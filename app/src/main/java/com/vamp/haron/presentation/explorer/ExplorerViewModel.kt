@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
@@ -92,7 +93,8 @@ class ExplorerViewModel @Inject constructor(
                 bottomPanel = it.bottomPanel.copy(sortOrder = savedSort, showHidden = showHidden, gridColumns = gridColumns),
                 panelRatio = panelRatio,
                 favorites = preferences.getFavorites(),
-                recentPaths = preferences.getRecentPaths()
+                recentPaths = preferences.getRecentPaths(),
+                themeMode = EcosystemPreferences.theme
             )
         }
         val topPath = preferences.topPanelPath.let { if (File(it).isDirectory) it else HaronConstants.ROOT_PATH }
@@ -127,11 +129,12 @@ class ExplorerViewModel @Inject constructor(
     private companion object {
         const val SERVICE_FILE_THRESHOLD = 10
         const val SERVICE_SIZE_THRESHOLD = 50L * 1024 * 1024 // 50 MB
+        const val MAX_HISTORY_SIZE = 50
     }
 
     // --- Navigation ---
 
-    fun navigateTo(panelId: PanelId, path: String) {
+    fun navigateTo(panelId: PanelId, path: String, pushHistory: Boolean = true) {
         viewModelScope.launch {
             updatePanel(panelId) { it.copy(isLoading = true, error = null) }
 
@@ -144,12 +147,24 @@ class ExplorerViewModel @Inject constructor(
                 showHidden = panel.showHidden
             ).onSuccess { files ->
                 updatePanel(panelId) {
+                    var history = it.navigationHistory
+                    var index = it.historyIndex
+                    if (pushHistory) {
+                        // Обрезаем forward-стек и добавляем новый путь
+                        history = history.take(index + 1) + path
+                        if (history.size > MAX_HISTORY_SIZE) {
+                            history = history.takeLast(MAX_HISTORY_SIZE)
+                        }
+                        index = history.lastIndex
+                    }
                     it.copy(
                         currentPath = path,
                         displayPath = displayPath,
                         files = files,
                         isLoading = false,
-                        error = null
+                        error = null,
+                        navigationHistory = history,
+                        historyIndex = index
                     )
                 }
                 // Save panel path & track recent
@@ -204,6 +219,50 @@ class ExplorerViewModel @Inject constructor(
 
     fun canNavigateUp(panelId: PanelId): Boolean {
         return fileRepository.getParentPath(getPanel(panelId).currentPath) != null
+    }
+
+    fun navigateBack(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        if (panel.historyIndex <= 0) return
+        val newIndex = panel.historyIndex - 1
+        val path = panel.navigationHistory[newIndex]
+        updatePanel(panelId) { it.copy(historyIndex = newIndex) }
+        navigateTo(panelId, path, pushHistory = false)
+    }
+
+    fun navigateForward(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        if (panel.historyIndex >= panel.navigationHistory.lastIndex) return
+        val newIndex = panel.historyIndex + 1
+        val path = panel.navigationHistory[newIndex]
+        updatePanel(panelId) { it.copy(historyIndex = newIndex) }
+        navigateTo(panelId, path, pushHistory = false)
+    }
+
+    fun canNavigateBack(panelId: PanelId): Boolean {
+        return getPanel(panelId).historyIndex > 0
+    }
+
+    fun canNavigateForward(panelId: PanelId): Boolean {
+        val panel = getPanel(panelId)
+        return panel.historyIndex < panel.navigationHistory.lastIndex
+    }
+
+    fun openInOtherPanel(panelId: PanelId) {
+        val path = getPanel(panelId).currentPath
+        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        navigateTo(otherId, path)
+    }
+
+    fun cycleTheme() {
+        val current = EcosystemPreferences.theme
+        val next = when (current) {
+            "system" -> "light"
+            "light" -> "dark"
+            else -> "system"
+        }
+        EcosystemPreferences.theme = next
+        _uiState.update { it.copy(themeMode = next) }
     }
 
     // --- Active panel ---

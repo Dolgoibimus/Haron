@@ -33,7 +33,12 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,10 +82,10 @@ import com.vamp.haron.presentation.explorer.state.PanelUiState
 fun FilePanel(
     state: PanelUiState,
     isActive: Boolean,
-    canNavigateUp: Boolean,
+    canNavigateUp: Boolean = false,
     isFavorite: Boolean,
     onFileClick: (FileEntry) -> Unit,
-    onNavigateUp: () -> Unit,
+    onNavigateUp: () -> Unit = {},
     onSortChanged: (SortOrder) -> Unit,
     onToggleHidden: () -> Unit,
     onSelectAll: () -> Unit,
@@ -96,6 +101,14 @@ fun FilePanel(
     onRenameCancel: () -> Unit,
     onCreateNew: () -> Unit,
     onShowTrash: () -> Unit,
+    onBreadcrumbClick: (String) -> Unit = {},
+    onNavigateBack: () -> Unit = {},
+    onNavigateForward: () -> Unit = {},
+    canNavigateBack: Boolean = false,
+    canNavigateForward: Boolean = false,
+    onOpenInOtherPanel: () -> Unit = {},
+    onCycleTheme: () -> Unit = {},
+    themeMode: String = "system",
     trashSizeInfo: String = "",
     onGridColumnsChanged: (Int) -> Unit = {},
     onDragStarted: ((List<String>, Offset) -> Unit)? = null,
@@ -163,7 +176,7 @@ fun FilePanel(
                     .padding(start = 4.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Navigation icon
+                // Navigation icons
                 when {
                     showSearch -> {
                         IconButton(
@@ -182,7 +195,10 @@ fun FilePanel(
                     }
                     state.isSelectionMode -> {
                         IconButton(
-                            onClick = onClearSelection,
+                            onClick = {
+                                onPanelTap()
+                                onClearSelection()
+                            },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
@@ -192,20 +208,47 @@ fun FilePanel(
                             )
                         }
                     }
-                    canNavigateUp -> {
+                    else -> {
+                        // Кнопка назад по истории
                         IconButton(
-                            onClick = onNavigateUp,
+                            onClick = {
+                                onPanelTap()
+                                onNavigateBack()
+                            },
+                            enabled = canNavigateBack,
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Назад",
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = if (canNavigateBack) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                }
                             )
                         }
-                    }
-                    else -> {
-                        Spacer(Modifier.width(4.dp))
+                        // Кнопка вперёд по истории
+                        IconButton(
+                            onClick = {
+                                onPanelTap()
+                                onNavigateForward()
+                            },
+                            enabled = canNavigateForward,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Вперёд",
+                                modifier = Modifier.size(18.dp),
+                                tint = if (canNavigateForward) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -245,7 +288,12 @@ fun FilePanel(
                             text = state.statusMessage,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onPanelTap() }
                         )
                     }
                     state.isSelectionMode -> {
@@ -255,7 +303,12 @@ fun FilePanel(
                         Text(
                             text = "Выбрано: ${formatFileCount(dirs, files)}",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onPanelTap() }
                         )
                     }
                     else -> {
@@ -517,6 +570,42 @@ fun FilePanel(
                                         )
                                     }
                                 )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Открыть в другой панели") },
+                                    onClick = {
+                                        onOpenInOtherPanel()
+                                        showOverflow = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            when (themeMode) {
+                                                "light" -> "Тема: светлая"
+                                                "dark" -> "Тема: тёмная"
+                                                else -> "Тема: системная"
+                                            }
+                                        )
+                                    },
+                                    onClick = {
+                                        onCycleTheme()
+                                        showOverflow = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = when (themeMode) {
+                                                "light" -> Icons.Filled.LightMode
+                                                "dark" -> Icons.Filled.DarkMode
+                                                else -> Icons.Filled.BrightnessAuto
+                                            },
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -533,7 +622,8 @@ fun FilePanel(
             ) {
                 BreadcrumbBar(
                     displayPath = state.displayPath,
-                    folderSize = state.files.sumOf { it.size }
+                    folderSize = state.files.sumOf { it.size },
+                    onSegmentClick = onBreadcrumbClick
                 )
             }
         }

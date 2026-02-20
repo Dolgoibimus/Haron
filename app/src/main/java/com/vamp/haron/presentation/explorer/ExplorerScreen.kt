@@ -90,11 +90,13 @@ fun ExplorerScreen(
     val selectedFiles = selectedEntries.size - selectedDirs
     val hasRenaming = state.topPanel.renamingPath != null || state.bottomPanel.renamingPath != null
 
-    // Back: rename → selection → navigation
-    BackHandler(enabled = hasRenaming || hasSelection || viewModel.canNavigateUp(activePanel)) {
+    // Back: rename → selection → history back → navigate up
+    val canGoBack = viewModel.canNavigateBack(activePanel)
+    BackHandler(enabled = hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
         when {
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> viewModel.clearSelection(activePanel)
+            canGoBack -> viewModel.navigateBack(activePanel)
             else -> viewModel.navigateUp(activePanel)
         }
     }
@@ -160,6 +162,14 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
+                onBreadcrumbClick = { viewModel.navigateTo(PanelId.TOP, it) },
+                onNavigateBack = { viewModel.navigateBack(PanelId.TOP) },
+                onNavigateForward = { viewModel.navigateForward(PanelId.TOP) },
+                canNavigateBack = viewModel.canNavigateBack(PanelId.TOP),
+                canNavigateForward = viewModel.canNavigateForward(PanelId.TOP),
+                onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.TOP) },
+                onCycleTheme = { viewModel.cycleTheme() },
+                themeMode = state.themeMode,
                 trashSizeInfo = state.trashSizeInfo,
                 onGridColumnsChanged = { viewModel.setGridColumns(it) },
                 onDragStarted = { paths, offset ->
@@ -212,6 +222,14 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
+                onBreadcrumbClick = { viewModel.navigateTo(PanelId.BOTTOM, it) },
+                onNavigateBack = { viewModel.navigateBack(PanelId.BOTTOM) },
+                onNavigateForward = { viewModel.navigateForward(PanelId.BOTTOM) },
+                canNavigateBack = viewModel.canNavigateBack(PanelId.BOTTOM),
+                canNavigateForward = viewModel.canNavigateForward(PanelId.BOTTOM),
+                onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.BOTTOM) },
+                onCycleTheme = { viewModel.cycleTheme() },
+                themeMode = state.themeMode,
                 trashSizeInfo = state.trashSizeInfo,
                 onGridColumnsChanged = { viewModel.setGridColumns(it) },
                 onDragStarted = { paths, offset ->

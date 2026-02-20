@@ -16,7 +16,8 @@ data class ExplorerUiState(
     val showFavoritesPanel: Boolean = false,
     val dragState: DragState = DragState.Idle,
     val operationProgress: OperationProgress? = null,
-    val trashSizeInfo: String = ""
+    val trashSizeInfo: String = "",
+    val themeMode: String = "system"
 )
 
 sealed interface DialogState {
