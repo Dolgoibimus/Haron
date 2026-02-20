@@ -2,9 +2,11 @@ package com.vamp.haron.presentation.explorer.state
 
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
+import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
+import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.model.TrashEntry
 
 data class ExplorerUiState(
@@ -38,6 +40,12 @@ sealed interface DialogState {
         val destinationDir: String,
         val operationType: OperationType,
         val decisions: Map<String, ConflictResolution> = emptyMap()
+    ) : DialogState
+    data class QuickPreview(
+        val entry: FileEntry,
+        val previewData: PreviewData? = null,
+        val isLoading: Boolean = true,
+        val error: String? = null
     ) : DialogState
 }
 

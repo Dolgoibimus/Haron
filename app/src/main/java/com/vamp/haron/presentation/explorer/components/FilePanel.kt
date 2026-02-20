@@ -86,6 +86,7 @@ fun FilePanel(
     canNavigateUp: Boolean = false,
     isFavorite: Boolean,
     onFileClick: (FileEntry) -> Unit,
+    onIconClick: (FileEntry) -> Unit,
     onNavigateUp: () -> Unit = {},
     onSortChanged: (SortOrder) -> Unit,
     onToggleHidden: () -> Unit,
@@ -762,7 +763,7 @@ fun FilePanel(
                                                     accumulatedScale = 1f
                                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 }
-                                                accumulatedScale < 0.7f && cols < 4 -> {
+                                                accumulatedScale < 0.7f && cols < 6 -> {
                                                     currentOnGridColumnsChanged(cols + 1)
                                                     accumulatedScale = 1f
                                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -857,6 +858,7 @@ fun FilePanel(
                             isRenaming = state.renamingPath == entry.path,
                             onClick = { onFileClick(entry) },
                             onLongClick = { onLongPressItem(entry) },
+                            onIconClick = { onIconClick(entry) },
                             onRenameConfirm = onRenameConfirm,
                             onRenameCancel = onRenameCancel,
                             isGridMode = isGridMode

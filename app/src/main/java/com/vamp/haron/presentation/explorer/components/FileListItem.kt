@@ -4,15 +4,19 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,6 +52,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
@@ -62,6 +67,7 @@ fun FileListItem(
     isRenaming: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onIconClick: () -> Unit,
     onRenameConfirm: (String) -> Unit,
     onRenameCancel: () -> Unit,
     isGridMode: Boolean = false,
@@ -91,10 +97,12 @@ fun FileListItem(
         else -> Icons.AutoMirrored.Filled.InsertDriveFile
     }
 
-    val iconTint = if (entry.isDirectory) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val isEmptyFolder = entry.isDirectory && entry.childCount == 0
+
+    val iconTint = when {
+        isEmptyFolder -> MaterialTheme.colorScheme.outline
+        entry.isDirectory -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     if (isGridMode) {
@@ -110,14 +118,51 @@ fun FileListItem(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
             ) {
-                // Selection badge overlay
-                Box(contentAlignment = Alignment.TopEnd) {
+                // Selection badge overlay + icon click target + extension badge
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onIconClick
+                        )
+                ) {
+                    val emptyFolderBorder = if (isEmptyFolder) Modifier.border(
+                        width = 1.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(6.dp)
+                    ) else Modifier
                     Icon(
                         imageVector = fileIcon,
                         contentDescription = null,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .align(Alignment.Center)
+                            .then(emptyFolderBorder)
+                            .padding(if (isEmptyFolder) 4.dp else 0.dp),
                         tint = iconTint
                     )
+                    // Extension badge (bottom-center)
+                    if (!entry.isDirectory && entry.extension.isNotEmpty()) {
+                        Text(
+                            text = entry.extension.take(4).uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                lineHeight = 10.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .offset(y = 2.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                    RoundedCornerShape(3.dp)
+                                )
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
+                    // Selection indicator (top-end)
                     if (isSelectionMode && !isRenaming) {
                         Icon(
                             imageVector = if (isSelected) {
@@ -126,7 +171,9 @@ fun FileListItem(
                                 Icons.Filled.RadioButtonUnchecked
                             },
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .align(Alignment.TopEnd),
                             tint = if (isSelected) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -186,14 +233,52 @@ fun FileListItem(
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
-            Icon(
-                imageVector = fileIcon,
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = iconTint
-            )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onIconClick
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                val emptyFolderBorderList = if (isEmptyFolder) Modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(4.dp)
+                ) else Modifier
+                Icon(
+                    imageVector = fileIcon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .then(emptyFolderBorderList)
+                        .padding(if (isEmptyFolder) 3.dp else 0.dp),
+                    tint = iconTint
+                )
+                // Extension badge (bottom-center)
+                if (!entry.isDirectory && entry.extension.isNotEmpty()) {
+                    Text(
+                        text = entry.extension.take(4).uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 7.sp,
+                            lineHeight = 9.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = 2.dp)
+                            .background(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                RoundedCornerShape(2.dp)
+                            )
+                            .padding(horizontal = 2.dp)
+                    )
+                }
+            }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
 
             if (isRenaming) {
                 InlineRenameField(

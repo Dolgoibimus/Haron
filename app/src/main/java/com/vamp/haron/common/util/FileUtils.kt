@@ -28,7 +28,7 @@ fun FileEntry.iconRes(): String {
     if (isDirectory) return "folder"
     return when {
         extension in listOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "svg") -> "image"
-        extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm") -> "video"
+        extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp", "3gpp", "ts", "m4v", "mts") -> "video"
         extension in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma") -> "audio"
         extension in listOf("pdf") -> "pdf"
         extension in listOf("doc", "docx", "odt", "rtf") -> "document"
@@ -36,8 +36,16 @@ fun FileEntry.iconRes(): String {
         extension in listOf("ppt", "pptx", "odp") -> "presentation"
         extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> "archive"
         extension in listOf("apk") -> "apk"
-        extension in listOf("txt", "md", "log", "json", "xml", "yml", "yaml") -> "text"
-        extension in listOf("kt", "java", "py", "js", "ts", "html", "css") -> "code"
+        extension in listOf(
+            "txt", "md", "log", "json", "xml", "yml", "yaml",
+            "conf", "cfg", "ini", "properties", "env", "toml",
+            "fb2", "csv", "sql", "gradle"
+        ) -> "text"
+        extension in listOf(
+            "kt", "java", "py", "js", "ts", "html", "css",
+            "sh", "bat", "c", "cpp", "h", "hpp", "rs", "go",
+            "rb", "php", "swift", "dart", "lua", "r", "scala"
+        ) -> "code"
         else -> "file"
     }
 }

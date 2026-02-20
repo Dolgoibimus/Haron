@@ -28,6 +28,7 @@ import com.vamp.haron.domain.usecase.CreateFileUseCase
 import com.vamp.haron.domain.usecase.DeleteFilesUseCase
 import com.vamp.haron.domain.usecase.EmptyTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilesUseCase
+import com.vamp.haron.domain.usecase.LoadPreviewUseCase
 import com.vamp.haron.domain.usecase.MoveFilesUseCase
 import com.vamp.haron.domain.usecase.MoveToTrashUseCase
 import com.vamp.haron.domain.usecase.RenameFileUseCase
@@ -48,6 +49,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import java.io.File
 import java.text.SimpleDateFormat
@@ -67,6 +69,7 @@ class ExplorerViewModel @Inject constructor(
     private val renameFileUseCase: RenameFileUseCase,
     private val createDirectoryUseCase: CreateDirectoryUseCase,
     private val createFileUseCase: CreateFileUseCase,
+    private val loadPreviewUseCase: LoadPreviewUseCase,
     private val moveToTrashUseCase: MoveToTrashUseCase,
     private val restoreFromTrashUseCase: RestoreFromTrashUseCase,
     private val emptyTrashUseCase: EmptyTrashUseCase,
@@ -233,6 +236,45 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun onIconClick(panelId: PanelId, entry: FileEntry) {
+        setActivePanel(panelId)
+        val panel = getPanel(panelId)
+        when {
+            panel.isSelectionMode -> toggleSelection(panelId, entry.path)
+            entry.isDirectory -> navigateTo(panelId, entry.path)
+            else -> {
+                _uiState.update {
+                    it.copy(dialogState = DialogState.QuickPreview(entry = entry))
+                }
+                viewModelScope.launch {
+                    loadPreviewUseCase(entry)
+                        .onSuccess { data ->
+                            val current = _uiState.value.dialogState
+                            if (current is DialogState.QuickPreview && current.entry.path == entry.path) {
+                                _uiState.update {
+                                    it.copy(dialogState = current.copy(
+                                        previewData = data,
+                                        isLoading = false
+                                    ))
+                                }
+                            }
+                        }
+                        .onFailure { e ->
+                            val current = _uiState.value.dialogState
+                            if (current is DialogState.QuickPreview && current.entry.path == entry.path) {
+                                _uiState.update {
+                                    it.copy(dialogState = current.copy(
+                                        isLoading = false,
+                                        error = e.message ?: "Ошибка загрузки превью"
+                                    ))
+                                }
+                            }
+                        }
+                }
+            }
+        }
+    }
+
     fun canNavigateUp(panelId: PanelId): Boolean {
         return fileRepository.getParentPath(getPanel(panelId).currentPath) != null
     }
@@ -335,7 +377,7 @@ class ExplorerViewModel @Inject constructor(
     // --- Grid columns ---
 
     fun setGridColumns(columns: Int) {
-        val clamped = columns.coerceIn(1, 4)
+        val clamped = columns.coerceIn(1, 6)
         _uiState.update { state ->
             state.copy(
                 topPanel = state.topPanel.copy(gridColumns = clamped),

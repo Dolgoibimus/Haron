@@ -56,6 +56,7 @@ import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FavoritesPanel
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
+import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
 import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -162,6 +163,7 @@ fun ExplorerScreen(
                 canNavigateUp = viewModel.canNavigateUp(PanelId.TOP),
                 isFavorite = state.topPanel.currentPath in state.favorites,
                 onFileClick = { viewModel.onFileClick(PanelId.TOP, it) },
+                onIconClick = { viewModel.onIconClick(PanelId.TOP, it) },
                 onNavigateUp = { viewModel.navigateUp(PanelId.TOP) },
                 onSortChanged = { viewModel.setSortOrder(PanelId.TOP, it) },
                 onToggleHidden = { viewModel.toggleShowHidden(PanelId.TOP) },
@@ -234,6 +236,7 @@ fun ExplorerScreen(
                 canNavigateUp = viewModel.canNavigateUp(PanelId.BOTTOM),
                 isFavorite = state.bottomPanel.currentPath in state.favorites,
                 onFileClick = { viewModel.onFileClick(PanelId.BOTTOM, it) },
+                onIconClick = { viewModel.onIconClick(PanelId.BOTTOM, it) },
                 onNavigateUp = { viewModel.navigateUp(PanelId.BOTTOM) },
                 onSortChanged = { viewModel.setSortOrder(PanelId.BOTTOM, it) },
                 onToggleHidden = { viewModel.toggleShowHidden(PanelId.BOTTOM) },
@@ -430,6 +433,15 @@ fun ExplorerScreen(
                 onResolve = { resolution, applyToAll ->
                     viewModel.resolveCurrentConflict(resolution, applyToAll)
                 },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.QuickPreview -> {
+            QuickPreviewDialog(
+                entry = dialog.entry,
+                previewData = dialog.previewData,
+                isLoading = dialog.isLoading,
+                error = dialog.error,
                 onDismiss = viewModel::dismissDialog
             )
         }

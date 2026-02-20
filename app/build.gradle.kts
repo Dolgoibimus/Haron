@@ -45,7 +45,18 @@ dependencies {
     // Ecosystem Core
     implementation("com.vamp:core:1.0.0")
 
+    // Document support (.doc)
+    implementation("org.apache.poi:poi:5.2.5")
+    implementation("org.apache.poi:poi-scratchpad:5.2.5")
+
+    // Archive support (7z, rar)
+    implementation("org.apache.commons:commons-compress:1.26.1")
+    implementation("org.tukaani:xz:1.9")
+    implementation("com.github.junrar:junrar:7.5.5")
+    implementation("org.slf4j:slf4j-nop:2.0.13")
+
     // AndroidX
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

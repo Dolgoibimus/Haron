@@ -36,7 +36,7 @@ class HaronPreferences @Inject constructor(
 
     var gridColumns: Int
         get() = prefs.getInt(KEY_GRID_COLUMNS, 1)
-        set(value) = prefs.edit().putInt(KEY_GRID_COLUMNS, value.coerceIn(1, 4)).apply()
+        set(value) = prefs.edit().putInt(KEY_GRID_COLUMNS, value.coerceIn(1, 6)).apply()
 
     var panelRatio: Float
         get() = prefs.getFloat(KEY_PANEL_RATIO, 0.5f)
