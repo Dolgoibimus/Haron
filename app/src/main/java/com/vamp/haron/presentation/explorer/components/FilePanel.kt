@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,8 +53,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,13 +87,19 @@ fun FilePanel(
     onRenameConfirm: (String) -> Unit,
     onRenameCancel: () -> Unit,
     onCreateNew: () -> Unit,
+    onShowTrash: () -> Unit,
+    onDragStarted: ((List<String>, Offset) -> Unit)? = null,
+    onDragMoved: ((Offset) -> Unit)? = null,
+    onDragEnded: (() -> Unit)? = null,
+    isDragTarget: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = if (isActive) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-    } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val borderColor = when {
+        isDragTarget -> MaterialTheme.colorScheme.tertiary
+        isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     }
+    val borderWidth = if (isDragTarget) 3.dp else if (isActive) 2.dp else 1.dp
 
     var showOverflow by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
@@ -124,7 +134,7 @@ fun FilePanel(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
             .border(
-                width = if (isActive) 2.dp else 1.dp,
+                width = borderWidth,
                 color = borderColor,
                 shape = RoundedCornerShape(4.dp)
             )
@@ -373,6 +383,19 @@ fun FilePanel(
                                         )
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Корзина") },
+                                    onClick = {
+                                        onShowTrash()
+                                        showOverflow = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Filled.DeleteOutline,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -448,18 +471,29 @@ fun FilePanel(
             else -> {
                 val listState = rememberLazyListState()
                 var dragStartIndex by remember { mutableIntStateOf(-1) }
+                var isCrossPanelDrag by remember { mutableStateOf(false) }
 
                 // Stable references for gesture handler
                 val currentFilteredFiles by rememberUpdatedState(filteredFiles)
                 val currentOnPanelTap by rememberUpdatedState(onPanelTap)
                 val currentOnLongPressItem by rememberUpdatedState(onLongPressItem)
                 val currentOnSelectRange by rememberUpdatedState(onSelectRange)
+                val currentOnDragStarted by rememberUpdatedState(onDragStarted)
+                val currentOnDragMoved by rememberUpdatedState(onDragMoved)
+                val currentOnDragEnded by rememberUpdatedState(onDragEnded)
+                val currentSelectedPaths by rememberUpdatedState(state.selectedPaths)
+
+                // Track list position in root for global offset calc
+                var listRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        .onGloballyPositioned { coords ->
+                            listRootOffset = coords.positionInRoot()
+                        }
                         .pointerInput(Unit) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { offset ->
@@ -468,13 +502,36 @@ fun FilePanel(
                                         listState.layoutInfo, offset.y
                                     )
                                     if (index >= 0 && index < currentFilteredFiles.size) {
-                                        dragStartIndex = index
-                                        currentOnLongPressItem(currentFilteredFiles[index])
+                                        val entry = currentFilteredFiles[index]
+                                        // If tapped on an already-selected file → cross-panel DnD
+                                        if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
+                                            isCrossPanelDrag = true
+                                            dragStartIndex = -1
+                                            val globalOffset = Offset(
+                                                listRootOffset.x + offset.x,
+                                                listRootOffset.y + offset.y
+                                            )
+                                            currentOnDragStarted?.invoke(
+                                                currentSelectedPaths.toList(),
+                                                globalOffset
+                                            )
+                                        } else {
+                                            // Range selection
+                                            isCrossPanelDrag = false
+                                            dragStartIndex = index
+                                            currentOnLongPressItem(entry)
+                                        }
                                     }
                                 },
                                 onDrag = { change, _ ->
                                     change.consume()
-                                    if (dragStartIndex >= 0) {
+                                    if (isCrossPanelDrag) {
+                                        val globalOffset = Offset(
+                                            listRootOffset.x + change.position.x,
+                                            listRootOffset.y + change.position.y
+                                        )
+                                        currentOnDragMoved?.invoke(globalOffset)
+                                    } else if (dragStartIndex >= 0) {
                                         val currentIndex = findItemIndexAtOffset(
                                             listState.layoutInfo, change.position.y
                                         )
@@ -483,8 +540,20 @@ fun FilePanel(
                                         }
                                     }
                                 },
-                                onDragEnd = { dragStartIndex = -1 },
-                                onDragCancel = { dragStartIndex = -1 }
+                                onDragEnd = {
+                                    if (isCrossPanelDrag) {
+                                        currentOnDragEnded?.invoke()
+                                    }
+                                    dragStartIndex = -1
+                                    isCrossPanelDrag = false
+                                },
+                                onDragCancel = {
+                                    if (isCrossPanelDrag) {
+                                        currentOnDragEnded?.invoke()
+                                    }
+                                    dragStartIndex = -1
+                                    isCrossPanelDrag = false
+                                }
                             )
                         }
                 ) {

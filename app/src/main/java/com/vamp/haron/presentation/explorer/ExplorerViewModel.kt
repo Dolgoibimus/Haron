@@ -9,19 +9,28 @@ import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.repository.FileRepository
+import com.vamp.haron.domain.repository.TrashRepository
+import com.vamp.haron.domain.usecase.CleanExpiredTrashUseCase
 import com.vamp.haron.domain.usecase.CopyFilesUseCase
 import com.vamp.haron.domain.usecase.CreateDirectoryUseCase
 import com.vamp.haron.domain.usecase.CreateFileUseCase
 import com.vamp.haron.domain.usecase.DeleteFilesUseCase
+import com.vamp.haron.domain.usecase.EmptyTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilesUseCase
 import com.vamp.haron.domain.usecase.MoveFilesUseCase
+import com.vamp.haron.domain.usecase.MoveToTrashUseCase
 import com.vamp.haron.domain.usecase.RenameFileUseCase
+import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
+import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
 import com.vamp.haron.presentation.explorer.state.FileTemplate
 import com.vamp.haron.presentation.explorer.state.PanelUiState
+import androidx.compose.ui.geometry.Offset
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
@@ -42,10 +51,18 @@ class ExplorerViewModel @Inject constructor(
     private val deleteFilesUseCase: DeleteFilesUseCase,
     private val renameFileUseCase: RenameFileUseCase,
     private val createDirectoryUseCase: CreateDirectoryUseCase,
-    private val createFileUseCase: CreateFileUseCase
+    private val createFileUseCase: CreateFileUseCase,
+    private val moveToTrashUseCase: MoveToTrashUseCase,
+    private val restoreFromTrashUseCase: RestoreFromTrashUseCase,
+    private val emptyTrashUseCase: EmptyTrashUseCase,
+    private val cleanExpiredTrashUseCase: CleanExpiredTrashUseCase,
+    private val trashRepository: TrashRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
+
+    private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val toastMessage = _toastMessage.asSharedFlow()
     val uiState: StateFlow<ExplorerUiState> = _uiState.asStateFlow()
 
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
@@ -66,6 +83,11 @@ class ExplorerViewModel @Inject constructor(
         }
         navigateTo(PanelId.TOP, HaronConstants.ROOT_PATH)
         navigateTo(PanelId.BOTTOM, HaronConstants.ROOT_PATH)
+
+        // Автоочистка просроченных записей корзины
+        viewModelScope.launch {
+            cleanExpiredTrashUseCase()
+        }
     }
 
     // --- Navigation ---
@@ -302,13 +324,14 @@ class ExplorerViewModel @Inject constructor(
         dismissDialog()
         val activeId = _uiState.value.activePanel
         viewModelScope.launch {
-            deleteFilesUseCase(paths)
-                .onSuccess {
+            moveToTrashUseCase(paths)
+                .onSuccess { count ->
                     clearSelection(activeId)
-                    refreshPanel(activeId)
+                    showStatusMessage(activeId, "В корзине: $count")
+                    refreshBothIfSamePath(activeId)
                 }
                 .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка удаления: ${e.message}")
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка перемещения в корзину: ${e.message}")
                 }
         }
     }
@@ -336,8 +359,9 @@ class ExplorerViewModel @Inject constructor(
 
         viewModelScope.launch {
             renameFileUseCase(path, newName)
-                .onSuccess { refreshPanel(activeId) }
+                .onSuccess { refreshBothIfSamePath(activeId) }
                 .onFailure { e ->
+                    _toastMessage.tryEmit(e.message ?: "Ошибка переименования")
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
                 }
         }
@@ -383,7 +407,7 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
             result
-                .onSuccess { refreshPanel(activeId) }
+                .onSuccess { refreshBothIfSamePath(activeId) }
                 .onFailure { e ->
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка создания: ${e.message}")
                 }
@@ -425,6 +449,120 @@ class ExplorerViewModel @Inject constructor(
         navigateTo(activeId, path)
     }
 
+    // --- Trash ---
+
+    fun showTrash() {
+        viewModelScope.launch {
+            trashRepository.getTrashEntries()
+                .onSuccess { entries ->
+                    val totalSize = trashRepository.getTrashSize()
+                    _uiState.update {
+                        it.copy(dialogState = DialogState.ShowTrash(entries, totalSize))
+                    }
+                }
+                .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка чтения корзины: ${e.message}")
+                }
+        }
+    }
+
+    fun restoreFromTrash(ids: List<String>) {
+        viewModelScope.launch {
+            restoreFromTrashUseCase(ids)
+                .onSuccess { count ->
+                    showStatusMessage(_uiState.value.activePanel, "Восстановлено: $count")
+                    refreshPanel(PanelId.TOP)
+                    refreshPanel(PanelId.BOTTOM)
+                    // Обновить диалог корзины
+                    showTrash()
+                }
+                .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка восстановления: ${e.message}")
+                }
+        }
+    }
+
+    fun deleteFromTrashPermanently(ids: List<String>) {
+        viewModelScope.launch {
+            trashRepository.deleteFromTrash(ids)
+                .onSuccess {
+                    showTrash()
+                }
+                .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка удаления из корзины: ${e.message}")
+                }
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            emptyTrashUseCase()
+                .onSuccess { count ->
+                    showStatusMessage(_uiState.value.activePanel, "Корзина очищена: $count")
+                    dismissDialog()
+                }
+                .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка очистки корзины: ${e.message}")
+                }
+        }
+    }
+
+    // --- Drag-and-Drop ---
+
+    fun startDrag(panelId: PanelId, paths: List<String>, offset: Offset) {
+        if (paths.isEmpty()) return
+        val panel = getPanel(panelId)
+        val firstEntry = panel.files.find { it.path == paths.first() }
+        _uiState.update {
+            it.copy(
+                dragState = DragState.Dragging(
+                    sourcePanelId = panelId,
+                    draggedPaths = paths,
+                    dragOffset = offset,
+                    fileCount = paths.size,
+                    previewName = firstEntry?.name ?: paths.first().substringAfterLast('/')
+                )
+            )
+        }
+    }
+
+    fun updateDragPosition(offset: Offset) {
+        val current = _uiState.value.dragState
+        if (current is DragState.Dragging) {
+            _uiState.update {
+                it.copy(dragState = current.copy(dragOffset = offset))
+            }
+        }
+    }
+
+    fun endDrag(targetPanelId: PanelId?) {
+        val current = _uiState.value.dragState
+        if (current !is DragState.Dragging) return
+        _uiState.update { it.copy(dragState = DragState.Idle) }
+
+        if (targetPanelId == null || targetPanelId == current.sourcePanelId) return
+
+        val sourcePanel = getPanel(current.sourcePanelId)
+        val targetPanel = getPanel(targetPanelId)
+        if (sourcePanel.currentPath == targetPanel.currentPath) return
+        viewModelScope.launch {
+            moveFilesUseCase(current.draggedPaths, targetPanel.currentPath)
+                .onSuccess {
+                    clearSelection(current.sourcePanelId)
+                    showStatusMessage(targetPanelId, "Перемещено: ${current.fileCount}")
+                    refreshPanel(current.sourcePanelId)
+                    refreshPanel(targetPanelId)
+                }
+                .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка DnD перемещения: ${e.message}")
+                }
+        }
+    }
+
+    fun cancelDrag() {
+        _uiState.update { it.copy(dragState = DragState.Idle) }
+    }
+
     // --- Helpers ---
 
     fun getSelectedTotalSize(): Long {
@@ -440,6 +578,14 @@ class ExplorerViewModel @Inject constructor(
         val path = getPanel(panelId).currentPath
         if (path.isNotEmpty()) {
             navigateTo(panelId, path)
+        }
+    }
+
+    private fun refreshBothIfSamePath(panelId: PanelId) {
+        refreshPanel(panelId)
+        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        if (getPanel(panelId).currentPath == getPanel(otherId).currentPath) {
+            refreshPanel(otherId)
         }
     }
 

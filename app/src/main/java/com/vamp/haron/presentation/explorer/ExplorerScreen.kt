@@ -5,23 +5,34 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
+import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FavoritesPanel
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
+import com.vamp.haron.presentation.explorer.components.TrashDialog
+import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 
 @Composable
@@ -29,6 +40,12 @@ fun ExplorerScreen(
     viewModel: ExplorerViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.toastMessage.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
     val activePanel = state.activePanel
     val hasSelection = when (activePanel) {
         PanelId.TOP -> state.topPanel.isSelectionMode
@@ -53,6 +70,35 @@ fun ExplorerScreen(
     }
 
     var totalHeightPx by remember { mutableFloatStateOf(0f) }
+
+    // Panel Y positions for drag target detection
+    var topPanelTopY by remember { mutableFloatStateOf(0f) }
+    var topPanelBottomY by remember { mutableFloatStateOf(0f) }
+    var bottomPanelTopY by remember { mutableFloatStateOf(0f) }
+    var bottomPanelBottomY by remember { mutableFloatStateOf(0f) }
+
+    val dragState = state.dragState
+    val isDragging = dragState is DragState.Dragging
+
+    // Determine which panel is drag target
+    val dragTargetPanel: PanelId? = if (dragState is DragState.Dragging) {
+        val y = dragState.dragOffset.y
+        when {
+            y in topPanelTopY..topPanelBottomY && dragState.sourcePanelId != PanelId.TOP -> PanelId.TOP
+            y in bottomPanelTopY..bottomPanelBottomY && dragState.sourcePanelId != PanelId.BOTTOM -> PanelId.BOTTOM
+            else -> null
+        }
+    } else null
+
+    val haptic = LocalHapticFeedback.current
+    // Track previous drag target for haptic
+    var prevDragTarget by remember { mutableStateOf<PanelId?>(null) }
+    if (dragTargetPanel != prevDragTarget) {
+        if (dragTargetPanel != null) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+        prevDragTarget = dragTargetPanel
+    }
 
     // Box overlay: panels fill all space, SelectionActionBar overlays at bottom
     Box(
@@ -83,9 +129,22 @@ fun ExplorerScreen(
                 onRenameConfirm = { viewModel.confirmInlineRename(it) },
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
+                onShowTrash = { viewModel.showTrash() },
+                onDragStarted = { paths, offset ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.startDrag(PanelId.TOP, paths, offset)
+                },
+                onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
+                onDragEnded = { viewModel.endDrag(dragTargetPanel) },
+                isDragTarget = dragTargetPanel == PanelId.TOP,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        topPanelTopY = pos.y
+                        topPanelBottomY = pos.y + coords.size.height
+                    }
             )
 
             // Divider
@@ -120,14 +179,27 @@ fun ExplorerScreen(
                 onRenameConfirm = { viewModel.confirmInlineRename(it) },
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
+                onShowTrash = { viewModel.showTrash() },
+                onDragStarted = { paths, offset ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.startDrag(PanelId.BOTTOM, paths, offset)
+                },
+                onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
+                onDragEnded = { viewModel.endDrag(dragTargetPanel) },
+                isDragTarget = dragTargetPanel == PanelId.BOTTOM,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        bottomPanelTopY = pos.y
+                        bottomPanelBottomY = pos.y + coords.size.height
+                    }
             )
         }
 
         // Selection action bar — overlay, no layout shift
-        if (hasSelection) {
+        if (hasSelection && !isDragging) {
             SelectionActionBar(
                 dirCount = selectedDirs,
                 fileCount = selectedFiles,
@@ -137,6 +209,15 @@ fun ExplorerScreen(
                 onDelete = viewModel::requestDeleteSelected,
                 onRename = viewModel::requestRename,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // Drag overlay — ghost icon following finger
+        if (dragState is DragState.Dragging) {
+            DragOverlay(
+                previewName = dragState.previewName,
+                fileCount = dragState.fileCount,
+                offset = dragState.dragOffset
             )
         }
     }
@@ -153,6 +234,16 @@ fun ExplorerScreen(
         is DialogState.CreateFromTemplate -> {
             CreateFromTemplateDialog(
                 onConfirm = viewModel::confirmCreateFromTemplate,
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ShowTrash -> {
+            TrashDialog(
+                entries = dialog.entries,
+                totalSize = dialog.totalSize,
+                onRestore = viewModel::restoreFromTrash,
+                onDeletePermanently = viewModel::deleteFromTrashPermanently,
+                onEmptyTrash = viewModel::emptyTrash,
                 onDismiss = viewModel::dismissDialog
             )
         }

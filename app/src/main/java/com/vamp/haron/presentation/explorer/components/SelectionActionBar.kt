@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
@@ -61,8 +61,8 @@ fun SelectionActionBar(
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Удалить",
+                        Icons.Filled.DeleteOutline,
+                        contentDescription = "В корзину",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
                     )

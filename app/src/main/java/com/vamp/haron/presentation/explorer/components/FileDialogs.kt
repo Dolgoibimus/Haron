@@ -40,16 +40,16 @@ fun DeleteConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Удалить?") },
+        title = { Text("В корзину?") },
         text = {
             Text(
-                if (count == 1) "Удалить выбранный элемент? Это действие нельзя отменить."
-                else "Удалить выбранные элементы ($count)? Это действие нельзя отменить."
+                if (count == 1) "Переместить выбранный элемент в корзину?"
+                else "Переместить выбранные элементы ($count) в корзину?"
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Удалить")
+                Text("В корзину")
             }
         },
         dismissButton = {

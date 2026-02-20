@@ -229,7 +229,7 @@ class FileRepositoryImpl @Inject constructor() : FileRepository {
         val ext = if ('.' in name) ".${name.substringAfterLast('.')}" else ""
         var counter = 1
         while (target.exists()) {
-            target = File(destDir, "${baseName} ($counter)$ext")
+            target = File(destDir, "${baseName}($counter)$ext")
             counter++
         }
         return target
