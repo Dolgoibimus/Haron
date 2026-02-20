@@ -50,6 +50,7 @@ import java.util.concurrent.TimeUnit
 fun TrashDialog(
     entries: List<TrashEntry>,
     totalSize: Long,
+    maxSizeMb: Int = 0,
     onRestore: (List<String>) -> Unit,
     onDeletePermanently: (List<String>) -> Unit,
     onEmptyTrash: () -> Unit,
@@ -74,10 +75,19 @@ fun TrashDialog(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.height(4.dp))
+            val sizeText = if (maxSizeMb > 0) {
+                val maxBytes = maxSizeMb.toLong() * 1024 * 1024
+                "${totalSize.toFileSize()} из ${maxBytes.toFileSize()}"
+            } else {
+                totalSize.toFileSize()
+            }
             Text(
-                text = "${entries.size} ${pluralItems(entries.size)} \u00B7 ${totalSize.toFileSize()}",
+                text = "${entries.size} ${pluralItems(entries.size)} \u00B7 $sizeText",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (maxSizeMb > 0 && totalSize >= maxSizeMb.toLong() * 1024 * 1024)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(8.dp))

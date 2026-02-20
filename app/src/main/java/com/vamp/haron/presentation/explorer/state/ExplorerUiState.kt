@@ -1,5 +1,7 @@
 package com.vamp.haron.presentation.explorer.state
 
+import com.vamp.haron.domain.model.OperationProgress
+import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.model.TrashEntry
 
@@ -12,7 +14,9 @@ data class ExplorerUiState(
     val favorites: List<String> = emptyList(),
     val recentPaths: List<String> = emptyList(),
     val showFavoritesPanel: Boolean = false,
-    val dragState: DragState = DragState.Idle
+    val dragState: DragState = DragState.Idle,
+    val operationProgress: OperationProgress? = null,
+    val trashSizeInfo: String = ""
 )
 
 sealed interface DialogState {
@@ -21,7 +25,14 @@ sealed interface DialogState {
     data object CreateFromTemplate : DialogState
     data class ShowTrash(
         val entries: List<TrashEntry> = emptyList(),
-        val totalSize: Long = 0L
+        val totalSize: Long = 0L,
+        val maxSizeMb: Int = 0
+    ) : DialogState
+    data class ConfirmConflict(
+        val conflictNames: List<String>,
+        val allPaths: List<String>,
+        val destinationDir: String,
+        val operationType: OperationType
     ) : DialogState
 }
 

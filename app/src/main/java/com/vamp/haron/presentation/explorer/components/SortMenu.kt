@@ -4,13 +4,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,39 +46,54 @@ fun SortMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-        SortField.entries.forEach { field ->
-            val label = when (field) {
-                SortField.NAME -> "По имени"
-                SortField.DATE -> "По дате"
-                SortField.SIZE -> "По размеру"
-                SortField.EXTENSION -> "По типу"
-            }
-            val isSelected = currentOrder.field == field
-            DropdownMenuItem(
-                text = { Text(label) },
-                onClick = {
-                    val newDirection = if (isSelected) {
-                        if (currentOrder.direction == SortDirection.ASCENDING) {
-                            SortDirection.DESCENDING
+            SortField.entries.forEach { field ->
+                val label = when (field) {
+                    SortField.NAME -> "По имени"
+                    SortField.DATE -> "По дате"
+                    SortField.SIZE -> "По размеру"
+                    SortField.EXTENSION -> "По типу"
+                }
+                val isSelected = currentOrder.field == field
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        val newDirection = if (isSelected) {
+                            if (currentOrder.direction == SortDirection.ASCENDING) {
+                                SortDirection.DESCENDING
+                            } else {
+                                SortDirection.ASCENDING
+                            }
                         } else {
                             SortDirection.ASCENDING
                         }
-                    } else {
-                        SortDirection.ASCENDING
-                    }
-                    onSortChanged(SortOrder(field, newDirection))
-                    expanded = false
-                },
-                trailingIcon = if (isSelected) {
-                    {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null
-                        )
-                    }
-                } else null
-            )
-        }
+                        onSortChanged(SortOrder(field, newDirection))
+                        expanded = false
+                    },
+                    trailingIcon = if (isSelected) {
+                        {
+                            Icon(
+                                imageVector = if (currentOrder.direction == SortDirection.ASCENDING) {
+                                    Icons.Filled.ArrowUpward
+                                } else {
+                                    Icons.Filled.ArrowDownward
+                                },
+                                contentDescription = if (currentOrder.direction == SortDirection.ASCENDING) {
+                                    "По возрастанию"
+                                } else {
+                                    "По убыванию"
+                                },
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else null
+                )
+            }
         }
     }
 }

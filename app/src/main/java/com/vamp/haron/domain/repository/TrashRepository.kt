@@ -10,4 +10,5 @@ interface TrashRepository {
     suspend fun emptyTrash(): Result<Int>
     suspend fun cleanExpired(): Result<Int>
     suspend fun getTrashSize(): Long
+    suspend fun evictToFitSize(maxSizeBytes: Long): Int
 }

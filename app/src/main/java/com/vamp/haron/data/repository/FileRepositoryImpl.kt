@@ -2,6 +2,7 @@ package com.vamp.haron.data.repository
 
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.toFileEntry
+import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.core.logger.EcosystemLogger
@@ -67,7 +68,8 @@ class FileRepositoryImpl @Inject constructor() : FileRepository {
 
     override suspend fun copyFiles(
         sourcePaths: List<String>,
-        destinationDir: String
+        destinationDir: String,
+        conflictResolution: ConflictResolution
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val destDir = File(destinationDir)
@@ -80,7 +82,16 @@ class FileRepositoryImpl @Inject constructor() : FileRepository {
             for (srcPath in sourcePaths) {
                 val src = File(srcPath)
                 if (!src.exists()) continue
-                val dest = resolveConflict(destDir, src.name)
+                val destFile = File(destDir, src.name)
+                val dest = when {
+                    !destFile.exists() -> destFile
+                    conflictResolution == ConflictResolution.REPLACE -> {
+                        destFile.deleteRecursively(); destFile
+                    }
+                    conflictResolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
+                    conflictResolution == ConflictResolution.SKIP -> continue
+                    else -> continue
+                }
                 if (src.isDirectory) {
                     src.copyRecursively(dest, overwrite = false)
                 } else {
@@ -98,7 +109,8 @@ class FileRepositoryImpl @Inject constructor() : FileRepository {
 
     override suspend fun moveFiles(
         sourcePaths: List<String>,
-        destinationDir: String
+        destinationDir: String,
+        conflictResolution: ConflictResolution
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val destDir = File(destinationDir)
@@ -111,10 +123,18 @@ class FileRepositoryImpl @Inject constructor() : FileRepository {
             for (srcPath in sourcePaths) {
                 val src = File(srcPath)
                 if (!src.exists()) continue
-                val dest = resolveConflict(destDir, src.name)
+                val destFile = File(destDir, src.name)
+                val dest = when {
+                    !destFile.exists() -> destFile
+                    conflictResolution == ConflictResolution.REPLACE -> {
+                        destFile.deleteRecursively(); destFile
+                    }
+                    conflictResolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
+                    conflictResolution == ConflictResolution.SKIP -> continue
+                    else -> continue
+                }
                 val moved = src.renameTo(dest)
                 if (!moved) {
-                    // fallback: copy + delete
                     if (src.isDirectory) {
                         src.copyRecursively(dest, overwrite = false)
                     } else {

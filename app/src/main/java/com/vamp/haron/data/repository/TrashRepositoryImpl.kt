@@ -201,6 +201,34 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
             }
         }
 
+    override suspend fun evictToFitSize(maxSizeBytes: Long): Int =
+        withContext(Dispatchers.IO) {
+            if (maxSizeBytes <= 0L) return@withContext 0
+            mutex.withLock {
+                val entries = readMeta().toMutableList()
+                var currentSize = entries.sumOf { it.size }
+                if (currentSize <= maxSizeBytes) return@withLock 0
+                // Sort by trashedAt ascending (oldest first)
+                val sorted = entries.sortedBy { it.trashedAt }
+                val toRemove = mutableListOf<TrashEntry>()
+                for (entry in sorted) {
+                    if (currentSize <= maxSizeBytes) break
+                    File(trashDir, entry.id).deleteRecursively()
+                    currentSize -= entry.size
+                    toRemove.add(entry)
+                }
+                entries.removeAll(toRemove.toSet())
+                writeMeta(entries)
+                if (toRemove.isNotEmpty()) {
+                    EcosystemLogger.d(
+                        HaronConstants.TAG,
+                        "Корзина: удалено ${toRemove.size} старых записей для освобождения места"
+                    )
+                }
+                toRemove.size
+            }
+        }
+
     // --- Helpers ---
 
     private fun ensureTrashDir() {

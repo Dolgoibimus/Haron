@@ -1,11 +1,31 @@
 package com.vamp.haron.presentation.explorer
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import android.widget.Toast
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -16,14 +36,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.domain.model.PanelId
+import com.vamp.haron.presentation.explorer.components.ConflictDialog
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
@@ -47,15 +71,21 @@ fun ExplorerScreen(
         }
     }
     val activePanel = state.activePanel
-    val hasSelection = when (activePanel) {
-        PanelId.TOP -> state.topPanel.isSelectionMode
-        PanelId.BOTTOM -> state.bottomPanel.isSelectionMode
+
+    // Show selection bar if ANY panel has selection (not just active)
+    val selectionPanelId = when {
+        state.topPanel.isSelectionMode && state.bottomPanel.isSelectionMode -> activePanel
+        state.topPanel.isSelectionMode -> PanelId.TOP
+        state.bottomPanel.isSelectionMode -> PanelId.BOTTOM
+        else -> null
     }
-    val activePanelState = when (activePanel) {
+    val hasSelection = selectionPanelId != null
+    val selectionPanelState = when (selectionPanelId) {
         PanelId.TOP -> state.topPanel
         PanelId.BOTTOM -> state.bottomPanel
+        else -> state.topPanel // fallback, won't be used
     }
-    val selectedEntries = activePanelState.files.filter { it.path in activePanelState.selectedPaths }
+    val selectedEntries = selectionPanelState.files.filter { it.path in selectionPanelState.selectedPaths }
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
     val hasRenaming = state.topPanel.renamingPath != null || state.bottomPanel.renamingPath != null
@@ -130,6 +160,8 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
+                trashSizeInfo = state.trashSizeInfo,
+                onGridColumnsChanged = { viewModel.setGridColumns(it) },
                 onDragStarted = { paths, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.startDrag(PanelId.TOP, paths, offset)
@@ -180,6 +212,8 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
+                trashSizeInfo = state.trashSizeInfo,
+                onGridColumnsChanged = { viewModel.setGridColumns(it) },
                 onDragStarted = { paths, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.startDrag(PanelId.BOTTOM, paths, offset)
@@ -204,12 +238,94 @@ fun ExplorerScreen(
                 dirCount = selectedDirs,
                 fileCount = selectedFiles,
                 totalSize = viewModel.getSelectedTotalSize(),
-                onCopy = viewModel::copySelectedToOtherPanel,
-                onMove = viewModel::moveSelectedToOtherPanel,
-                onDelete = viewModel::requestDeleteSelected,
-                onRename = viewModel::requestRename,
+                onCopy = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.copySelectedToOtherPanel()
+                },
+                onMove = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.moveSelectedToOtherPanel()
+                },
+                onDelete = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.requestDeleteSelected()
+                },
+                onRename = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.requestRename()
+                },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+
+        // File operation progress bar
+        val progress = state.operationProgress
+        AnimatedVisibility(
+            visible = progress != null && !progress.isComplete,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
+        ) {
+            progress?.let { p ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        val progressText = when {
+                            p.current == 0 && p.currentFileName.isEmpty() ->
+                                "${p.type.label}: ${p.total} файл(ов)…"
+                            p.currentFileName.isNotEmpty() ->
+                                "${p.type.label}: ${p.current}/${p.total} — ${p.currentFileName}"
+                            else ->
+                                "${p.type.label}: ${p.current}/${p.total}"
+                        }
+                        Text(
+                            text = progressText,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val isIndeterminate = p.current == 0 && p.total > 0
+                        if (isIndeterminate) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                progress = { if (p.total > 0) p.current.toFloat() / p.total else 0f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { viewModel.cancelFileOperation() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Отмена",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
 
         // Drag overlay — ghost icon following finger
@@ -241,9 +357,17 @@ fun ExplorerScreen(
             TrashDialog(
                 entries = dialog.entries,
                 totalSize = dialog.totalSize,
+                maxSizeMb = dialog.maxSizeMb,
                 onRestore = viewModel::restoreFromTrash,
                 onDeletePermanently = viewModel::deleteFromTrashPermanently,
                 onEmptyTrash = viewModel::emptyTrash,
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ConfirmConflict -> {
+            ConflictDialog(
+                conflictNames = dialog.conflictNames,
+                onResolution = viewModel::confirmConflict,
                 onDismiss = viewModel::dismissDialog
             )
         }

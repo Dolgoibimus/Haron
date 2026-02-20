@@ -42,6 +42,11 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getFloat(KEY_PANEL_RATIO, 0.5f)
         set(value) = prefs.edit().putFloat(KEY_PANEL_RATIO, value.coerceIn(0.2f, 0.8f)).apply()
 
+    /** Trash max size in MB (0 = unlimited). Default 500 MB. */
+    var trashMaxSizeMb: Int
+        get() = prefs.getInt(KEY_TRASH_MAX_SIZE_MB, 500)
+        set(value) = prefs.edit().putInt(KEY_TRASH_MAX_SIZE_MB, value.coerceAtLeast(0)).apply()
+
     fun getSortOrder(): SortOrder = SortOrder(sortField, sortDirection)
 
     fun saveSortOrder(order: SortOrder) {
@@ -96,6 +101,16 @@ class HaronPreferences @Inject constructor(
         prefs.edit().putString(KEY_RECENT_PATHS, JSONArray(trimmed).toString()).apply()
     }
 
+    // --- Panel paths ---
+
+    var topPanelPath: String
+        get() = prefs.getString(KEY_TOP_PANEL_PATH, HaronConstants.ROOT_PATH) ?: HaronConstants.ROOT_PATH
+        set(value) = prefs.edit().putString(KEY_TOP_PANEL_PATH, value).apply()
+
+    var bottomPanelPath: String
+        get() = prefs.getString(KEY_BOTTOM_PANEL_PATH, HaronConstants.ROOT_PATH) ?: HaronConstants.ROOT_PATH
+        set(value) = prefs.edit().putString(KEY_BOTTOM_PANEL_PATH, value).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -104,6 +119,9 @@ class HaronPreferences @Inject constructor(
         const val KEY_PANEL_RATIO = "panel_ratio"
         const val KEY_FAVORITES = "favorites"
         const val KEY_RECENT_PATHS = "recent_paths"
+        const val KEY_TRASH_MAX_SIZE_MB = "trash_max_size_mb"
+        const val KEY_TOP_PANEL_PATH = "top_panel_path"
+        const val KEY_BOTTOM_PANEL_PATH = "bottom_panel_path"
         const val MAX_RECENT = 10
     }
 }

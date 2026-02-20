@@ -4,10 +4,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.common.util.iconRes
@@ -61,6 +64,7 @@ fun FileListItem(
     onLongClick: () -> Unit,
     onRenameConfirm: (String) -> Unit,
     onRenameCancel: () -> Unit,
+    isGridMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -69,85 +73,153 @@ fun FileListItem(
         else -> MaterialTheme.colorScheme.surface
     }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .then(
-                when {
-                    isRenaming -> Modifier
-                    isSelectionMode -> Modifier.clickable(onClick = onClick)
-                    else -> Modifier.combinedClickable(
-                        onClick = onClick,
-                        onLongClick = onLongClick
+    val clickModifier = when {
+        isRenaming -> Modifier
+        isSelectionMode -> Modifier.clickable(onClick = onClick)
+        else -> Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    }
+
+    val fileIcon = when (entry.iconRes()) {
+        "folder" -> Icons.Filled.Folder
+        "image" -> Icons.Filled.Image
+        "video" -> Icons.Filled.VideoFile
+        "audio" -> Icons.Filled.AudioFile
+        "text", "code", "document" -> Icons.Filled.Description
+        else -> Icons.AutoMirrored.Filled.InsertDriveFile
+    }
+
+    val iconTint = if (entry.isDirectory) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    if (isGridMode) {
+        // Grid mode: vertical Column layout (icon on top, name below)
+        Box(
+            modifier = modifier
+                .background(bgColor)
+                .then(clickModifier)
+                .padding(4.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+            ) {
+                // Selection badge overlay
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Icon(
+                        imageVector = fileIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = iconTint
+                    )
+                    if (isSelectionMode && !isRenaming) {
+                        Icon(
+                            imageVector = if (isSelected) {
+                                Icons.Filled.CheckCircle
+                            } else {
+                                Icons.Filled.RadioButtonUnchecked
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (isRenaming) {
+                    InlineRenameField(
+                        currentName = entry.name,
+                        onConfirm = onRenameConfirm,
+                        onCancel = onRenameCancel,
+                        isGridMode = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = entry.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
-            )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (isSelectionMode && !isRenaming) {
-            Icon(
-                imageVector = if (isSelected) {
-                    Icons.Filled.CheckCircle
-                } else {
-                    Icons.Filled.RadioButtonUnchecked
-                },
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
-        Icon(
-            imageVector = when (entry.iconRes()) {
-                "folder" -> Icons.Filled.Folder
-                "image" -> Icons.Filled.Image
-                "video" -> Icons.Filled.VideoFile
-                "audio" -> Icons.Filled.AudioFile
-                "text", "code", "document" -> Icons.Filled.Description
-                else -> Icons.AutoMirrored.Filled.InsertDriveFile
-            },
-            contentDescription = null,
-            modifier = Modifier.size(32.dp),
-            tint = if (entry.isDirectory) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
             }
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        if (isRenaming) {
-            InlineRenameField(
-                currentName = entry.name,
-                onConfirm = onRenameConfirm,
-                onCancel = onRenameCancel,
-                modifier = Modifier.weight(1f)
-            )
-        } else {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (entry.isDirectory) {
-                        "${entry.childCount} элем."
+        }
+    } else {
+        // List mode: horizontal Row layout
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(bgColor)
+                .then(clickModifier)
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isSelectionMode && !isRenaming) {
+                Icon(
+                    imageVector = if (isSelected) {
+                        Icons.Filled.CheckCircle
                     } else {
-                        "${entry.size.toFileSize()} \u00B7 ${entry.lastModified.toRelativeDate()}"
+                        Icons.Filled.RadioButtonUnchecked
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Icon(
+                imageVector = fileIcon,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = iconTint
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            if (isRenaming) {
+                InlineRenameField(
+                    currentName = entry.name,
+                    onConfirm = onRenameConfirm,
+                    onCancel = onRenameCancel,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (entry.isDirectory) {
+                            "${entry.childCount} \u044D\u043B\u0435\u043C."
+                        } else {
+                            "${entry.size.toFileSize()} \u00B7 ${entry.lastModified.toRelativeDate()}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -158,6 +230,7 @@ private fun InlineRenameField(
     currentName: String,
     onConfirm: (String) -> Unit,
     onCancel: () -> Unit,
+    isGridMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val dotIndex = currentName.lastIndexOf('.')
@@ -173,9 +246,16 @@ private fun InlineRenameField(
     }
     val focusRequester = remember { FocusRequester() }
     val primaryColor = MaterialTheme.colorScheme.primary
-    val textStyle = MaterialTheme.typography.bodyLarge.copy(
-        color = MaterialTheme.colorScheme.onSurface
-    )
+    val textStyle = if (isGridMode) {
+        MaterialTheme.typography.bodySmall.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+    } else {
+        MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
 
     // Track whether confirm was already called (to avoid cancel on focus loss after Done)
     var confirmed by remember { mutableStateOf(false) }
@@ -189,7 +269,8 @@ private fun InlineRenameField(
         value = textFieldValue,
         onValueChange = { textFieldValue = it },
         textStyle = textStyle,
-        singleLine = true,
+        singleLine = !isGridMode,
+        maxLines = if (isGridMode) 2 else 1,
         cursorBrush = SolidColor(primaryColor),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(

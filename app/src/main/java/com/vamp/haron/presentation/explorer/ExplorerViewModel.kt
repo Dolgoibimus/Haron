@@ -1,12 +1,17 @@
 package com.vamp.haron.presentation.explorer
 
+import android.content.Context
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.model.SortOrder
+import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.OperationProgress
+import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.haron.domain.repository.TrashRepository
@@ -19,6 +24,7 @@ import com.vamp.haron.domain.usecase.EmptyTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilesUseCase
 import com.vamp.haron.domain.usecase.MoveFilesUseCase
 import com.vamp.haron.domain.usecase.MoveToTrashUseCase
+import com.vamp.haron.domain.usecase.TrashMoveResult
 import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -26,8 +32,9 @@ import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
 import com.vamp.haron.presentation.explorer.state.FileTemplate
 import com.vamp.haron.presentation.explorer.state.PanelUiState
-import androidx.compose.ui.geometry.Offset
+import com.vamp.haron.service.FileOperationService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -36,6 +43,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.vamp.haron.common.util.toFileSize
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,6 +52,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ExplorerViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val getFilesUseCase: GetFilesUseCase,
     private val fileRepository: FileRepository,
     private val preferences: HaronPreferences,
@@ -68,26 +78,55 @@ class ExplorerViewModel @Inject constructor(
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
     private var dragBaseSelection: Set<String> = emptySet()
 
+    /** Job for inline (non-service) file operations, used for cancellation. */
+    private var inlineOperationJob: kotlinx.coroutines.Job? = null
+
     init {
         val savedSort = preferences.getSortOrder()
         val showHidden = preferences.showHidden
         val panelRatio = preferences.panelRatio
+        val gridColumns = preferences.gridColumns
         _uiState.update {
             it.copy(
-                topPanel = it.topPanel.copy(sortOrder = savedSort, showHidden = showHidden),
-                bottomPanel = it.bottomPanel.copy(sortOrder = savedSort, showHidden = showHidden),
+                topPanel = it.topPanel.copy(sortOrder = savedSort, showHidden = showHidden, gridColumns = gridColumns),
+                bottomPanel = it.bottomPanel.copy(sortOrder = savedSort, showHidden = showHidden, gridColumns = gridColumns),
                 panelRatio = panelRatio,
                 favorites = preferences.getFavorites(),
                 recentPaths = preferences.getRecentPaths()
             )
         }
-        navigateTo(PanelId.TOP, HaronConstants.ROOT_PATH)
-        navigateTo(PanelId.BOTTOM, HaronConstants.ROOT_PATH)
+        val topPath = preferences.topPanelPath.let { if (File(it).isDirectory) it else HaronConstants.ROOT_PATH }
+        val bottomPath = preferences.bottomPanelPath.let { if (File(it).isDirectory) it else HaronConstants.ROOT_PATH }
+        navigateTo(PanelId.TOP, topPath)
+        navigateTo(PanelId.BOTTOM, bottomPath)
 
-        // Автоочистка просроченных записей корзины
+        // Автоочистка просроченных записей корзины + обновить инфо корзины
         viewModelScope.launch {
             cleanExpiredTrashUseCase()
+            updateTrashSizeInfo()
         }
+
+        // Подписка на прогресс файловых операций из foreground service
+        viewModelScope.launch {
+            FileOperationService.progress.collect { progress ->
+                _uiState.update { it.copy(operationProgress = progress) }
+                // Когда операция завершена — обновить обе панели
+                if (progress?.isComplete == true) {
+                    delay(500)
+                    refreshPanel(PanelId.TOP)
+                    refreshPanel(PanelId.BOTTOM)
+                    // Очистить прогресс через 3 секунды
+                    delay(3000)
+                    _uiState.update { it.copy(operationProgress = null) }
+                }
+            }
+        }
+    }
+
+    /** Threshold: use foreground service for >10 files or >50MB total */
+    private companion object {
+        const val SERVICE_FILE_THRESHOLD = 10
+        const val SERVICE_SIZE_THRESHOLD = 50L * 1024 * 1024 // 50 MB
     }
 
     // --- Navigation ---
@@ -113,7 +152,11 @@ class ExplorerViewModel @Inject constructor(
                         error = null
                     )
                 }
-                // Track recent paths
+                // Save panel path & track recent
+                when (panelId) {
+                    PanelId.TOP -> preferences.topPanelPath = path
+                    PanelId.BOTTOM -> preferences.bottomPanelPath = path
+                }
                 preferences.addRecentPath(path)
                 _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
                 EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Открыта папка: $path (${files.size} файлов)")
@@ -183,6 +226,19 @@ class ExplorerViewModel @Inject constructor(
     fun resetPanelRatio() {
         _uiState.update { it.copy(panelRatio = 0.5f) }
         preferences.panelRatio = 0.5f
+    }
+
+    // --- Grid columns ---
+
+    fun setGridColumns(columns: Int) {
+        val clamped = columns.coerceIn(1, 4)
+        _uiState.update { state ->
+            state.copy(
+                topPanel = state.topPanel.copy(gridColumns = clamped),
+                bottomPanel = state.bottomPanel.copy(gridColumns = clamped)
+            )
+        }
+        preferences.gridColumns = clamped
     }
 
     // --- Sort & hidden ---
@@ -270,19 +326,49 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
+        val conflicts = detectConflicts(paths, targetPanel.currentPath)
+        if (conflicts.isNotEmpty()) {
+            _uiState.update {
+                it.copy(dialogState = DialogState.ConfirmConflict(
+                    conflictNames = conflicts,
+                    allPaths = paths,
+                    destinationDir = targetPanel.currentPath,
+                    operationType = OperationType.COPY
+                ))
+            }
+            return
+        }
+
+        executeCopy(paths, targetPanel.currentPath, ConflictResolution.RENAME)
+    }
+
+    private fun executeCopy(
+        paths: List<String>,
+        destinationDir: String,
+        resolution: ConflictResolution
+    ) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+
         val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
+        val totalSize = selected.sumOf { it.size }
         val dirs = selected.count { it.isDirectory }
         val files = selected.size - dirs
-        viewModelScope.launch {
-            copyFilesUseCase(paths, targetPanel.currentPath)
-                .onSuccess {
-                    clearSelection(activeId)
-                    showStatusMessage(targetId, "Скопировано: ${formatFileCount(dirs, files)}")
-                    refreshPanel(targetId)
+        clearSelection(activeId)
+
+        if (paths.size > SERVICE_FILE_THRESHOLD || totalSize > SERVICE_SIZE_THRESHOLD) {
+            FileOperationService.start(appContext, paths, destinationDir, isMove = false, conflictResolution = resolution)
+        } else {
+            val fileSizes = selected.associate { it.path to it.size }
+            inlineOperationJob = viewModelScope.launch {
+                runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
+                    copyFilesUseCase(listOf(path), destinationDir, resolution)
                 }
-                .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка копирования: ${e.message}")
-                }
+                showStatusMessage(targetId, "Скопировано: ${formatFileCount(dirs, files)}")
+                refreshPanel(targetId)
+            }
         }
     }
 
@@ -295,20 +381,50 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
+        val conflicts = detectConflicts(paths, targetPanel.currentPath)
+        if (conflicts.isNotEmpty()) {
+            _uiState.update {
+                it.copy(dialogState = DialogState.ConfirmConflict(
+                    conflictNames = conflicts,
+                    allPaths = paths,
+                    destinationDir = targetPanel.currentPath,
+                    operationType = OperationType.MOVE
+                ))
+            }
+            return
+        }
+
+        executeMove(paths, targetPanel.currentPath, ConflictResolution.RENAME)
+    }
+
+    private fun executeMove(
+        paths: List<String>,
+        destinationDir: String,
+        resolution: ConflictResolution
+    ) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+
         val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
+        val totalSize = selected.sumOf { it.size }
         val dirs = selected.count { it.isDirectory }
         val files = selected.size - dirs
-        viewModelScope.launch {
-            moveFilesUseCase(paths, targetPanel.currentPath)
-                .onSuccess {
-                    clearSelection(activeId)
-                    showStatusMessage(targetId, "Перемещено: ${formatFileCount(dirs, files)}")
-                    refreshPanel(activeId)
-                    refreshPanel(targetId)
+        clearSelection(activeId)
+
+        if (paths.size > SERVICE_FILE_THRESHOLD || totalSize > SERVICE_SIZE_THRESHOLD) {
+            FileOperationService.start(appContext, paths, destinationDir, isMove = true, conflictResolution = resolution)
+        } else {
+            val fileSizes = selected.associate { it.path to it.size }
+            inlineOperationJob = viewModelScope.launch {
+                runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
+                    moveFilesUseCase(listOf(path), destinationDir, resolution)
                 }
-                .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка перемещения: ${e.message}")
-                }
+                showStatusMessage(targetId, "Перемещено: ${formatFileCount(dirs, files)}")
+                refreshPanel(activeId)
+                refreshPanel(targetId)
+            }
         }
     }
 
@@ -323,16 +439,99 @@ class ExplorerViewModel @Inject constructor(
     fun confirmDelete(paths: List<String>) {
         dismissDialog()
         val activeId = _uiState.value.activePanel
+        clearSelection(activeId)
         viewModelScope.launch {
+            val total = paths.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
+            }
+
             moveToTrashUseCase(paths)
-                .onSuccess { count ->
-                    clearSelection(activeId)
-                    showStatusMessage(activeId, "В корзине: $count")
-                    refreshBothIfSamePath(activeId)
+                .onSuccess { result ->
+                    _uiState.update {
+                        it.copy(
+                            operationProgress = OperationProgress(
+                                result.movedCount, total, "", OperationType.DELETE, isComplete = true
+                            )
+                        )
+                    }
+                    if (result.evictedCount > 0) {
+                        _toastMessage.tryEmit(
+                            "Автоудалено ${result.evictedCount} старых файлов из корзины для освобождения места"
+                        )
+                    }
+                    updateTrashSizeInfo()
+                    showStatusMessage(activeId, "В корзине: ${result.movedCount}")
                 }
                 .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка перемещения в корзину: ${e.message}")
+                    _uiState.update {
+                        it.copy(
+                            operationProgress = OperationProgress(
+                                0, total, "", OperationType.DELETE, isComplete = true, error = e.message
+                            )
+                        )
+                    }
+                    _toastMessage.tryEmit("Ошибка удаления: ${e.message}")
                 }
+
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
+            refreshBothIfSamePath(activeId)
+        }
+    }
+
+    /** Processes files one by one with progress updates in UI. */
+    private suspend fun runInlineOperation(
+        paths: List<String>,
+        type: OperationType,
+        fileSizes: Map<String, Long> = emptyMap(),
+        action: suspend (String) -> Result<Int>
+    ) {
+        val total = paths.size
+        _uiState.update {
+            it.copy(operationProgress = OperationProgress(0, total, "", type))
+        }
+        var completed = 0
+        for ((index, path) in paths.withIndex()) {
+            val fileName = path.substringAfterLast('/')
+            val size = fileSizes[path] ?: 0L
+            val displayName = if (size > 1024 * 1024) {
+                "$fileName (${size.toFileSize()})"
+            } else {
+                fileName
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(index, total, displayName, type))
+            }
+            action(path).onSuccess { completed++ }
+        }
+        _uiState.update {
+            it.copy(operationProgress = OperationProgress(completed, total, "", type, isComplete = true))
+        }
+        delay(2000)
+        _uiState.update { it.copy(operationProgress = null) }
+    }
+
+    // --- Cancel file operation ---
+
+    fun cancelFileOperation() {
+        // Cancel foreground service
+        val intent = android.content.Intent(appContext, FileOperationService::class.java).apply {
+            action = FileOperationService.ACTION_CANCEL
+        }
+        appContext.startService(intent)
+        // Cancel inline operation
+        inlineOperationJob?.cancel()
+        inlineOperationJob = null
+        _uiState.update { state ->
+            val p = state.operationProgress
+            if (p != null && !p.isComplete) {
+                state.copy(operationProgress = p.copy(isComplete = true, error = "Отменено"))
+            } else state
+        }
+        viewModelScope.launch {
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
         }
     }
 
@@ -457,7 +656,7 @@ class ExplorerViewModel @Inject constructor(
                 .onSuccess { entries ->
                     val totalSize = trashRepository.getTrashSize()
                     _uiState.update {
-                        it.copy(dialogState = DialogState.ShowTrash(entries, totalSize))
+                        it.copy(dialogState = DialogState.ShowTrash(entries, totalSize, preferences.trashMaxSizeMb))
                     }
                 }
                 .onFailure { e ->
@@ -470,6 +669,7 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             restoreFromTrashUseCase(ids)
                 .onSuccess { count ->
+                    updateTrashSizeInfo()
                     showStatusMessage(_uiState.value.activePanel, "Восстановлено: $count")
                     refreshPanel(PanelId.TOP)
                     refreshPanel(PanelId.BOTTOM)
@@ -486,6 +686,7 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             trashRepository.deleteFromTrash(ids)
                 .onSuccess {
+                    updateTrashSizeInfo()
                     showTrash()
                 }
                 .onFailure { e ->
@@ -498,6 +699,7 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             emptyTrashUseCase()
                 .onSuccess { count ->
+                    updateTrashSizeInfo()
                     showStatusMessage(_uiState.value.activePanel, "Корзина очищена: $count")
                     dismissDialog()
                 }
@@ -545,17 +747,68 @@ class ExplorerViewModel @Inject constructor(
         val sourcePanel = getPanel(current.sourcePanelId)
         val targetPanel = getPanel(targetPanelId)
         if (sourcePanel.currentPath == targetPanel.currentPath) return
+
+        val paths = current.draggedPaths
+        clearSelection(current.sourcePanelId)
+
+        val conflicts = detectConflicts(paths, targetPanel.currentPath)
+        if (conflicts.isNotEmpty()) {
+            _uiState.update {
+                it.copy(dialogState = DialogState.ConfirmConflict(
+                    conflictNames = conflicts,
+                    allPaths = paths,
+                    destinationDir = targetPanel.currentPath,
+                    operationType = OperationType.MOVE
+                ))
+            }
+            return
+        }
+
+        executeDragMove(paths, targetPanel.currentPath, current.sourcePanelId, targetPanelId, current.fileCount, ConflictResolution.RENAME)
+    }
+
+    private fun executeDragMove(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        fileCount: Int,
+        resolution: ConflictResolution
+    ) {
+        val total = paths.size
+        val dirs = paths.count { File(it).isDirectory }
+        val files = total - dirs
         viewModelScope.launch {
-            moveFilesUseCase(current.draggedPaths, targetPanel.currentPath)
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
+            }
+
+            moveFilesUseCase(paths, destinationDir, resolution)
                 .onSuccess {
-                    clearSelection(current.sourcePanelId)
-                    showStatusMessage(targetPanelId, "Перемещено: ${current.fileCount}")
-                    refreshPanel(current.sourcePanelId)
+                    _uiState.update {
+                        it.copy(
+                            operationProgress = OperationProgress(
+                                total, total, "", OperationType.MOVE, isComplete = true
+                            )
+                        )
+                    }
+                    showStatusMessage(targetPanelId, "Перемещено: ${formatFileCount(dirs, files)}")
+                    refreshPanel(sourcePanelId)
                     refreshPanel(targetPanelId)
                 }
                 .onFailure { e ->
+                    _uiState.update {
+                        it.copy(
+                            operationProgress = OperationProgress(
+                                0, total, "", OperationType.MOVE, isComplete = true, error = e.message
+                            )
+                        )
+                    }
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка DnD перемещения: ${e.message}")
                 }
+
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
         }
     }
 
@@ -563,7 +816,61 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(dragState = DragState.Idle) }
     }
 
+    // --- Conflict resolution ---
+
+    private fun detectConflicts(paths: List<String>, destDir: String): List<String> {
+        return paths.mapNotNull { path ->
+            val name = File(path).name
+            if (File(destDir, name).exists()) name else null
+        }
+    }
+
+    fun confirmConflict(resolution: ConflictResolution) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.ConfirmConflict) return
+        dismissDialog()
+
+        when (dialog.operationType) {
+            OperationType.COPY -> executeCopy(dialog.allPaths, dialog.destinationDir, resolution)
+            OperationType.MOVE -> {
+                val state = _uiState.value
+                val activeId = state.activePanel
+                val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                // Determine source/target panels for DnD vs button move
+                val sourcePanel = getPanel(activeId)
+                if (sourcePanel.selectedPaths.isNotEmpty()) {
+                    executeMove(dialog.allPaths, dialog.destinationDir, resolution)
+                } else {
+                    // DnD case — selection already cleared, execute directly
+                    executeDragMove(
+                        dialog.allPaths,
+                        dialog.destinationDir,
+                        activeId,
+                        targetId,
+                        dialog.allPaths.size,
+                        resolution
+                    )
+                }
+            }
+            else -> {}
+        }
+    }
+
     // --- Helpers ---
+
+    private fun updateTrashSizeInfo() {
+        viewModelScope.launch {
+            val trashSize = trashRepository.getTrashSize()
+            val maxMb = preferences.trashMaxSizeMb
+            val info = if (maxMb > 0) {
+                val maxBytes = maxMb.toLong() * 1024 * 1024
+                "${trashSize.toFileSize()} / ${maxBytes.toFileSize()}"
+            } else {
+                trashSize.toFileSize()
+            }
+            _uiState.update { it.copy(trashSizeInfo = info) }
+        }
+    }
 
     fun getSelectedTotalSize(): Long {
         val state = _uiState.value

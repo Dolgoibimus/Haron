@@ -15,5 +15,6 @@ data class PanelUiState(
     val isSelectionMode: Boolean = false,
     val searchQuery: String = "",
     val renamingPath: String? = null,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val gridColumns: Int = 1
 )

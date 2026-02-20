@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.4.0 (Phase 1, Batch 4)
+**Текущая версия:** 0.5.0 (Phase 1, Batch 5)
 **Текущая фаза:** Phase 1 — MVP
 
 ---
@@ -18,7 +18,7 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-Batch 4 завершён. Drag-and-Drop между панелями + корзина с 30-дневной автоочисткой.
+Batch 5 завершён. Pinch-to-Grid (1–4 колонки) + Foreground Service для крупных файловых операций.
 
 ---
 
@@ -36,7 +36,7 @@ Batch 4 завершён. Drag-and-Drop между панелями + корзи
 - [x] Базовая навигация по папкам (верхняя панель)
 - [x] Избранное и закреплённые папки: быстрый доступ к часто используемым местам; история недавних папок и файлов ← Batch 3
 - [x] Счётчик файлов и общий размер выделенного в реальном времени — показывается в панели выделения ← Batch 3
-- [ ] Отображение файлов: pinch/spread плавно меняет размер сетки — от одноколоночного списка до 4 колонок в ряд, как в галерее iOS; крайние положения фиксируются с haptic-откликом
+- [x] Отображение файлов: pinch/spread плавно меняет размер сетки — от одноколоночного списка до 4 колонок в ряд, как в галерее iOS; крайние положения фиксируются с haptic-откликом ← Batch 5
 - [x] Сортировка: по имени, дате, размеру, расширению
 - [x] Базовые операции: копирование, перемещение, удаление, переименование ← Batch 2
 - [x] Быстрый поиск по текущей папке: фильтрует видимые файлы в реальном времени без индексации ← Batch 3
@@ -47,8 +47,8 @@ Batch 4 завершён. Drag-and-Drop между панелями + корзи
 - [x] Визуальный фидбек при drag (подсветка целевой панели, haptics) ← Batch 4
 - [ ] Контроль версий при конфликтах (карточка сравнения)
 - [x] Корзина (30 дней, автоочистка) ← Batch 4
-- [ ] Foreground Service для фоновых операций (dataSync): при копировании/перемещении показывается прогресс с чекбоксом "выполнить в фоне"; если ушло в фон — появляется плавающая кнопка (FAB) поверх интерфейса, тап разворачивает прогресс, ещё тап — снова в фон
-- [ ] Интерактивное уведомление с прогресс-баром
+- [x] Foreground Service для фоновых операций (dataSync): при крупных операциях (>10 файлов или >50MB) запускается foreground service с прогрессом ← Batch 5
+- [x] Интерактивное уведомление с прогресс-баром ← Batch 5
 
 ### Phase 2 — Поиск и передача (Недели 9-16)
 
@@ -141,6 +141,15 @@ Batch 4 завершён. Drag-and-Drop между панелями + корзи
 
 > Выполненные задачи с описанием как решили.
 
+### Batch 5 — Pinch-to-Grid + Foreground Service
+- **Pinch-to-Grid** — `LazyColumn` заменён на `LazyVerticalGrid(GridCells.Fixed(gridColumns))`. `gridColumns` (1–4) хранится в `PanelUiState` и `HaronPreferences`. Обе панели синхронизируются. `detectTransformGestures` на контейнере списка: pinch in (scale < 0.7) → +1 колонка, pinch out (scale > 1.4) → −1 колонка. Haptic feedback при каждом переключении.
+- **FileListItem grid mode** — `isGridMode: Boolean` параметр. При `gridColumns >= 2`: вертикальный Column с крупной иконкой (48dp), именем в 2 строки, selection badge в углу. При `gridColumns == 1`: оригинальный горизонтальный Row.
+- **findItemIndexAtPosition** — 2D поиск по `LazyGridLayoutInfo.visibleItemsInfo` вместо 1D `LazyListLayoutInfo`. Проверяет x/y координаты каждого видимого item, fallback на ближайший по строке/столбцу.
+- **FileOperationService** — foreground service (`dataSync` type, `START_STICKY`). Notification channel `file_operations` с прогресс-баром. Кнопка "Отмена" через PendingIntent. `StateFlow<OperationProgress?>` через companion object для подписки из ViewModel.
+- **OperationProgress** — `data class(current, total, currentFileName, isComplete, error)`.
+- **Порог для service** — >10 файлов или >50MB total size. Мелкие операции по-прежнему через use case напрямую.
+- **UI прогресс** — `AnimatedVisibility` overlay внизу ExplorerScreen: "Копирование: 3/10 — photo.jpg" + `LinearProgressIndicator`. Автоочистка через 3 сек после завершения.
+
 ### Batch 4 — Drag-and-Drop + Корзина
 - **Корзина** — файловая реализация через `.haron_trash/` + `meta.json` (Graceful Degradation, без Room). `TrashRepository` с mutex для потокобезопасности. Удаление → `moveToTrash`, восстановление → `restoreFromTrash`, автоочистка 30 дней при старте.
 - **TrashDialog** — ModalBottomSheet: список удалённых файлов с оригинальным путём, размером, датой удаления и оставшимися днями. Множественное выделение, восстановление, удаление навсегда, очистка корзины.
@@ -187,6 +196,19 @@ Batch 4 завершён. Drag-and-Drop между панелями + корзи
 ---
 
 ## Changelog
+
+### 0.5.0 — Batch 5 (Phase 1)
+- Pinch-to-Grid: сетка файлов 1–4 колонки через pinch жест
+- Haptic feedback при переключении колонок
+- Grid-вариант FileListItem (крупная иконка + имя)
+- Сохранение gridColumns в SharedPreferences
+- DnD и range selection работают в grid режиме (2D hit-test)
+- Foreground Service (dataSync) для крупных файловых операций
+- Notification с прогрессом и кнопкой "Отмена"
+- Порог: >10 файлов или >50MB → service, иначе inline
+- UI прогресс-бар внизу экрана (animated)
+- OperationProgress model (current/total/fileName/complete/error)
+- Автообновление панелей после завершения service
 
 ### 0.4.0 — Batch 4 (Phase 1)
 - Drag-and-Drop между панелями (одиночный и групповой)

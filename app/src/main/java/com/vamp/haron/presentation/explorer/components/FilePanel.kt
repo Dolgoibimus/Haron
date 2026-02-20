@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.explorer.components
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -14,9 +16,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -29,6 +33,7 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,7 +64,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.data.model.SortOrder
@@ -88,6 +96,8 @@ fun FilePanel(
     onRenameCancel: () -> Unit,
     onCreateNew: () -> Unit,
     onShowTrash: () -> Unit,
+    trashSizeInfo: String = "",
+    onGridColumnsChanged: (Int) -> Unit = {},
     onDragStarted: ((List<String>, Offset) -> Unit)? = null,
     onDragMoved: ((Offset) -> Unit)? = null,
     onDragEnded: (() -> Unit)? = null,
@@ -129,6 +139,8 @@ fun FilePanel(
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+
+    val isGridMode = state.gridColumns >= 2
 
     Column(
         modifier = modifier
@@ -174,7 +186,7 @@ fun FilePanel(
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                Icons.Filled.Close,
+                                Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Отменить выделение",
                                 modifier = Modifier.size(18.dp)
                             )
@@ -279,6 +291,7 @@ fun FilePanel(
                         }
                     }
                     state.isSelectionMode -> {
+                        // Compact: SelectAll + collapsed chevron menu
                         IconButton(
                             onClick = onSelectAll,
                             modifier = Modifier.size(32.dp)
@@ -288,6 +301,102 @@ fun FilePanel(
                                 contentDescription = "Выбрать/снять все",
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+                        var showCollapsed by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(
+                                onClick = { showCollapsed = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.ExpandMore,
+                                    contentDescription = "Ещё",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showCollapsed,
+                                onDismissRequest = { showCollapsed = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Поиск") },
+                                    onClick = {
+                                        showSearch = true
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Избранное") },
+                                    onClick = {
+                                        onShowFavorites()
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Star, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Создать") },
+                                    onClick = {
+                                        onCreateNew()
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(if (state.showHidden) "Скрыть скрытые" else "Показать скрытые")
+                                    },
+                                    onClick = {
+                                        onToggleHidden()
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (state.showHidden) Icons.Filled.VisibilityOff
+                                            else Icons.Filled.Visibility,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(if (isFavorite) "Убрать из избранного" else "В избранное")
+                                    },
+                                    onClick = {
+                                        onToggleFavorite()
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Корзина")
+                                            if (trashSizeInfo.isNotEmpty()) {
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    text = trashSizeInfo,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        onShowTrash()
+                                        showCollapsed = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.DeleteOutline, contentDescription = null)
+                                    }
+                                )
+                            }
                         }
                     }
                     else -> {
@@ -384,7 +493,19 @@ fun FilePanel(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Корзина") },
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Корзина")
+                                            if (trashSizeInfo.isNotEmpty()) {
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    text = trashSizeInfo,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    },
                                     onClick = {
                                         onShowTrash()
                                         showOverflow = false
@@ -403,14 +524,17 @@ fun FilePanel(
             }
         }
 
-        if (!state.isSelectionMode && !showSearch) {
+        if (!showSearch) {
             Box(
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { onPanelTap() }
             ) {
-                BreadcrumbBar(displayPath = state.displayPath)
+                BreadcrumbBar(
+                    displayPath = state.displayPath,
+                    folderSize = state.files.sumOf { it.size }
+                )
             }
         }
 
@@ -469,7 +593,7 @@ fun FilePanel(
             }
 
             else -> {
-                val listState = rememberLazyListState()
+                val gridState = rememberLazyGridState()
                 var dragStartIndex by remember { mutableIntStateOf(-1) }
                 var isCrossPanelDrag by remember { mutableStateOf(false) }
 
@@ -482,12 +606,19 @@ fun FilePanel(
                 val currentOnDragMoved by rememberUpdatedState(onDragMoved)
                 val currentOnDragEnded by rememberUpdatedState(onDragEnded)
                 val currentSelectedPaths by rememberUpdatedState(state.selectedPaths)
+                val currentGridColumns by rememberUpdatedState(state.gridColumns)
+                val currentOnGridColumnsChanged by rememberUpdatedState(onGridColumnsChanged)
 
                 // Track list position in root for global offset calc
                 var listRootOffset by remember { mutableStateOf(Offset.Zero) }
 
-                LazyColumn(
-                    state = listState,
+                // Pinch-to-zoom accumulated scale
+                val haptic = LocalHapticFeedback.current
+                var accumulatedScale by remember { mutableFloatStateOf(1f) }
+
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(state.gridColumns),
+                    state = gridState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -495,11 +626,50 @@ fun FilePanel(
                             listRootOffset = coords.positionInRoot()
                         }
                         .pointerInput(Unit) {
+                            // Custom 2-finger pinch detector.
+                            // Does NOT consume single-finger events → scroll & drag work normally.
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var prevSpan = 0f
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.size >= 2) {
+                                        val dx = pressed[0].position.x - pressed[1].position.x
+                                        val dy = pressed[0].position.y - pressed[1].position.y
+                                        val span = kotlin.math.sqrt(dx * dx + dy * dy)
+                                        if (prevSpan > 0f) {
+                                            accumulatedScale *= span / prevSpan
+                                            val cols = currentGridColumns
+                                            when {
+                                                accumulatedScale > 1.4f && cols > 1 -> {
+                                                    currentOnGridColumnsChanged(cols - 1)
+                                                    accumulatedScale = 1f
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                }
+                                                accumulatedScale < 0.7f && cols < 4 -> {
+                                                    currentOnGridColumnsChanged(cols + 1)
+                                                    accumulatedScale = 1f
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                }
+                                            }
+                                        }
+                                        prevSpan = span
+                                        // Consume only multi-touch to prevent scroll during pinch
+                                        event.changes.forEach { it.consume() }
+                                    } else {
+                                        prevSpan = 0f
+                                    }
+                                } while (event.changes.any { it.pressed })
+                                accumulatedScale = 1f
+                            }
+                        }
+                        .pointerInput(Unit) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { offset ->
                                     currentOnPanelTap()
-                                    val index = findItemIndexAtOffset(
-                                        listState.layoutInfo, offset.y
+                                    val index = findItemIndexAtPosition(
+                                        gridState.layoutInfo, offset, currentGridColumns
                                     )
                                     if (index >= 0 && index < currentFilteredFiles.size) {
                                         val entry = currentFilteredFiles[index]
@@ -532,8 +702,8 @@ fun FilePanel(
                                         )
                                         currentOnDragMoved?.invoke(globalOffset)
                                     } else if (dragStartIndex >= 0) {
-                                        val currentIndex = findItemIndexAtOffset(
-                                            listState.layoutInfo, change.position.y
+                                        val currentIndex = findItemIndexAtPosition(
+                                            gridState.layoutInfo, change.position, currentGridColumns
                                         )
                                         if (currentIndex >= 0 && currentIndex < currentFilteredFiles.size) {
                                             currentOnSelectRange(dragStartIndex, currentIndex)
@@ -559,7 +729,11 @@ fun FilePanel(
                 ) {
                     itemsIndexed(
                         items = filteredFiles,
-                        key = { _, entry -> entry.path }
+                        key = { _, entry -> entry.path },
+                        span = { _, entry ->
+                            if (state.renamingPath == entry.path) GridItemSpan(maxLineSpan)
+                            else GridItemSpan(1)
+                        }
                     ) { _, entry ->
                         FileListItem(
                             entry = entry,
@@ -569,7 +743,8 @@ fun FilePanel(
                             onClick = { onFileClick(entry) },
                             onLongClick = { onLongPressItem(entry) },
                             onRenameConfirm = onRenameConfirm,
-                            onRenameCancel = onRenameCancel
+                            onRenameCancel = onRenameCancel,
+                            isGridMode = isGridMode
                         )
                     }
                 }
@@ -578,20 +753,43 @@ fun FilePanel(
     }
 }
 
-private fun findItemIndexAtOffset(
-    layoutInfo: androidx.compose.foundation.lazy.LazyListLayoutInfo,
-    yOffset: Float
+private fun findItemIndexAtPosition(
+    layoutInfo: androidx.compose.foundation.lazy.grid.LazyGridLayoutInfo,
+    position: Offset,
+    gridColumns: Int
 ): Int {
+    // Try to find the item directly under the touch point
     for (item in layoutInfo.visibleItemsInfo) {
-        val top = item.offset.toFloat()
-        val bottom = (item.offset + item.size).toFloat()
-        if (yOffset in top..bottom) {
+        val left = item.offset.x.toFloat()
+        val top = item.offset.y.toFloat()
+        val right = left + item.size.width.toFloat()
+        val bottom = top + item.size.height.toFloat()
+        if (position.x in left..right && position.y in top..bottom) {
             return item.index
         }
     }
-    val first = layoutInfo.visibleItemsInfo.firstOrNull() ?: return -1
-    val last = layoutInfo.visibleItemsInfo.lastOrNull() ?: return -1
-    return if (yOffset < first.offset) first.index else last.index
+    // Fallback: find closest item by Y then X
+    if (layoutInfo.visibleItemsInfo.isEmpty()) return -1
+    val first = layoutInfo.visibleItemsInfo.first()
+    val last = layoutInfo.visibleItemsInfo.last()
+    return when {
+        position.y < first.offset.y -> first.index
+        position.y > last.offset.y + last.size.height -> last.index
+        else -> {
+            // Find the row, then the column
+            val rowItems = layoutInfo.visibleItemsInfo.filter { item ->
+                val top = item.offset.y.toFloat()
+                val bottom = top + item.size.height.toFloat()
+                position.y in top..bottom
+            }
+            if (rowItems.isEmpty()) return last.index
+            // Find closest column
+            rowItems.minByOrNull {
+                val centerX = it.offset.x + it.size.width / 2f
+                kotlin.math.abs(position.x - centerX)
+            }?.index ?: last.index
+        }
+    }
 }
 
 private fun formatFileCount(dirs: Int, files: Int): String {
