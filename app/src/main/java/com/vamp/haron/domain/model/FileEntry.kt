@@ -8,5 +8,6 @@ data class FileEntry(
     val lastModified: Long,
     val extension: String,
     val isHidden: Boolean,
-    val childCount: Int
+    val childCount: Int,
+    val isContentUri: Boolean = false
 )

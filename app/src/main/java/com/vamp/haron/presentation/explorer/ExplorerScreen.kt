@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.explorer
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,7 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.domain.model.PanelId
-import com.vamp.haron.presentation.explorer.components.ConflictDialog
+import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
@@ -71,6 +73,15 @@ fun ExplorerScreen(
         }
     }
     val activePanel = state.activePanel
+
+    // SAF document tree picker
+    val safLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.onSafUriGranted(uri)
+        }
+    }
 
     // Show selection bar if ANY panel has selection (not just active)
     val selectionPanelId = when {
@@ -132,6 +143,11 @@ fun ExplorerScreen(
         prevDragTarget = dragTargetPanel
     }
 
+    // SAF state
+    val hasRemovable = viewModel.hasRemovableStorage()
+    val sdLabel = viewModel.getSdCardLabel()
+    val hasSafPerm = viewModel.hasSafPermission()
+
     // Box overlay: panels fill all space, SelectionActionBar overlays at bottom
     Box(
         modifier = Modifier
@@ -179,6 +195,18 @@ fun ExplorerScreen(
                 onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
                 onDragEnded = { viewModel.endDrag(dragTargetPanel) },
                 isDragTarget = dragTargetPanel == PanelId.TOP,
+                hasRemovableStorage = hasRemovable,
+                sdCardLabel = sdLabel,
+                hasSafPermission = hasSafPerm,
+                onSdCardClick = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    viewModel.navigateToSdCard()
+                },
+                onRequestSafAccess = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    safLauncher.launch(null)
+                },
+                safVolumeLabel = sdLabel,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -239,6 +267,18 @@ fun ExplorerScreen(
                 onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
                 onDragEnded = { viewModel.endDrag(dragTargetPanel) },
                 isDragTarget = dragTargetPanel == PanelId.BOTTOM,
+                hasRemovableStorage = hasRemovable,
+                sdCardLabel = sdLabel,
+                hasSafPermission = hasSafPerm,
+                onSdCardClick = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    viewModel.navigateToSdCard()
+                },
+                onRequestSafAccess = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    safLauncher.launch(null)
+                },
+                safVolumeLabel = sdLabel,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -383,9 +423,13 @@ fun ExplorerScreen(
             )
         }
         is DialogState.ConfirmConflict -> {
-            ConflictDialog(
-                conflictNames = dialog.conflictNames,
-                onResolution = viewModel::confirmConflict,
+            ConflictComparisonCard(
+                pair = dialog.conflictPairs[dialog.currentIndex],
+                currentIndex = dialog.currentIndex,
+                totalCount = dialog.conflictPairs.size,
+                onResolve = { resolution, applyToAll ->
+                    viewModel.resolveCurrentConflict(resolution, applyToAll)
+                },
                 onDismiss = viewModel::dismissDialog
             )
         }

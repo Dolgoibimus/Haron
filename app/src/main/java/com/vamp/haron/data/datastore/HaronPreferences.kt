@@ -81,6 +81,33 @@ class HaronPreferences @Inject constructor(
         }
     }
 
+    // --- SAF URIs ---
+
+    fun getSafUris(): List<String> {
+        val json = prefs.getString(KEY_SAF_URIS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addSafUri(uri: String) {
+        val list = getSafUris().toMutableList()
+        if (uri !in list) {
+            list.add(uri)
+            prefs.edit().putString(KEY_SAF_URIS, JSONArray(list).toString()).apply()
+        }
+    }
+
+    fun removeSafUri(uri: String) {
+        val list = getSafUris().toMutableList()
+        if (list.remove(uri)) {
+            prefs.edit().putString(KEY_SAF_URIS, JSONArray(list).toString()).apply()
+        }
+    }
+
     // --- Recent paths ---
 
     fun getRecentPaths(): List<String> {
@@ -120,6 +147,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_FAVORITES = "favorites"
         const val KEY_RECENT_PATHS = "recent_paths"
         const val KEY_TRASH_MAX_SIZE_MB = "trash_max_size_mb"
+        const val KEY_SAF_URIS = "saf_uris"
         const val KEY_TOP_PANEL_PATH = "top_panel_path"
         const val KEY_BOTTOM_PANEL_PATH = "bottom_panel_path"
         const val MAX_RECENT = 10

@@ -15,4 +15,14 @@ interface FileRepository {
     suspend fun renameFile(path: String, newName: String): Result<String>
     suspend fun createDirectory(parentPath: String, name: String): Result<String>
     suspend fun createFile(parentPath: String, name: String, content: String = ""): Result<String>
+
+    suspend fun copyFilesWithResolutions(
+        sourcePaths: List<String>, destinationDir: String,
+        resolutions: Map<String, ConflictResolution>
+    ): Result<Int>
+
+    suspend fun moveFilesWithResolutions(
+        sourcePaths: List<String>, destinationDir: String,
+        resolutions: Map<String, ConflictResolution>
+    ): Result<Int>
 }

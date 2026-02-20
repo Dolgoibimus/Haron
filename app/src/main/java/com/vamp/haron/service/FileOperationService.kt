@@ -8,9 +8,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.documentfile.provider.DocumentFile
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.MainActivity
 import com.vamp.haron.R
@@ -86,18 +88,21 @@ class FileOperationService : Service() {
         isMove: Boolean,
         conflictResolution: ConflictResolution = ConflictResolution.RENAME
     ) {
-        val destDir = File(destinationDir)
         val total = sourcePaths.size
         val type = if (isMove) OperationType.MOVE else OperationType.COPY
+        val isDstSaf = destinationDir.startsWith("content://")
 
         _progress.value = OperationProgress(current = 0, total = total, currentFileName = "", type = type)
 
         var completed = 0
         for ((index, srcPath) in sourcePaths.withIndex()) {
-            val src = File(srcPath)
-            if (!src.exists()) continue
+            val isSrcSaf = srcPath.startsWith("content://")
+            val fileName = if (isSrcSaf) {
+                Uri.parse(srcPath).lastPathSegment?.substringAfterLast('/') ?: "file"
+            } else {
+                File(srcPath).name
+            }
 
-            val fileName = src.name
             _progress.value = OperationProgress(
                 current = index,
                 total = total,
@@ -110,28 +115,81 @@ class FileOperationService : Service() {
             }
 
             try {
-                val destFile = File(destDir, fileName)
-                val dest = when {
-                    !destFile.exists() -> destFile
-                    conflictResolution == ConflictResolution.REPLACE -> {
-                        destFile.deleteRecursively(); destFile
+                when {
+                    !isSrcSaf && !isDstSaf -> {
+                        // File → File (original)
+                        val src = File(srcPath)
+                        if (!src.exists()) continue
+                        val destDir = File(destinationDir)
+                        val destFile = File(destDir, fileName)
+                        val dest = resolveFileConflict(destFile, conflictResolution, destDir, fileName) ?: continue
+                        if (isMove) {
+                            val moved = src.renameTo(dest)
+                            if (!moved) {
+                                if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
+                                else src.copyTo(dest, overwrite = false)
+                                src.deleteRecursively()
+                            }
+                        } else {
+                            if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
+                            else src.copyTo(dest, overwrite = false)
+                        }
+                        completed++
                     }
-                    conflictResolution == ConflictResolution.RENAME -> resolveConflict(destDir, fileName)
-                    conflictResolution == ConflictResolution.SKIP -> continue
-                    else -> continue
-                }
-                if (isMove) {
-                    val moved = src.renameTo(dest)
-                    if (!moved) {
-                        if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
-                        else src.copyTo(dest, overwrite = false)
-                        src.deleteRecursively()
+                    isSrcSaf && !isDstSaf -> {
+                        // SAF → File (stream copy)
+                        val destDir = File(destinationDir)
+                        val destFile = File(destDir, fileName)
+                        val dest = resolveFileConflict(destFile, conflictResolution, destDir, fileName) ?: continue
+                        contentResolver.openInputStream(Uri.parse(srcPath))?.use { input ->
+                            dest.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        if (isMove) {
+                            try {
+                                android.provider.DocumentsContract.deleteDocument(contentResolver, Uri.parse(srcPath))
+                            } catch (_: Exception) { }
+                        }
+                        completed++
                     }
-                } else {
-                    if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
-                    else src.copyTo(dest, overwrite = false)
+                    !isSrcSaf && isDstSaf -> {
+                        // File → SAF (stream copy)
+                        val src = File(srcPath)
+                        if (!src.exists()) continue
+                        val destUri = Uri.parse(destinationDir)
+                        val parent = DocumentFile.fromTreeUri(this@FileOperationService, destUri)
+                        val existing = parent?.findFile(src.name)
+                        val targetName = resolveSafConflict(existing, conflictResolution, destUri, src.name) ?: continue
+                        val mimeType = android.webkit.MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(src.extension) ?: "application/octet-stream"
+                        val destDoc = parent?.createFile(mimeType, targetName) ?: continue
+                        contentResolver.openOutputStream(destDoc.uri)?.use { output ->
+                            src.inputStream().use { input -> input.copyTo(output) }
+                        }
+                        if (isMove) src.deleteRecursively()
+                        completed++
+                    }
+                    else -> {
+                        // SAF → SAF (stream copy)
+                        val srcUri = Uri.parse(srcPath)
+                        val destUri = Uri.parse(destinationDir)
+                        val parent = DocumentFile.fromTreeUri(this@FileOperationService, destUri)
+                        val existing = parent?.findFile(fileName)
+                        val targetName = resolveSafConflict(existing, conflictResolution, destUri, fileName) ?: continue
+                        val mimeType = contentResolver.getType(srcUri) ?: "application/octet-stream"
+                        val destDoc = parent?.createFile(mimeType, targetName) ?: continue
+                        contentResolver.openInputStream(srcUri)?.use { input ->
+                            contentResolver.openOutputStream(destDoc.uri)?.use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (isMove) {
+                            try {
+                                android.provider.DocumentsContract.deleteDocument(contentResolver, srcUri)
+                            } catch (_: Exception) { }
+                        }
+                        completed++
+                    }
                 }
-                completed++
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка операции с $fileName: ${e.message}")
                 _progress.value = OperationProgress(
@@ -156,6 +214,52 @@ class FileOperationService : Service() {
             showCompleteNotification(completed, total, isMove)
             stopSelf()
         }
+    }
+
+    private fun resolveFileConflict(
+        destFile: File,
+        resolution: ConflictResolution,
+        destDir: File,
+        fileName: String
+    ): File? {
+        return when {
+            !destFile.exists() -> destFile
+            resolution == ConflictResolution.REPLACE -> {
+                destFile.deleteRecursively(); destFile
+            }
+            resolution == ConflictResolution.RENAME -> resolveConflict(destDir, fileName)
+            resolution == ConflictResolution.SKIP -> null
+            else -> null
+        }
+    }
+
+    private fun resolveSafConflict(
+        existing: DocumentFile?,
+        resolution: ConflictResolution,
+        parentUri: Uri,
+        fileName: String
+    ): String? {
+        if (existing == null) return fileName
+        return when (resolution) {
+            ConflictResolution.REPLACE -> {
+                existing.delete(); fileName
+            }
+            ConflictResolution.RENAME -> generateSafRename(parentUri, fileName)
+            ConflictResolution.SKIP -> null
+        }
+    }
+
+    private fun generateSafRename(parentUri: Uri, name: String): String {
+        val parent = DocumentFile.fromTreeUri(this, parentUri) ?: return name
+        val baseName = name.substringBeforeLast('.', name)
+        val ext = if ('.' in name) ".${name.substringAfterLast('.')}" else ""
+        var counter = 1
+        var candidate = "${baseName}($counter)$ext"
+        while (parent.findFile(candidate) != null) {
+            counter++
+            candidate = "${baseName}($counter)$ext"
+        }
+        return candidate
     }
 
     private fun cancelOperation() {

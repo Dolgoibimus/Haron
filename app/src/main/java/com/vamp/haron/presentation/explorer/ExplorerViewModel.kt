@@ -1,6 +1,7 @@
 package com.vamp.haron.presentation.explorer
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,10 @@ import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.model.SortOrder
+import com.vamp.haron.data.saf.SafUriManager
+import com.vamp.haron.data.saf.StorageVolumeHelper
+import com.vamp.haron.domain.model.ConflictFileInfo
+import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.OperationProgress
@@ -25,7 +30,6 @@ import com.vamp.haron.domain.usecase.EmptyTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilesUseCase
 import com.vamp.haron.domain.usecase.MoveFilesUseCase
 import com.vamp.haron.domain.usecase.MoveToTrashUseCase
-import com.vamp.haron.domain.usecase.TrashMoveResult
 import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -67,7 +71,9 @@ class ExplorerViewModel @Inject constructor(
     private val restoreFromTrashUseCase: RestoreFromTrashUseCase,
     private val emptyTrashUseCase: EmptyTrashUseCase,
     private val cleanExpiredTrashUseCase: CleanExpiredTrashUseCase,
-    private val trashRepository: TrashRepository
+    private val trashRepository: TrashRepository,
+    private val safUriManager: SafUriManager,
+    private val storageVolumeHelper: StorageVolumeHelper
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -97,8 +103,12 @@ class ExplorerViewModel @Inject constructor(
                 themeMode = EcosystemPreferences.theme
             )
         }
-        val topPath = preferences.topPanelPath.let { if (File(it).isDirectory) it else HaronConstants.ROOT_PATH }
-        val bottomPath = preferences.bottomPanelPath.let { if (File(it).isDirectory) it else HaronConstants.ROOT_PATH }
+        val topPath = preferences.topPanelPath.let { p ->
+            if (p.startsWith("content://") || File(p).isDirectory) p else HaronConstants.ROOT_PATH
+        }
+        val bottomPath = preferences.bottomPanelPath.let { p ->
+            if (p.startsWith("content://") || File(p).isDirectory) p else HaronConstants.ROOT_PATH
+        }
         navigateTo(PanelId.TOP, topPath)
         navigateTo(PanelId.BOTTOM, bottomPath)
 
@@ -139,7 +149,11 @@ class ExplorerViewModel @Inject constructor(
             updatePanel(panelId) { it.copy(isLoading = true, error = null) }
 
             val panel = getPanel(panelId)
-            val displayPath = path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
+            val displayPath = if (path.startsWith("content://")) {
+                buildSafDisplayPath(path)
+            } else {
+                path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
+            }
 
             getFilesUseCase(
                 path = path,
@@ -172,8 +186,10 @@ class ExplorerViewModel @Inject constructor(
                     PanelId.TOP -> preferences.topPanelPath = path
                     PanelId.BOTTOM -> preferences.bottomPanelPath = path
                 }
-                preferences.addRecentPath(path)
-                _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
+                if (!path.startsWith("content://")) {
+                    preferences.addRecentPath(path)
+                    _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
+                }
                 EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Открыта папка: $path (${files.size} файлов)")
             }.onFailure { error ->
                 updatePanel(panelId) {
@@ -263,6 +279,35 @@ class ExplorerViewModel @Inject constructor(
         }
         EcosystemPreferences.theme = next
         _uiState.update { it.copy(themeMode = next) }
+    }
+
+    // --- SAF ---
+
+    fun onSafUriGranted(uri: Uri) {
+        safUriManager.persistUri(uri)
+        navigateTo(_uiState.value.activePanel, uri.toString())
+    }
+
+    fun hasRemovableStorage(): Boolean {
+        return storageVolumeHelper.getRemovableVolumes().isNotEmpty() ||
+            safUriManager.getPersistedUris().isNotEmpty()
+    }
+
+    fun getSdCardLabel(): String {
+        val volumes = storageVolumeHelper.getRemovableVolumes()
+        return volumes.firstOrNull()?.label ?: "SD-карта"
+    }
+
+    fun navigateToSdCard() {
+        val persisted = safUriManager.getPersistedUris()
+        if (persisted.isNotEmpty()) {
+            navigateTo(_uiState.value.activePanel, persisted.first().toString())
+        }
+        // If no persisted URI — UI should launch SAF picker
+    }
+
+    fun hasSafPermission(): Boolean {
+        return safUriManager.getPersistedUris().isNotEmpty()
     }
 
     // --- Active panel ---
@@ -385,11 +430,11 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
-        val conflicts = detectConflicts(paths, targetPanel.currentPath)
-        if (conflicts.isNotEmpty()) {
+        val conflictPairs = buildConflictPairs(paths, targetPanel)
+        if (conflictPairs.isNotEmpty()) {
             _uiState.update {
                 it.copy(dialogState = DialogState.ConfirmConflict(
-                    conflictNames = conflicts,
+                    conflictPairs = conflictPairs,
                     allPaths = paths,
                     destinationDir = targetPanel.currentPath,
                     operationType = OperationType.COPY
@@ -431,6 +476,50 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    private fun executeCopyWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+
+        val selected = sourcePanel.files.filter { it.path in paths.toSet() }
+        val dirs = selected.count { it.isDirectory }
+        val files = selected.size - dirs
+        clearSelection(activeId)
+
+        inlineOperationJob = viewModelScope.launch {
+            val total = paths.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY))
+            }
+            fileRepository.copyFilesWithResolutions(paths, destinationDir, decisions)
+                .onSuccess { count ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.COPY, isComplete = true))
+                    }
+                    val skipped = total - count
+                    val msg = when {
+                        count == 0 -> "Пропущено: $total"
+                        skipped > 0 -> "Скопировано: $count, пропущено: $skipped"
+                        else -> "Скопировано: ${formatFileCount(dirs, files)}"
+                    }
+                    showStatusMessage(targetId, msg)
+                }
+                .onFailure { e ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY, isComplete = true, error = e.message))
+                    }
+                }
+            refreshPanel(targetId)
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
+        }
+    }
+
     fun moveSelectedToOtherPanel() {
         val state = _uiState.value
         val activeId = state.activePanel
@@ -440,11 +529,11 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
-        val conflicts = detectConflicts(paths, targetPanel.currentPath)
-        if (conflicts.isNotEmpty()) {
+        val conflictPairs = buildConflictPairs(paths, targetPanel)
+        if (conflictPairs.isNotEmpty()) {
             _uiState.update {
                 it.copy(dialogState = DialogState.ConfirmConflict(
-                    conflictNames = conflicts,
+                    conflictPairs = conflictPairs,
                     allPaths = paths,
                     destinationDir = targetPanel.currentPath,
                     operationType = OperationType.MOVE
@@ -487,6 +576,51 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    private fun executeMoveWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+
+        val selected = sourcePanel.files.filter { it.path in paths.toSet() }
+        val dirs = selected.count { it.isDirectory }
+        val files = selected.size - dirs
+        clearSelection(activeId)
+
+        inlineOperationJob = viewModelScope.launch {
+            val total = paths.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
+            }
+            fileRepository.moveFilesWithResolutions(paths, destinationDir, decisions)
+                .onSuccess { count ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.MOVE, isComplete = true))
+                    }
+                    val skipped = total - count
+                    val msg = when {
+                        count == 0 -> "Пропущено: $total"
+                        skipped > 0 -> "Перемещено: $count, пропущено: $skipped"
+                        else -> "Перемещено: ${formatFileCount(dirs, files)}"
+                    }
+                    showStatusMessage(targetId, msg)
+                }
+                .onFailure { e ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE, isComplete = true, error = e.message))
+                    }
+                }
+            refreshPanel(activeId)
+            refreshPanel(targetId)
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
+        }
+    }
+
     fun requestDeleteSelected() {
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
@@ -505,33 +639,50 @@ class ExplorerViewModel @Inject constructor(
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
             }
 
-            moveToTrashUseCase(paths)
-                .onSuccess { result ->
-                    _uiState.update {
-                        it.copy(
-                            operationProgress = OperationProgress(
-                                result.movedCount, total, "", OperationType.DELETE, isComplete = true
+            // For SAF files, delete directly (no trash support for content:// URIs)
+            val hasSaf = paths.any { it.startsWith("content://") }
+            if (hasSaf) {
+                fileRepository.deleteFiles(paths)
+                    .onSuccess { count ->
+                        _uiState.update {
+                            it.copy(operationProgress = OperationProgress(count, total, "", OperationType.DELETE, isComplete = true))
+                        }
+                        showStatusMessage(activeId, "Удалено: $count")
+                    }
+                    .onFailure { e ->
+                        _uiState.update {
+                            it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE, isComplete = true, error = e.message))
+                        }
+                    }
+            } else {
+                moveToTrashUseCase(paths)
+                    .onSuccess { result ->
+                        _uiState.update {
+                            it.copy(
+                                operationProgress = OperationProgress(
+                                    result.movedCount, total, "", OperationType.DELETE, isComplete = true
+                                )
                             )
-                        )
-                    }
-                    if (result.evictedCount > 0) {
-                        _toastMessage.tryEmit(
-                            "Автоудалено ${result.evictedCount} старых файлов из корзины для освобождения места"
-                        )
-                    }
-                    updateTrashSizeInfo()
-                    showStatusMessage(activeId, "В корзине: ${result.movedCount}")
-                }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(
-                            operationProgress = OperationProgress(
-                                0, total, "", OperationType.DELETE, isComplete = true, error = e.message
+                        }
+                        if (result.evictedCount > 0) {
+                            _toastMessage.tryEmit(
+                                "Автоудалено ${result.evictedCount} старых файлов из корзины для освобождения места"
                             )
-                        )
+                        }
+                        updateTrashSizeInfo()
+                        showStatusMessage(activeId, "В корзине: ${result.movedCount}")
                     }
-                    _toastMessage.tryEmit("Ошибка удаления: ${e.message}")
-                }
+                    .onFailure { e ->
+                        _uiState.update {
+                            it.copy(
+                                operationProgress = OperationProgress(
+                                    0, total, "", OperationType.DELETE, isComplete = true, error = e.message
+                                )
+                            )
+                        }
+                        _toastMessage.tryEmit("Ошибка удаления: ${e.message}")
+                    }
+            }
 
             delay(2000)
             _uiState.update { it.copy(operationProgress = null) }
@@ -552,7 +703,11 @@ class ExplorerViewModel @Inject constructor(
         }
         var completed = 0
         for ((index, path) in paths.withIndex()) {
-            val fileName = path.substringAfterLast('/')
+            val fileName = if (path.startsWith("content://")) {
+                Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
+            } else {
+                path.substringAfterLast('/')
+            }
             val size = fileSizes[path] ?: 0L
             val displayName = if (size > 1024 * 1024) {
                 "$fileName (${size.toFileSize()})"
@@ -810,11 +965,11 @@ class ExplorerViewModel @Inject constructor(
         val paths = current.draggedPaths
         clearSelection(current.sourcePanelId)
 
-        val conflicts = detectConflicts(paths, targetPanel.currentPath)
-        if (conflicts.isNotEmpty()) {
+        val conflictPairs = buildConflictPairs(paths, targetPanel)
+        if (conflictPairs.isNotEmpty()) {
             _uiState.update {
                 it.copy(dialogState = DialogState.ConfirmConflict(
-                    conflictNames = conflicts,
+                    conflictPairs = conflictPairs,
                     allPaths = paths,
                     destinationDir = targetPanel.currentPath,
                     operationType = OperationType.MOVE
@@ -835,7 +990,9 @@ class ExplorerViewModel @Inject constructor(
         resolution: ConflictResolution
     ) {
         val total = paths.size
-        val dirs = paths.count { File(it).isDirectory }
+        val dirs = paths.count { p ->
+            if (p.startsWith("content://")) false else File(p).isDirectory
+        }
         val files = total - dirs
         viewModelScope.launch {
             _uiState.update {
@@ -875,43 +1032,168 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(dragState = DragState.Idle) }
     }
 
-    // --- Conflict resolution ---
+    // --- Conflict resolution (per-file card) ---
 
-    private fun detectConflicts(paths: List<String>, destDir: String): List<String> {
-        return paths.mapNotNull { path ->
-            val name = File(path).name
-            if (File(destDir, name).exists()) name else null
+    private fun buildConflictPairs(paths: List<String>, targetPanel: PanelUiState): List<ConflictPair> {
+        val destFiles = targetPanel.files.associateBy { it.name }
+        val sourcePanel = getPanel(_uiState.value.activePanel)
+        val sourceFiles = sourcePanel.files.associateBy { it.path }
+        val pairs = mutableListOf<ConflictPair>()
+
+        for (path in paths) {
+            val srcEntry = sourceFiles[path]
+            val name = srcEntry?.name ?: if (path.startsWith("content://")) {
+                Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: continue
+            } else {
+                File(path).name
+            }
+            val destEntry = destFiles[name] ?: continue
+
+            val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
+            val srcExt = srcEntry?.extension ?: name.substringAfterLast('.', "").lowercase()
+            val dstExt = destEntry.extension
+
+            pairs.add(
+                ConflictPair(
+                    source = ConflictFileInfo(
+                        name = name,
+                        path = path,
+                        size = srcEntry?.size ?: 0L,
+                        lastModified = srcEntry?.lastModified ?: 0L,
+                        isImage = srcExt in imageExtensions
+                    ),
+                    destination = ConflictFileInfo(
+                        name = destEntry.name,
+                        path = destEntry.path,
+                        size = destEntry.size,
+                        lastModified = destEntry.lastModified,
+                        isImage = dstExt in imageExtensions
+                    )
+                )
+            )
+        }
+        return pairs
+    }
+
+    fun resolveCurrentConflict(resolution: ConflictResolution, applyToAll: Boolean) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.ConfirmConflict) return
+
+        val currentPair = dialog.conflictPairs[dialog.currentIndex]
+        val newDecisions = dialog.decisions.toMutableMap()
+        newDecisions[currentPair.source.path] = resolution
+
+        if (applyToAll) {
+            // Apply same resolution to all remaining conflicts
+            for (i in dialog.currentIndex + 1..dialog.conflictPairs.lastIndex) {
+                newDecisions[dialog.conflictPairs[i].source.path] = resolution
+            }
+            dismissDialog()
+            // Add default RENAME for non-conflict files
+            val allDecisions = dialog.allPaths.associateWith { path ->
+                newDecisions[path] ?: ConflictResolution.RENAME
+            }
+            executeWithDecisions(dialog, allDecisions)
+        } else {
+            val nextIndex = dialog.currentIndex + 1
+            if (nextIndex >= dialog.conflictPairs.size) {
+                // All conflicts resolved
+                dismissDialog()
+                val allDecisions = dialog.allPaths.associateWith { path ->
+                    newDecisions[path] ?: ConflictResolution.RENAME
+                }
+                executeWithDecisions(dialog, allDecisions)
+            } else {
+                // Show next conflict card
+                _uiState.update {
+                    it.copy(dialogState = dialog.copy(
+                        currentIndex = nextIndex,
+                        decisions = newDecisions
+                    ))
+                }
+            }
         }
     }
 
-    fun confirmConflict(resolution: ConflictResolution) {
-        val dialog = _uiState.value.dialogState
-        if (dialog !is DialogState.ConfirmConflict) return
-        dismissDialog()
-
+    private fun executeWithDecisions(
+        dialog: DialogState.ConfirmConflict,
+        decisions: Map<String, ConflictResolution>
+    ) {
         when (dialog.operationType) {
-            OperationType.COPY -> executeCopy(dialog.allPaths, dialog.destinationDir, resolution)
+            OperationType.COPY -> executeCopyWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
             OperationType.MOVE -> {
                 val state = _uiState.value
                 val activeId = state.activePanel
-                val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-                // Determine source/target panels for DnD vs button move
                 val sourcePanel = getPanel(activeId)
                 if (sourcePanel.selectedPaths.isNotEmpty()) {
-                    executeMove(dialog.allPaths, dialog.destinationDir, resolution)
+                    executeMoveWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
                 } else {
-                    // DnD case — selection already cleared, execute directly
-                    executeDragMove(
-                        dialog.allPaths,
-                        dialog.destinationDir,
-                        activeId,
-                        targetId,
-                        dialog.allPaths.size,
-                        resolution
-                    )
+                    // DnD case
+                    val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                    executeDragMoveWithDecisions(dialog.allPaths, dialog.destinationDir, activeId, targetId, decisions)
                 }
             }
             else -> {}
+        }
+    }
+
+    private fun executeDragMoveWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        val total = paths.size
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
+            }
+            fileRepository.moveFilesWithResolutions(paths, destinationDir, decisions)
+                .onSuccess { count ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.MOVE, isComplete = true))
+                    }
+                    refreshPanel(sourcePanelId)
+                    refreshPanel(targetPanelId)
+                }
+                .onFailure { e ->
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE, isComplete = true, error = e.message))
+                    }
+                }
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
+        }
+    }
+
+    /** Legacy single-resolution conflict handler (kept for backward compatibility with old dialog code paths) */
+    fun confirmConflict(resolution: ConflictResolution) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.ConfirmConflict) return
+        // Apply same resolution to all
+        resolveCurrentConflict(resolution, applyToAll = true)
+    }
+
+    // --- SAF display helpers ---
+
+    private fun buildSafDisplayPath(path: String): String {
+        val uri = Uri.parse(path)
+        return try {
+            val docId = android.provider.DocumentsContract.getDocumentId(uri)
+            val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+            val parts = docId.split(":")
+            val treeParts = treeDocId.split(":")
+            val relativePath = if (parts.size >= 2) parts[1] else ""
+            val treeBasePath = if (treeParts.size >= 2) treeParts[1] else ""
+            val suffix = if (relativePath.length > treeBasePath.length) {
+                relativePath.removePrefix(treeBasePath).trimStart('/')
+            } else {
+                ""
+            }
+            if (suffix.isEmpty()) "/" else "/$suffix"
+        } catch (_: Exception) {
+            "/"
         }
     }
 

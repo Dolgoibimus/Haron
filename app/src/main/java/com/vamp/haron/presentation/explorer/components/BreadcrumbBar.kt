@@ -21,6 +21,8 @@ import com.vamp.haron.common.util.toFileSize
 @Composable
 fun BreadcrumbBar(
     displayPath: String,
+    currentPath: String = "",
+    safVolumeLabel: String = "",
     folderSize: Long = 0L,
     onSegmentClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
@@ -31,8 +33,9 @@ fun BreadcrumbBar(
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
+    val isSaf = currentPath.startsWith("content://")
+
     // Разбиваем displayPath на сегменты
-    // displayPath = "/Documents/Photos" или "/"
     val segments = displayPath.trim('/').split('/').filter { it.isNotEmpty() }
 
     Row(
@@ -47,45 +50,89 @@ fun BreadcrumbBar(
                 .horizontalScroll(scrollState),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Корневой сегмент "Хранилище"
-            Text(
-                text = "Хранилище",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (segments.isEmpty()) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                modifier = Modifier.clickable {
-                    onSegmentClick(HaronConstants.ROOT_PATH)
-                }
-            )
-
-            // Остальные сегменты
-            segments.forEachIndexed { index, segment ->
+            if (isSaf) {
+                // SAF root label
+                val rootLabel = safVolumeLabel.ifEmpty { "SD-карта" }
                 Text(
-                    text = " › ",
+                    text = rootLabel,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val isLast = index == segments.lastIndex
-                // Собираем полный путь до этого сегмента
-                val segmentPath = HaronConstants.ROOT_PATH + "/" +
-                    segments.take(index + 1).joinToString("/")
-                Text(
-                    text = segment,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isLast) {
+                    color = if (segments.isEmpty()) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.primary
                     },
-                    modifier = if (!isLast) {
-                        Modifier.clickable { onSegmentClick(segmentPath) }
-                    } else {
-                        Modifier
+                    modifier = Modifier.clickable {
+                        // Navigate to SAF tree root — rebuild URI from currentPath
+                        val treeRoot = extractSafTreeRoot(currentPath)
+                        if (treeRoot != null) onSegmentClick(treeRoot)
                     }
                 )
+
+                // SAF path segments
+                segments.forEachIndexed { index, segment ->
+                    Text(
+                        text = " › ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val isLast = index == segments.lastIndex
+                    Text(
+                        text = segment,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isLast) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = if (!isLast) {
+                            Modifier.clickable {
+                                val targetPath = buildSafBreadcrumbPath(currentPath, segments, index)
+                                if (targetPath != null) onSegmentClick(targetPath)
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
+                }
+            } else {
+                // Regular file system — original logic
+                Text(
+                    text = "Хранилище",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (segments.isEmpty()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.clickable {
+                        onSegmentClick(HaronConstants.ROOT_PATH)
+                    }
+                )
+
+                segments.forEachIndexed { index, segment ->
+                    Text(
+                        text = " › ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val isLast = index == segments.lastIndex
+                    val segmentPath = HaronConstants.ROOT_PATH + "/" +
+                        segments.take(index + 1).joinToString("/")
+                    Text(
+                        text = segment,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isLast) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = if (!isLast) {
+                            Modifier.clickable { onSegmentClick(segmentPath) }
+                        } else {
+                            Modifier
+                        }
+                    )
+                }
             }
         }
         if (folderSize > 0L) {
@@ -97,5 +144,55 @@ fun BreadcrumbBar(
                 maxLines = 1
             )
         }
+    }
+}
+
+/**
+ * Extract the SAF tree root URI from a document URI.
+ * content://authority/tree/XXXX-XXXX%3A/document/XXXX-XXXX%3Afolder%2Fsub
+ * → content://authority/tree/XXXX-XXXX%3A/document/XXXX-XXXX%3A
+ */
+private fun extractSafTreeRoot(currentPath: String): String? {
+    if (!currentPath.startsWith("content://")) return null
+    return try {
+        val uri = android.net.Uri.parse(currentPath)
+        val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+        val treeUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+            uri, treeDocId
+        )
+        treeUri.toString()
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
+ * Build a SAF document URI for a specific breadcrumb segment.
+ * Uses the tree URI and reconstructs the document ID with path segments.
+ */
+private fun buildSafBreadcrumbPath(
+    currentPath: String,
+    segments: List<String>,
+    targetIndex: Int
+): String? {
+    if (!currentPath.startsWith("content://")) return null
+    return try {
+        val uri = android.net.Uri.parse(currentPath)
+        val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+        val parts = treeDocId.split(":")
+        val volumeId = parts[0]
+        val treePath = if (parts.size > 1) parts[1] else ""
+        val targetPath = if (treePath.isEmpty()) {
+            segments.take(targetIndex + 1).joinToString("/")
+        } else {
+            treePath.trimEnd('/') + "/" + segments.take(targetIndex + 1).joinToString("/")
+        }
+        val targetDocId = "$volumeId:$targetPath"
+        val targetUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+            uri, targetDocId
+        )
+        targetUri.toString()
+    } catch (_: Exception) {
+        null
     }
 }

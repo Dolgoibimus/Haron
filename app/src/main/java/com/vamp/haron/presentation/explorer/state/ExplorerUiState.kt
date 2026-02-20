@@ -1,5 +1,7 @@
 package com.vamp.haron.presentation.explorer.state
 
+import com.vamp.haron.domain.model.ConflictPair
+import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
@@ -30,10 +32,12 @@ sealed interface DialogState {
         val maxSizeMb: Int = 0
     ) : DialogState
     data class ConfirmConflict(
-        val conflictNames: List<String>,
+        val conflictPairs: List<ConflictPair>,
+        val currentIndex: Int = 0,
         val allPaths: List<String>,
         val destinationDir: String,
-        val operationType: OperationType
+        val operationType: OperationType,
+        val decisions: Map<String, ConflictResolution> = emptyMap()
     ) : DialogState
 }
 
@@ -43,4 +47,3 @@ enum class FileTemplate(val label: String, val extension: String) {
     MARKDOWN("Markdown (.md)", ".md"),
     DATED_FOLDER("Папка с датой", "")
 }
-

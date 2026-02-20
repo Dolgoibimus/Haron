@@ -46,6 +46,7 @@ dependencies {
     implementation("com.vamp:core:1.0.0")
 
     // AndroidX
+    implementation("androidx.documentfile:documentfile:1.1.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")

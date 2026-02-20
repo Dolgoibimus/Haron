@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -115,6 +116,12 @@ fun FilePanel(
     onDragMoved: ((Offset) -> Unit)? = null,
     onDragEnded: (() -> Unit)? = null,
     isDragTarget: Boolean = false,
+    hasRemovableStorage: Boolean = false,
+    sdCardLabel: String = "SD-карта",
+    hasSafPermission: Boolean = false,
+    onSdCardClick: () -> Unit = {},
+    onRequestSafAccess: () -> Unit = {},
+    safVolumeLabel: String = "",
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -327,8 +334,11 @@ fun FilePanel(
                     }
                 }
 
-                // Actions
+                // Actions — hide when status message is shown to give it full width
                 when {
+                    state.statusMessage != null -> {
+                        // No action icons — status message uses entire row
+                    }
                     showSearch -> {
                         if (state.searchQuery.isNotEmpty()) {
                             IconButton(
@@ -570,6 +580,19 @@ fun FilePanel(
                                         )
                                     }
                                 )
+                                if (hasRemovableStorage) {
+                                    DropdownMenuItem(
+                                        text = { Text(sdCardLabel) },
+                                        onClick = {
+                                            if (hasSafPermission) onSdCardClick()
+                                            else onRequestSafAccess()
+                                            showOverflow = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Filled.SdCard, contentDescription = null)
+                                        }
+                                    )
+                                }
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("Открыть в другой панели") },
@@ -622,6 +645,8 @@ fun FilePanel(
             ) {
                 BreadcrumbBar(
                     displayPath = state.displayPath,
+                    currentPath = state.currentPath,
+                    safVolumeLabel = safVolumeLabel,
                     folderSize = state.files.sumOf { it.size },
                     onSegmentClick = onBreadcrumbClick
                 )
