@@ -51,6 +51,9 @@ sealed interface DialogState {
         val currentFileIndex: Int = 0,
         val previewCache: Map<Int, PreviewData> = emptyMap()
     ) : DialogState
+    data class CreateArchive(
+        val selectedPaths: List<String>
+    ) : DialogState
 }
 
 enum class FileTemplate(val label: String, val extension: String) {

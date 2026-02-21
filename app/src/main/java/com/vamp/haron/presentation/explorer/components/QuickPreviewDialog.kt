@@ -105,6 +105,9 @@ fun QuickPreviewDialog(
     onDismiss: () -> Unit,
     onFullscreenPlay: ((positionMs: Long) -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
+    onOpenGallery: (() -> Unit)? = null,
+    onOpenPdf: (() -> Unit)? = null,
+    onOpenArchive: (() -> Unit)? = null,
     adjacentFiles: List<FileEntry> = emptyList(),
     currentFileIndex: Int = 0,
     onFileChanged: (Int) -> Unit = {},
@@ -319,19 +322,57 @@ fun QuickPreviewDialog(
                     )
                 }
 
-                // Fullscreen button — always occupies space
-                if (onFullscreenPlay != null) {
+                // Fullscreen buttons
+                val isImage = previewData is PreviewData.ImagePreview
+                val isPdf = previewData is PreviewData.PdfPreview
+                val isArchive = previewData is PreviewData.ArchivePreview
+                val hasFullscreen = isMedia || isImage || isPdf || isArchive
+
+                if (hasFullscreen) {
                     Spacer(Modifier.height(4.dp))
-                    HorizontalDivider(modifier = Modifier.alpha(controlsAlpha))
+                    HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = { if (isMedia) onFullscreenPlay(playerState.currentPosition) },
-                        modifier = Modifier.fillMaxWidth().alpha(controlsAlpha),
-                        enabled = isMedia
-                    ) {
-                        Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Во весь экран")
+                    when {
+                        isMedia && onFullscreenPlay != null -> {
+                            Button(
+                                onClick = { onFullscreenPlay(playerState.currentPosition) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Во весь экран")
+                            }
+                        }
+                        isImage && onOpenGallery != null -> {
+                            Button(
+                                onClick = onOpenGallery,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Открыть в галерее")
+                            }
+                        }
+                        isPdf && onOpenPdf != null -> {
+                            Button(
+                                onClick = onOpenPdf,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Открыть в читалке")
+                            }
+                        }
+                        isArchive && onOpenArchive != null -> {
+                            Button(
+                                onClick = onOpenArchive,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Открыть архив")
+                            }
+                        }
                     }
                 }
             }

@@ -12,6 +12,7 @@ import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.data.saf.SafUriManager
 import com.vamp.haron.data.saf.StorageVolumeHelper
+import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.ConflictFileInfo
@@ -25,6 +26,7 @@ import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.haron.domain.repository.TrashRepository
 import com.vamp.haron.domain.usecase.CleanExpiredTrashUseCase
 import com.vamp.haron.domain.usecase.CopyFilesUseCase
+import com.vamp.haron.domain.usecase.CreateZipUseCase
 import com.vamp.haron.domain.usecase.CreateDirectoryUseCase
 import com.vamp.haron.domain.usecase.CreateFileUseCase
 import com.vamp.haron.domain.usecase.DeleteFilesUseCase
@@ -72,6 +74,7 @@ class ExplorerViewModel @Inject constructor(
     private val createDirectoryUseCase: CreateDirectoryUseCase,
     private val createFileUseCase: CreateFileUseCase,
     private val loadPreviewUseCase: LoadPreviewUseCase,
+    private val createZipUseCase: CreateZipUseCase,
     private val moveToTrashUseCase: MoveToTrashUseCase,
     private val restoreFromTrashUseCase: RestoreFromTrashUseCase,
     private val emptyTrashUseCase: EmptyTrashUseCase,
@@ -283,6 +286,31 @@ class ExplorerViewModel @Inject constructor(
                         NavigationEvent.OpenTextEditor(entry.path, entry.name)
                     )
                 }
+                "image" -> {
+                    val imageFiles = panel.files.filter { f ->
+                        !f.isDirectory && f.iconRes() == "image"
+                    }
+                    GalleryHolder.items = imageFiles.map { f ->
+                        GalleryHolder.GalleryItem(
+                            filePath = f.path,
+                            fileName = f.name,
+                            fileSize = f.size
+                        )
+                    }
+                    val startIndex = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+                    GalleryHolder.startIndex = startIndex
+                    _navigationEvent.tryEmit(NavigationEvent.OpenGallery(startIndex))
+                }
+                "pdf" -> {
+                    _navigationEvent.tryEmit(
+                        NavigationEvent.OpenPdfReader(entry.path, entry.name)
+                    )
+                }
+                "archive" -> {
+                    _navigationEvent.tryEmit(
+                        NavigationEvent.OpenArchiveViewer(entry.path, entry.name)
+                    )
+                }
             }
         }
     }
@@ -303,6 +331,23 @@ class ExplorerViewModel @Inject constructor(
         // Find the index of the current entry in filtered media list
         val idx = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
         PlaylistHolder.startIndex = idx
+        return idx
+    }
+
+    /** Build gallery from preview dialog context. Returns startIndex in filtered image list. */
+    fun buildGalleryFromPreview(entry: FileEntry, adjacentFiles: List<FileEntry>, currentIndex: Int): Int {
+        val imageFiles = adjacentFiles.filter { f ->
+            !f.isDirectory && f.iconRes() == "image"
+        }
+        GalleryHolder.items = imageFiles.map { f ->
+            GalleryHolder.GalleryItem(
+                filePath = f.path,
+                fileName = f.name,
+                fileSize = f.size
+            )
+        }
+        val idx = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+        GalleryHolder.startIndex = idx
         return idx
     }
 
@@ -991,6 +1036,50 @@ class ExplorerViewModel @Inject constructor(
                 .onFailure { e ->
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка создания: ${e.message}")
                 }
+        }
+    }
+
+    // --- Archive creation ---
+
+    fun requestCreateArchive() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val paths = panel.selectedPaths.toList()
+        if (paths.isEmpty()) return
+        _uiState.update { it.copy(dialogState = DialogState.CreateArchive(paths)) }
+    }
+
+    fun confirmCreateArchive(selectedPaths: List<String>, archiveName: String) {
+        dismissDialog()
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val name = if (archiveName.endsWith(".zip")) archiveName else "$archiveName.zip"
+        val outputPath = if (panel.currentPath.startsWith("content://")) {
+            File(appContext.cacheDir, name).absolutePath
+        } else {
+            "${panel.currentPath}/$name"
+        }
+
+        viewModelScope.launch {
+            clearSelection(activeId)
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    type = OperationType.COPY,
+                    current = 0,
+                    total = selectedPaths.size,
+                    currentFileName = "Создание ZIP…",
+                    isComplete = false
+                ))
+            }
+            try {
+                createZipUseCase(selectedPaths, outputPath)
+                _toastMessage.tryEmit("Архив создан: $name")
+                refreshBothIfSamePath(activeId)
+            } catch (e: Exception) {
+                _toastMessage.tryEmit("Ошибка создания архива: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "Ошибка ZIP: ${e.message}")
+            }
+            _uiState.update { it.copy(operationProgress = null) }
         }
     }
 

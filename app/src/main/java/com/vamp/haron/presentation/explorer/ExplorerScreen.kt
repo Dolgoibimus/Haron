@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
+import com.vamp.haron.presentation.explorer.components.CreateArchiveDialog
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
@@ -67,7 +68,10 @@ import com.vamp.haron.presentation.explorer.state.DialogState
 fun ExplorerScreen(
     viewModel: ExplorerViewModel = hiltViewModel(),
     onOpenMediaPlayer: (startIndex: Int) -> Unit = { },
-    onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> }
+    onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenGallery: (startIndex: Int) -> Unit = { },
+    onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -84,6 +88,15 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenTextEditor -> {
                     onOpenTextEditor(event.filePath, event.fileName)
+                }
+                is NavigationEvent.OpenGallery -> {
+                    onOpenGallery(event.startIndex)
+                }
+                is NavigationEvent.OpenPdfReader -> {
+                    onOpenPdfReader(event.filePath, event.fileName)
+                }
+                is NavigationEvent.OpenArchiveViewer -> {
+                    onOpenArchiveViewer(event.filePath, event.fileName)
                 }
             }
         }
@@ -332,6 +345,10 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.requestRename()
                 },
+                onZip = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.requestCreateArchive()
+                },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -469,12 +486,33 @@ fun ExplorerScreen(
                     viewModel.dismissDialog()
                     onOpenTextEditor(dialog.entry.path, dialog.entry.name)
                 },
+                onOpenGallery = {
+                    viewModel.dismissDialog()
+                    val idx = viewModel.buildGalleryFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
+                    onOpenGallery(idx)
+                },
+                onOpenPdf = {
+                    viewModel.dismissDialog()
+                    onOpenPdfReader(dialog.entry.path, dialog.entry.name)
+                },
+                onOpenArchive = {
+                    viewModel.dismissDialog()
+                    onOpenArchiveViewer(dialog.entry.path, dialog.entry.name)
+                },
                 adjacentFiles = dialog.adjacentFiles,
                 currentFileIndex = dialog.currentFileIndex,
                 onFileChanged = { newIndex ->
                     viewModel.onPreviewFileChanged(newIndex)
                 },
                 previewCache = dialog.previewCache
+            )
+        }
+        is DialogState.CreateArchive -> {
+            CreateArchiveDialog(
+                onConfirm = { archiveName ->
+                    viewModel.confirmCreateArchive(dialog.selectedPaths, archiveName)
+                },
+                onDismiss = viewModel::dismissDialog
             )
         }
         DialogState.None -> { /* no dialog */ }

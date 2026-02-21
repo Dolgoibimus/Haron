@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +32,7 @@ fun SelectionActionBar(
     onMove: () -> Unit,
     onDelete: () -> Unit,
     onRename: () -> Unit,
+    onZip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val totalCount = dirCount + fileCount
@@ -73,6 +75,9 @@ fun SelectionActionBar(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(Icons.Filled.Edit, contentDescription = "Переименовать", modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Archive, contentDescription = "ZIP", modifier = Modifier.size(20.dp))
                 }
             }
         }
