@@ -28,6 +28,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
@@ -60,6 +62,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,7 +81,11 @@ import androidx.compose.ui.unit.dp
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.presentation.explorer.state.PanelUiState
+import com.vamp.haron.service.PlaybackService
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun FilePanel(
     state: PanelUiState,
@@ -123,6 +130,7 @@ fun FilePanel(
     onSdCardClick: () -> Unit = {},
     onRequestSafAccess: () -> Unit = {},
     safVolumeLabel: String = "",
+    onScrollPositionChanged: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -134,6 +142,18 @@ fun FilePanel(
 
     var showOverflow by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+
+    // Playback service state polling
+    var serviceRunning by remember { mutableStateOf(false) }
+    var isServicePlaying by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val adapter = PlaybackService.instance?.getAdapter()
+            serviceRunning = adapter != null
+            isServicePlaying = adapter?.isCurrentlyPlaying() == true
+            delay(500)
+        }
+    }
 
     // Search focus
     val searchFocusRequester = remember { FocusRequester() }
@@ -320,18 +340,31 @@ fun FilePanel(
                         )
                     }
                     else -> {
-                        Text(
-                            text = state.displayPath.substringAfterLast('/').ifEmpty { "Хранилище" },
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
                                 ) { onPanelTap() }
-                        )
+                        ) {
+                            if (state.isSafPath) {
+                                Icon(
+                                    Icons.Filled.SdCard,
+                                    contentDescription = "SAF",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(Modifier.width(3.dp))
+                            }
+                            Text(
+                                text = state.displayPath.substringAfterLast('/').ifEmpty { "Хранилище" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
@@ -464,6 +497,24 @@ fun FilePanel(
                         }
                     }
                     else -> {
+                        if (serviceRunning) {
+                            IconButton(
+                                onClick = {
+                                    val vlc = PlaybackService.instance?.getVlcPlayer()
+                                    if (vlc != null) {
+                                        if (isServicePlaying) vlc.pause() else vlc.play()
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    if (isServicePlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (isServicePlaying) "Пауза" else "Воспроизвести",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 showSearch = true
@@ -710,6 +761,20 @@ fun FilePanel(
 
             else -> {
                 val gridState = rememberLazyGridState()
+
+                // Report scroll position to ViewModel
+                LaunchedEffect(gridState) {
+                    snapshotFlow { gridState.firstVisibleItemIndex }
+                        .collect { index -> onScrollPositionChanged(index) }
+                }
+
+                // Restore scroll position when navigating
+                LaunchedEffect(state.scrollToTrigger) {
+                    if (state.scrollToTrigger > 0L) {
+                        gridState.scrollToItem(state.scrollToIndex)
+                    }
+                }
+
                 var dragStartIndex by remember { mutableIntStateOf(-1) }
                 var isCrossPanelDrag by remember { mutableStateOf(false) }
 

@@ -12,6 +12,8 @@ import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.data.saf.SafUriManager
 import com.vamp.haron.data.saf.StorageVolumeHelper
+import com.vamp.haron.domain.model.NavigationEvent
+import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
@@ -85,11 +87,27 @@ class ExplorerViewModel @Inject constructor(
     val toastMessage = _toastMessage.asSharedFlow()
     val uiState: StateFlow<ExplorerUiState> = _uiState.asStateFlow()
 
+    private val _navigationEvent = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 1)
+    val navigationEvent = _navigationEvent.asSharedFlow()
+
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
     private var dragBaseSelection: Set<String> = emptySet()
 
     /** Job for inline (non-service) file operations, used for cancellation. */
     private var inlineOperationJob: kotlinx.coroutines.Job? = null
+
+    /** Scroll position cache: path → firstVisibleItemIndex */
+    private val scrollCache = mutableMapOf<String, Int>()
+
+    /** Current scroll positions reported by panels */
+    private val panelScrollIndex = mutableMapOf<PanelId, Int>()
+
+    /** Monotonic trigger counter for scroll events */
+    private var scrollTrigger = 0L
+
+    fun onScrollPositionChanged(panelId: PanelId, index: Int) {
+        panelScrollIndex[panelId] = index
+    }
 
     init {
         val savedSort = preferences.getSortOrder()
@@ -114,6 +132,9 @@ class ExplorerViewModel @Inject constructor(
         }
         navigateTo(PanelId.TOP, topPath)
         navigateTo(PanelId.BOTTOM, bottomPath)
+
+        // Загрузить SAF roots
+        refreshSafRoots()
 
         // Автоочистка просроченных записей корзины + обновить инфо корзины
         viewModelScope.launch {
@@ -149,6 +170,12 @@ class ExplorerViewModel @Inject constructor(
 
     fun navigateTo(panelId: PanelId, path: String, pushHistory: Boolean = true) {
         viewModelScope.launch {
+            // Save current scroll position before navigating away (only when actually changing folder)
+            val currentPath = getPanel(panelId).currentPath
+            if (currentPath.isNotEmpty() && currentPath != path) {
+                scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
+            }
+
             updatePanel(panelId) { it.copy(isLoading = true, error = null) }
 
             val panel = getPanel(panelId)
@@ -163,6 +190,9 @@ class ExplorerViewModel @Inject constructor(
                 sortOrder = panel.sortOrder,
                 showHidden = panel.showHidden
             ).onSuccess { files ->
+                val isNewPath = currentPath != path
+                val savedScroll = if (isNewPath) scrollCache[path] ?: 0 else -1
+                if (isNewPath) scrollTrigger++
                 updatePanel(panelId) {
                     var history = it.navigationHistory
                     var index = it.historyIndex
@@ -174,15 +204,22 @@ class ExplorerViewModel @Inject constructor(
                         }
                         index = history.lastIndex
                     }
-                    it.copy(
+                    val base = it.copy(
                         currentPath = path,
                         displayPath = displayPath,
                         files = files,
                         isLoading = false,
                         error = null,
                         navigationHistory = history,
-                        historyIndex = index
+                        historyIndex = index,
+                        isSafPath = path.startsWith("content://")
                     )
+                    if (savedScroll >= 0) {
+                        base.copy(
+                            scrollToIndex = savedScroll,
+                            scrollToTrigger = scrollTrigger
+                        )
+                    } else base
                 }
                 // Save panel path & track recent
                 when (panelId) {
@@ -206,10 +243,10 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
-    fun navigateUp(panelId: PanelId): Boolean {
+    fun navigateUp(panelId: PanelId, pushHistory: Boolean = true): Boolean {
         val currentPath = getPanel(panelId).currentPath
         val parentPath = fileRepository.getParentPath(currentPath) ?: return false
-        navigateTo(panelId, parentPath)
+        navigateTo(panelId, parentPath, pushHistory = pushHistory)
         return true
     }
 
@@ -220,7 +257,53 @@ class ExplorerViewModel @Inject constructor(
             toggleSelection(panelId, entry.path)
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
+        } else {
+            val type = entry.iconRes()
+            when (type) {
+                "video", "audio" -> {
+                    // Build playlist from all media files in folder
+                    val mediaFiles = panel.files.filter { f ->
+                        !f.isDirectory && f.iconRes() in listOf("video", "audio")
+                    }
+                    PlaylistHolder.items = mediaFiles.map { f ->
+                        PlaylistHolder.PlaylistItem(
+                            filePath = f.path,
+                            fileName = f.name,
+                            fileType = f.iconRes()
+                        )
+                    }
+                    val startIndex = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+                    PlaylistHolder.startIndex = startIndex
+                    _navigationEvent.tryEmit(
+                        NavigationEvent.OpenMediaPlayer(startIndex)
+                    )
+                }
+                "text", "code" -> {
+                    _navigationEvent.tryEmit(
+                        NavigationEvent.OpenTextEditor(entry.path, entry.name)
+                    )
+                }
+            }
         }
+    }
+
+    /** Build playlist from preview dialog context (for fullscreen play from QuickPreview).
+     *  Returns the startIndex in the filtered media list. */
+    fun buildPlaylistFromPreview(entry: FileEntry, adjacentFiles: List<FileEntry>, currentIndex: Int): Int {
+        val mediaFiles = adjacentFiles.filter { f ->
+            !f.isDirectory && f.iconRes() in listOf("video", "audio")
+        }
+        PlaylistHolder.items = mediaFiles.map { f ->
+            PlaylistHolder.PlaylistItem(
+                filePath = f.path,
+                fileName = f.name,
+                fileType = f.iconRes()
+            )
+        }
+        // Find the index of the current entry in filtered media list
+        val idx = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+        PlaylistHolder.startIndex = idx
+        return idx
     }
 
     fun onFileLongClick(panelId: PanelId, entry: FileEntry) {
@@ -243,8 +326,16 @@ class ExplorerViewModel @Inject constructor(
             panel.isSelectionMode -> toggleSelection(panelId, entry.path)
             entry.isDirectory -> navigateTo(panelId, entry.path)
             else -> {
+                val allFiles = panel.files.filter { !it.isDirectory }
+                val fileIndex = allFiles.indexOfFirst { it.path == entry.path }
+                val idx = if (fileIndex >= 0) fileIndex else 0
+
                 _uiState.update {
-                    it.copy(dialogState = DialogState.QuickPreview(entry = entry))
+                    it.copy(dialogState = DialogState.QuickPreview(
+                        entry = entry,
+                        adjacentFiles = allFiles,
+                        currentFileIndex = idx
+                    ))
                 }
                 viewModelScope.launch {
                     loadPreviewUseCase(entry)
@@ -254,9 +345,13 @@ class ExplorerViewModel @Inject constructor(
                                 _uiState.update {
                                     it.copy(dialogState = current.copy(
                                         previewData = data,
-                                        isLoading = false
+                                        isLoading = false,
+                                        previewCache = current.previewCache + (idx to data)
                                     ))
                                 }
+                                // Preload neighbors
+                                preloadPreview(idx - 1, allFiles)
+                                preloadPreview(idx + 1, allFiles)
                             }
                         }
                         .onFailure { e ->
@@ -327,6 +422,7 @@ class ExplorerViewModel @Inject constructor(
 
     fun onSafUriGranted(uri: Uri) {
         safUriManager.persistUri(uri)
+        refreshSafRoots()
         navigateTo(_uiState.value.activePanel, uri.toString())
     }
 
@@ -350,6 +446,35 @@ class ExplorerViewModel @Inject constructor(
 
     fun hasSafPermission(): Boolean {
         return safUriManager.getPersistedUris().isNotEmpty()
+    }
+
+    /**
+     * Build list of storage items for FavoritesPanel:
+     * - Each removable volume from StorageVolumeHelper
+     * - Matched against persisted SAF URIs to know if access is granted
+     * Pair: (label, safUri?) — null uri means no access yet
+     */
+    fun refreshSafRoots() {
+        val removable = storageVolumeHelper.getRemovableVolumes()
+        val persisted = safUriManager.getPersistedUris()
+
+        val roots = removable.map { vol ->
+            val matchingUri = persisted.find { uri ->
+                try {
+                    val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+                    val volumeId = treeDocId.split(":").firstOrNull()
+                    volumeId != null && volumeId != "primary" &&
+                        (vol.uuid != null && volumeId.equals(vol.uuid, ignoreCase = true))
+                } catch (_: Exception) { false }
+            }
+            vol.label to (matchingUri?.toString() ?: "")
+        }
+        _uiState.update { it.copy(safRoots = roots) }
+    }
+
+    fun removeSafRoot(uri: String) {
+        safUriManager.releaseUri(Uri.parse(uri))
+        refreshSafRoots()
     }
 
     // --- Active panel ---
@@ -869,6 +994,93 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun onPreviewFileChanged(newIndex: Int) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.QuickPreview) return
+        val files = dialog.adjacentFiles
+        if (newIndex !in files.indices) return
+        val newEntry = files[newIndex]
+
+        // Check cache — if already loaded, show instantly without flash
+        val cached = dialog.previewCache[newIndex]
+        if (cached != null) {
+            _uiState.update {
+                it.copy(dialogState = dialog.copy(
+                    entry = newEntry,
+                    previewData = cached,
+                    isLoading = false,
+                    error = null,
+                    currentFileIndex = newIndex
+                ))
+            }
+            preloadPreview(newIndex - 1, files)
+            preloadPreview(newIndex + 1, files)
+            return
+        }
+
+        // Not cached — load with spinner
+        _uiState.update {
+            it.copy(dialogState = dialog.copy(
+                entry = newEntry,
+                previewData = null,
+                isLoading = true,
+                error = null,
+                currentFileIndex = newIndex
+            ))
+        }
+
+        viewModelScope.launch {
+            loadPreviewUseCase(newEntry)
+                .onSuccess { data ->
+                    val current = _uiState.value.dialogState
+                    if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
+                        _uiState.update {
+                            it.copy(dialogState = current.copy(
+                                previewData = data,
+                                isLoading = false,
+                                previewCache = current.previewCache + (newIndex to data)
+                            ))
+                        }
+                        preloadPreview(newIndex - 1, files)
+                        preloadPreview(newIndex + 1, files)
+                    }
+                }
+                .onFailure { e ->
+                    val current = _uiState.value.dialogState
+                    if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
+                        _uiState.update {
+                            it.copy(dialogState = current.copy(
+                                isLoading = false,
+                                error = e.message ?: "Ошибка"
+                            ))
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun preloadPreview(index: Int, files: List<FileEntry>) {
+        if (index !in files.indices) return
+        val current = _uiState.value.dialogState
+        if (current !is DialogState.QuickPreview) return
+        if (index in current.previewCache) return
+
+        viewModelScope.launch {
+            loadPreviewUseCase(files[index])
+                .onSuccess { data ->
+                    val dialog = _uiState.value.dialogState
+                    if (dialog is DialogState.QuickPreview) {
+                        _uiState.update {
+                            it.copy(dialogState = dialog.copy(
+                                previewCache = dialog.previewCache + (index to data)
+                            ))
+                        }
+                    }
+                }
+            // Silently ignore preload errors
+        }
+    }
+
     fun dismissDialog() {
         _uiState.update { it.copy(dialogState = DialogState.None) }
     }
@@ -1267,7 +1479,7 @@ class ExplorerViewModel @Inject constructor(
     fun refreshPanel(panelId: PanelId) {
         val path = getPanel(panelId).currentPath
         if (path.isNotEmpty()) {
-            navigateTo(panelId, path)
+            navigateTo(panelId, path, pushHistory = false)
         }
     }
 

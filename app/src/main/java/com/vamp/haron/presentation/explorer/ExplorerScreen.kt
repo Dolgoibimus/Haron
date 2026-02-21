@@ -59,18 +59,33 @@ import com.vamp.haron.presentation.explorer.components.PanelDivider
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
 import com.vamp.haron.presentation.explorer.components.TrashDialog
+import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 
 @Composable
 fun ExplorerScreen(
-    viewModel: ExplorerViewModel = hiltViewModel()
+    viewModel: ExplorerViewModel = hiltViewModel(),
+    onOpenMediaPlayer: (startIndex: Int) -> Unit = { },
+    onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is NavigationEvent.OpenMediaPlayer -> {
+                    onOpenMediaPlayer(event.startIndex)
+                }
+                is NavigationEvent.OpenTextEditor -> {
+                    onOpenTextEditor(event.filePath, event.fileName)
+                }
+            }
         }
     }
     val activePanel = state.activePanel
@@ -109,7 +124,7 @@ fun ExplorerScreen(
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> viewModel.clearSelection(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
-            else -> viewModel.navigateUp(activePanel)
+            else -> viewModel.navigateUp(activePanel, pushHistory = false)
         }
     }
 
@@ -209,6 +224,7 @@ fun ExplorerScreen(
                     safLauncher.launch(null)
                 },
                 safVolumeLabel = sdLabel,
+                onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -282,6 +298,7 @@ fun ExplorerScreen(
                     safLauncher.launch(null)
                 },
                 safVolumeLabel = sdLabel,
+                onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -442,7 +459,22 @@ fun ExplorerScreen(
                 previewData = dialog.previewData,
                 isLoading = dialog.isLoading,
                 error = dialog.error,
-                onDismiss = viewModel::dismissDialog
+                onDismiss = viewModel::dismissDialog,
+                onFullscreenPlay = { _ ->
+                    viewModel.dismissDialog()
+                    val idx = viewModel.buildPlaylistFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
+                    onOpenMediaPlayer(idx)
+                },
+                onEdit = {
+                    viewModel.dismissDialog()
+                    onOpenTextEditor(dialog.entry.path, dialog.entry.name)
+                },
+                adjacentFiles = dialog.adjacentFiles,
+                currentFileIndex = dialog.currentFileIndex,
+                onFileChanged = { newIndex ->
+                    viewModel.onPreviewFileChanged(newIndex)
+                },
+                previewCache = dialog.previewCache
             )
         }
         DialogState.None -> { /* no dialog */ }
@@ -453,8 +485,23 @@ fun ExplorerScreen(
         FavoritesPanel(
             favorites = state.favorites,
             recentPaths = state.recentPaths,
+            safRoots = state.safRoots,
             onNavigate = viewModel::navigateFromFavorites,
             onRemoveFavorite = viewModel::removeFavorite,
+            onNavigateToInternalStorage = {
+                viewModel.dismissFavoritesPanel()
+                viewModel.navigateTo(
+                    state.activePanel,
+                    com.vamp.haron.common.constants.HaronConstants.ROOT_PATH
+                )
+            },
+            onGrantVolumeAccess = {
+                viewModel.dismissFavoritesPanel()
+                safLauncher.launch(null)
+            },
+            onRevokeVolumeAccess = { uri ->
+                viewModel.removeSafRoot(uri)
+            },
             onDismiss = viewModel::dismissFavoritesPanel
         )
     }

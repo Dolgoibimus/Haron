@@ -29,7 +29,7 @@ fun FileEntry.iconRes(): String {
     return when {
         extension in listOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "svg") -> "image"
         extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp", "3gpp", "ts", "m4v", "mts") -> "video"
-        extension in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma") -> "audio"
+        extension in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus") -> "audio"
         extension in listOf("pdf") -> "pdf"
         extension in listOf("doc", "docx", "odt", "rtf") -> "document"
         extension in listOf("xls", "xlsx", "ods", "csv") -> "spreadsheet"

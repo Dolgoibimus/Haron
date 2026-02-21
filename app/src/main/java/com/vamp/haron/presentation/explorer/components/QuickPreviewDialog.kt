@@ -1,8 +1,12 @@
 package com.vamp.haron.presentation.explorer.components
 
 import android.graphics.Bitmap
+import android.net.Uri
+import android.content.ComponentName
+import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,48 +20,171 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import org.videolan.libvlc.util.VLCVideoLayout
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
+import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.PreviewData
+import com.vamp.haron.service.PlaybackService
+import androidx.compose.foundation.layout.fillMaxSize
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
+/** Shared state between inline player and seekbar outside pager */
+private class InlinePlayerState {
+    var currentPosition by mutableLongStateOf(0L)
+    var duration by mutableLongStateOf(0L)
+    var isActive by mutableStateOf(false)
+    var seekTo: ((Long) -> Unit)? = null
+}
+
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun QuickPreviewDialog(
     entry: FileEntry,
     previewData: PreviewData?,
     isLoading: Boolean,
     error: String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onFullscreenPlay: ((positionMs: Long) -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
+    adjacentFiles: List<FileEntry> = emptyList(),
+    currentFileIndex: Int = 0,
+    onFileChanged: (Int) -> Unit = {},
+    previewCache: Map<Int, PreviewData> = emptyMap()
 ) {
+    val hasPager = adjacentFiles.size > 1
+    val playerState = remember { InlinePlayerState() }
+    val context = LocalContext.current
+
+    // Media playlist from adjacent files
+    val mediaFiles = remember(adjacentFiles) {
+        adjacentFiles.mapIndexedNotNull { idx, f ->
+            if (!f.isDirectory && f.iconRes() in listOf("video", "audio")) idx to f else null
+        }
+    }
+    val pageToMediaIndex = remember(mediaFiles) {
+        mediaFiles.withIndex().associate { (mediaIdx, pair) -> pair.first to mediaIdx }
+    }
+    val mediaToPageIndex = remember(mediaFiles) {
+        mediaFiles.withIndex().associate { (mediaIdx, pair) -> mediaIdx to pair.first }
+    }
+
+    // PlaybackService connection
+    var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var serviceConnected by remember { mutableStateOf(false) }
+    var currentAdapterIndex by remember { mutableStateOf(-1) }
+
+    fun startMediaPlayback(pageIndex: Int) {
+        val mediaIndex = pageToMediaIndex[pageIndex] ?: return
+        if (serviceConnected) {
+            controller?.seekTo(mediaIndex, 0)
+            return
+        }
+        PlaylistHolder.items = mediaFiles.map { (_, f) ->
+            PlaylistHolder.PlaylistItem(f.path, f.name, f.iconRes())
+        }
+        PlaylistHolder.startIndex = mediaIndex
+        context.startService(Intent(context, PlaybackService::class.java))
+        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture = future
+        future.addListener({
+            val ctrl = future.get()
+            controller = ctrl
+            PlaybackService.instance?.getAdapter()?.setPlaylist(PlaylistHolder.items, mediaIndex)
+            serviceConnected = true
+        }, MoreExecutors.directExecutor())
+    }
+
+    val onTogglePlayPause: () -> Unit = {
+        controller?.let { ctrl ->
+            if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            controllerFuture?.let { MediaController.releaseFuture(it) }
+            controller = null
+        }
+    }
+
+    // Poll adapter for state
+    LaunchedEffect(serviceConnected) {
+        if (!serviceConnected) return@LaunchedEffect
+        while (isActive) {
+            val adapter = PlaybackService.instance?.getAdapter()
+            if (adapter != null) {
+                playerState.isActive = adapter.isCurrentlyPlaying()
+                playerState.currentPosition = adapter.getCurrentPositionMs()
+                val d = adapter.getCurrentDurationMs()
+                if (d > 0) playerState.duration = d
+                playerState.seekTo = { pos -> controller?.seekTo(pos) }
+                currentAdapterIndex = adapter.getCurrentIndex()
+            }
+            delay(100)
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
@@ -73,8 +200,10 @@ fun QuickPreviewDialog(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    val subtitle = buildSubtitle(entry) +
+                        if (hasPager) " \u00B7 ${currentFileIndex + 1}/${adjacentFiles.size}" else ""
                     Text(
-                        text = buildSubtitle(entry),
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -96,34 +225,113 @@ fun QuickPreviewDialog(
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
 
-                when {
-                    isLoading -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
-                        }
+                // Fixed-height content area — prevents dialog from resizing
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (hasPager) {
+                        PreviewPagerContent(
+                            entry = entry,
+                            previewData = previewData,
+                            isLoading = isLoading,
+                            error = error,
+                            currentIndex = currentFileIndex,
+                            totalFiles = adjacentFiles.size,
+                            adjacentFiles = adjacentFiles,
+                            onPageChanged = onFileChanged,
+                            onEdit = onEdit,
+                            playerState = playerState,
+                            previewCache = previewCache,
+                            serviceConnected = serviceConnected,
+                            currentAdapterIndex = currentAdapterIndex,
+                            mediaToPageIndex = mediaToPageIndex,
+                            pageToMediaIndex = pageToMediaIndex,
+                            onStartPlayback = ::startMediaPlayback,
+                            onTogglePlayPause = onTogglePlayPause,
+                            controller = controller
+                        )
+                    } else {
+                        PreviewContentBlock(
+                            entry = entry,
+                            previewData = previewData,
+                            isLoading = isLoading,
+                            error = error,
+                            onEdit = onEdit,
+                            playerState = playerState,
+                            serviceConnected = serviceConnected,
+                            onStartPlayback = { startMediaPlayback(0) },
+                            onTogglePlayPause = onTogglePlayPause
+                        )
                     }
-                    error != null -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
+                }
+
+                // Bottom controls — always occupy space, invisible for non-media
+                val isMedia = previewData is PreviewData.VideoPreview || previewData is PreviewData.AudioPreview
+                val controlsAlpha = if (isMedia) 1f else 0f
+
+                Spacer(Modifier.height(4.dp))
+                var isDragging by remember { mutableStateOf(false) }
+                var dragValue by remember { mutableFloatStateOf(0f) }
+                Slider(
+                    value = if (isDragging) dragValue
+                        else if (playerState.isActive && playerState.duration > 0)
+                            playerState.currentPosition.toFloat() / playerState.duration
+                        else 0f,
+                    onValueChange = {
+                        isDragging = true
+                        dragValue = it
+                    },
+                    onValueChangeFinished = {
+                        if (playerState.isActive) {
+                            val seekTarget = (dragValue * playerState.duration).toLong()
+                            playerState.currentPosition = seekTarget
+                            playerState.seekTo?.invoke(seekTarget)
                         }
-                    }
-                    previewData != null -> {
-                        PreviewContent(previewData)
+                        isDragging = false
+                    },
+                    enabled = isMedia && playerState.isActive,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(if (isMedia && playerState.isActive) 1f else 0f)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(controlsAlpha),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (playerState.isActive) playerState.currentPosition.toDurationString() else "0:00",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = if (playerState.isActive) 1f else 0.5f
+                        )
+                    )
+                    Text(
+                        text = playerState.duration.toDurationString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = if (playerState.isActive) 1f else 0.5f
+                        )
+                    )
+                }
+
+                // Fullscreen button — always occupies space
+                if (onFullscreenPlay != null) {
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(modifier = Modifier.alpha(controlsAlpha))
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { if (isMedia) onFullscreenPlay(playerState.currentPosition) },
+                        modifier = Modifier.fillMaxWidth().alpha(controlsAlpha),
+                        enabled = isMedia
+                    ) {
+                        Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Во весь экран")
                     }
                 }
             }
@@ -131,139 +339,348 @@ fun QuickPreviewDialog(
     )
 }
 
-@Composable
-private fun PreviewContent(data: PreviewData) {
-    when (data) {
-        is PreviewData.ImagePreview -> ImagePreviewContent(data)
-        is PreviewData.VideoPreview -> VideoPreviewContent(data)
-        is PreviewData.AudioPreview -> AudioPreviewContent(data)
-        is PreviewData.TextPreview -> TextPreviewContent(data)
-        is PreviewData.PdfPreview -> PdfPreviewContent(data)
-        is PreviewData.ArchivePreview -> ArchivePreviewContent(data)
-        is PreviewData.ApkPreview -> ApkPreviewContent(data)
-        is PreviewData.UnsupportedPreview -> UnsupportedPreviewContent()
-    }
-}
+// --- Pager for all file types ---
 
 @Composable
-private fun ImagePreviewContent(data: PreviewData.ImagePreview) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Image(
-            bitmap = data.bitmap.asImageBitmap(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 300.dp)
-                .clip(RoundedCornerShape(8.dp))
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "${data.width} \u00D7 ${data.height}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
+private fun PreviewPagerContent(
+    entry: FileEntry,
+    previewData: PreviewData?,
+    isLoading: Boolean,
+    error: String?,
+    currentIndex: Int,
+    totalFiles: Int,
+    adjacentFiles: List<FileEntry>,
+    onPageChanged: (Int) -> Unit,
+    onEdit: (() -> Unit)?,
+    playerState: InlinePlayerState,
+    previewCache: Map<Int, PreviewData>,
+    serviceConnected: Boolean = false,
+    currentAdapterIndex: Int = -1,
+    mediaToPageIndex: Map<Int, Int> = emptyMap(),
+    pageToMediaIndex: Map<Int, Int> = emptyMap(),
+    onStartPlayback: ((Int) -> Unit)? = null,
+    onTogglePlayPause: () -> Unit = {},
+    controller: MediaController? = null
+) {
+    val pagerState = rememberPagerState(
+        initialPage = currentIndex,
+        pageCount = { totalFiles }
+    )
+    val dummyPlayerState = remember { InlinePlayerState() }
+    val coroutineScope = rememberCoroutineScope()
 
-@Composable
-private fun VideoPreviewContent(data: PreviewData.VideoPreview) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 300.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (data.thumbnail != null) {
-                Image(
-                    bitmap = data.thumbnail.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // Semi-transparent overlay + play icon
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(
-                            MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f),
-                            RoundedCornerShape(28.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.PlayCircleFilled,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.PlayCircleFilled,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+    // Notify ViewModel when page changes + sync service
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            if (page != currentIndex) {
+                onPageChanged(page)
+                // If service playing and user swiped to a media page, switch track
+                if (serviceConnected) {
+                    val mediaIdx = pageToMediaIndex[page]
+                    if (mediaIdx != null && mediaIdx != currentAdapterIndex) {
+                        controller?.seekTo(mediaIdx, 0)
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = data.durationMs.toDurationString(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    }
+
+    // Auto-advance pager when adapter changes track
+    LaunchedEffect(currentAdapterIndex) {
+        if (currentAdapterIndex < 0) return@LaunchedEffect
+        val targetPage = mediaToPageIndex[currentAdapterIndex]
+        if (targetPage != null && targetPage != pagerState.currentPage) {
+            pagerState.animateScrollToPage(targetPage)
+        }
+    }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        beyondViewportPageCount = 1
+    ) { page ->
+        when {
+            // Current page — live data from ViewModel
+            page == currentIndex -> {
+                PreviewContentBlock(
+                    entry = entry,
+                    previewData = previewData,
+                    isLoading = isLoading,
+                    error = error,
+                    onEdit = onEdit,
+                    playerState = playerState,
+                    serviceConnected = serviceConnected,
+                    onStartPlayback = { onStartPlayback?.invoke(page) },
+                    onTogglePlayPause = onTogglePlayPause
+                )
+            }
+            // Cached page — instant display
+            page in previewCache -> {
+                val cachedData = previewCache[page]!!
+                val cachedEntry = adjacentFiles[page]
+                PreviewContentBlock(
+                    entry = cachedEntry,
+                    previewData = cachedData,
+                    isLoading = false,
+                    error = null,
+                    onEdit = null,
+                    playerState = dummyPlayerState
+                )
+            }
+            // Not yet loaded — placeholder
+            else -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.InsertDriveFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = adjacentFiles.getOrNull(page)?.name ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
+// --- Single preview content block ---
+
 @Composable
-private fun AudioPreviewContent(data: PreviewData.AudioPreview) {
+private fun PreviewContentBlock(
+    entry: FileEntry,
+    previewData: PreviewData?,
+    isLoading: Boolean,
+    error: String?,
+    onEdit: (() -> Unit)?,
+    playerState: InlinePlayerState = InlinePlayerState(),
+    serviceConnected: Boolean = false,
+    onStartPlayback: (() -> Unit)? = null,
+    onTogglePlayPause: () -> Unit = {}
+) {
+    when {
+        isLoading -> {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            }
+        }
+        error != null -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        previewData != null -> {
+            when (previewData) {
+                is PreviewData.ImagePreview -> ImagePreviewContent(previewData)
+                is PreviewData.VideoPreview -> {
+                    InlineVideoContent(
+                        thumbnail = previewData.thumbnail,
+                        playerState = playerState,
+                        serviceConnected = serviceConnected,
+                        onStartPlayback = onStartPlayback,
+                        onTogglePlayPause = onTogglePlayPause
+                    )
+                }
+                is PreviewData.AudioPreview -> {
+                    InlineAudioContent(
+                        data = previewData,
+                        playerState = playerState,
+                        serviceConnected = serviceConnected,
+                        onStartPlayback = onStartPlayback,
+                        onTogglePlayPause = onTogglePlayPause
+                    )
+                }
+                is PreviewData.TextPreview -> {
+                    TextPreviewContent(previewData)
+                    if (onEdit != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(onClick = onEdit) {
+                                Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Редактировать")
+                            }
+                        }
+                    }
+                }
+                is PreviewData.PdfPreview -> PdfPreviewContent(previewData)
+                is PreviewData.ArchivePreview -> ArchivePreviewContent(previewData)
+                is PreviewData.ApkPreview -> ApkPreviewContent(previewData)
+                is PreviewData.UnsupportedPreview -> UnsupportedPreviewContent()
+            }
+        }
+    }
+}
+
+// --- Inline Video (uses PlaybackService for folder repeat + lock screen) ---
+
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+private fun InlineVideoContent(
+    thumbnail: Bitmap?,
+    playerState: InlinePlayerState,
+    serviceConnected: Boolean,
+    onStartPlayback: (() -> Unit)?,
+    onTogglePlayPause: () -> Unit
+) {
+    var hasStarted by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            PlaybackService.instance?.getVlcPlayer()?.detachViews()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (hasStarted && serviceConnected) {
+            AndroidView(
+                factory = { ctx ->
+                    VLCVideoLayout(ctx).also { layout ->
+                        PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable { onTogglePlayPause() }
+            )
+        } else if (hasStarted && !serviceConnected) {
+            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+        } else {
+            if (thumbnail != null) {
+                Image(
+                    bitmap = thumbnail.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f),
+                        RoundedCornerShape(28.dp)
+                    )
+                    .clickable {
+                        hasStarted = true
+                        onStartPlayback?.invoke()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.PlayCircleFilled,
+                    contentDescription = "Воспроизвести",
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        }
+    }
+}
+
+// --- Inline Audio ---
+
+@Composable
+private fun InlineAudioContent(
+    data: PreviewData.AudioPreview,
+    playerState: InlinePlayerState,
+    serviceConnected: Boolean,
+    onStartPlayback: (() -> Unit)?,
+    onTogglePlayPause: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (data.albumArt != null) {
-            Image(
-                bitmap = data.albumArt.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-        } else {
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable {
+                    if (serviceConnected) onTogglePlayPause()
+                    else onStartPlayback?.invoke()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (data.albumArt != null) {
+                Image(
+                    bitmap = data.albumArt.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(80.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.MusicNote,
+                        null,
+                        Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
-                    .size(80.dp)
+                    .size(36.dp)
                     .background(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                        RoundedCornerShape(8.dp)
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
+                        RoundedCornerShape(18.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.MusicNote,
+                    if (playerState.isActive) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
         }
@@ -295,12 +712,33 @@ private fun AudioPreviewContent(data: PreviewData.AudioPreview) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = data.durationMs.toDurationString(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
+    }
+}
+
+// --- Static preview content ---
+
+@Composable
+private fun ImagePreviewContent(data: PreviewData.ImagePreview) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            bitmap = data.bitmap.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 300.dp)
+                .clip(RoundedCornerShape(8.dp))
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "${data.width} \u00D7 ${data.height}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

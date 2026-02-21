@@ -21,6 +21,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
@@ -54,6 +58,15 @@ dependencies {
     implementation("org.tukaani:xz:1.9")
     implementation("com.github.junrar:junrar:7.5.5")
     implementation("org.slf4j:slf4j-nop:2.0.13")
+
+    // Media3 ExoPlayer (inline previews)
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("androidx.media3:media3-common:1.5.1")
+    implementation("androidx.media3:media3-session:1.5.1")
+
+    // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
+    implementation("org.videolan.android:libvlc-all:3.6.5")
 
     // AndroidX
     implementation("androidx.exifinterface:exifinterface:1.4.1")

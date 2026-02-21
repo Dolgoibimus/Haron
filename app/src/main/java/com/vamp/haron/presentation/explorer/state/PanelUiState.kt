@@ -18,5 +18,8 @@ data class PanelUiState(
     val statusMessage: String? = null,
     val gridColumns: Int = 1,
     val navigationHistory: List<String> = emptyList(),
-    val historyIndex: Int = -1
+    val historyIndex: Int = -1,
+    val isSafPath: Boolean = false,
+    val scrollToIndex: Int = 0,
+    val scrollToTrigger: Long = 0L
 )

@@ -21,7 +21,8 @@ data class ExplorerUiState(
     val dragState: DragState = DragState.Idle,
     val operationProgress: OperationProgress? = null,
     val trashSizeInfo: String = "",
-    val themeMode: String = "system"
+    val themeMode: String = "system",
+    val safRoots: List<Pair<String, String>> = emptyList() // (uri, label)
 )
 
 sealed interface DialogState {
@@ -45,7 +46,10 @@ sealed interface DialogState {
         val entry: FileEntry,
         val previewData: PreviewData? = null,
         val isLoading: Boolean = true,
-        val error: String? = null
+        val error: String? = null,
+        val adjacentFiles: List<FileEntry> = emptyList(),
+        val currentFileIndex: Int = 0,
+        val previewCache: Map<Int, PreviewData> = emptyMap()
     ) : DialogState
 }
 
