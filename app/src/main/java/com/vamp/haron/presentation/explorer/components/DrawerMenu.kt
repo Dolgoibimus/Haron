@@ -18,7 +18,9 @@ import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
@@ -56,6 +58,10 @@ fun DrawerMenu(
     onShowTrash: () -> Unit,
     onOpenStorageAnalysis: () -> Unit,
     onOpenDuplicateDetector: () -> Unit,
+    onOpenAppManager: () -> Unit,
+    onFindEmptyFolders: () -> Unit,
+    onForceDelete: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -246,6 +252,28 @@ fun DrawerMenu(
                     onClick = { onOpenDuplicateDetector(); onDismiss() }
                 )
             }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Apps, null, Modifier.size(24.dp)) },
+                    title = "Менеджер приложений",
+                    onClick = { onOpenAppManager(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.FolderOff, null, Modifier.size(24.dp)) },
+                    title = "Пустые папки",
+                    onClick = { onFindEmptyFolders(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.DeleteOutline, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.error) },
+                    title = "Принудительное удаление",
+                    subtitle = "Без корзины, навсегда",
+                    onClick = { onForceDelete(); onDismiss() }
+                )
+            }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
@@ -278,6 +306,17 @@ fun DrawerMenu(
                     Spacer(Modifier.width(8.dp))
                     ThemeButton("Тёмная", themeMode == "dark", Icons.Filled.DarkMode) { onSetTheme("dark") }
                 }
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+
+            // --- Settings ---
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Settings, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                    title = "Настройки",
+                    onClick = { onOpenSettings(); onDismiss() }
+                )
             }
 
             item { Spacer(Modifier.height(16.dp)) }

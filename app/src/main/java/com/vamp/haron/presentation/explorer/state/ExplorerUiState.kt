@@ -1,5 +1,6 @@
 package com.vamp.haron.presentation.explorer.state
 
+import com.vamp.haron.domain.model.ApkInstallInfo
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
@@ -28,7 +29,12 @@ data class ExplorerUiState(
     val trashSizeInfo: String = "",
     val themeMode: String = "system",
     val safRoots: List<Pair<String, String>> = emptyList(), // (uri, label)
-    val originalFolders: Set<String> = emptySet()
+    val originalFolders: Set<String> = emptySet(),
+    val showBookmarkPopup: Boolean = false,
+    val showToolsPopup: Boolean = false,
+    val bookmarks: Map<Int, String> = emptyMap(),
+    val folderSizeCache: Map<String, Long> = emptyMap(),
+    val folderSizeCalculating: Boolean = false
 )
 
 sealed interface DialogState {
@@ -65,6 +71,22 @@ sealed interface DialogState {
         val properties: FileProperties? = null,
         val hashResult: HashResult? = null,
         val isHashCalculating: Boolean = false
+    ) : DialogState
+    data class ApkInstallDialog(
+        val entry: FileEntry,
+        val apkInfo: ApkInstallInfo? = null,
+        val isLoading: Boolean = true,
+        val error: String? = null
+    ) : DialogState
+    data class EmptyFolderCleanup(
+        val folders: List<String> = emptyList(),
+        val isRecursive: Boolean = true,
+        val selectedPaths: Set<String> = emptySet(),
+        val isLoading: Boolean = false
+    ) : DialogState
+    data class ForceDeleteConfirm(
+        val paths: List<String>,
+        val names: List<String>
     ) : DialogState
 }
 

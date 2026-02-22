@@ -27,4 +27,8 @@ sealed interface NavigationEvent {
     data object OpenStorageAnalysis : NavigationEvent
 
     data object OpenDuplicateDetector : NavigationEvent
+
+    data object OpenAppManager : NavigationEvent
+
+    data object OpenSettings : NavigationEvent
 }

@@ -14,6 +14,7 @@ data class PanelUiState(
     val selectedPaths: Set<String> = emptySet(),
     val isSelectionMode: Boolean = false,
     val searchQuery: String = "",
+    val isSearchActive: Boolean = false,
     val renamingPath: String? = null,
     val statusMessage: String? = null,
     val gridColumns: Int = 1,

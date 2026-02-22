@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -69,6 +68,11 @@ import com.vamp.haron.presentation.explorer.components.FilePropertiesDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
+import com.vamp.haron.presentation.explorer.components.ApkInstallDialog
+import com.vamp.haron.presentation.explorer.components.BookmarkPopup
+import com.vamp.haron.presentation.explorer.components.ToolsPopup
+import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
+import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
 import com.vamp.haron.presentation.explorer.components.ShelfPanel
@@ -80,13 +84,16 @@ import com.vamp.haron.presentation.explorer.state.DialogState
 @Composable
 fun ExplorerScreen(
     viewModel: ExplorerViewModel = hiltViewModel(),
+    initialNavigatePath: String? = null,
     onOpenMediaPlayer: (startIndex: Int) -> Unit = { },
     onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenGallery: (startIndex: Int) -> Unit = { },
     onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenStorageAnalysis: () -> Unit = { },
-    onOpenDuplicateDetector: () -> Unit = { }
+    onOpenDuplicateDetector: () -> Unit = { },
+    onOpenAppManager: () -> Unit = { },
+    onOpenSettings: () -> Unit = { }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -119,9 +126,22 @@ fun ExplorerScreen(
                 is NavigationEvent.OpenDuplicateDetector -> {
                     onOpenDuplicateDetector()
                 }
+                is NavigationEvent.OpenAppManager -> {
+                    onOpenAppManager()
+                }
+                is NavigationEvent.OpenSettings -> {
+                    onOpenSettings()
+                }
             }
         }
     }
+    // Navigate to path from widget intent
+    LaunchedEffect(initialNavigatePath) {
+        if (!initialNavigatePath.isNullOrEmpty()) {
+            viewModel.navigateTo(viewModel.uiState.value.activePanel, initialNavigatePath)
+        }
+    }
+
     val activePanel = state.activePanel
 
     // SAF document tree picker
@@ -150,14 +170,20 @@ fun ExplorerScreen(
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
     val hasRenaming = state.topPanel.renamingPath != null || state.bottomPanel.renamingPath != null
+    val hasSearch = state.topPanel.isSearchActive || state.bottomPanel.isSearchActive
     val showDrawerOrShelf = state.showDrawer || state.showShelf
 
-    // Back: drawer/shelf → rename → selection → history back → navigate up
+    // Back: drawer/shelf → search → rename → selection → history back → navigate up
     val canGoBack = viewModel.canNavigateBack(activePanel)
-    BackHandler(enabled = state.showDrawer || state.showShelf || hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
+    BackHandler(enabled = state.showDrawer || state.showShelf || hasSearch || hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
         when {
             state.showDrawer -> viewModel.dismissDrawer()
             state.showShelf -> viewModel.dismissShelf()
+            hasSearch -> {
+                // Close search in the panel that has it active
+                if (state.topPanel.isSearchActive) viewModel.closeSearch(PanelId.TOP)
+                if (state.bottomPanel.isSearchActive) viewModel.closeSearch(PanelId.BOTTOM)
+            }
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> viewModel.clearSelection(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
@@ -206,6 +232,33 @@ fun ExplorerScreen(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { totalHeightPx = it.height.toFloat() }
+            .pointerInput(showDrawerOrShelf, isDragging) {
+                if (showDrawerOrShelf || isDragging) return@pointerInput
+                val edgePx = 24.dp.toPx()
+                val swipeThreshold = 60f
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (down.position.x > edgePx) return@awaitEachGesture
+                    val startY = down.position.y
+                    var totalDragX = 0f
+                    var consumed = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        totalDragX += change.position.x - change.previousPosition.x
+                        if (!consumed && totalDragX > swipeThreshold) {
+                            consumed = true
+                            val height = size.height.toFloat()
+                            if (startY < height / 2) {
+                                viewModel.toggleShelf()
+                            } else {
+                                viewModel.toggleDrawer()
+                            }
+                            change.consume()
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Top panel
@@ -264,6 +317,8 @@ fun ExplorerScreen(
                 },
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
+                onOpenSearch = { viewModel.openSearch(PanelId.TOP) },
+                onCloseSearch = { viewModel.closeSearch(PanelId.TOP) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.TOP),
                 modifier = Modifier
@@ -283,7 +338,9 @@ fun ExplorerScreen(
                     viewModel.updatePanelRatio(state.panelRatio + delta)
                 },
                 onDragEnd = { viewModel.savePanelRatio() },
-                onDoubleTap = { viewModel.resetPanelRatio() }
+                onDoubleTap = { viewModel.resetPanelRatio() },
+                onBookmarkTap = { viewModel.showBookmarkPopup() },
+                onRightZoneTap = { viewModel.showToolsPopup() }
             )
 
             // Bottom panel
@@ -342,6 +399,8 @@ fun ExplorerScreen(
                 },
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
+                onOpenSearch = { viewModel.openSearch(PanelId.BOTTOM) },
+                onCloseSearch = { viewModel.closeSearch(PanelId.BOTTOM) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.BOTTOM),
                 modifier = Modifier
@@ -357,10 +416,12 @@ fun ExplorerScreen(
 
         // Selection action bar — overlay, no layout shift
         if (hasSelection && !isDragging) {
+            val (totalSizeWithFolders, isSizeCalculating) = viewModel.getSelectedTotalSizeWithFolders()
             SelectionActionBar(
                 dirCount = selectedDirs,
                 fileCount = selectedFiles,
-                totalSize = viewModel.getSelectedTotalSize(),
+                totalSize = totalSizeWithFolders,
+                isSizeCalculating = isSizeCalculating,
                 onCopy = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.copySelectedToOtherPanel()
@@ -467,40 +528,7 @@ fun ExplorerScreen(
             }
         }
 
-        // Left edge swipe zone
-        if (!showDrawerOrShelf && !isDragging) {
-            // Swipe detection zone on left edge
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .width(24.dp)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown()
-                            val startY = down.position.y
-                            val threshold = 60f // px
-                            var totalDragX = 0f
-                            var consumed = false
-                            do {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
-                                totalDragX += change.position.x - (change.previousPosition.x)
-                                if (!consumed && totalDragX > threshold) {
-                                    consumed = true
-                                    val height = size.height.toFloat()
-                                    if (startY < height / 2) {
-                                        viewModel.toggleShelf()
-                                    } else {
-                                        viewModel.toggleDrawer()
-                                    }
-                                    change.consume()
-                                }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
-            )
-        }
+        // Left edge swipe detection moved to parent Box modifier
 
         // Drag overlay — ghost icon following finger
         if (dragState is DragState.Dragging) {
@@ -578,6 +606,9 @@ fun ExplorerScreen(
                     viewModel.dismissDialog()
                     onOpenArchiveViewer(dialog.entry.path, dialog.entry.name)
                 },
+                onInstallApk = {
+                    viewModel.installApk(dialog.entry)
+                },
                 adjacentFiles = dialog.adjacentFiles,
                 currentFileIndex = dialog.currentFileIndex,
                 onFileChanged = { newIndex ->
@@ -610,7 +641,53 @@ fun ExplorerScreen(
                 isContentUri = dialog.entry.isContentUri
             )
         }
+        is DialogState.ApkInstallDialog -> {
+            ApkInstallDialog(
+                apkInfo = dialog.apkInfo,
+                isLoading = dialog.isLoading,
+                error = dialog.error,
+                onInstall = { viewModel.installApk(dialog.entry) },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.EmptyFolderCleanup -> {
+            EmptyFolderCleanupDialog(
+                folders = dialog.folders,
+                isRecursive = dialog.isRecursive,
+                selectedPaths = dialog.selectedPaths,
+                onToggleRecursive = { viewModel.toggleEmptyFoldersRecursive(it) },
+                onToggleSelected = { viewModel.toggleEmptyFolderSelected(it) },
+                onSelectAll = { viewModel.selectAllEmptyFolders() },
+                onDelete = { viewModel.deleteEmptyFolders() },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ForceDeleteConfirm -> {
+            ForceDeleteConfirmDialog(
+                names = dialog.names,
+                onConfirm = { viewModel.confirmForceDelete(dialog.paths) },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
         DialogState.None -> { /* no dialog */ }
+    }
+
+    // Bookmark popup
+    if (state.showBookmarkPopup) {
+        BookmarkPopup(
+            bookmarks = state.bookmarks,
+            onNavigate = { viewModel.navigateToBookmark(it) },
+            onSave = { viewModel.saveBookmark(it) },
+            onDismiss = { viewModel.dismissBookmarkPopup() }
+        )
+    }
+
+    // Tools popup
+    if (state.showToolsPopup) {
+        ToolsPopup(
+            onToolSelected = { viewModel.onToolSelected(it) },
+            onDismiss = { viewModel.dismissToolsPopup() }
+        )
     }
 
     // Drawer / Shelf overlay
@@ -662,6 +739,10 @@ fun ExplorerScreen(
                     onShowTrash = { viewModel.showTrash() },
                     onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                     onOpenDuplicateDetector = { viewModel.openDuplicateDetector() },
+                    onOpenAppManager = { viewModel.openAppManager() },
+                    onFindEmptyFolders = { viewModel.findEmptyFolders() },
+                    onForceDelete = { viewModel.requestForceDelete() },
+                    onOpenSettings = { viewModel.openSettings() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer
                 )

@@ -3,9 +3,12 @@ package com.vamp.haron.presentation.explorer.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -39,6 +42,7 @@ fun SelectionActionBar(
     onAddToShelf: () -> Unit,
     onInfo: () -> Unit,
     onOpenWith: () -> Unit,
+    isSizeCalculating: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val totalCount = dirCount + fileCount
@@ -51,11 +55,20 @@ fun SelectionActionBar(
             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "${formatFileCount(dirCount, fileCount)} \u00B7 ${totalSize.toFileSize()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${formatFileCount(dirCount, fileCount)} \u00B7 ${totalSize.toFileSize()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (isSizeCalculating) {
+                    Spacer(Modifier.width(6.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,

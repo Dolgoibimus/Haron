@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -21,17 +22,14 @@ fun PanelDivider(
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDoubleTap: () -> Unit,
+    onBookmarkTap: () -> Unit = {},
+    onRightZoneTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(24.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = { onDoubleTap() }
-                )
-            }
             .pointerInput(totalHeight) {
                 detectDragGestures(
                     onDragEnd = { onDragEnd() },
@@ -45,7 +43,51 @@ fun PanelDivider(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Drag handle indicator
+        Row(
+            modifier = Modifier.fillMaxWidth().height(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left zone: tap → bookmarks pie menu
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(24.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onBookmarkTap() }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) { }
+
+            // Center zone: tap → reset 50/50
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(24.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onDoubleTap() }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) { }
+
+            // Right zone: tap → swap panels / TBD
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(24.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onRightZoneTap() }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) { }
+        }
+
+        // Drag handle indicator (centered, on top)
         Box(
             modifier = Modifier
                 .width(40.dp)

@@ -68,6 +68,10 @@ dependencies {
     // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
     implementation("org.videolan.android:libvlc-all:3.6.5")
 
+    // Glance widget
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
+
     // AndroidX
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("androidx.documentfile:documentfile:1.1.0")

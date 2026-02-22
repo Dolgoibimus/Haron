@@ -40,6 +40,10 @@ import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilePropertiesUseCase
 import com.vamp.haron.domain.usecase.CalculateHashUseCase
+import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
+import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
+import com.vamp.haron.common.util.HapticManager
+import com.vamp.haron.domain.usecase.ForceDeleteUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
@@ -55,7 +59,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.content.Intent
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
@@ -88,7 +94,11 @@ class ExplorerViewModel @Inject constructor(
     private val safUriManager: SafUriManager,
     private val storageVolumeHelper: StorageVolumeHelper,
     private val getFilePropertiesUseCase: GetFilePropertiesUseCase,
-    private val calculateHashUseCase: CalculateHashUseCase
+    private val calculateHashUseCase: CalculateHashUseCase,
+    private val loadApkInstallInfoUseCase: LoadApkInstallInfoUseCase,
+    private val hapticManager: HapticManager,
+    private val forceDeleteUseCase: ForceDeleteUseCase,
+    private val findEmptyFoldersUseCase: FindEmptyFoldersUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -114,6 +124,9 @@ class ExplorerViewModel @Inject constructor(
 
     /** Monotonic trigger counter for scroll events */
     private var scrollTrigger = 0L
+
+    /** Folder size calculation jobs */
+    private val folderSizeJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     fun onScrollPositionChanged(panelId: PanelId, index: Int) {
         panelScrollIndex[panelId] = index
@@ -144,7 +157,8 @@ class ExplorerViewModel @Inject constructor(
                 recentPaths = preferences.getRecentPaths(),
                 shelfItems = shelfItems,
                 themeMode = EcosystemPreferences.theme,
-                originalFolders = preferences.getOriginalFolders()
+                originalFolders = preferences.getOriginalFolders(),
+                bookmarks = preferences.getBookmarks()
             )
         }
         val topPath = preferences.topPanelPath.let { p ->
@@ -169,8 +183,13 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             FileOperationService.progress.collect { progress ->
                 _uiState.update { it.copy(operationProgress = progress) }
-                // Когда операция завершена — обновить обе панели
+                // Когда операция завершена — haptic + log + обновить обе панели
                 if (progress?.isComplete == true) {
+                    if (progress.error == null) {
+                        hapticManager.completion()
+                    } else {
+                        hapticManager.error()
+                    }
                     delay(500)
                     refreshPanel(PanelId.TOP)
                     refreshPanel(PanelId.BOTTOM)
@@ -297,6 +316,7 @@ class ExplorerViewModel @Inject constructor(
                     }
                     val startIndex = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
                     PlaylistHolder.startIndex = startIndex
+                    preferences.lastMediaFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenMediaPlayer(startIndex)
                     )
@@ -322,11 +342,13 @@ class ExplorerViewModel @Inject constructor(
                     _navigationEvent.tryEmit(NavigationEvent.OpenGallery(startIndex))
                 }
                 "pdf" -> {
+                    preferences.lastDocumentFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenPdfReader(entry.path, entry.name)
                     )
                 }
                 "document" -> {
+                    preferences.lastDocumentFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenPdfReader(entry.path, entry.name)
                     )
@@ -335,6 +357,9 @@ class ExplorerViewModel @Inject constructor(
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenArchiveViewer(entry.path, entry.name)
                     )
+                }
+                "apk" -> {
+                    showApkInstallDialog(entry)
                 }
                 else -> {
                     // No built-in handler — open with external app
@@ -399,6 +424,7 @@ class ExplorerViewModel @Inject constructor(
         when {
             panel.isSelectionMode -> toggleSelection(panelId, entry.path)
             entry.isDirectory -> navigateTo(panelId, entry.path)
+            entry.iconRes() == "apk" -> showApkInstallDialog(entry)
             else -> {
                 val allFiles = panel.files.filter { !it.isDirectory }
                 val fileIndex = allFiles.indexOfFirst { it.path == entry.path }
@@ -624,8 +650,16 @@ class ExplorerViewModel @Inject constructor(
         updatePanel(panelId) { it.copy(searchQuery = query) }
     }
 
+    fun openSearch(panelId: PanelId) {
+        updatePanel(panelId) { it.copy(isSearchActive = true) }
+    }
+
+    fun closeSearch(panelId: PanelId) {
+        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "") }
+    }
+
     fun clearSearch(panelId: PanelId) {
-        updatePanel(panelId) { it.copy(searchQuery = "") }
+        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false) }
     }
 
     // --- Selection ---
@@ -727,6 +761,7 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
                     copyFilesUseCase(listOf(path), destinationDir, resolution)
                 }
+                hapticManager.success()
                 showStatusMessage(targetId, "Скопировано: ${formatFileCount(dirs, files)}")
                 refreshPanel(targetId)
             }
@@ -750,30 +785,38 @@ class ExplorerViewModel @Inject constructor(
 
         inlineOperationJob = viewModelScope.launch {
             val total = paths.size
+            var completed = 0
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY))
             }
-            fileRepository.copyFilesWithResolutions(paths, destinationDir, decisions)
-                .onSuccess { count ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.COPY, isComplete = true))
-                    }
-                    val skipped = total - count
-                    val msg = when {
-                        count == 0 -> "Пропущено: $total"
-                        skipped > 0 -> "Скопировано: $count, пропущено: $skipped"
-                        else -> "Скопировано: ${formatFileCount(dirs, files)}"
-                    }
-                    showStatusMessage(targetId, msg)
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.COPY))
                 }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY, isComplete = true, error = e.message))
-                    }
-                }
+                val resolution = decisions[path] ?: ConflictResolution.RENAME
+                fileRepository.copyFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
+            }
+            val skipped = total - completed
+            val msg = when {
+                completed == 0 -> "Пропущено: $total"
+                skipped > 0 -> "Скопировано: $completed, пропущено: $skipped"
+                else -> "Скопировано: ${formatFileCount(dirs, files)}"
+            }
+            showStatusMessage(targetId, msg)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
             refreshPanel(targetId)
-            delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
+            }
         }
     }
 
@@ -826,6 +869,7 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
                     moveFilesUseCase(listOf(path), destinationDir, resolution)
                 }
+                hapticManager.success()
                 showStatusMessage(targetId, "Перемещено: ${formatFileCount(dirs, files)}")
                 refreshPanel(activeId)
                 refreshPanel(targetId)
@@ -850,31 +894,39 @@ class ExplorerViewModel @Inject constructor(
 
         inlineOperationJob = viewModelScope.launch {
             val total = paths.size
+            var completed = 0
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
             }
-            fileRepository.moveFilesWithResolutions(paths, destinationDir, decisions)
-                .onSuccess { count ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.MOVE, isComplete = true))
-                    }
-                    val skipped = total - count
-                    val msg = when {
-                        count == 0 -> "Пропущено: $total"
-                        skipped > 0 -> "Перемещено: $count, пропущено: $skipped"
-                        else -> "Перемещено: ${formatFileCount(dirs, files)}"
-                    }
-                    showStatusMessage(targetId, msg)
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.MOVE))
                 }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE, isComplete = true, error = e.message))
-                    }
-                }
+                val resolution = decisions[path] ?: ConflictResolution.RENAME
+                fileRepository.moveFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.MOVE, isComplete = true))
+            }
+            val skipped = total - completed
+            val msg = when {
+                completed == 0 -> "Пропущено: $total"
+                skipped > 0 -> "Перемещено: $completed, пропущено: $skipped"
+                else -> "Перемещено: ${formatFileCount(dirs, files)}"
+            }
+            showStatusMessage(targetId, msg)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
             refreshPanel(activeId)
             refreshPanel(targetId)
-            delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
+            }
         }
     }
 
@@ -883,6 +935,7 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(activeId)
         val paths = panel.selectedPaths.toList()
         if (paths.isEmpty()) return
+        hapticManager.warning()
         _uiState.update { it.copy(dialogState = DialogState.ConfirmDelete(paths)) }
     }
 
@@ -896,53 +949,75 @@ class ExplorerViewModel @Inject constructor(
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
             }
 
-            // For SAF files, delete directly (no trash support for content:// URIs)
-            val hasSaf = paths.any { it.startsWith("content://") }
-            if (hasSaf) {
-                fileRepository.deleteFiles(paths)
-                    .onSuccess { count ->
-                        _uiState.update {
-                            it.copy(operationProgress = OperationProgress(count, total, "", OperationType.DELETE, isComplete = true))
-                        }
-                        showStatusMessage(activeId, "Удалено: $count")
+            // Pre-calculate eviction: free space in trash before the loop
+            val nonSafPaths = paths.filter { !it.startsWith("content://") }
+            var totalEvicted = 0
+            if (nonSafPaths.isNotEmpty()) {
+                val maxMb = preferences.trashMaxSizeMb
+                if (maxMb > 0) {
+                    val incomingSize = nonSafPaths.sumOf { p ->
+                        val f = File(p)
+                        if (f.isDirectory) f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                        else f.length()
                     }
-                    .onFailure { e ->
-                        _uiState.update {
-                            it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE, isComplete = true, error = e.message))
-                        }
+                    val currentTrashSize = trashRepository.getTrashSize()
+                    val maxBytes = maxMb.toLong() * 1024 * 1024
+                    val needed = (currentTrashSize + incomingSize) - maxBytes
+                    if (needed > 0) {
+                        totalEvicted = trashRepository.evictToFitSize(maxBytes - incomingSize)
                     }
-            } else {
-                moveToTrashUseCase(paths)
-                    .onSuccess { result ->
-                        _uiState.update {
-                            it.copy(
-                                operationProgress = OperationProgress(
-                                    result.movedCount, total, "", OperationType.DELETE, isComplete = true
-                                )
-                            )
-                        }
-                        if (result.evictedCount > 0) {
-                            _toastMessage.tryEmit(
-                                "Автоудалено ${result.evictedCount} старых файлов из корзины для освобождения места"
-                            )
-                        }
-                        updateTrashSizeInfo()
-                        showStatusMessage(activeId, "В корзине: ${result.movedCount}")
-                    }
-                    .onFailure { e ->
-                        _uiState.update {
-                            it.copy(
-                                operationProgress = OperationProgress(
-                                    0, total, "", OperationType.DELETE, isComplete = true, error = e.message
-                                )
-                            )
-                        }
-                        _toastMessage.tryEmit("Ошибка удаления: ${e.message}")
-                    }
+                }
             }
 
-            delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
+            var completed = 0
+            var lastError: String? = null
+            for ((index, path) in paths.withIndex()) {
+                val isSaf = path.startsWith("content://")
+                val fileName = if (isSaf) {
+                    Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
+                } else {
+                    File(path).name
+                }
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.DELETE))
+                }
+                try {
+                    if (isSaf) {
+                        fileRepository.deleteFiles(listOf(path)).onSuccess { completed++ }
+                    } else {
+                        trashRepository.moveToTrash(listOf(path))
+                            .onSuccess { count -> completed += count }
+                            .onFailure { e -> lastError = e.message }
+                    }
+                } catch (e: Exception) {
+                    lastError = e.message
+                }
+            }
+
+            if (totalEvicted > 0) {
+                _toastMessage.tryEmit("Автоудалено $totalEvicted старых файлов из корзины")
+            }
+            updateTrashSizeInfo()
+            if (lastError != null && completed == 0) {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE, isComplete = true, error = lastError))
+                }
+                hapticManager.error()
+                _toastMessage.tryEmit("Ошибка удаления: $lastError")
+            } else {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.DELETE, isComplete = true))
+                }
+                hapticManager.success()
+                showStatusMessage(activeId, "В корзине: $completed")
+            }
+
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
+            }
             refreshBothIfSamePath(activeId)
         }
     }
@@ -979,8 +1054,13 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update {
             it.copy(operationProgress = OperationProgress(completed, total, "", type, isComplete = true))
         }
-        delay(2000)
-        _uiState.update { it.copy(operationProgress = null) }
+        // Cleanup progress after delay — non-blocking so callers proceed immediately
+        viewModelScope.launch {
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
     }
 
     // --- Cancel file operation ---
@@ -1029,8 +1109,12 @@ class ExplorerViewModel @Inject constructor(
 
         viewModelScope.launch {
             renameFileUseCase(path, newName)
-                .onSuccess { refreshBothIfSamePath(activeId) }
+                .onSuccess {
+                    hapticManager.success()
+                    refreshBothIfSamePath(activeId)
+                }
                 .onFailure { e ->
+                    hapticManager.error()
                     _toastMessage.tryEmit(e.message ?: "Ошибка переименования")
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
                 }
@@ -1118,9 +1202,11 @@ class ExplorerViewModel @Inject constructor(
             }
             try {
                 createZipUseCase(selectedPaths, outputPath)
+                hapticManager.success()
                 _toastMessage.tryEmit("Архив создан: $name")
                 refreshBothIfSamePath(activeId)
             } catch (e: Exception) {
+                hapticManager.error()
                 _toastMessage.tryEmit("Ошибка создания архива: ${e.message}")
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка ZIP: ${e.message}")
             }
@@ -1229,6 +1315,7 @@ class ExplorerViewModel @Inject constructor(
             preferences.addFavorite(path)
         }
         _uiState.update { it.copy(favorites = preferences.getFavorites()) }
+        updateWidget()
     }
 
     fun removeFavorite(path: String) {
@@ -1239,12 +1326,14 @@ class ExplorerViewModel @Inject constructor(
     // --- Drawer ---
 
     fun toggleDrawer() {
+        val opening = !_uiState.value.showDrawer
         _uiState.update {
             it.copy(
                 showDrawer = !it.showDrawer,
                 showShelf = false // close shelf when opening drawer
             )
         }
+        if (opening) updateTrashSizeInfo()
     }
 
     fun dismissDrawer() {
@@ -1621,24 +1710,32 @@ class ExplorerViewModel @Inject constructor(
     ) {
         val total = paths.size
         viewModelScope.launch {
+            var completed = 0
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
             }
-            fileRepository.moveFilesWithResolutions(paths, destinationDir, decisions)
-                .onSuccess { count ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(count, total, "", OperationType.MOVE, isComplete = true))
-                    }
-                    refreshPanel(sourcePanelId)
-                    refreshPanel(targetPanelId)
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.MOVE))
                 }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE, isComplete = true, error = e.message))
-                    }
+                val resolution = decisions[path] ?: ConflictResolution.RENAME
+                fileRepository.moveFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.MOVE, isComplete = true))
+            }
+            refreshPanel(sourcePanelId)
+            refreshPanel(targetPanelId)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
                 }
-            delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
+            }
         }
     }
 
@@ -1717,6 +1814,14 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             delay(5000)
             updatePanel(panelId) { it.copy(statusMessage = null) }
+        }
+    }
+
+    private fun extractFileName(path: String): String {
+        return if (path.startsWith("content://")) {
+            Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
+        } else {
+            path.substringAfterLast('/')
         }
     }
 
@@ -1838,6 +1943,65 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    // --- APK Install ---
+
+    fun showApkInstallDialog(entry: FileEntry) {
+        _uiState.update {
+            it.copy(dialogState = DialogState.ApkInstallDialog(entry = entry))
+        }
+        viewModelScope.launch {
+            loadApkInstallInfoUseCase(entry)
+                .onSuccess { info ->
+                    val current = _uiState.value.dialogState
+                    if (current is DialogState.ApkInstallDialog && current.entry.path == entry.path) {
+                        _uiState.update {
+                            it.copy(dialogState = current.copy(apkInfo = info, isLoading = false))
+                        }
+                    }
+                }
+                .onFailure { e ->
+                    val current = _uiState.value.dialogState
+                    if (current is DialogState.ApkInstallDialog && current.entry.path == entry.path) {
+                        _uiState.update {
+                            it.copy(dialogState = current.copy(
+                                isLoading = false,
+                                error = e.message ?: "Ошибка анализа APK"
+                            ))
+                        }
+                    }
+                }
+        }
+    }
+
+    fun installApk(entry: FileEntry) {
+        dismissDialog()
+        try {
+            val uri = if (entry.isContentUri) {
+                Uri.parse(entry.path)
+            } else {
+                androidx.core.content.FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    File(entry.path)
+                )
+            }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(intent)
+        } catch (_: Exception) {
+            _toastMessage.tryEmit("Не удалось открыть установщик")
+        }
+    }
+
+    // --- App Manager ---
+
+    fun openAppManager() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenAppManager)
+    }
+
     // --- Storage Analysis ---
 
     fun openStorageAnalysis() {
@@ -1883,5 +2047,300 @@ class ExplorerViewModel @Inject constructor(
         if (selected.size == 1 && !selected.first().isDirectory) {
             openWithExternalApp(selected.first())
         }
+    }
+
+    fun openSettings() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenSettings)
+    }
+
+    // --- Force Delete ---
+
+    fun requestForceDelete() {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.selectedPaths.toList()
+        if (selected.isEmpty()) {
+            _toastMessage.tryEmit("Сначала выделите файлы или папки")
+            return
+        }
+        val names = panel.files
+            .filter { it.path in panel.selectedPaths }
+            .map { it.name }
+        _uiState.update {
+            it.copy(dialogState = DialogState.ForceDeleteConfirm(selected, names))
+        }
+    }
+
+    fun confirmForceDelete(paths: List<String>) {
+        dismissDialog()
+        val activeId = _uiState.value.activePanel
+        clearSelection(activeId)
+        val total = paths.size
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
+            }
+            forceDeleteUseCase(paths) { current, fileName ->
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(current, total, fileName, OperationType.DELETE))
+                }
+            }
+                .onSuccess { count ->
+                    hapticManager.success()
+                    _toastMessage.tryEmit("Удалено навсегда: $count")
+                }
+                .onFailure { e ->
+                    hapticManager.error()
+                    _toastMessage.tryEmit("Ошибка: ${e.message}")
+                }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(total, total, "", OperationType.DELETE, isComplete = true))
+            }
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
+            }
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+        }
+    }
+
+    // --- Empty Folders ---
+
+    fun findEmptyFolders() {
+        val activeId = _uiState.value.activePanel
+        val path = getPanel(activeId).currentPath
+        if (path.startsWith("content://")) {
+            _toastMessage.tryEmit("Недоступно для SAF-хранилищ")
+            return
+        }
+        _uiState.update {
+            it.copy(dialogState = DialogState.EmptyFolderCleanup(isLoading = true, isRecursive = true))
+        }
+        viewModelScope.launch {
+            findEmptyFoldersUseCase(path, recursive = true).collect { folders ->
+                _uiState.update {
+                    it.copy(dialogState = DialogState.EmptyFolderCleanup(
+                        folders = folders,
+                        isRecursive = true,
+                        selectedPaths = folders.toSet(),
+                        isLoading = false
+                    ))
+                }
+            }
+        }
+    }
+
+    fun toggleEmptyFoldersRecursive(recursive: Boolean) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.EmptyFolderCleanup) return
+        val activeId = _uiState.value.activePanel
+        val path = getPanel(activeId).currentPath
+        _uiState.update {
+            it.copy(dialogState = dialog.copy(isLoading = true, isRecursive = recursive))
+        }
+        viewModelScope.launch {
+            findEmptyFoldersUseCase(path, recursive = recursive).collect { folders ->
+                _uiState.update {
+                    it.copy(dialogState = DialogState.EmptyFolderCleanup(
+                        folders = folders,
+                        isRecursive = recursive,
+                        selectedPaths = folders.toSet(),
+                        isLoading = false
+                    ))
+                }
+            }
+        }
+    }
+
+    fun toggleEmptyFolderSelected(path: String) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.EmptyFolderCleanup) return
+        val newSelected = dialog.selectedPaths.toMutableSet()
+        if (path in newSelected) newSelected.remove(path) else newSelected.add(path)
+        _uiState.update { it.copy(dialogState = dialog.copy(selectedPaths = newSelected)) }
+    }
+
+    fun selectAllEmptyFolders() {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.EmptyFolderCleanup) return
+        val newSelected = if (dialog.selectedPaths.size == dialog.folders.size) {
+            emptySet()
+        } else {
+            dialog.folders.toSet()
+        }
+        _uiState.update { it.copy(dialogState = dialog.copy(selectedPaths = newSelected)) }
+    }
+
+    fun deleteEmptyFolders() {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.EmptyFolderCleanup) return
+        val paths = dialog.selectedPaths.toList()
+        if (paths.isEmpty()) return
+        dismissDialog()
+
+        viewModelScope.launch {
+            moveToTrashUseCase(paths)
+                .onSuccess { result ->
+                    hapticManager.success()
+                    _toastMessage.tryEmit("Удалено пустых папок: ${result.movedCount}")
+                    updateTrashSizeInfo()
+                }
+                .onFailure { e ->
+                    hapticManager.error()
+                    _toastMessage.tryEmit("Ошибка: ${e.message}")
+                }
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+        }
+    }
+
+    // --- Folder Size Calculation ---
+
+    fun getSelectedTotalSizeWithFolders(): Pair<Long, Boolean> {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        var total = 0L
+        var calculating = false
+        for (entry in selected) {
+            if (entry.isDirectory) {
+                val cached = state.folderSizeCache[entry.path]
+                if (cached != null) {
+                    total += cached
+                } else {
+                    calculating = true
+                    // Launch calculation if not already running
+                    if (!folderSizeJobs.containsKey(entry.path)) {
+                        calculateFolderSize(entry.path)
+                    }
+                }
+            } else {
+                total += entry.size
+            }
+        }
+        return total to calculating
+    }
+
+    private fun calculateFolderSize(folderPath: String) {
+        val job = viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val size = File(folderPath).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                _uiState.update { state ->
+                    state.copy(folderSizeCache = state.folderSizeCache + (folderPath to size))
+                }
+            }
+        }
+        folderSizeJobs[folderPath] = job
+        job.invokeOnCompletion { folderSizeJobs.remove(folderPath) }
+    }
+
+    fun clearFolderSizeCache() {
+        folderSizeJobs.values.forEach { it.cancel() }
+        folderSizeJobs.clear()
+        _uiState.update { it.copy(folderSizeCache = emptyMap()) }
+    }
+
+    // --- Bookmarks ---
+
+    fun showBookmarkPopup() {
+        _uiState.update {
+            it.copy(
+                showBookmarkPopup = true,
+                bookmarks = preferences.getBookmarks()
+            )
+        }
+    }
+
+    fun dismissBookmarkPopup() {
+        _uiState.update { it.copy(showBookmarkPopup = false) }
+    }
+
+    fun navigateToBookmark(slot: Int) {
+        val path = _uiState.value.bookmarks[slot] ?: return
+        dismissBookmarkPopup()
+        val activeId = _uiState.value.activePanel
+        navigateTo(activeId, path)
+        hapticManager.tick()
+    }
+
+    fun saveBookmark(slot: Int) {
+        val activeId = _uiState.value.activePanel
+        val path = getPanel(activeId).currentPath
+        preferences.setBookmark(slot, path)
+        _uiState.update { it.copy(bookmarks = preferences.getBookmarks()) }
+        hapticManager.success()
+        _toastMessage.tryEmit("Закладка $slot сохранена")
+    }
+
+    // --- Tools popup ---
+
+    fun showToolsPopup() {
+        _uiState.update { it.copy(showToolsPopup = true) }
+    }
+
+    fun dismissToolsPopup() {
+        _uiState.update { it.copy(showToolsPopup = false) }
+    }
+
+    fun onToolSelected(index: Int) {
+        dismissToolsPopup()
+        when (index) {
+            0 -> showTrash()
+            1 -> openStorageAnalysis()
+            2 -> openDuplicateDetector()
+            3 -> openAppManager()
+            4 -> openLastMedia()
+            5 -> openLastDocument()
+        }
+    }
+
+    private fun openLastMedia() {
+        val path = preferences.lastMediaFile
+        if (path == null || !File(path).exists()) {
+            _toastMessage.tryEmit("Нет недавних")
+            return
+        }
+        val file = File(path)
+        PlaylistHolder.items = listOf(
+            PlaylistHolder.PlaylistItem(
+                filePath = path,
+                fileName = file.name,
+                fileType = file.name.substringAfterLast('.', "").lowercase().let {
+                    when (it) {
+                        "mp4", "mkv", "avi", "webm", "mov", "3gp" -> "video"
+                        else -> "audio"
+                    }
+                }
+            )
+        )
+        PlaylistHolder.startIndex = 0
+        _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(0))
+    }
+
+    private fun openLastDocument() {
+        val path = preferences.lastDocumentFile
+        if (path == null || !File(path).exists()) {
+            _toastMessage.tryEmit("Нет недавних")
+            return
+        }
+        val file = File(path)
+        _navigationEvent.tryEmit(NavigationEvent.OpenPdfReader(path, file.name))
+    }
+
+    // --- Widget update ---
+
+    fun updateWidget() {
+        // Widget reads from SharedPreferences directly, just trigger update
+        try {
+            val intent = Intent("android.appwidget.action.APPWIDGET_UPDATE")
+            intent.setPackage(appContext.packageName)
+            appContext.sendBroadcast(intent)
+        } catch (_: Exception) { }
     }
 }

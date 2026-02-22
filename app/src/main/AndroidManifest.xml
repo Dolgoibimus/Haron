@@ -47,6 +47,16 @@
     <!-- Camera (for QR code scanning) -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Vibration -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- APK Installation -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- App Manager: see all installed packages (Android 11+) -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
         android:name=".HaronApp"
         android:allowBackup="true"
@@ -94,6 +104,16 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <receiver
+            android:name=".widget.FavoriteFoldersWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/favorite_folders_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

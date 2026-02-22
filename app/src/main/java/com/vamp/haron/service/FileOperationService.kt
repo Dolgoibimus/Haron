@@ -123,15 +123,20 @@ class FileOperationService : Service() {
                         val destDir = File(destinationDir)
                         val destFile = File(destDir, fileName)
                         val dest = resolveFileConflict(destFile, conflictResolution, destDir, fileName) ?: continue
+                        // Guard: cannot copy/move folder into itself
+                        if (src.isDirectory && dest.absolutePath.startsWith(src.absolutePath + File.separator)) {
+                            EcosystemLogger.e(HaronConstants.TAG, "Cannot copy folder into itself: ${src.path} → ${dest.path}")
+                            continue
+                        }
                         if (isMove) {
                             val moved = src.renameTo(dest)
                             if (!moved) {
-                                if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
+                                if (src.isDirectory) safeCopyDirectory(src, dest)
                                 else src.copyTo(dest, overwrite = false)
                                 src.deleteRecursively()
                             }
                         } else {
-                            if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
+                            if (src.isDirectory) safeCopyDirectory(src, dest)
                             else src.copyTo(dest, overwrite = false)
                         }
                         completed++
@@ -335,6 +340,21 @@ class FileOperationService : Service() {
             .build()
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID + 1, notification)
+    }
+
+    /** Snapshot-based directory copy — avoids infinite recursion */
+    private fun safeCopyDirectory(src: File, dest: File) {
+        val snapshot = src.walkTopDown().toList()
+        for (file in snapshot) {
+            val relPath = file.toRelativeString(src)
+            val dstFile = File(dest, relPath)
+            if (file.isDirectory) {
+                dstFile.mkdirs()
+            } else {
+                dstFile.parentFile?.mkdirs()
+                file.copyTo(dstFile, overwrite = false)
+            }
+        }
     }
 
     private fun resolveConflict(destDir: File, name: String): File {

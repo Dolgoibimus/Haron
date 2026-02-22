@@ -108,6 +108,7 @@ fun QuickPreviewDialog(
     onOpenGallery: (() -> Unit)? = null,
     onOpenPdf: (() -> Unit)? = null,
     onOpenArchive: (() -> Unit)? = null,
+    onInstallApk: (() -> Unit)? = null,
     adjacentFiles: List<FileEntry> = emptyList(),
     currentFileIndex: Int = 0,
     onFileChanged: (Int) -> Unit = {},
@@ -328,8 +329,9 @@ fun QuickPreviewDialog(
                 val isArchive = previewData is PreviewData.ArchivePreview
                 val isText = previewData is PreviewData.TextPreview
                 val isDocument = isText && entry.iconRes() == "document"
+                val isApk = previewData is PreviewData.ApkPreview
                 val isEditableText = isText && onEdit != null && entry.iconRes() in listOf("text", "code")
-                val hasAction = isMedia || isImage || isPdf || isArchive || isDocument || isEditableText
+                val hasAction = isMedia || isImage || isPdf || isArchive || isDocument || isEditableText || isApk
 
                 if (hasAction) {
                     Spacer(Modifier.height(4.dp))
@@ -394,6 +396,16 @@ fun QuickPreviewDialog(
                                 Icon(Icons.Filled.Edit, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Редактировать")
+                            }
+                        }
+                        isApk && onInstallApk != null -> {
+                            Button(
+                                onClick = onInstallApk,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Установить")
                             }
                         }
                     }

@@ -17,7 +17,9 @@ import com.vamp.haron.presentation.gallery.GalleryScreen
 import com.vamp.haron.presentation.pdf.PdfReaderScreen
 import com.vamp.haron.presentation.permission.PermissionScreen
 import com.vamp.haron.presentation.player.MediaPlayerScreen
+import com.vamp.haron.presentation.appmanager.AppManagerScreen
 import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
+import com.vamp.haron.presentation.settings.SettingsScreen
 import com.vamp.haron.presentation.storage.StorageAnalysisScreen
 
 object HaronRoutes {
@@ -35,6 +37,8 @@ object HaronRoutes {
     const val ARCHIVE_VIEWER_ROUTE = "archive_viewer?filePath={filePath}&fileName={fileName}"
     const val STORAGE_ANALYSIS = "storage_analysis"
     const val DUPLICATE_DETECTOR = "duplicate_detector"
+    const val APP_MANAGER = "app_manager"
+    const val SETTINGS = "settings"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -58,7 +62,7 @@ object HaronRoutes {
 }
 
 @Composable
-fun HaronNavigation(modifier: Modifier = Modifier) {
+fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val startDestination = if (hasStoragePermission(context)) {
@@ -83,6 +87,7 @@ fun HaronNavigation(modifier: Modifier = Modifier) {
         }
         composable(HaronRoutes.EXPLORER) {
             ExplorerScreen(
+                initialNavigatePath = navigateToPath,
                 onOpenMediaPlayer = { startIndex ->
                     navController.navigate(HaronRoutes.mediaPlayer(startIndex))
                 },
@@ -103,11 +108,27 @@ fun HaronNavigation(modifier: Modifier = Modifier) {
                 },
                 onOpenDuplicateDetector = {
                     navController.navigate(HaronRoutes.DUPLICATE_DETECTOR)
+                },
+                onOpenAppManager = {
+                    navController.navigate(HaronRoutes.APP_MANAGER)
+                },
+                onOpenSettings = {
+                    navController.navigate(HaronRoutes.SETTINGS)
                 }
             )
         }
         composable(HaronRoutes.STORAGE_ANALYSIS) {
             StorageAnalysisScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.APP_MANAGER) {
+            AppManagerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.SETTINGS) {
+            SettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

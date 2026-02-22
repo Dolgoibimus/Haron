@@ -195,8 +195,9 @@ class FileRepositoryImpl @Inject constructor(
                             resolution == ConflictResolution.SKIP -> continue
                             else -> continue
                         }
-                        if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
-                        else src.copyTo(dest, overwrite = false)
+                        val isReplace = resolution == ConflictResolution.REPLACE
+                        if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
+                        else src.copyTo(dest, overwrite = isReplace)
                         count++
                     }
                     isSrcSaf && !isDstSaf -> {
@@ -299,10 +300,15 @@ class FileRepositoryImpl @Inject constructor(
                             resolution == ConflictResolution.SKIP -> continue
                             else -> continue
                         }
+                        // Guard: cannot move folder into itself
+                        if (src.isDirectory && dest.absolutePath.startsWith(src.absolutePath + File.separator)) {
+                            continue
+                        }
                         val moved = src.renameTo(dest)
                         if (!moved) {
-                            if (src.isDirectory) src.copyRecursively(dest, overwrite = false)
-                            else src.copyTo(dest, overwrite = false)
+                            val isReplace = resolution == ConflictResolution.REPLACE
+                            if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
+                            else src.copyTo(dest, overwrite = isReplace)
                             src.deleteRecursively()
                         }
                         count++
@@ -474,6 +480,31 @@ class FileRepositoryImpl @Inject constructor(
             counter++
         }
         return target
+    }
+
+    /**
+     * Safe directory copy: takes a snapshot of the file tree BEFORE copying
+     * to avoid infinite recursion when dest is inside src.
+     * Also rejects copying a folder into itself.
+     */
+    private fun safeCopyDirectory(src: File, dest: File, overwrite: Boolean): Boolean {
+        val srcAbsolute = src.absolutePath + File.separator
+        if (dest.absolutePath.startsWith(srcAbsolute)) {
+            throw IllegalArgumentException("Cannot copy folder into itself")
+        }
+        // Snapshot the tree BEFORE any writes
+        val snapshot = src.walkTopDown().toList()
+        for (file in snapshot) {
+            val relPath = file.toRelativeString(src)
+            val dstFile = File(dest, relPath)
+            if (file.isDirectory) {
+                dstFile.mkdirs()
+            } else {
+                dstFile.parentFile?.mkdirs()
+                file.copyTo(dstFile, overwrite = overwrite)
+            }
+        }
+        return true
     }
 
     private fun generateSafRename(parentUri: Uri, name: String): String {

@@ -137,6 +137,8 @@ fun FilePanel(
     onRequestSafAccess: () -> Unit = {},
     safVolumeLabel: String = "",
     onOpenStorageAnalysis: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onCloseSearch: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
     initialScrollIndex: Int = 0,
     modifier: Modifier = Modifier
@@ -149,7 +151,7 @@ fun FilePanel(
     val borderWidth = if (isDragTarget) 3.dp else if (isActive) 2.dp else 1.dp
 
     var showOverflow by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
+    val showSearch = state.isSearchActive
 
     // Playback service state polling
     var serviceRunning by remember { mutableStateOf(false) }
@@ -216,10 +218,7 @@ fun FilePanel(
                 when {
                     showSearch -> {
                         IconButton(
-                            onClick = {
-                                showSearch = false
-                                onClearSearch()
-                            },
+                            onClick = { onCloseSearch() },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
@@ -426,7 +425,7 @@ fun FilePanel(
                                 DropdownMenuItem(
                                     text = { Text("Поиск") },
                                     onClick = {
-                                        showSearch = true
+                                        onOpenSearch()
                                         showCollapsed = false
                                     },
                                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }
@@ -518,7 +517,7 @@ fun FilePanel(
                         }
                         IconButton(
                             onClick = {
-                                showSearch = true
+                                onOpenSearch()
                                 onPanelTap()
                             },
                             modifier = Modifier.size(32.dp)

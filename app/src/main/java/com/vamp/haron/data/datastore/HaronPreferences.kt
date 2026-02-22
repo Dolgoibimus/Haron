@@ -213,6 +213,87 @@ class HaronPreferences @Inject constructor(
         }
     }
 
+    // --- Haptic ---
+
+    var hapticEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HAPTIC_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_HAPTIC_ENABLED, value).apply()
+
+    // --- Night mode ---
+
+    var nightModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_NIGHT_MODE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_NIGHT_MODE_ENABLED, value).apply()
+
+    var nightModeStartHour: Int
+        get() = prefs.getInt(KEY_NIGHT_MODE_START_HOUR, 22)
+        set(value) = prefs.edit().putInt(KEY_NIGHT_MODE_START_HOUR, value).apply()
+
+    var nightModeStartMinute: Int
+        get() = prefs.getInt(KEY_NIGHT_MODE_START_MINUTE, 0)
+        set(value) = prefs.edit().putInt(KEY_NIGHT_MODE_START_MINUTE, value).apply()
+
+    var nightModeEndHour: Int
+        get() = prefs.getInt(KEY_NIGHT_MODE_END_HOUR, 7)
+        set(value) = prefs.edit().putInt(KEY_NIGHT_MODE_END_HOUR, value).apply()
+
+    var nightModeEndMinute: Int
+        get() = prefs.getInt(KEY_NIGHT_MODE_END_MINUTE, 0)
+        set(value) = prefs.edit().putInt(KEY_NIGHT_MODE_END_MINUTE, value).apply()
+
+    // --- Font / Icon scaling ---
+
+    var fontScale: Float
+        get() = prefs.getFloat(KEY_FONT_SCALE, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_FONT_SCALE, value.coerceIn(0.6f, 1.4f)).apply()
+
+    var iconScale: Float
+        get() = prefs.getFloat(KEY_ICON_SCALE, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_ICON_SCALE, value.coerceIn(0.6f, 1.4f)).apply()
+
+    // --- Last opened files (for tools pie menu) ---
+
+    var lastMediaFile: String?
+        get() = prefs.getString(KEY_LAST_MEDIA_FILE, null)
+        set(value) = prefs.edit().putString(KEY_LAST_MEDIA_FILE, value).apply()
+
+    var lastDocumentFile: String?
+        get() = prefs.getString(KEY_LAST_DOCUMENT_FILE, null)
+        set(value) = prefs.edit().putString(KEY_LAST_DOCUMENT_FILE, value).apply()
+
+    // --- Bookmarks (digit slots 1-9) ---
+
+    fun getBookmarks(): Map<Int, String> {
+        val json = prefs.getString(KEY_BOOKMARKS, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(json)
+            val map = mutableMapOf<Int, String>()
+            obj.keys().forEach { key ->
+                val slot = key.toIntOrNull()
+                if (slot != null) map[slot] = obj.getString(key)
+            }
+            map
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun setBookmark(slot: Int, path: String) {
+        val map = getBookmarks().toMutableMap()
+        map[slot] = path
+        val obj = JSONObject()
+        map.forEach { (k, v) -> obj.put(k.toString(), v) }
+        prefs.edit().putString(KEY_BOOKMARKS, obj.toString()).apply()
+    }
+
+    fun removeBookmark(slot: Int) {
+        val map = getBookmarks().toMutableMap()
+        map.remove(slot)
+        val obj = JSONObject()
+        map.forEach { (k, v) -> obj.put(k.toString(), v) }
+        prefs.edit().putString(KEY_BOOKMARKS, obj.toString()).apply()
+    }
+
     // --- Panel paths ---
 
     var topPanelPath: String
@@ -238,6 +319,17 @@ class HaronPreferences @Inject constructor(
         const val KEY_BOTTOM_PANEL_PATH = "bottom_panel_path"
         const val KEY_ORIGINAL_OVERRIDES = "original_overrides"
         const val KEY_ORIGINAL_FOLDERS = "original_folders"
+        const val KEY_HAPTIC_ENABLED = "haptic_enabled"
+        const val KEY_NIGHT_MODE_ENABLED = "night_mode_enabled"
+        const val KEY_NIGHT_MODE_START_HOUR = "night_mode_start_hour"
+        const val KEY_NIGHT_MODE_START_MINUTE = "night_mode_start_minute"
+        const val KEY_NIGHT_MODE_END_HOUR = "night_mode_end_hour"
+        const val KEY_NIGHT_MODE_END_MINUTE = "night_mode_end_minute"
+        const val KEY_FONT_SCALE = "font_scale"
+        const val KEY_ICON_SCALE = "icon_scale"
+        const val KEY_BOOKMARKS = "bookmarks"
+        const val KEY_LAST_MEDIA_FILE = "last_media_file"
+        const val KEY_LAST_DOCUMENT_FILE = "last_document_file"
         const val MAX_RECENT = 5
     }
 }
