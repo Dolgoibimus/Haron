@@ -238,6 +238,6 @@ class HaronPreferences @Inject constructor(
         const val KEY_BOTTOM_PANEL_PATH = "bottom_panel_path"
         const val KEY_ORIGINAL_OVERRIDES = "original_overrides"
         const val KEY_ORIGINAL_FOLDERS = "original_folders"
-        const val MAX_RECENT = 10
+        const val MAX_RECENT = 5
     }
 }

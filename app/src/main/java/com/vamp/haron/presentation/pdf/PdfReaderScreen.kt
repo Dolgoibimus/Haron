@@ -1,5 +1,6 @@
 package com.vamp.haron.presentation.pdf
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -22,8 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -63,14 +66,281 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.apache.poi.hwpf.HWPFDocument
+import org.apache.poi.hwpf.extractor.WordExtractor
 import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipFile
 
 private const val MAX_PAGE_WIDTH = 2048
 private const val CACHE_SIZE = 5
 
+private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "odt", "rtf")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfReaderScreen(
+    filePath: String,
+    fileName: String,
+    onBack: () -> Unit
+) {
+    val extension = fileName.substringAfterLast('.', "").lowercase()
+    val isDocumentMode = extension in DOCUMENT_EXTENSIONS
+
+    if (isDocumentMode) {
+        DocumentReaderContent(filePath, fileName, extension, onBack)
+    } else {
+        PdfReaderContent(filePath, fileName, onBack)
+    }
+}
+
+// --- Document reader (DOC/DOCX/ODT/RTF) ---
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DocumentReaderContent(
+    filePath: String,
+    fileName: String,
+    extension: String,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var documentText by remember { mutableStateOf<String?>(null) }
+    var lineCount by remember { mutableIntStateOf(0) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // Zoom state
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+
+    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+        if (newScale > 1f) {
+            val maxOff = (newScale - 1f) * 500f
+            offsetX = (offsetX + panChange.x).coerceIn(-maxOff, maxOff)
+            offsetY = (offsetY + panChange.y).coerceIn(-maxOff, maxOff)
+        } else {
+            offsetX = 0f
+            offsetY = 0f
+        }
+        scale = newScale
+    }
+
+    // Extract text
+    LaunchedEffect(filePath) {
+        withContext(Dispatchers.IO) {
+            try {
+                val text = extractDocumentText(context, filePath, extension)
+                documentText = text
+                lineCount = text.lines().size
+            } catch (e: Exception) {
+                error = e.message ?: "Не удалось прочитать документ"
+            }
+            isLoading = false
+        }
+    }
+
+    if (error != null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(error!!, color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onBack) { Text("Назад") }
+            }
+        }
+        return
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = fileName,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isLoading) "Загрузка…" else "Строк: $lineCount",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    ) { padding ->
+        if (isLoading) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+
+        val text = documentText ?: return@Scaffold
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1.1f) {
+                                scale = 1f; offsetX = 0f; offsetY = 0f
+                            } else {
+                                scale = 2f
+                            }
+                        }
+                    )
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .transformable(state = transformableState)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY
+                    )
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp)
+                )
+            }
+        }
+    }
+}
+
+// --- Text extraction helpers ---
+
+private fun extractDocumentText(context: Context, filePath: String, extension: String): String {
+    return when (extension) {
+        "docx" -> extractDocx(context, filePath)
+        "odt" -> extractOdt(context, filePath)
+        "doc" -> extractDoc(context, filePath)
+        "rtf" -> extractRtf(context, filePath)
+        else -> throw IllegalArgumentException("Неподдерживаемый формат: $extension")
+    }
+}
+
+private fun extractDocx(context: Context, filePath: String): String {
+    val file = resolveFile(context, filePath, "docx")
+    val isTemp = filePath.startsWith("content://")
+    try {
+        ZipFile(file).use { zip ->
+            val xmlEntry = zip.getEntry("word/document.xml")
+                ?: throw IllegalStateException("Не удалось прочитать документ")
+            val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
+            return xml.split("</w:p>").map { para ->
+                Regex("<w:t[^>]*>([^<]*)</w:t>").findAll(para)
+                    .map { it.groupValues[1] }
+                    .joinToString("")
+            }.filter { it.isNotBlank() }.joinToString("\n")
+        }
+    } finally {
+        if (isTemp) file.delete()
+    }
+}
+
+private fun extractOdt(context: Context, filePath: String): String {
+    val file = resolveFile(context, filePath, "odt")
+    val isTemp = filePath.startsWith("content://")
+    try {
+        ZipFile(file).use { zip ->
+            val xmlEntry = zip.getEntry("content.xml")
+                ?: throw IllegalStateException("Не удалось прочитать документ")
+            val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
+            return xml.split("</text:p>").map { para ->
+                para.replace(Regex("<[^>]+>"), "")
+            }.filter { it.isNotBlank() }.joinToString("\n")
+        }
+    } finally {
+        if (isTemp) file.delete()
+    }
+}
+
+private fun extractDoc(context: Context, filePath: String): String {
+    val stream = if (filePath.startsWith("content://")) {
+        context.contentResolver.openInputStream(Uri.parse(filePath))
+            ?: throw IllegalStateException("Не удалось открыть файл")
+    } else {
+        File(filePath).inputStream()
+    }
+    return stream.use { input ->
+        val doc = HWPFDocument(input)
+        val extractor = WordExtractor(doc)
+        val text = extractor.text ?: ""
+        extractor.close()
+        doc.close()
+        text
+    }
+}
+
+private fun extractRtf(context: Context, filePath: String): String {
+    val raw = if (filePath.startsWith("content://")) {
+        context.contentResolver.openInputStream(Uri.parse(filePath))
+            ?.bufferedReader()?.readText()
+            ?: throw IllegalStateException("Не удалось открыть файл")
+    } else {
+        File(filePath).readText()
+    }
+    return raw
+        .replace(Regex("\\\\[a-z]+[\\d]*\\s?"), " ")
+        .replace(Regex("\\\\[{}\\\\]"), "")
+        .replace(Regex("[{}]"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+private fun resolveFile(context: Context, filePath: String, extension: String): File {
+    return if (filePath.startsWith("content://")) {
+        val tempFile = File(context.cacheDir, "doc_reader_${System.currentTimeMillis()}.$extension")
+        context.contentResolver.openInputStream(Uri.parse(filePath))?.use { input ->
+            FileOutputStream(tempFile).use { output ->
+                input.copyTo(output)
+            }
+        } ?: throw IllegalStateException("Не удалось открыть файл")
+        tempFile
+    } else {
+        File(filePath)
+    }
+}
+
+// --- PDF reader (existing logic) ---
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PdfReaderContent(
     filePath: String,
     fileName: String,
     onBack: () -> Unit

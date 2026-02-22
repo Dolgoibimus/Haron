@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,11 +121,7 @@ fun FileListItem(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onIconClick
-                        )
+                        .clickable(onClick = onIconClick)
                 ) {
                     val emptyFolderBorder = if (isEmptyFolder) Modifier.border(
                         width = 1.5.dp,
@@ -235,12 +230,8 @@ fun FileListItem(
 
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onIconClick
-                    ),
+                    .size(48.dp)
+                    .clickable(onClick = onIconClick),
                 contentAlignment = Alignment.Center
             ) {
                 val emptyFolderBorderList = if (isEmptyFolder) Modifier.border(

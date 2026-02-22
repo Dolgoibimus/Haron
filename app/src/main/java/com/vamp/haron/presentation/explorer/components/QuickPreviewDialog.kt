@@ -322,13 +322,16 @@ fun QuickPreviewDialog(
                     )
                 }
 
-                // Fullscreen buttons
+                // Action buttons (fullscreen / edit / open)
                 val isImage = previewData is PreviewData.ImagePreview
                 val isPdf = previewData is PreviewData.PdfPreview
                 val isArchive = previewData is PreviewData.ArchivePreview
-                val hasFullscreen = isMedia || isImage || isPdf || isArchive
+                val isText = previewData is PreviewData.TextPreview
+                val isDocument = isText && entry.iconRes() == "document"
+                val isEditableText = isText && onEdit != null && entry.iconRes() in listOf("text", "code")
+                val hasAction = isMedia || isImage || isPdf || isArchive || isDocument || isEditableText
 
-                if (hasFullscreen) {
+                if (hasAction) {
                     Spacer(Modifier.height(4.dp))
                     HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
@@ -371,6 +374,26 @@ fun QuickPreviewDialog(
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Открыть архив")
+                            }
+                        }
+                        isDocument && onOpenPdf != null -> {
+                            Button(
+                                onClick = onOpenPdf,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Открыть в читалке")
+                            }
+                        }
+                        isEditableText -> {
+                            Button(
+                                onClick = onEdit,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Edit, null, Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Редактировать")
                             }
                         }
                     }
@@ -557,19 +580,6 @@ private fun PreviewContentBlock(
                 }
                 is PreviewData.TextPreview -> {
                     TextPreviewContent(previewData)
-                    if (onEdit != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Button(onClick = onEdit) {
-                                Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Редактировать")
-                            }
-                        }
-                    }
                 }
                 is PreviewData.PdfPreview -> PdfPreviewContent(previewData)
                 is PreviewData.ArchivePreview -> ArchivePreviewContent(previewData)

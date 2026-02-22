@@ -5,7 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
+import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.GalleryHolder
+import com.vamp.haron.domain.model.NavigationEvent
+import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.usecase.DuplicateGroup
 import com.vamp.haron.domain.usecase.DuplicateScanProgress
 import com.vamp.haron.domain.usecase.FindDuplicatesUseCase
@@ -38,7 +42,10 @@ data class DuplicateDetectorState(
     val previewEntry: FileEntry? = null,
     val previewData: PreviewData? = null,
     val previewLoading: Boolean = false,
-    val previewError: String? = null
+    val previewError: String? = null,
+    val previewAdjacentFiles: List<FileEntry> = emptyList(),
+    val previewCurrentIndex: Int = 0,
+    val previewCache: Map<Int, PreviewData> = emptyMap()
 )
 
 @HiltViewModel
@@ -53,6 +60,9 @@ class DuplicateDetectorViewModel @Inject constructor(
 
     private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val toastMessage = _toastMessage.asSharedFlow()
+
+    private val _navigationEvent = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 1)
+    val navigationEvent = _navigationEvent.asSharedFlow()
 
     init {
         // Load persistent overrides and folders
@@ -221,7 +231,7 @@ class DuplicateDetectorViewModel @Inject constructor(
         preferences.saveOriginalFolders(_state.value.originalFolders)
     }
 
-    // --- Preview file (QuickPreview dialog) ---
+    // --- Preview file (QuickPreview dialog, full-featured like main screen) ---
 
     fun loadPreview(path: String) {
         val file = File(path)
@@ -229,23 +239,54 @@ class DuplicateDetectorViewModel @Inject constructor(
             _toastMessage.tryEmit("Файл не найден")
             return
         }
-        val entry = FileEntry(
-            name = file.name,
-            path = file.absolutePath,
-            isDirectory = false,
-            size = file.length(),
-            lastModified = file.lastModified(),
-            extension = file.extension.lowercase(),
-            isHidden = file.isHidden,
-            childCount = 0
-        )
+
+        // Build adjacent files list from the same duplicate group
+        val st = _state.value
+        val group = st.groups.find { g -> g.files.any { it.path == path } }
+        val adjacentEntries = if (group != null) {
+            group.files.map { f ->
+                val ff = File(f.path)
+                FileEntry(
+                    name = ff.name, path = ff.absolutePath, isDirectory = false,
+                    size = ff.length(), lastModified = ff.lastModified(),
+                    extension = ff.extension.lowercase(), isHidden = ff.isHidden, childCount = 0
+                )
+            }
+        } else {
+            listOf(
+                FileEntry(
+                    name = file.name, path = file.absolutePath, isDirectory = false,
+                    size = file.length(), lastModified = file.lastModified(),
+                    extension = file.extension.lowercase(), isHidden = file.isHidden, childCount = 0
+                )
+            )
+        }
+        val currentIndex = adjacentEntries.indexOfFirst { it.path == path }.coerceAtLeast(0)
+        val entry = adjacentEntries[currentIndex]
+
         _state.update {
-            it.copy(previewEntry = entry, previewData = null, previewLoading = true, previewError = null)
+            it.copy(
+                previewEntry = entry,
+                previewData = null,
+                previewLoading = true,
+                previewError = null,
+                previewAdjacentFiles = adjacentEntries,
+                previewCurrentIndex = currentIndex,
+                previewCache = emptyMap()
+            )
         }
         viewModelScope.launch {
             loadPreviewUseCase(entry)
                 .onSuccess { data ->
-                    _state.update { it.copy(previewData = data, previewLoading = false) }
+                    _state.update {
+                        it.copy(
+                            previewData = data,
+                            previewLoading = false,
+                            previewCache = it.previewCache + (currentIndex to data)
+                        )
+                    }
+                    preloadPreview(currentIndex - 1, adjacentEntries)
+                    preloadPreview(currentIndex + 1, adjacentEntries)
                 }
                 .onFailure { e ->
                     _state.update {
@@ -255,9 +296,131 @@ class DuplicateDetectorViewModel @Inject constructor(
         }
     }
 
+    fun onPreviewFileChanged(newIndex: Int) {
+        val st = _state.value
+        val files = st.previewAdjacentFiles
+        if (newIndex !in files.indices) return
+        val newEntry = files[newIndex]
+
+        // Check cache
+        val cached = st.previewCache[newIndex]
+        if (cached != null) {
+            _state.update {
+                it.copy(
+                    previewEntry = newEntry,
+                    previewData = cached,
+                    previewLoading = false,
+                    previewError = null,
+                    previewCurrentIndex = newIndex
+                )
+            }
+            preloadPreview(newIndex - 1, files)
+            preloadPreview(newIndex + 1, files)
+            return
+        }
+
+        _state.update {
+            it.copy(
+                previewEntry = newEntry,
+                previewData = null,
+                previewLoading = true,
+                previewError = null,
+                previewCurrentIndex = newIndex
+            )
+        }
+        viewModelScope.launch {
+            loadPreviewUseCase(newEntry)
+                .onSuccess { data ->
+                    val current = _state.value
+                    if (current.previewEntry?.path == newEntry.path) {
+                        _state.update {
+                            it.copy(
+                                previewData = data,
+                                previewLoading = false,
+                                previewCache = it.previewCache + (newIndex to data)
+                            )
+                        }
+                        preloadPreview(newIndex - 1, files)
+                        preloadPreview(newIndex + 1, files)
+                    }
+                }
+                .onFailure { e ->
+                    val current = _state.value
+                    if (current.previewEntry?.path == newEntry.path) {
+                        _state.update {
+                            it.copy(previewLoading = false, previewError = e.message ?: "Ошибка")
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun preloadPreview(index: Int, files: List<FileEntry>) {
+        if (index !in files.indices) return
+        if (index in _state.value.previewCache) return
+        viewModelScope.launch {
+            loadPreviewUseCase(files[index])
+                .onSuccess { data ->
+                    _state.update {
+                        it.copy(previewCache = it.previewCache + (index to data))
+                    }
+                }
+        }
+    }
+
+    fun buildPlaylistFromPreview(entry: FileEntry, adjacentFiles: List<FileEntry>, currentIndex: Int): Int {
+        val mediaFiles = adjacentFiles.filter { f ->
+            !f.isDirectory && f.iconRes() in listOf("video", "audio")
+        }
+        PlaylistHolder.items = mediaFiles.map { f ->
+            PlaylistHolder.PlaylistItem(filePath = f.path, fileName = f.name, fileType = f.iconRes())
+        }
+        val idx = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+        PlaylistHolder.startIndex = idx
+        return idx
+    }
+
+    fun buildGalleryFromPreview(entry: FileEntry, adjacentFiles: List<FileEntry>, currentIndex: Int): Int {
+        val imageFiles = adjacentFiles.filter { f ->
+            !f.isDirectory && f.iconRes() == "image"
+        }
+        GalleryHolder.items = imageFiles.map { f ->
+            GalleryHolder.GalleryItem(filePath = f.path, fileName = f.name, fileSize = f.size)
+        }
+        val idx = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+        GalleryHolder.startIndex = idx
+        return idx
+    }
+
+    /** Build playlist from all media files across all duplicate groups. Returns startIndex (0) or -1 if no media. */
+    fun buildPlaylistFromAllGroups(): Int {
+        val st = _state.value
+        val mediaFiles = st.groups.flatMap { group ->
+            group.files.filter { f ->
+                val ext = f.name.substringAfterLast('.', "").lowercase()
+                ext in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp", "3gpp", "ts", "m4v", "mts",
+                    "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus")
+            }
+        }.distinctBy { it.path }
+        if (mediaFiles.isEmpty()) {
+            _toastMessage.tryEmit("Нет медиафайлов среди дубликатов")
+            return -1
+        }
+        PlaylistHolder.items = mediaFiles.map { f ->
+            val ext = f.name.substringAfterLast('.', "").lowercase()
+            val type = if (ext in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp", "3gpp", "ts", "m4v", "mts")) "video" else "audio"
+            PlaylistHolder.PlaylistItem(filePath = f.path, fileName = f.name, fileType = type)
+        }
+        PlaylistHolder.startIndex = 0
+        return 0
+    }
+
     fun dismissPreview() {
         _state.update {
-            it.copy(previewEntry = null, previewData = null, previewLoading = false, previewError = null)
+            it.copy(
+                previewEntry = null, previewData = null, previewLoading = false, previewError = null,
+                previewAdjacentFiles = emptyList(), previewCurrentIndex = 0, previewCache = emptyMap()
+            )
         }
     }
 

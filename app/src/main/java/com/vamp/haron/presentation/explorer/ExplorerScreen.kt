@@ -662,7 +662,7 @@ fun ExplorerScreen(
                     onShowTrash = { viewModel.showTrash() },
                     onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                     onOpenDuplicateDetector = { viewModel.openDuplicateDetector() },
-                    onCycleTheme = { viewModel.cycleTheme() },
+                    onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer
                 )
             }

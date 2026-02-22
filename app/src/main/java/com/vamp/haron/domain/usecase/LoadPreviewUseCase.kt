@@ -520,13 +520,22 @@ class LoadPreviewUseCase @Inject constructor(
         } else {
             File(entry.path).inputStream()
         }
-        stream.use { input ->
-            val doc = HWPFDocument(input)
-            val extractor = WordExtractor(doc)
-            val text = extractor.text ?: ""
-            extractor.close()
-            doc.close()
-            return textToPreview(entry, text)
+        return try {
+            stream.use { input ->
+                val doc = HWPFDocument(input)
+                val extractor = WordExtractor(doc)
+                val text = extractor.text ?: ""
+                extractor.close()
+                doc.close()
+                textToPreview(entry, text)
+            }
+        } catch (e: Exception) {
+            PreviewData.UnsupportedPreview(
+                fileName = entry.name,
+                fileSize = entry.size,
+                lastModified = entry.lastModified,
+                mimeType = "doc"
+            )
         }
     }
 

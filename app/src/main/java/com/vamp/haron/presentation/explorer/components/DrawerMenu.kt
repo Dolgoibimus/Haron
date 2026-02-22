@@ -56,7 +56,7 @@ fun DrawerMenu(
     onShowTrash: () -> Unit,
     onOpenStorageAnalysis: () -> Unit,
     onOpenDuplicateDetector: () -> Unit,
-    onCycleTheme: () -> Unit,
+    onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -272,11 +272,11 @@ fun DrawerMenu(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ThemeButton("Системная", themeMode == "system", Icons.Filled.BrightnessAuto) { onCycleTheme() }
+                    ThemeButton("Системная", themeMode == "system", Icons.Filled.BrightnessAuto) { onSetTheme("system") }
                     Spacer(Modifier.width(8.dp))
-                    ThemeButton("Светлая", themeMode == "light", Icons.Filled.LightMode) { onCycleTheme() }
+                    ThemeButton("Светлая", themeMode == "light", Icons.Filled.LightMode) { onSetTheme("light") }
                     Spacer(Modifier.width(8.dp))
-                    ThemeButton("Тёмная", themeMode == "dark", Icons.Filled.DarkMode) { onCycleTheme() }
+                    ThemeButton("Тёмная", themeMode == "dark", Icons.Filled.DarkMode) { onSetTheme("dark") }
                 }
             }
 

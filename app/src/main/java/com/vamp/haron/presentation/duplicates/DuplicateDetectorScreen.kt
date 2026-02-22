@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Badge
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.usecase.DuplicateGroup
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 
@@ -72,6 +74,11 @@ import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 @Composable
 fun DuplicateDetectorScreen(
     onBack: () -> Unit,
+    onOpenMediaPlayer: (startIndex: Int) -> Unit = {},
+    onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenGallery: (startIndex: Int) -> Unit = {},
+    onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     viewModel: DuplicateDetectorViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -84,7 +91,22 @@ fun DuplicateDetectorScreen(
         }
     }
 
-    // QuickPreview dialog
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is NavigationEvent.OpenMediaPlayer -> onOpenMediaPlayer(event.startIndex)
+                is NavigationEvent.OpenTextEditor -> onOpenTextEditor(event.filePath, event.fileName)
+                is NavigationEvent.OpenGallery -> onOpenGallery(event.startIndex)
+                is NavigationEvent.OpenPdfReader -> onOpenPdfReader(event.filePath, event.fileName)
+                is NavigationEvent.OpenArchiveViewer -> onOpenArchiveViewer(event.filePath, event.fileName)
+                else -> {}
+            }
+        }
+    }
+
+    // QuickPreview dialog (full-featured like main screen)
+    // All callbacks are always provided — QuickPreviewDialog decides which button
+    // to show based on PreviewData type (TextPreview → Edit, ImagePreview → Gallery, etc.)
     val previewEntry = state.previewEntry
     if (previewEntry != null) {
         QuickPreviewDialog(
@@ -92,7 +114,33 @@ fun DuplicateDetectorScreen(
             previewData = state.previewData,
             isLoading = state.previewLoading,
             error = state.previewError,
-            onDismiss = { viewModel.dismissPreview() }
+            onDismiss = { viewModel.dismissPreview() },
+            onFullscreenPlay = { _ ->
+                viewModel.dismissPreview()
+                val idx = viewModel.buildPlaylistFromPreview(previewEntry, state.previewAdjacentFiles, state.previewCurrentIndex)
+                onOpenMediaPlayer(idx)
+            },
+            onEdit = {
+                viewModel.dismissPreview()
+                onOpenTextEditor(previewEntry.path, previewEntry.name)
+            },
+            onOpenGallery = {
+                viewModel.dismissPreview()
+                val idx = viewModel.buildGalleryFromPreview(previewEntry, state.previewAdjacentFiles, state.previewCurrentIndex)
+                onOpenGallery(idx)
+            },
+            onOpenPdf = {
+                viewModel.dismissPreview()
+                onOpenPdfReader(previewEntry.path, previewEntry.name)
+            },
+            onOpenArchive = {
+                viewModel.dismissPreview()
+                onOpenArchiveViewer(previewEntry.path, previewEntry.name)
+            },
+            adjacentFiles = state.previewAdjacentFiles,
+            currentFileIndex = state.previewCurrentIndex,
+            onFileChanged = { newIndex -> viewModel.onPreviewFileChanged(newIndex) },
+            previewCache = state.previewCache
         )
     }
 
@@ -117,6 +165,12 @@ fun DuplicateDetectorScreen(
                                 Icons.Filled.SelectAll,
                                 if (state.selectedPaths.isNotEmpty()) "Снять выделение" else "Выделить копии"
                             )
+                        }
+                        IconButton(onClick = {
+                            val idx = viewModel.buildPlaylistFromAllGroups()
+                            if (idx >= 0) onOpenMediaPlayer(idx)
+                        }) {
+                            Icon(Icons.Filled.PlayArrow, "Воспроизвести")
                         }
                         IconButton(onClick = { viewModel.startScan() }) {
                             Icon(Icons.Filled.Refresh, "Пересканировать")

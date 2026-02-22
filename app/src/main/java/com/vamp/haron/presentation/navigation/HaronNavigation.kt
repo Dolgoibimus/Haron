@@ -113,7 +113,22 @@ fun HaronNavigation(modifier: Modifier = Modifier) {
         }
         composable(HaronRoutes.DUPLICATE_DETECTOR) {
             DuplicateDetectorScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onOpenMediaPlayer = { startIndex ->
+                    navController.navigate(HaronRoutes.mediaPlayer(startIndex))
+                },
+                onOpenTextEditor = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.textEditor(filePath, fileName))
+                },
+                onOpenGallery = { startIndex ->
+                    navController.navigate(HaronRoutes.gallery(startIndex))
+                },
+                onOpenPdfReader = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.pdfReader(filePath, fileName))
+                },
+                onOpenArchiveViewer = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
+                }
             )
         }
         composable(

@@ -326,6 +326,11 @@ class ExplorerViewModel @Inject constructor(
                         NavigationEvent.OpenPdfReader(entry.path, entry.name)
                     )
                 }
+                "document" -> {
+                    _navigationEvent.tryEmit(
+                        NavigationEvent.OpenPdfReader(entry.path, entry.name)
+                    )
+                }
                 "archive" -> {
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenArchiveViewer(entry.path, entry.name)
@@ -495,8 +500,12 @@ class ExplorerViewModel @Inject constructor(
             "light" -> "dark"
             else -> "system"
         }
-        EcosystemPreferences.theme = next
-        _uiState.update { it.copy(themeMode = next) }
+        setTheme(next)
+    }
+
+    fun setTheme(theme: String) {
+        EcosystemPreferences.theme = theme
+        _uiState.update { it.copy(themeMode = theme) }
     }
 
     // --- SAF ---

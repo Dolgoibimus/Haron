@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowInsetsControllerCompat
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.haron.presentation.navigation.HaronNavigation
 import com.vamp.haron.ui.theme.HaronTheme
@@ -46,6 +49,14 @@ class MainActivity : ComponentActivity() {
                 "light" -> false
                 "dark" -> true
                 else -> isSystemDark
+            }
+
+            val view = LocalView.current
+            if (!view.isInEditMode) {
+                SideEffect {
+                    val window = (view.context as android.app.Activity).window
+                    WindowInsetsControllerCompat(window, view).isAppearanceLightStatusBars = !darkTheme
+                }
             }
 
             HaronTheme(darkTheme = darkTheme) {
