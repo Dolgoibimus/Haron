@@ -8,6 +8,8 @@ import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.model.TrashEntry
+import com.vamp.haron.domain.usecase.FileProperties
+import com.vamp.haron.domain.usecase.HashResult
 
 data class ExplorerUiState(
     val topPanel: PanelUiState = PanelUiState(),
@@ -53,6 +55,12 @@ sealed interface DialogState {
     ) : DialogState
     data class CreateArchive(
         val selectedPaths: List<String>
+    ) : DialogState
+    data class FilePropertiesState(
+        val entry: FileEntry,
+        val properties: FileProperties? = null,
+        val hashResult: HashResult? = null,
+        val isHashCalculating: Boolean = false
     ) : DialogState
 }
 

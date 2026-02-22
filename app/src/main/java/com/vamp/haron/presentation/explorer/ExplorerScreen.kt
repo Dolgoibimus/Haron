@@ -50,9 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import com.vamp.haron.presentation.explorer.components.CreateArchiveDialog
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
+import com.vamp.haron.presentation.explorer.components.FilePropertiesDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FavoritesPanel
 import com.vamp.haron.presentation.explorer.components.FilePanel
@@ -71,7 +75,8 @@ fun ExplorerScreen(
     onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenGallery: (startIndex: Int) -> Unit = { },
     onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
-    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> }
+    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenStorageAnalysis: () -> Unit = { }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -97,6 +102,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenArchiveViewer -> {
                     onOpenArchiveViewer(event.filePath, event.fileName)
+                }
+                is NavigationEvent.OpenStorageAnalysis -> {
+                    onOpenStorageAnalysis()
                 }
             }
         }
@@ -237,6 +245,7 @@ fun ExplorerScreen(
                     safLauncher.launch(null)
                 },
                 safVolumeLabel = sdLabel,
+                onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -311,6 +320,7 @@ fun ExplorerScreen(
                     safLauncher.launch(null)
                 },
                 safVolumeLabel = sdLabel,
+                onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -348,6 +358,14 @@ fun ExplorerScreen(
                 onZip = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.requestCreateArchive()
+                },
+                onInfo = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.showSelectedFileProperties()
+                },
+                onOpenWith = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.openSelectedWithExternalApp()
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -513,6 +531,22 @@ fun ExplorerScreen(
                     viewModel.confirmCreateArchive(dialog.selectedPaths, archiveName)
                 },
                 onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.FilePropertiesState -> {
+            FilePropertiesDialog(
+                properties = dialog.properties,
+                hashResult = dialog.hashResult,
+                isHashCalculating = dialog.isHashCalculating,
+                onCalculateHash = { viewModel.calculateHash() },
+                onCopyHash = { hash ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("hash", hash))
+                    Toast.makeText(context, "Хеш скопирован", Toast.LENGTH_SHORT).show()
+                },
+                onRemoveExif = { viewModel.removeExif() },
+                onDismiss = viewModel::dismissDialog,
+                isContentUri = dialog.entry.isContentUri
             )
         }
         DialogState.None -> { /* no dialog */ }

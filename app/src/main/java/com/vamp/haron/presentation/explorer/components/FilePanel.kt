@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -130,6 +131,7 @@ fun FilePanel(
     onSdCardClick: () -> Unit = {},
     onRequestSafAccess: () -> Unit = {},
     safVolumeLabel: String = "",
+    onOpenStorageAnalysis: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -630,6 +632,16 @@ fun FilePanel(
                                             Icons.Filled.DeleteOutline,
                                             contentDescription = null
                                         )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Анализ памяти") },
+                                    onClick = {
+                                        onOpenStorageAnalysis()
+                                        showOverflow = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.PieChart, contentDescription = null)
                                     }
                                 )
                                 if (hasRemovableStorage) {

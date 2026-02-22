@@ -17,6 +17,7 @@ import com.vamp.haron.presentation.gallery.GalleryScreen
 import com.vamp.haron.presentation.pdf.PdfReaderScreen
 import com.vamp.haron.presentation.permission.PermissionScreen
 import com.vamp.haron.presentation.player.MediaPlayerScreen
+import com.vamp.haron.presentation.storage.StorageAnalysisScreen
 
 object HaronRoutes {
     const val PERMISSION = "permission"
@@ -31,6 +32,7 @@ object HaronRoutes {
     const val PDF_READER_ROUTE = "pdf_reader?filePath={filePath}&fileName={fileName}"
     const val ARCHIVE_VIEWER = "archive_viewer"
     const val ARCHIVE_VIEWER_ROUTE = "archive_viewer?filePath={filePath}&fileName={fileName}"
+    const val STORAGE_ANALYSIS = "storage_analysis"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -93,7 +95,15 @@ fun HaronNavigation(modifier: Modifier = Modifier) {
                 },
                 onOpenArchiveViewer = { filePath, fileName ->
                     navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
+                },
+                onOpenStorageAnalysis = {
+                    navController.navigate(HaronRoutes.STORAGE_ANALYSIS)
                 }
+            )
+        }
+        composable(HaronRoutes.STORAGE_ANALYSIS) {
+            StorageAnalysisScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(

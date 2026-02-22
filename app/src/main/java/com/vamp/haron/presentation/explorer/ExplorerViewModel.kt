@@ -37,6 +37,8 @@ import com.vamp.haron.domain.usecase.MoveFilesUseCase
 import com.vamp.haron.domain.usecase.MoveToTrashUseCase
 import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
+import com.vamp.haron.domain.usecase.GetFilePropertiesUseCase
+import com.vamp.haron.domain.usecase.CalculateHashUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
@@ -53,7 +55,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import android.content.Intent
 import com.vamp.haron.common.util.iconRes
+import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.common.util.toFileSize
 import java.io.File
 import java.text.SimpleDateFormat
@@ -81,7 +85,9 @@ class ExplorerViewModel @Inject constructor(
     private val cleanExpiredTrashUseCase: CleanExpiredTrashUseCase,
     private val trashRepository: TrashRepository,
     private val safUriManager: SafUriManager,
-    private val storageVolumeHelper: StorageVolumeHelper
+    private val storageVolumeHelper: StorageVolumeHelper,
+    private val getFilePropertiesUseCase: GetFilePropertiesUseCase,
+    private val calculateHashUseCase: CalculateHashUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -310,6 +316,10 @@ class ExplorerViewModel @Inject constructor(
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenArchiveViewer(entry.path, entry.name)
                     )
+                }
+                else -> {
+                    // No built-in handler — open with external app
+                    openWithExternalApp(entry)
                 }
             }
         }
@@ -1631,6 +1641,125 @@ class ExplorerViewModel @Inject constructor(
                 PanelId.TOP -> state.copy(topPanel = transform(state.topPanel))
                 PanelId.BOTTOM -> state.copy(bottomPanel = transform(state.bottomPanel))
             }
+        }
+    }
+
+    // --- File Properties ---
+
+    fun showFileProperties(entry: FileEntry) {
+        _uiState.update { it.copy(dialogState = DialogState.FilePropertiesState(entry = entry)) }
+        viewModelScope.launch {
+            getFilePropertiesUseCase(entry).collect { props ->
+                _uiState.update { state ->
+                    val dialog = state.dialogState
+                    if (dialog is DialogState.FilePropertiesState && dialog.entry.path == entry.path) {
+                        state.copy(dialogState = dialog.copy(properties = props))
+                    } else state
+                }
+            }
+        }
+    }
+
+    fun showSelectedFileProperties() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.size == 1) {
+            showFileProperties(selected.first())
+        }
+    }
+
+    fun calculateHash() {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.FilePropertiesState) return
+        val entry = dialog.entry
+
+        _uiState.update { state ->
+            val d = state.dialogState
+            if (d is DialogState.FilePropertiesState) {
+                state.copy(dialogState = d.copy(isHashCalculating = true))
+            } else state
+        }
+
+        viewModelScope.launch {
+            calculateHashUseCase(entry.path).collect { hash ->
+                _uiState.update { state ->
+                    val d = state.dialogState
+                    if (d is DialogState.FilePropertiesState && d.entry.path == entry.path) {
+                        state.copy(dialogState = d.copy(hashResult = hash))
+                    } else state
+                }
+            }
+            _uiState.update { state ->
+                val d = state.dialogState
+                if (d is DialogState.FilePropertiesState) {
+                    state.copy(dialogState = d.copy(isHashCalculating = false))
+                } else state
+            }
+        }
+    }
+
+    fun removeExif() {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.FilePropertiesState) return
+        val entry = dialog.entry
+
+        viewModelScope.launch {
+            val success = getFilePropertiesUseCase.removeExif(entry.path)
+            if (success) {
+                _toastMessage.tryEmit("EXIF-данные удалены")
+                // Reload properties to reflect removal
+                showFileProperties(entry)
+            } else {
+                _toastMessage.tryEmit("Не удалось удалить EXIF")
+            }
+        }
+    }
+
+    // --- Storage Analysis ---
+
+    fun openStorageAnalysis() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenStorageAnalysis)
+    }
+
+    // --- Open with external app ---
+
+    fun openWithExternalApp(entry: FileEntry) {
+        if (entry.isDirectory) {
+            _toastMessage.tryEmit("Папки нельзя открыть во внешнем приложении")
+            return
+        }
+        try {
+            val uri = if (entry.isContentUri) {
+                Uri.parse(entry.path)
+            } else {
+                androidx.core.content.FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    File(entry.path)
+                )
+            }
+            val mime = entry.mimeType()
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(intent, "Открыть в...").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(chooser)
+        } catch (_: Exception) {
+            _toastMessage.tryEmit("Нет приложения для открытия этого файла")
+        }
+    }
+
+    fun openSelectedWithExternalApp() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.size == 1 && !selected.first().isDirectory) {
+            openWithExternalApp(selected.first())
         }
     }
 }

@@ -23,4 +23,6 @@ sealed interface NavigationEvent {
         val filePath: String,
         val fileName: String
     ) : NavigationEvent
+
+    data object OpenStorageAnalysis : NavigationEvent
 }
