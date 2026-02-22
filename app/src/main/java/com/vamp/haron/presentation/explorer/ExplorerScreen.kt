@@ -7,13 +7,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -56,13 +64,14 @@ import android.content.Context
 import com.vamp.haron.presentation.explorer.components.CreateArchiveDialog
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
+import com.vamp.haron.presentation.explorer.components.DrawerMenu
 import com.vamp.haron.presentation.explorer.components.FilePropertiesDialog
 import com.vamp.haron.presentation.explorer.components.DragOverlay
-import com.vamp.haron.presentation.explorer.components.FavoritesPanel
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
+import com.vamp.haron.presentation.explorer.components.ShelfPanel
 import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -76,7 +85,8 @@ fun ExplorerScreen(
     onOpenGallery: (startIndex: Int) -> Unit = { },
     onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
-    onOpenStorageAnalysis: () -> Unit = { }
+    onOpenStorageAnalysis: () -> Unit = { },
+    onOpenDuplicateDetector: () -> Unit = { }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -105,6 +115,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenStorageAnalysis -> {
                     onOpenStorageAnalysis()
+                }
+                is NavigationEvent.OpenDuplicateDetector -> {
+                    onOpenDuplicateDetector()
                 }
             }
         }
@@ -137,11 +150,14 @@ fun ExplorerScreen(
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
     val hasRenaming = state.topPanel.renamingPath != null || state.bottomPanel.renamingPath != null
+    val showDrawerOrShelf = state.showDrawer || state.showShelf
 
-    // Back: rename → selection → history back → navigate up
+    // Back: drawer/shelf → rename → selection → history back → navigate up
     val canGoBack = viewModel.canNavigateBack(activePanel)
-    BackHandler(enabled = hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
+    BackHandler(enabled = state.showDrawer || state.showShelf || hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
         when {
+            state.showDrawer -> viewModel.dismissDrawer()
+            state.showShelf -> viewModel.dismissShelf()
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> viewModel.clearSelection(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
@@ -209,7 +225,7 @@ fun ExplorerScreen(
                 onSearchChanged = { viewModel.setSearchQuery(PanelId.TOP, it) },
                 onClearSearch = { viewModel.clearSearch(PanelId.TOP) },
                 onToggleFavorite = { viewModel.toggleFavorite(PanelId.TOP) },
-                onShowFavorites = { viewModel.toggleFavoritesPanel() },
+                onShowDrawer = { viewModel.toggleDrawer() },
                 onSelectRange = { from, to -> viewModel.selectRange(PanelId.TOP, from, to) },
                 onLongPressItem = { viewModel.onFileLongClick(PanelId.TOP, it) },
                 onRenameConfirm = { viewModel.confirmInlineRename(it) },
@@ -222,6 +238,8 @@ fun ExplorerScreen(
                 canNavigateBack = viewModel.canNavigateBack(PanelId.TOP),
                 canNavigateForward = viewModel.canNavigateForward(PanelId.TOP),
                 onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.TOP) },
+                isOriginalFolder = state.topPanel.currentPath in state.originalFolders,
+                onToggleOriginalFolder = { viewModel.toggleOriginalFolder(PanelId.TOP) },
                 onCycleTheme = { viewModel.cycleTheme() },
                 themeMode = state.themeMode,
                 trashSizeInfo = state.trashSizeInfo,
@@ -247,6 +265,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
+                initialScrollIndex = viewModel.getScrollIndex(PanelId.TOP),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -284,7 +303,7 @@ fun ExplorerScreen(
                 onSearchChanged = { viewModel.setSearchQuery(PanelId.BOTTOM, it) },
                 onClearSearch = { viewModel.clearSearch(PanelId.BOTTOM) },
                 onToggleFavorite = { viewModel.toggleFavorite(PanelId.BOTTOM) },
-                onShowFavorites = { viewModel.toggleFavoritesPanel() },
+                onShowDrawer = { viewModel.toggleDrawer() },
                 onSelectRange = { from, to -> viewModel.selectRange(PanelId.BOTTOM, from, to) },
                 onLongPressItem = { viewModel.onFileLongClick(PanelId.BOTTOM, it) },
                 onRenameConfirm = { viewModel.confirmInlineRename(it) },
@@ -297,6 +316,8 @@ fun ExplorerScreen(
                 canNavigateBack = viewModel.canNavigateBack(PanelId.BOTTOM),
                 canNavigateForward = viewModel.canNavigateForward(PanelId.BOTTOM),
                 onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.BOTTOM) },
+                isOriginalFolder = state.bottomPanel.currentPath in state.originalFolders,
+                onToggleOriginalFolder = { viewModel.toggleOriginalFolder(PanelId.BOTTOM) },
                 onCycleTheme = { viewModel.cycleTheme() },
                 themeMode = state.themeMode,
                 trashSizeInfo = state.trashSizeInfo,
@@ -322,6 +343,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
+                initialScrollIndex = viewModel.getScrollIndex(PanelId.BOTTOM),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -358,6 +380,10 @@ fun ExplorerScreen(
                 onZip = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.requestCreateArchive()
+                },
+                onAddToShelf = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.addToShelf()
                 },
                 onInfo = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
@@ -439,6 +465,41 @@ fun ExplorerScreen(
                     }
                 }
             }
+        }
+
+        // Left edge swipe zone
+        if (!showDrawerOrShelf && !isDragging) {
+            // Swipe detection zone on left edge
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(24.dp)
+                    .fillMaxHeight()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            val startY = down.position.y
+                            val threshold = 60f // px
+                            var totalDragX = 0f
+                            var consumed = false
+                            do {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                totalDragX += change.position.x - (change.previousPosition.x)
+                                if (!consumed && totalDragX > threshold) {
+                                    consumed = true
+                                    val height = size.height.toFloat()
+                                    if (startY < height / 2) {
+                                        viewModel.toggleShelf()
+                                    } else {
+                                        viewModel.toggleDrawer()
+                                    }
+                                    change.consume()
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+            )
         }
 
         // Drag overlay — ghost icon following finger
@@ -552,29 +613,76 @@ fun ExplorerScreen(
         DialogState.None -> { /* no dialog */ }
     }
 
-    // Favorites panel
-    if (state.showFavoritesPanel) {
-        FavoritesPanel(
-            favorites = state.favorites,
-            recentPaths = state.recentPaths,
-            safRoots = state.safRoots,
-            onNavigate = viewModel::navigateFromFavorites,
-            onRemoveFavorite = viewModel::removeFavorite,
-            onNavigateToInternalStorage = {
-                viewModel.dismissFavoritesPanel()
-                viewModel.navigateTo(
-                    state.activePanel,
-                    com.vamp.haron.common.constants.HaronConstants.ROOT_PATH
+    // Drawer / Shelf overlay
+    if (showDrawerOrShelf) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Scrim
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        viewModel.dismissDrawer()
+                        viewModel.dismissShelf()
+                    }
+            )
+
+            // Drawer
+            AnimatedVisibility(
+                visible = state.showDrawer,
+                enter = slideInHorizontally(initialOffsetX = { -it }),
+                exit = slideOutHorizontally(targetOffsetX = { -it }),
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                DrawerMenu(
+                    favorites = state.favorites,
+                    recentPaths = state.recentPaths,
+                    safRoots = state.safRoots,
+                    themeMode = state.themeMode,
+                    trashSizeInfo = state.trashSizeInfo,
+                    onNavigate = viewModel::navigateFromDrawer,
+                    onRemoveFavorite = viewModel::removeFavorite,
+                    onNavigateToInternalStorage = {
+                        viewModel.dismissDrawer()
+                        viewModel.navigateTo(
+                            state.activePanel,
+                            com.vamp.haron.common.constants.HaronConstants.ROOT_PATH
+                        )
+                    },
+                    onGrantVolumeAccess = {
+                        viewModel.dismissDrawer()
+                        safLauncher.launch(null)
+                    },
+                    onRevokeVolumeAccess = { uri ->
+                        viewModel.removeSafRoot(uri)
+                    },
+                    onShowTrash = { viewModel.showTrash() },
+                    onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
+                    onOpenDuplicateDetector = { viewModel.openDuplicateDetector() },
+                    onCycleTheme = { viewModel.cycleTheme() },
+                    onDismiss = viewModel::dismissDrawer
                 )
-            },
-            onGrantVolumeAccess = {
-                viewModel.dismissFavoritesPanel()
-                safLauncher.launch(null)
-            },
-            onRevokeVolumeAccess = { uri ->
-                viewModel.removeSafRoot(uri)
-            },
-            onDismiss = viewModel::dismissFavoritesPanel
-        )
+            }
+
+            // Shelf
+            AnimatedVisibility(
+                visible = state.showShelf,
+                enter = slideInHorizontally(initialOffsetX = { -it }),
+                exit = slideOutHorizontally(targetOffsetX = { -it }),
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                ShelfPanel(
+                    items = state.shelfItems,
+                    onRemoveItem = viewModel::removeFromShelf,
+                    onPasteCopy = { viewModel.pasteFromShelf(isMove = false) },
+                    onPasteMove = { viewModel.pasteFromShelf(isMove = true) },
+                    onClear = viewModel::clearShelf,
+                    onDismiss = viewModel::dismissShelf
+                )
+            }
+        }
     }
 }

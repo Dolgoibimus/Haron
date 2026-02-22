@@ -7,6 +7,7 @@ import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.model.PreviewData
+import com.vamp.haron.domain.model.ShelfItem
 import com.vamp.haron.domain.model.TrashEntry
 import com.vamp.haron.domain.usecase.FileProperties
 import com.vamp.haron.domain.usecase.HashResult
@@ -19,12 +20,15 @@ data class ExplorerUiState(
     val dialogState: DialogState = DialogState.None,
     val favorites: List<String> = emptyList(),
     val recentPaths: List<String> = emptyList(),
-    val showFavoritesPanel: Boolean = false,
+    val showDrawer: Boolean = false,
+    val showShelf: Boolean = false,
+    val shelfItems: List<ShelfItem> = emptyList(),
     val dragState: DragState = DragState.Idle,
     val operationProgress: OperationProgress? = null,
     val trashSizeInfo: String = "",
     val themeMode: String = "system",
-    val safRoots: List<Pair<String, String>> = emptyList() // (uri, label)
+    val safRoots: List<Pair<String, String>> = emptyList(), // (uri, label)
+    val originalFolders: Set<String> = emptySet()
 )
 
 sealed interface DialogState {

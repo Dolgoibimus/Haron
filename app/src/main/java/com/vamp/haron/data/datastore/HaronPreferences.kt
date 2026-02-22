@@ -6,8 +6,10 @@ import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
 import com.vamp.haron.data.model.SortOrder
+import com.vamp.haron.domain.model.ShelfItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -128,6 +130,89 @@ class HaronPreferences @Inject constructor(
         prefs.edit().putString(KEY_RECENT_PATHS, JSONArray(trimmed).toString()).apply()
     }
 
+    // --- Shelf ---
+
+    fun getShelfItems(): List<ShelfItem> {
+        val json = prefs.getString(KEY_SHELF_ITEMS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                ShelfItem(
+                    name = obj.getString("name"),
+                    path = obj.getString("path"),
+                    isDirectory = obj.getBoolean("isDirectory"),
+                    size = obj.getLong("size")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveShelfItems(items: List<ShelfItem>) {
+        val arr = JSONArray()
+        items.forEach { item ->
+            arr.put(JSONObject().apply {
+                put("name", item.name)
+                put("path", item.path)
+                put("isDirectory", item.isDirectory)
+                put("size", item.size)
+            })
+        }
+        prefs.edit().putString(KEY_SHELF_ITEMS, arr.toString()).apply()
+    }
+
+    fun addShelfItems(newItems: List<ShelfItem>) {
+        val existing = getShelfItems().toMutableList()
+        val existingPaths = existing.map { it.path }.toSet()
+        newItems.filter { it.path !in existingPaths }.let { existing.addAll(it) }
+        saveShelfItems(existing)
+    }
+
+    fun removeShelfItem(path: String) {
+        val items = getShelfItems().filter { it.path != path }
+        saveShelfItems(items)
+    }
+
+    fun clearShelf() {
+        prefs.edit().remove(KEY_SHELF_ITEMS).apply()
+    }
+
+    // --- Duplicate detector: original overrides & folders ---
+
+    fun saveOriginalOverrides(overrides: Map<String, String>) {
+        val obj = JSONObject()
+        overrides.forEach { (hash, path) -> obj.put(hash, path) }
+        prefs.edit().putString(KEY_ORIGINAL_OVERRIDES, obj.toString()).apply()
+    }
+
+    fun getOriginalOverrides(): Map<String, String> {
+        val json = prefs.getString(KEY_ORIGINAL_OVERRIDES, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(json)
+            val map = mutableMapOf<String, String>()
+            obj.keys().forEach { key -> map[key] = obj.getString(key) }
+            map
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveOriginalFolders(folders: Set<String>) {
+        prefs.edit().putString(KEY_ORIGINAL_FOLDERS, JSONArray(folders.toList()).toString()).apply()
+    }
+
+    fun getOriginalFolders(): Set<String> {
+        val json = prefs.getString(KEY_ORIGINAL_FOLDERS, null) ?: return emptySet()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
     // --- Panel paths ---
 
     var topPanelPath: String
@@ -148,8 +233,11 @@ class HaronPreferences @Inject constructor(
         const val KEY_RECENT_PATHS = "recent_paths"
         const val KEY_TRASH_MAX_SIZE_MB = "trash_max_size_mb"
         const val KEY_SAF_URIS = "saf_uris"
+        const val KEY_SHELF_ITEMS = "shelf_items"
         const val KEY_TOP_PANEL_PATH = "top_panel_path"
         const val KEY_BOTTOM_PANEL_PATH = "bottom_panel_path"
+        const val KEY_ORIGINAL_OVERRIDES = "original_overrides"
+        const val KEY_ORIGINAL_FOLDERS = "original_folders"
         const val MAX_RECENT = 10
     }
 }

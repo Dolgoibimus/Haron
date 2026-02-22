@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.SdCard
@@ -104,19 +107,21 @@ fun FilePanel(
     onSearchChanged: (String) -> Unit,
     onClearSearch: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onShowFavorites: () -> Unit,
+    onShowDrawer: () -> Unit,
     onSelectRange: (fromIndex: Int, toIndex: Int) -> Unit,
     onLongPressItem: (FileEntry) -> Unit,
     onRenameConfirm: (String) -> Unit,
     onRenameCancel: () -> Unit,
     onCreateNew: () -> Unit,
-    onShowTrash: () -> Unit,
+    onShowTrash: () -> Unit = {},
     onBreadcrumbClick: (String) -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
     canNavigateBack: Boolean = false,
     canNavigateForward: Boolean = false,
     onOpenInOtherPanel: () -> Unit = {},
+    isOriginalFolder: Boolean = false,
+    onToggleOriginalFolder: () -> Unit = {},
     onCycleTheme: () -> Unit = {},
     themeMode: String = "system",
     trashSizeInfo: String = "",
@@ -133,6 +138,7 @@ fun FilePanel(
     safVolumeLabel: String = "",
     onOpenStorageAnalysis: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
+    initialScrollIndex: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -426,12 +432,12 @@ fun FilePanel(
                                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Избранное") },
+                                    text = { Text("Меню") },
                                     onClick = {
-                                        onShowFavorites()
+                                        onShowDrawer()
                                         showCollapsed = false
                                     },
-                                    leadingIcon = { Icon(Icons.Filled.Star, contentDescription = null) }
+                                    leadingIcon = { Icon(Icons.Filled.Menu, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Создать") },
@@ -475,24 +481,17 @@ fun FilePanel(
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Корзина")
-                                            if (trashSizeInfo.isNotEmpty()) {
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = trashSizeInfo,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
+                                        Text(if (isOriginalFolder) "Убрать пометку оригинала" else "Папка-оригинал")
                                     },
                                     onClick = {
-                                        onShowTrash()
+                                        onToggleOriginalFolder()
                                         showCollapsed = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Filled.DeleteOutline, contentDescription = null)
+                                        Icon(
+                                            if (isOriginalFolder) Icons.Filled.FolderSpecial else Icons.Filled.Folder,
+                                            contentDescription = null
+                                        )
                                     }
                                 )
                             }
@@ -533,13 +532,13 @@ fun FilePanel(
                         IconButton(
                             onClick = {
                                 onPanelTap()
-                                onShowFavorites()
+                                onShowDrawer()
                             },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Избранное",
+                                Icons.Filled.Menu,
+                                contentDescription = "Меню",
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -609,54 +608,6 @@ fun FilePanel(
                                         )
                                     }
                                 )
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Корзина")
-                                            if (trashSizeInfo.isNotEmpty()) {
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = trashSizeInfo,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        onShowTrash()
-                                        showOverflow = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Filled.DeleteOutline,
-                                            contentDescription = null
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Анализ памяти") },
-                                    onClick = {
-                                        onOpenStorageAnalysis()
-                                        showOverflow = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Filled.PieChart, contentDescription = null)
-                                    }
-                                )
-                                if (hasRemovableStorage) {
-                                    DropdownMenuItem(
-                                        text = { Text(sdCardLabel) },
-                                        onClick = {
-                                            if (hasSafPermission) onSdCardClick()
-                                            else onRequestSafAccess()
-                                            showOverflow = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(Icons.Filled.SdCard, contentDescription = null)
-                                        }
-                                    )
-                                }
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("Открыть в другой панели") },
@@ -670,25 +621,15 @@ fun FilePanel(
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Text(
-                                            when (themeMode) {
-                                                "light" -> "Тема: светлая"
-                                                "dark" -> "Тема: тёмная"
-                                                else -> "Тема: системная"
-                                            }
-                                        )
+                                        Text(if (isOriginalFolder) "Убрать пометку оригинала" else "Папка-оригинал")
                                     },
                                     onClick = {
-                                        onCycleTheme()
+                                        onToggleOriginalFolder()
                                         showOverflow = false
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = when (themeMode) {
-                                                "light" -> Icons.Filled.LightMode
-                                                "dark" -> Icons.Filled.DarkMode
-                                                else -> Icons.Filled.BrightnessAuto
-                                            },
+                                            if (isOriginalFolder) Icons.Filled.FolderSpecial else Icons.Filled.Folder,
                                             contentDescription = null
                                         )
                                     }
@@ -774,15 +715,24 @@ fun FilePanel(
             else -> {
                 val gridState = rememberLazyGridState()
 
+                // Restore scroll when returning from another screen
+                LaunchedEffect(Unit) {
+                    if (initialScrollIndex > 0) {
+                        gridState.scrollToItem(initialScrollIndex)
+                    }
+                }
+
                 // Report scroll position to ViewModel
                 LaunchedEffect(gridState) {
                     snapshotFlow { gridState.firstVisibleItemIndex }
                         .collect { index -> onScrollPositionChanged(index) }
                 }
 
-                // Restore scroll position when navigating
+                // Restore scroll on folder navigation only (skip re-creation)
+                val handledTrigger = remember { mutableStateOf(state.scrollToTrigger) }
                 LaunchedEffect(state.scrollToTrigger) {
-                    if (state.scrollToTrigger > 0L) {
+                    if (state.scrollToTrigger != handledTrigger.value) {
+                        handledTrigger.value = state.scrollToTrigger
                         gridState.scrollToItem(state.scrollToIndex)
                     }
                 }

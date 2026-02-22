@@ -25,4 +25,6 @@ sealed interface NavigationEvent {
     ) : NavigationEvent
 
     data object OpenStorageAnalysis : NavigationEvent
+
+    data object OpenDuplicateDetector : NavigationEvent
 }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,7 @@ fun SelectionActionBar(
     onDelete: () -> Unit,
     onRename: () -> Unit,
     onZip: () -> Unit,
+    onAddToShelf: () -> Unit,
     onInfo: () -> Unit,
     onOpenWith: () -> Unit,
     modifier: Modifier = Modifier
@@ -82,6 +84,9 @@ fun SelectionActionBar(
                 }
                 IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Filled.Archive, contentDescription = "ZIP", modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onAddToShelf, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Inventory2, contentDescription = "На полку", modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = onInfo,

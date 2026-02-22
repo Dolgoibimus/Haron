@@ -15,6 +15,7 @@ import com.vamp.haron.data.saf.StorageVolumeHelper
 import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.model.PlaylistHolder
+import com.vamp.haron.domain.model.ShelfItem
 import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
@@ -118,11 +119,22 @@ class ExplorerViewModel @Inject constructor(
         panelScrollIndex[panelId] = index
     }
 
+    fun getScrollIndex(panelId: PanelId): Int = panelScrollIndex[panelId] ?: 0
+
     init {
         val savedSort = preferences.getSortOrder()
         val showHidden = preferences.showHidden
         val panelRatio = preferences.panelRatio
         val gridColumns = preferences.gridColumns
+        // Load shelf and filter out non-existing files
+        val shelfItems = preferences.getShelfItems().filter { item ->
+            if (item.path.startsWith("content://")) true
+            else File(item.path).exists()
+        }
+        if (shelfItems.size != preferences.getShelfItems().size) {
+            preferences.saveShelfItems(shelfItems)
+        }
+
         _uiState.update {
             it.copy(
                 topPanel = it.topPanel.copy(sortOrder = savedSort, showHidden = showHidden, gridColumns = gridColumns),
@@ -130,7 +142,9 @@ class ExplorerViewModel @Inject constructor(
                 panelRatio = panelRatio,
                 favorites = preferences.getFavorites(),
                 recentPaths = preferences.getRecentPaths(),
-                themeMode = EcosystemPreferences.theme
+                shelfItems = shelfItems,
+                themeMode = EcosystemPreferences.theme,
+                originalFolders = preferences.getOriginalFolders()
             )
         }
         val topPath = preferences.topPanelPath.let { p ->
@@ -462,6 +476,18 @@ class ExplorerViewModel @Inject constructor(
         navigateTo(otherId, path)
     }
 
+    fun toggleOriginalFolder(panelId: PanelId) {
+        val path = getPanel(panelId).currentPath
+        _uiState.update { st ->
+            val newFolders = st.originalFolders.toMutableSet()
+            if (path in newFolders) newFolders.remove(path) else newFolders.add(path)
+            st.copy(originalFolders = newFolders)
+        }
+        preferences.saveOriginalFolders(_uiState.value.originalFolders)
+        val isNow = path in _uiState.value.originalFolders
+        _toastMessage.tryEmit(if (isNow) "Папка помечена как оригинал" else "Пометка снята")
+    }
+
     fun cycleTheme() {
         val current = EcosystemPreferences.theme
         val next = when (current) {
@@ -504,7 +530,7 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /**
-     * Build list of storage items for FavoritesPanel:
+     * Build list of storage items for DrawerMenu:
      * - Each removable volume from StorageVolumeHelper
      * - Matched against persisted SAF URIs to know if access is granted
      * Pair: (label, safUri?) — null uri means no access yet
@@ -1201,18 +1227,105 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(favorites = preferences.getFavorites()) }
     }
 
-    fun toggleFavoritesPanel() {
-        _uiState.update { it.copy(showFavoritesPanel = !it.showFavoritesPanel) }
+    // --- Drawer ---
+
+    fun toggleDrawer() {
+        _uiState.update {
+            it.copy(
+                showDrawer = !it.showDrawer,
+                showShelf = false // close shelf when opening drawer
+            )
+        }
     }
 
-    fun dismissFavoritesPanel() {
-        _uiState.update { it.copy(showFavoritesPanel = false) }
+    fun dismissDrawer() {
+        _uiState.update { it.copy(showDrawer = false) }
     }
 
-    fun navigateFromFavorites(path: String) {
+    fun navigateFromDrawer(path: String) {
         val activeId = _uiState.value.activePanel
-        dismissFavoritesPanel()
+        dismissDrawer()
         navigateTo(activeId, path)
+    }
+
+    // --- Shelf ---
+
+    fun addToShelf() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.isEmpty()) return
+
+        val newItems = selected.map {
+            ShelfItem(name = it.name, path = it.path, isDirectory = it.isDirectory, size = it.size)
+        }
+        preferences.addShelfItems(newItems)
+        val updatedShelf = preferences.getShelfItems()
+        _uiState.update { it.copy(shelfItems = updatedShelf) }
+        clearSelection(activeId)
+        _toastMessage.tryEmit("На полку: ${selected.size}")
+    }
+
+    fun removeFromShelf(path: String) {
+        preferences.removeShelfItem(path)
+        _uiState.update { it.copy(shelfItems = preferences.getShelfItems()) }
+    }
+
+    fun clearShelf() {
+        preferences.clearShelf()
+        _uiState.update { it.copy(shelfItems = emptyList()) }
+    }
+
+    fun toggleShelf() {
+        _uiState.update {
+            it.copy(
+                showShelf = !it.showShelf,
+                showDrawer = false // close drawer when opening shelf
+            )
+        }
+    }
+
+    fun dismissShelf() {
+        _uiState.update { it.copy(showShelf = false) }
+    }
+
+    fun pasteFromShelf(isMove: Boolean) {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val destinationDir = panel.currentPath
+        val items = _uiState.value.shelfItems
+        if (items.isEmpty()) return
+
+        val paths = items.map { it.path }
+        dismissShelf()
+
+        if (isMove) {
+            val fileSizes = items.associate { it.path to it.size }
+            inlineOperationJob = viewModelScope.launch {
+                runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
+                    moveFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
+                }
+                clearShelf()
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
+                _toastMessage.tryEmit("Перемещено с полки: ${paths.size}")
+            }
+        } else {
+            val fileSizes = items.associate { it.path to it.size }
+            inlineOperationJob = viewModelScope.launch {
+                runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
+                    copyFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
+                }
+                refreshPanel(activeId)
+                _toastMessage.tryEmit("Скопировано с полки: ${paths.size}")
+            }
+        }
+    }
+
+    // --- Duplicate Detector ---
+
+    fun openDuplicateDetector() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenDuplicateDetector)
     }
 
     // --- Trash ---

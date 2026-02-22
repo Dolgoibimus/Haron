@@ -17,6 +17,7 @@ import com.vamp.haron.presentation.gallery.GalleryScreen
 import com.vamp.haron.presentation.pdf.PdfReaderScreen
 import com.vamp.haron.presentation.permission.PermissionScreen
 import com.vamp.haron.presentation.player.MediaPlayerScreen
+import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
 import com.vamp.haron.presentation.storage.StorageAnalysisScreen
 
 object HaronRoutes {
@@ -33,6 +34,7 @@ object HaronRoutes {
     const val ARCHIVE_VIEWER = "archive_viewer"
     const val ARCHIVE_VIEWER_ROUTE = "archive_viewer?filePath={filePath}&fileName={fileName}"
     const val STORAGE_ANALYSIS = "storage_analysis"
+    const val DUPLICATE_DETECTOR = "duplicate_detector"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -98,11 +100,19 @@ fun HaronNavigation(modifier: Modifier = Modifier) {
                 },
                 onOpenStorageAnalysis = {
                     navController.navigate(HaronRoutes.STORAGE_ANALYSIS)
+                },
+                onOpenDuplicateDetector = {
+                    navController.navigate(HaronRoutes.DUPLICATE_DETECTOR)
                 }
             )
         }
         composable(HaronRoutes.STORAGE_ANALYSIS) {
             StorageAnalysisScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.DUPLICATE_DETECTOR) {
+            DuplicateDetectorScreen(
                 onBack = { navController.popBackStack() }
             )
         }
