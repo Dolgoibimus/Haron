@@ -1,3 +1,643 @@
 <resources>
     <string name="app_name">Haron</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="create">Create</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
+    <string name="clear">Clear</string>
+    <string name="search">Search</string>
+    <string name="menu">Menu</string>
+    <string name="back">Back</string>
+    <string name="done">Done</string>
+    <string name="loading">Loading…</string>
+    <string name="error_format">Error: %s</string>
+    <string name="name_label">Name</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+
+    <!-- File panel -->
+    <string name="search_placeholder">Search…</string>
+    <string name="selected_count">Selected: %s</string>
+    <string name="storage">Storage</string>
+    <string name="more">More</string>
+    <string name="hide_hidden">Hide hidden</string>
+    <string name="show_hidden">Show hidden</string>
+    <string name="remove_from_favorites">Remove from favorites</string>
+    <string name="add_to_favorites">Add to favorites</string>
+    <string name="remove_original_marker">Remove original marker</string>
+    <string name="original_folder">Original folder</string>
+    <string name="open_in_other_panel">Open in other panel</string>
+    <string name="nothing_found">Nothing found</string>
+    <string name="folder_empty">Folder empty</string>
+    <string name="and_conjunction"> and </string>
+    <string name="plural_folders">folders</string>
+    <string name="plural_folder">folder</string>
+    <string name="plural_files">files</string>
+    <string name="plural_file">file</string>
+
+    <!-- Sort -->
+    <string name="sort_by_name">By name</string>
+    <string name="sort_by_date">By date</string>
+    <string name="sort_by_size">By size</string>
+    <string name="sort_by_type">By type</string>
+
+    <!-- Drawer menu -->
+    <string name="storages">Storages</string>
+    <string name="internal_storage">Internal storage</string>
+    <string name="sd_card">SD card</string>
+    <string name="no_access">No access</string>
+    <string name="connect">Connect</string>
+    <string name="favorites">Favorites</string>
+    <string name="no_favorite_folders">No favorite folders</string>
+    <string name="recent">Recent</string>
+    <string name="no_recent_folders">No recent folders</string>
+    <string name="tools">Tools</string>
+    <string name="trash">Trash</string>
+    <string name="storage_analyzer">Storage analyzer</string>
+    <string name="duplicate_detector">Duplicate detector</string>
+    <string name="app_manager">App manager</string>
+    <string name="empty_folders">Empty folders</string>
+    <string name="force_delete">Force delete</string>
+    <string name="force_delete_subtitle">Without trash, forever</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings">Settings</string>
+
+    <!-- Selection action bar -->
+    <string name="copy_action">Copy</string>
+    <string name="move_action">Move</string>
+    <string name="rename_action">Rename</string>
+    <string name="zip_action">ZIP</string>
+    <string name="to_shelf_action">To shelf</string>
+    <string name="properties_action">Properties</string>
+    <string name="open_with_action">Open with…</string>
+
+    <!-- Delete dialog -->
+    <string name="to_trash_question">To trash?</string>
+    <string name="move_one_to_trash">Move selected item to trash?</string>
+    <string name="move_many_to_trash">Move selected items (%d) to trash?</string>
+    <string name="to_trash">To trash</string>
+
+    <!-- Create template -->
+    <string name="template_folder">Folder</string>
+    <string name="template_text_file">Text file (.txt)</string>
+    <string name="template_markdown">Markdown (.md)</string>
+    <string name="template_dated_folder">Dated folder</string>
+
+    <!-- Trash dialog -->
+    <string name="trash_of">of</string>
+    <string name="trash_items_summary">%1$d %2$s \u00B7 %3$s</string>
+    <string name="trash_items_summary_limit">%1$d %2$s \u00B7 %3$s of %4$s</string>
+    <string name="plural_items_one">item</string>
+    <string name="plural_items_few">items</string>
+    <string name="plural_items_many">items</string>
+    <string name="restore_action">Restore (%d)</string>
+    <string name="restore">Restore</string>
+    <string name="delete_forever">Delete forever</string>
+    <string name="empty_trash">Empty trash</string>
+    <string name="trash_empty">Trash empty</string>
+    <string name="days_short">d.</string>
+    <string name="trash_item_details">%1$s \u00B7 %2$s \u00B7 %3$d%4$s</string>
+
+    <!-- Shelf -->
+    <string name="shelf_title">Shelf</string>
+    <string name="shelf_empty">Shelf empty</string>
+    <string name="shelf_empty_hint">Select files and tap \"To shelf\" in action bar</string>
+    <string name="paste_here">Paste here</string>
+    <string name="move_here">Move here</string>
+    <string name="clear_shelf">Clear shelf</string>
+
+    <!-- Conflict dialog -->
+    <string name="file_exists_title">File exists (%1$d of %2$d)</string>
+    <string name="from_label">From</string>
+    <string name="to_label">To</string>
+    <string name="apply_to_all">Apply to all (more %d)</string>
+    <string name="skip_action">Skip</string>
+    <string name="replace_action">Replace</string>
+    <string name="one_file_exists">1 file already exists</string>
+    <string name="few_files_exist">%d files already exist</string>
+    <string name="many_files_exist">%d files already exist</string>
+    <string name="and_more">and %d more…</string>
+
+    <!-- Create archive -->
+    <string name="create_zip_archive">Create ZIP archive</string>
+    <string name="archive_name_label">Archive name:</string>
+
+    <!-- Quick preview -->
+    <string name="play_fullscreen">Fullscreen</string>
+    <string name="open_in_gallery">Open in gallery</string>
+    <string name="open_in_reader">Open in reader</string>
+    <string name="open_archive">Open archive</string>
+    <string name="edit_action">Edit</string>
+    <string name="install_action">Install</string>
+    <string name="preview_unavailable">Preview unavailable</string>
+    <string name="shown_lines_format">Shown %1$d of %2$d lines</string>
+    <string name="total_lines">%d lines</string>
+    <string name="pages_count">Pages: %d</string>
+    <string name="archive_summary">%1$d files, size: %2$s</string>
+
+    <!-- File properties -->
+    <string name="properties_title">Properties</string>
+    <string name="general_section">General</string>
+    <string name="path_label">Path</string>
+    <string name="size_label">Size</string>
+    <string name="size_dir_format">%1$s (%2$d files)</string>
+    <string name="size_file_format">%1$s (%2$d bytes)</string>
+    <string name="modified_date_label">Modified date</string>
+    <string name="mime_type_label">MIME type</string>
+    <string name="permissions_label">Permissions</string>
+    <string name="exif_section">EXIF data</string>
+    <string name="remove_exif">Remove EXIF</string>
+    <string name="hash_section">Hash sums</string>
+    <string name="calculate_hash">Calculate hash</string>
+    <string name="calculating">Calculating…</string>
+
+    <!-- APK install dialog -->
+    <string name="analyzing_apk">Analyzing APK…</string>
+    <string name="unknown_app">Unknown app</string>
+    <string name="package_label">Package</string>
+    <string name="version_label">Version</string>
+    <string name="apk_size_label">Size</string>
+    <string name="signature_mismatch">APK signatures do not match installed version! Installation may fail.</string>
+    <string name="permissions_count">Permissions (%d)</string>
+    <string name="show_permissions">Show</string>
+    <string name="collapse_permissions">Collapse</string>
+    <string name="dangerous_permissions_count">Dangerous: %d</string>
+
+    <!-- Empty folder cleanup -->
+    <string name="empty_folders_title">Empty folders</string>
+    <string name="including_nested">Including nested</string>
+    <string name="no_empty_folders">No empty folders found</string>
+    <string name="select_all_count">Select all (%d)</string>
+
+    <!-- Force delete -->
+    <string name="force_delete_title">Force delete</string>
+    <string name="force_delete_warning">Files will be PERMANENTLY deleted without recovery. This action cannot be undone.</string>
+    <string name="will_be_deleted_count">Will be deleted: %d</string>
+    <string name="delete_forever_confirm">Delete forever</string>
+
+    <!-- Breadcrumb -->
+    <string name="sd_card_default">SD card</string>
+
+    <!-- Tools popup -->
+    <string name="tool_trash">Trash</string>
+    <string name="tool_analyzer">Analyzer</string>
+    <string name="tool_duplicator">Duplicator</string>
+    <string name="tool_apk">APK</string>
+    <string name="tool_player">Player</string>
+    <string name="tool_reader">Reader</string>
+
+    <!-- Explorer screen -->
+    <string name="hash_copied">Hash copied</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="night_mode_section">Night Mode</string>
+    <string name="night_mode_schedule">Enable on schedule</string>
+    <string name="night_mode_start">Start:</string>
+    <string name="night_mode_end">End:</string>
+    <string name="font_and_icons">Font and Icons</string>
+    <string name="font_scale_label">Font size: %d%%</string>
+    <string name="icon_scale_label">Icon size: %d%%</string>
+    <string name="preview_text">Sample text — Preview</string>
+    <string name="icon_preview">Icon preview</string>
+    <string name="haptic_section">Haptic Feedback</string>
+    <string name="haptic_vibration">Vibration for operations</string>
+    <string name="trash_section">Trash</string>
+    <string name="trash_max_size_label">Maximum size: %s</string>
+    <string name="trash_no_limit">No limit</string>
+    <string name="trash_info">0 = no limit. When exceeded, oldest files are deleted automatically.</string>
+
+    <!-- App manager -->
+    <string name="app_manager_title">App Manager</string>
+    <string name="search_apps">Search apps…</string>
+    <string name="sort_by_install_date">Install Date</string>
+    <string name="system_apps">System</string>
+    <string name="app_count">Apps: %d</string>
+    <string name="loading_apps">Loading apps…</string>
+    <string name="extract_apk">Extract APK</string>
+    <string name="save_to_downloads">Save to Downloads</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="system_app">System app</string>
+    <string name="uninstall_app">Uninstall app</string>
+    <string name="app_settings">App Settings</string>
+    <string name="open_in_system_settings">Open in system settings</string>
+    <string name="apk_extracted_format">APK extracted: %s</string>
+    <string name="extraction_error_format">Extraction error: %s</string>
+    <string name="uninstall_dialog_failed">Could not open uninstall dialog</string>
+    <string name="settings_open_failed">Could not open settings</string>
+
+    <!-- Text editor -->
+    <string name="read_file_error">File read error</string>
+    <string name="line_format">Line %d</string>
+    <string name="file_truncated">File truncated (>1 MB)</string>
+    <string name="modified">Modified</string>
+    <string name="saved">Saved</string>
+    <string name="unsaved_changes_title">Unsaved Changes</string>
+    <string name="save_before_exit">Save changes before exit?</string>
+    <string name="stay">Stay</string>
+    <string name="dont_save">Don\'t save</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+
+    <!-- PDF / Document reader -->
+    <string name="lines_count">Lines: %d</string>
+    <string name="read_document_failed">Could not read document</string>
+    <string name="open_file_failed">Could not open file</string>
+    <string name="unsupported_format">Unsupported format: %s</string>
+    <string name="apk_not_found">APK not found: %s</string>
+    <string name="pdf_open_failed">Could not open PDF</string>
+    <string name="pdf_open_error">PDF open error</string>
+    <string name="page_format">Page %1$d / %2$d</string>
+    <string name="go_to_page">Go to page</string>
+    <string name="enter_page_number">Enter page number (1 — %d):</string>
+    <string name="go">Go</string>
+
+    <!-- Storage analysis -->
+    <string name="storage_analysis_title">Storage Analysis</string>
+    <string name="refresh">Refresh</string>
+    <string name="delete_selected">Delete selected</string>
+    <string name="storage_summary">Used %1$s of %2$s, free %3$s</string>
+    <string name="scanning_format">Scanning… %1$d files — %2$s</string>
+    <string name="category_photos">Photos</string>
+    <string name="category_videos">Videos</string>
+    <string name="category_music">Music</string>
+    <string name="category_documents">Documents</string>
+    <string name="category_archives">Archives</string>
+    <string name="category_apk">APK</string>
+    <string name="category_other">Other</string>
+    <string name="no_large_files">No large files (>10 MB) in this category</string>
+    <string name="large_files_title">Large files (>10 MB)</string>
+    <string name="files_count">%d files</string>
+
+    <!-- Duplicate detector -->
+    <string name="original_folders_mode">Original Folders</string>
+    <string name="duplicates">Duplicates</string>
+    <string name="deselect">Deselect</string>
+    <string name="select_copies">Select copies</string>
+    <string name="play">Play</string>
+    <string name="rescan">Rescan</string>
+    <string name="delete_count_format">Delete (%d)</string>
+    <string name="marked_count">Marked: %d</string>
+    <string name="phase_1_scanning">Phase 1: Scanning files…</string>
+    <string name="phase_2_hashing">Phase 2: Calculating hashes…</string>
+    <string name="groups_stat">Groups</string>
+    <string name="files_stat">Files</string>
+    <string name="wasted_stat">Wasted</string>
+    <string name="no_duplicates">No duplicates found</string>
+    <string name="deleting">Deleting…</string>
+    <string name="duplicate_group_format">%1$d files · %2$s each</string>
+    <string name="wasted_format">Wasted: %s</string>
+    <string name="keep_original">Keep original</string>
+    <string name="original_badge">Original</string>
+    <string name="original_reassigned">Original reassigned</string>
+    <string name="file_not_found">File not found</string>
+    <string name="no_media_in_duplicates">No media files among duplicates</string>
+    <string name="duplicates_deleted_format">Duplicates deleted: %d</string>
+
+    <!-- Gallery -->
+    <string name="share">Share</string>
+    <string name="failed_to_load">Failed to load</string>
+
+    <!-- Media player -->
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+
+    <!-- Permission screen -->
+    <string name="file_access_title">File Access</string>
+    <string name="file_access_description">The file manager requires access to device files. This allows viewing, copying and moving files.</string>
+    <string name="grant_access">Grant Access</string>
+
+    <!-- Archive viewer -->
+    <string name="archive_title">Archive</string>
+    <string name="select_all">Select all</string>
+    <string name="extraction_progress_format">Extracting: %1$d/%2$d — %3$s</string>
+    <string name="extract_all">Extract all</string>
+    <string name="extract_count_format">Extract (%d)</string>
+    <string name="items_count">%d items</string>
+    <string name="empty_folder_item">Empty folder</string>
+    <string name="password_protected">Archive is password protected</string>
+    <string name="archive_read_error">Archive read error</string>
+    <string name="extracted_to_format">Extracted to %s</string>
+
+    <!-- File operation service -->
+    <string name="notification_preparing">Preparing…</string>
+    <string name="notification_channel_name">File operations</string>
+    <string name="notification_channel_desc">Copy and move file progress</string>
+    <string name="operation_cancelled">Cancelled</string>
+    <string name="operation_moved">Moved</string>
+    <string name="operation_copied">Copied</string>
+
+    <!-- Operation types -->
+    <string name="operation_type_copy">Copying</string>
+    <string name="operation_type_move">Moving</string>
+    <string name="operation_type_delete">Deleting</string>
+
+    <!-- ViewModel toasts -->
+    <string name="bookmark_saved">Bookmark %d saved</string>
+    <string name="no_recent_files">No recent files</string>
+    <string name="cannot_open_folders_external">Cannot open folders with external app</string>
+    <string name="copied_count">Copied: %d</string>
+    <string name="moved_count">Moved: %d</string>
+    <string name="deleted_count">Deleted: %d</string>
+    <string name="renamed_to">Renamed to %s</string>
+    <string name="archive_created">Archive created: %s</string>
+    <string name="added_to_shelf">Added to shelf: %d</string>
+    <string name="file_operation_progress_format">%1$s: %2$d file(s)…</string>
+    <string name="file_operation_current_format">%1$s: %2$d/%3$d — %4$s</string>
+    <string name="file_operation_count_format">%1$s: %2$d/%3$d</string>
+    <string name="folder_created">Folder created</string>
+    <string name="file_created">File created</string>
+
+    <!-- Format utils -->
+    <string name="size_bytes">B</string>
+    <string name="size_kb">KB</string>
+    <string name="size_mb">MB</string>
+    <string name="size_gb">GB</string>
+    <string name="size_tb">TB</string>
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%d min. ago</string>
+    <string name="time_hours_ago">%d h. ago</string>
+    <string name="time_days_ago">%d d. ago</string>
+
+    <!-- Widget -->
+    <string name="widget_title">Haron Favorites</string>
+    <string name="widget_no_favorites">No favorite folders</string>
+
+    <!-- Domain errors -->
+    <string name="error_folder_name_empty">Folder name cannot be empty</string>
+    <string name="error_folder_name_slashes">Folder name cannot contain / or \\</string>
+    <string name="error_file_name_empty">File name cannot be empty</string>
+    <string name="error_file_name_slashes">File name cannot contain / or \\</string>
+    <string name="error_name_empty">Name cannot be empty</string>
+    <string name="error_name_slashes">Name cannot contain / or \\</string>
+    <string name="hash_error">Error</string>
+
+    <!-- EXIF labels -->
+    <string name="exif_manufacturer">Manufacturer</string>
+    <string name="exif_camera_model">Camera model</string>
+    <string name="exif_date_taken">Date taken</string>
+    <string name="exif_image_size">Image size</string>
+    <string name="exif_iso">ISO</string>
+    <string name="exif_exposure">Exposure</string>
+    <string name="exif_aperture">Aperture</string>
+    <string name="exif_focal_length">Focal length</string>
+    <string name="exif_white_balance">White balance</string>
+    <string name="exif_wb_auto">Auto</string>
+    <string name="exif_wb_manual">Manual</string>
+    <string name="exif_flash">Flash</string>
+    <string name="exif_gps">GPS</string>
+    <string name="exif_software">Software</string>
+
+    <!-- Preview errors -->
+    <string name="preview_error_generic">Preview loading error</string>
+    <string name="archive_password_or_corrupt">Archive is password protected or corrupted</string>
+    <string name="rar_open_error">Could not open RAR archive</string>
+    <string name="document_read_error">Could not read document</string>
+
+    <!-- Repository errors -->
+    <string name="error_path_not_exists">Path does not exist: %s</string>
+    <string name="error_not_a_folder">Not a folder: %s</string>
+    <string name="error_dest_not_folder">Destination is not a folder: %s</string>
+    <string name="error_file_not_exists">File does not exist: %s</string>
+    <string name="error_file_name_exists">File with this name already exists: %s</string>
+    <string name="error_rename_failed">Could not rename file</string>
+    <string name="error_rename_saf">Could not rename SAF file</string>
+    <string name="error_create_folder_saf">Could not create folder via SAF</string>
+    <string name="error_folder_exists">Folder already exists: %s</string>
+    <string name="error_create_folder">Could not create folder</string>
+    <string name="error_create_file_saf">Could not create file via SAF</string>
+    <string name="error_parent_not_exists">Parent folder does not exist: %s</string>
+    <string name="error_copy_into_itself">Cannot copy folder into itself</string>
+
+    <!-- Storage categories (AnalyzeStorageUseCase) -->
+    <string name="storage_cat_photos">Photos</string>
+    <string name="storage_cat_videos">Videos</string>
+    <string name="storage_cat_music">Music</string>
+    <string name="storage_cat_documents">Documents</string>
+    <string name="storage_cat_archives">Archives</string>
+    <string name="storage_cat_apk">APK</string>
+    <string name="storage_cat_other">Other</string>
+
+    <!-- Archive extraction -->
+    <string name="extract_unsupported_format">Unsupported format</string>
+    <string name="extract_error_generic">Extraction error</string>
+
+    <!-- APK parse -->
+    <string name="apk_parse_error">Could not read APK</string>
+
+    <!-- Trash repository -->
+    <string name="storage_root_internal">Internal storage</string>
+    <string name="storage_root_sd">SD card</string>
+
+    <!-- Additional UI strings -->
+    <string name="close_search">Close search</string>
+    <string name="cancel_selection">Cancel selection</string>
+    <string name="forward">Forward</string>
+    <string name="sort_label">Sort</string>
+    <string name="ascending">Ascending</string>
+    <string name="descending">Descending</string>
+    <string name="pause">Pause</string>
+    <string name="select_deselect_all">Select/deselect all</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="remove_item">Remove</string>
+    <string name="to_favorites">To favorites</string>
+    <string name="plural_folders_genitive">folders</string>
+    <string name="plural_files_genitive">files</string>
+    <string name="zero_files">0 files</string>
+
+    <!-- ExplorerViewModel additional -->
+    <string name="folder_marked_original">Folder marked as original</string>
+    <string name="marker_removed">Marker removed</string>
+    <string name="auto_evicted_format">Auto-deleted %d old files from trash</string>
+    <string name="delete_error_format">Delete error: %s</string>
+    <string name="moved_to_trash_count">In trash: %d</string>
+    <string name="skipped_count">Skipped: %d</string>
+    <string name="copied_with_skip">Copied: %1$d, skipped: %2$d</string>
+    <string name="moved_with_skip">Moved: %1$d, skipped: %2$d</string>
+    <string name="copied_format">Copied: %s</string>
+    <string name="moved_format">Moved: %s</string>
+    <string name="restored_count">Restored: %d</string>
+    <string name="creating_zip">Creating ZIP…</string>
+    <string name="archive_create_error">Archive create error: %s</string>
+    <string name="moved_from_shelf">Moved from shelf: %d</string>
+    <string name="copied_from_shelf">Copied from shelf: %d</string>
+    <string name="installer_open_failed">Could not open installer</string>
+    <string name="no_app_for_file">No app to open this file</string>
+    <string name="select_files_first">Select files or folders first</string>
+    <string name="empty_folders_deleted">Empty folders deleted: %d</string>
+    <string name="force_deleted_count">Permanently deleted: %d</string>
+    <string name="error_rename">Rename error</string>
+    <string name="open_in_chooser">Open with…</string>
+    <string name="error_loading_preview">Preview loading error</string>
+    <string name="unknown_error">Unknown error</string>
+    <string name="operation_cancelled_label">Cancelled</string>
+    <string name="error_loading">Loading error</string>
+    <string name="added_to_shelf_count">To shelf: %d</string>
+    <string name="exif_data_removed">EXIF data removed</string>
+    <string name="exif_remove_error">Could not remove EXIF</string>
+
+    <!-- Missing toast/status strings -->
+    <string name="trash_cleared_count">Trash cleared: %d</string>
+    <string name="saf_unavailable">Not available for SAF storage</string>
+    <string name="apk_analysis_error">APK analysis error</string>
+    <string name="version_upgrade">Update: v%1$s → v%2$s</string>
+    <string name="version_downgrade">Downgrade: v%1$s → v%2$s</string>
+    <string name="version_reinstall">Reinstall: v%s</string>
+    <string name="storage_deleted_format">Deleted: %d files</string>
+    <string name="found_candidates_format">Found %d candidates</string>
+
+    <!-- APK permission descriptions (categories) -->
+    <string name="perm_cat_location">This permission is related to location tracking. The app may track where you are.</string>
+    <string name="perm_cat_camera">This permission gives camera access. The app can take photos or record video.</string>
+    <string name="perm_cat_audio">This permission is related to audio — microphone recording or audio file access.</string>
+    <string name="perm_cat_sms">This permission is related to SMS. The app can read, send, or receive text messages.</string>
+    <string name="perm_cat_phone">This permission is related to the phone — device info, calls, or call log.</string>
+    <string name="perm_cat_call">This permission is related to phone calls — making calls or accessing call history.</string>
+    <string name="perm_cat_contact">This permission gives access to your contacts — reading or modifying them.</string>
+    <string name="perm_cat_storage">This permission gives access to files on the device — reading or writing.</string>
+    <string name="perm_cat_media">This permission gives access to media files — photos, videos, or music.</string>
+    <string name="perm_cat_bluetooth">This permission is related to Bluetooth — connecting to wireless devices.</string>
+    <string name="perm_cat_wifi">This permission is related to Wi-Fi — network info or connections.</string>
+    <string name="perm_cat_network">This permission is related to network — checking internet connectivity.</string>
+    <string name="perm_cat_calendar">This permission gives access to your calendar — reading or adding events.</string>
+    <string name="perm_cat_sensor">This permission gives access to device sensors — accelerometer, gyroscope, or health sensors.</string>
+    <string name="perm_cat_notification">This permission is related to notifications — showing or managing them.</string>
+    <string name="perm_cat_alarm">This permission is related to alarms and timers.</string>
+    <string name="perm_cat_biometric">This permission is related to biometrics — fingerprint or face unlock.</string>
+    <string name="perm_cat_nfc">This permission is related to NFC — contactless data transfer.</string>
+    <string name="perm_cat_install">This permission allows installing applications.</string>
+    <string name="perm_cat_billing">This permission is related to in-app purchases.</string>
+    <string name="perm_cat_vibrate">This permission allows using device vibration.</string>
+    <string name="perm_cat_boot">This permission allows the app to start automatically after device boot.</string>
+    <string name="perm_cat_wake">This permission prevents the screen or CPU from sleeping while the app is active.</string>
+    <string name="perm_cat_foreground">This permission allows the app to run in the background and show a notification about it.</string>
+    <string name="perm_cat_overlay">This permission allows drawing windows on top of other apps.</string>
+    <string name="perm_cat_shortcut">This permission allows creating home screen shortcuts.</string>
+    <string name="perm_cat_fingerprint">This permission gives access to the fingerprint scanner for authentication.</string>
+    <string name="perm_cat_default">A technical permission the app requests for its operation. Usually does not affect your privacy.</string>
+
+    <!-- APK specific permission descriptions -->
+    <string name="perm_internet">The app can access the internet — load data, update, show ads, and send information to its servers. Almost all apps have this.</string>
+    <string name="perm_access_network_state">The app will know if you\'re connected to the internet and how — Wi-Fi or mobile data. Used to avoid using mobile data.</string>
+    <string name="perm_access_wifi_state">The app will see your Wi-Fi network name and connection status. Often needed to download updates and large files only over Wi-Fi.</string>
+    <string name="perm_change_wifi_state">The app can turn Wi-Fi on and off on your device. Used for automatic network connections.</string>
+    <string name="perm_change_network_state">The app can change network settings — for example, switch between Wi-Fi and mobile internet.</string>
+    <string name="perm_nearby_wifi_devices">The app can search for nearby Wi-Fi devices. Needed for file transfer between devices via Wi-Fi Direct.</string>
+    <string name="perm_camera">The app gets access to your phone\'s camera. Can take photos and videos, scan QR codes, or make video calls. Camera only works when the app is open.</string>
+    <string name="perm_record_audio">The app can record sound through the microphone. Used for voice messages, video calls, voice recorder, or voice search. Be aware — the microphone can record everything around.</string>
+    <string name="perm_read_contacts">The app will see all your contacts — names, phone numbers, emails. Usually needed to find friends in the app, but can be used for data collection.</string>
+    <string name="perm_write_contacts">The app can add new contacts and modify existing ones in your address book.</string>
+    <string name="perm_get_accounts">The app will see the list of accounts on the device — Google, email, and others. Used for signing in with an existing account.</string>
+    <string name="perm_read_phone_state">The app will get info about your phone — model, carrier, phone number. Often needed for device identification, but can be used for tracking.</string>
+    <string name="perm_read_phone_numbers">The app will see your phone number. Usually needed for automatic registration by number without manual input.</string>
+    <string name="perm_call_phone">The app can make calls to any number without your confirmation! Be careful — this may result in paid calls.</string>
+    <string name="perm_answer_phone_calls">The app can automatically answer incoming calls. Used in calling apps and auto-responders.</string>
+    <string name="perm_read_call_log">The app will see your entire call history — who you called, who called you, when, and how long each call lasted.</string>
+    <string name="perm_write_call_log">The app can add and delete entries from the call log. Needed for internet telephony apps.</string>
+    <string name="perm_process_outgoing_calls">The app will intercept outgoing calls. Used for spam blocking or call forwarding.</string>
+    <string name="perm_send_sms">The app can send SMS on your behalf. Be careful — sending SMS to premium numbers can cost money!</string>
+    <string name="perm_read_sms">The app will read all your SMS messages. Usually needed for automatic verification code reading, but gives access to all messages.</string>
+    <string name="perm_receive_sms">The app will receive incoming SMS in real time. Needed to automatically fill in verification codes during registration.</string>
+    <string name="perm_receive_mms">The app will receive incoming MMS — messages with images and video.</string>
+    <string name="perm_access_fine_location">The app will know your exact location within a few meters (via GPS). Needed for navigation, maps, and delivery. One of the most sensitive permissions.</string>
+    <string name="perm_access_coarse_location">The app will know your approximate location — city or district. Less precise than GPS, but sufficient for weather and news.</string>
+    <string name="perm_access_background_location">The app will track your location even when you close it! Needed for navigators and fitness trackers, but can drain battery and track you.</string>
+    <string name="perm_read_external_storage">The app can read all files in phone memory — photos, documents, downloads. On older Android versions gives broad access.</string>
+    <string name="perm_write_external_storage">The app can save and modify files in phone memory. Needed for downloading files, saving photos and documents.</string>
+    <string name="perm_manage_external_storage">Full access to ALL files on the device without restrictions! Only needed for file managers, antivirus apps, and backup apps. If this is a regular app — it\'s suspicious.</string>
+    <string name="perm_read_media_images">The app gets access to your photos and images. Needed for profile photo selection, sending in chat, or processing.</string>
+    <string name="perm_read_media_video">The app gets access to your videos. Needed for viewing, sending, or editing video.</string>
+    <string name="perm_read_media_audio">The app gets access to your music and audio recordings. Needed for music players and editors.</string>
+    <string name="perm_post_notifications">The app can show you notifications — messages, reminders, news, ads. You can disable them in settings at any time.</string>
+    <string name="perm_access_notification_policy">The app can manage Do Not Disturb mode. Needed for alarm apps and notification managers.</string>
+    <string name="perm_bluetooth">The app can connect to Bluetooth devices — headphones, speakers, smart watches, printers.</string>
+    <string name="perm_bluetooth_admin">The app can manage Bluetooth — turn on, turn off, and configure device connections.</string>
+    <string name="perm_bluetooth_connect">The app can connect to already known Bluetooth devices — headphones, speakers, watches that you previously paired.</string>
+    <string name="perm_bluetooth_scan">The app will search for nearby Bluetooth devices. Needed when first connecting a new device.</string>
+    <string name="perm_bluetooth_advertise">The app can make your device visible to others via Bluetooth. Needed for file transfer between phones.</string>
+    <string name="perm_read_calendar">The app will see all your calendar events — meetings, birthdays, reminders. Can be used for planning.</string>
+    <string name="perm_write_calendar">The app can add events to your calendar and modify existing ones. Needed for planners and schedule apps.</string>
+    <string name="perm_body_sensors">The app will get data from health sensors — heart rate, blood pressure, oxygen level. Needed for fitness apps and health monitoring.</string>
+    <string name="perm_body_sensors_background">The app will read health sensors even in the background. Needed for continuous heart rate or sleep monitoring.</string>
+    <string name="perm_activity_recognition">The app will determine what you\'re doing — walking, running, cycling, or driving. Needed for fitness trackers and pedometers.</string>
+    <string name="perm_high_sampling_rate_sensors">The app will get accelerated data from motion sensors. Needed for sports trackers and tilt-controlled games.</string>
+    <string name="perm_use_biometric">The app will offer fingerprint or face recognition login instead of password. Your biometric data is not shared with the app — verification is done by the system.</string>
+    <string name="perm_use_fingerprint">The app will offer to confirm an action with your fingerprint. Your fingerprint is stored only in the device\'s secure memory.</string>
+    <string name="perm_vibrate">The app can use vibration — for notifications, alarms, or touch feedback. A harmless permission.</string>
+    <string name="perm_wake_lock">The app won\'t let the phone sleep while performing a task — file download, music playback, navigation. May affect battery usage.</string>
+    <string name="perm_receive_boot_completed">The app will start automatically after phone restart. Needed for alarms, messengers, and monitoring. Many such apps slow down device boot.</string>
+    <string name="perm_foreground_service">The app can run in the background and show an icon in the notification shade. Needed for music players, downloaders, and navigators.</string>
+    <string name="perm_foreground_service_data_sync">The app can sync data in the background — download or upload files, even when you minimize it.</string>
+    <string name="perm_foreground_service_media_playback">The app can play music or video in the background — when the screen is off or another app is open.</string>
+    <string name="perm_foreground_service_location">The app can track location in the background with a notification. Needed for navigators and fitness trackers.</string>
+    <string name="perm_foreground_service_camera">The app can use the camera in the background. Needed for video calls and surveillance apps.</string>
+    <string name="perm_foreground_service_microphone">The app can record audio in the background. Needed for call recording, voice recorder, or voice assistants.</string>
+    <string name="perm_request_install_packages">The app can offer to install other APK files. Needed for app stores and auto-updates. If this isn\'t a store — be careful.</string>
+    <string name="perm_request_delete_packages">The app can offer to delete other applications. Needed for antivirus apps and app managers.</string>
+    <string name="perm_system_alert_window">The app can show windows on top of all apps! Needed for floating players, call screens, and chat bubbles. Scammers can use it to fake interfaces.</string>
+    <string name="perm_query_all_packages">The app will see all installed applications on the device. Needed for antivirus apps and launchers, but can be used to analyze your preferences.</string>
+    <string name="perm_schedule_exact_alarm">The app can set alarms and reminders at exact times. Needed for alarms, planners, and schedule apps.</string>
+    <string name="perm_use_exact_alarm">The app can trigger at exactly the set time, even in battery saver mode. Needed for alarms.</string>
+    <string name="perm_request_ignore_battery_optimizations">The app will ask to disable battery optimization for it. Needed for messengers and notification apps, but will increase battery drain.</string>
+    <string name="perm_package_usage_stats">The app will see usage statistics of other apps — which you open and how long you spend. Needed for screen time control.</string>
+    <string name="perm_nfc">The app can exchange data via NFC — contactless payment, reading tags, transit passes, or access cards.</string>
+    <string name="perm_nfc_transaction_event">The app will receive notifications about contactless NFC payments.</string>
+    <string name="perm_install_shortcut">The app can create a shortcut on your home screen for quick access. A harmless permission.</string>
+    <string name="perm_billing">The app supports purchases through Google Play — subscriptions, feature unlocks, ad removal, or virtual goods.</string>
+    <string name="perm_check_license">The app checks its license through Google Play — confirms you legally purchased/downloaded it.</string>
+
+    <!-- Batch rename -->
+    <string name="batch_rename_title">Batch rename</string>
+    <string name="batch_rename_template">Template</string>
+    <string name="batch_rename_find">Find</string>
+    <string name="batch_rename_replace_with">Replace with</string>
+    <string name="batch_rename_prefix">Add prefix</string>
+    <string name="batch_rename_suffix">Add suffix</string>
+    <string name="batch_rename_preview">Preview</string>
+    <string name="batch_rename_apply">Rename (%d)</string>
+    <string name="batch_rename_success">Renamed: %d</string>
+    <string name="batch_rename_error">Rename error: %s</string>
+    <string name="batch_rename_counter_hint">Use # for counter (photo_### → photo_001)</string>
+    <string name="batch_rename_start_number">Start number</string>
+    <string name="batch_rename_step">Step</string>
+    <string name="batch_mode_template">Template</string>
+    <string name="batch_mode_find_replace">Find &amp; Replace</string>
+    <string name="batch_mode_case">Case</string>
+    <string name="case_as_is">As is</string>
+    <string name="case_lower">lowercase</string>
+    <string name="case_upper">UPPERCASE</string>
+    <string name="case_title">Title Case</string>
+    <string name="batch_rename_history">Recent</string>
+    <string name="batch_rename_no_changes">No files to rename</string>
+    <string name="batch_rename_keep_ext">Keep extension</string>
+
+    <!-- Tags -->
+    <string name="tags_title">Tags</string>
+    <string name="tags_manage">Manage tags</string>
+    <string name="tags_assign">Tags</string>
+    <string name="tags_create">Create tag</string>
+    <string name="tags_edit">Edit tag</string>
+    <string name="tags_delete">Delete tag</string>
+    <string name="tags_name_hint">Tag name</string>
+    <string name="tags_color">Color</string>
+    <string name="tags_no_tags">No tags yet</string>
+    <string name="tags_create_first">Create first tag</string>
+    <string name="tags_delete_confirm">Delete tag \"%s\"? It will be removed from all files.</string>
+    <string name="tags_filter_all">All files</string>
+    <string name="tags_filter_by">Filter by tag</string>
+    <string name="tags_action">Tags</string>
+    <string name="tags_name_exists">Tag with this name already exists</string>
+    <string name="tags_apply">Apply</string>
+
+    <!-- Plural forms for file counts -->
+    <string name="plural_folders_nom">folder</string>
+    <string name="plural_folders_gen_few">folders</string>
+    <string name="plural_files_nom">file</string>
+    <string name="plural_files_gen_few">files</string>
 </resources>

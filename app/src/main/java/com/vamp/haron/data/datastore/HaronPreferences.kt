@@ -6,6 +6,7 @@ import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
 import com.vamp.haron.data.model.SortOrder
+import com.vamp.haron.domain.model.FileTag
 import com.vamp.haron.domain.model.ShelfItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
@@ -294,6 +295,157 @@ class HaronPreferences @Inject constructor(
         prefs.edit().putString(KEY_BOOKMARKS, obj.toString()).apply()
     }
 
+    // --- Batch rename pattern history ---
+
+    fun getRenamePatterns(): List<String> {
+        val json = prefs.getString(KEY_RENAME_PATTERNS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addRenamePattern(pattern: String) {
+        val trimmed = pattern.trim()
+        if (trimmed.isEmpty()) return
+        val list = getRenamePatterns().toMutableList()
+        list.remove(trimmed)
+        list.add(0, trimmed)
+        val capped = list.take(MAX_RENAME_PATTERNS)
+        prefs.edit().putString(KEY_RENAME_PATTERNS, JSONArray(capped).toString()).apply()
+    }
+
+    // --- Tag definitions ---
+
+    fun getTagDefinitions(): List<FileTag> {
+        val json = prefs.getString(KEY_TAG_DEFINITIONS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                FileTag(
+                    name = obj.getString("name"),
+                    colorIndex = obj.getInt("colorIndex")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveTagDefinitions(tags: List<FileTag>) {
+        val arr = JSONArray()
+        tags.forEach { tag ->
+            arr.put(JSONObject().apply {
+                put("name", tag.name)
+                put("colorIndex", tag.colorIndex)
+            })
+        }
+        prefs.edit().putString(KEY_TAG_DEFINITIONS, arr.toString()).apply()
+    }
+
+    fun addTagDefinition(tag: FileTag) {
+        val list = getTagDefinitions().toMutableList()
+        if (list.none { it.name == tag.name }) {
+            list.add(tag)
+            saveTagDefinitions(list)
+        }
+    }
+
+    fun removeTagDefinition(name: String) {
+        val list = getTagDefinitions().filter { it.name != name }
+        saveTagDefinitions(list)
+        // Also remove from all file mappings
+        val mappings = getFileTagMappings().toMutableMap()
+        var changed = false
+        mappings.forEach { (path, tags) ->
+            if (name in tags) {
+                mappings[path] = tags - name
+                changed = true
+            }
+        }
+        if (changed) {
+            // Remove entries with empty tag lists
+            val cleaned = mappings.filter { it.value.isNotEmpty() }
+            saveFileTagMappings(cleaned)
+        }
+    }
+
+    fun updateTagDefinition(oldName: String, newTag: FileTag) {
+        val list = getTagDefinitions().toMutableList()
+        val idx = list.indexOfFirst { it.name == oldName }
+        if (idx >= 0) {
+            list[idx] = newTag
+            saveTagDefinitions(list)
+            // Update mappings if name changed
+            if (oldName != newTag.name) {
+                val mappings = getFileTagMappings().toMutableMap()
+                var changed = false
+                mappings.forEach { (path, tags) ->
+                    if (oldName in tags) {
+                        mappings[path] = tags.map { if (it == oldName) newTag.name else it }
+                        changed = true
+                    }
+                }
+                if (changed) saveFileTagMappings(mappings)
+            }
+        }
+    }
+
+    // --- File-tag mappings ---
+
+    fun getFileTagMappings(): Map<String, List<String>> {
+        val json = prefs.getString(KEY_FILE_TAG_MAPPINGS, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(json)
+            val map = mutableMapOf<String, List<String>>()
+            obj.keys().forEach { path ->
+                val arr = obj.getJSONArray(path)
+                val tags = (0 until arr.length()).map { arr.getString(it) }
+                if (tags.isNotEmpty()) map[path] = tags
+            }
+            map
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun saveFileTagMappings(mappings: Map<String, List<String>>) {
+        val obj = JSONObject()
+        mappings.forEach { (path, tags) ->
+            if (tags.isNotEmpty()) {
+                obj.put(path, JSONArray(tags))
+            }
+        }
+        prefs.edit().putString(KEY_FILE_TAG_MAPPINGS, obj.toString()).apply()
+    }
+
+    fun setFileTags(path: String, tagNames: List<String>) {
+        val mappings = getFileTagMappings().toMutableMap()
+        if (tagNames.isEmpty()) {
+            mappings.remove(path)
+        } else {
+            mappings[path] = tagNames
+        }
+        saveFileTagMappings(mappings)
+    }
+
+    fun removeFileTags(path: String) {
+        val mappings = getFileTagMappings().toMutableMap()
+        if (mappings.remove(path) != null) {
+            saveFileTagMappings(mappings)
+        }
+    }
+
+    fun migrateFileTags(oldPath: String, newPath: String) {
+        val mappings = getFileTagMappings().toMutableMap()
+        val tags = mappings.remove(oldPath) ?: return
+        mappings[newPath] = tags
+        saveFileTagMappings(mappings)
+    }
+
     // --- Panel paths ---
 
     var topPanelPath: String
@@ -330,6 +482,10 @@ class HaronPreferences @Inject constructor(
         const val KEY_BOOKMARKS = "bookmarks"
         const val KEY_LAST_MEDIA_FILE = "last_media_file"
         const val KEY_LAST_DOCUMENT_FILE = "last_document_file"
+        const val KEY_RENAME_PATTERNS = "rename_patterns"
+        const val KEY_TAG_DEFINITIONS = "tag_definitions"
+        const val KEY_FILE_TAG_MAPPINGS = "file_tag_mappings"
         const val MAX_RECENT = 5
+        const val MAX_RENAME_PATTERNS = 10
     }
 }

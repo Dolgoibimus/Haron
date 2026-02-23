@@ -25,8 +25,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 
 @Composable
 fun EmptyFolderCleanupDialog(
@@ -41,7 +43,7 @@ fun EmptyFolderCleanupDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Пустые папки") },
+        title = { Text(stringResource(R.string.empty_folders_title)) },
         text = {
             Column {
                 // Toggle recursive
@@ -50,7 +52,7 @@ fun EmptyFolderCleanupDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Включая вложенные",
+                        stringResource(R.string.including_nested),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -63,7 +65,7 @@ fun EmptyFolderCleanupDialog(
 
                 if (folders.isEmpty()) {
                     Text(
-                        "Пустых папок не найдено",
+                        stringResource(R.string.no_empty_folders),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -82,7 +84,7 @@ fun EmptyFolderCleanupDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Выбрать все (${folders.size})",
+                            stringResource(R.string.select_all_count, folders.size),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -122,12 +124,12 @@ fun EmptyFolderCleanupDialog(
                 onClick = onDelete,
                 enabled = selectedPaths.isNotEmpty()
             ) {
-                Text("Удалить")
+                Text(stringResource(R.string.delete))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Закрыть")
+                Text(stringResource(R.string.close))
             }
         }
     )

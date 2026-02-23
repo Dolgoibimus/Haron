@@ -17,7 +17,8 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,7 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 
 @Composable
@@ -40,6 +43,7 @@ fun SelectionActionBar(
     onRename: () -> Unit,
     onZip: () -> Unit,
     onAddToShelf: () -> Unit,
+    onTag: () -> Unit,
     onInfo: () -> Unit,
     onOpenWith: () -> Unit,
     isSizeCalculating: Boolean = false,
@@ -75,77 +79,83 @@ fun SelectionActionBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = "Копировать", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onMove, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Переместить", modifier = Modifier.size(20.dp))
+                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Filled.DeleteOutline,
-                        contentDescription = "В корзину",
+                        contentDescription = stringResource(R.string.to_trash),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
                     )
                 }
                 IconButton(
                     onClick = onRename,
-                    enabled = totalCount == 1,
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(Icons.Filled.Edit, contentDescription = "Переименовать", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.rename_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Archive, contentDescription = "ZIP", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.zip_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onAddToShelf, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Inventory2, contentDescription = "На полку", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Inventory2, contentDescription = stringResource(R.string.to_shelf_action), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = onInfo,
                     enabled = totalCount == 1,
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(Icons.Filled.Info, contentDescription = "Свойства", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.properties_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = onOpenWith,
                     enabled = totalCount == 1 && dirCount == 0,
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(Icons.Filled.OpenInNew, contentDescription = "Открыть в...", modifier = Modifier.size(20.dp))
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_with_action), modifier = Modifier.size(20.dp))
                 }
             }
         }
     }
 }
 
+@Composable
 private fun formatFileCount(dirs: Int, files: Int): String {
+    val folderLabel = pluralForm(
+        dirs,
+        stringResource(R.string.plural_folders_nom),
+        stringResource(R.string.plural_folders_gen_few),
+        stringResource(R.string.plural_folders_genitive)
+    )
+    val fileLabel = pluralForm(
+        files,
+        stringResource(R.string.plural_files_nom),
+        stringResource(R.string.plural_files_gen_few),
+        stringResource(R.string.plural_files_genitive)
+    )
+    val andConj = stringResource(R.string.and_conjunction)
+    val zeroFiles = stringResource(R.string.zero_files)
     val parts = buildList {
-        if (dirs > 0) add("$dirs ${pluralDirs(dirs)}")
-        if (files > 0) add("$files ${pluralFiles(files)}")
+        if (dirs > 0) add("$dirs $folderLabel")
+        if (files > 0) add("$files $fileLabel")
     }
-    return parts.joinToString(" и ").ifEmpty { "0 файлов" }
+    return parts.joinToString(andConj).ifEmpty { zeroFiles }
 }
 
-private fun pluralDirs(count: Int): String {
+private fun pluralForm(count: Int, nom: String, genFew: String, genitive: String): String {
     val mod100 = count % 100
     val mod10 = count % 10
     return when {
-        mod100 in 11..14 -> "папок"
-        mod10 == 1 -> "папка"
-        mod10 in 2..4 -> "папки"
-        else -> "папок"
-    }
-}
-
-private fun pluralFiles(count: Int): String {
-    val mod100 = count % 100
-    val mod10 = count % 10
-    return when {
-        mod100 in 11..14 -> "файлов"
-        mod10 == 1 -> "файл"
-        mod10 in 2..4 -> "файла"
-        else -> "файлов"
+        mod100 in 11..14 -> genitive
+        mod10 == 1 -> nom
+        mod10 in 2..4 -> genFew
+        else -> genitive
     }
 }

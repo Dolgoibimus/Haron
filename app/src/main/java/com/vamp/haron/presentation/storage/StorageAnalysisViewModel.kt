@@ -3,6 +3,7 @@ package com.vamp.haron.presentation.storage
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.haron.R
 import com.vamp.haron.domain.usecase.AnalyzeStorageUseCase
 import com.vamp.haron.domain.usecase.StorageAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -75,7 +76,7 @@ class StorageAnalysisViewModel @Inject constructor(
                 } catch (_: Exception) { }
             }
             _state.update { it.copy(selectedFiles = emptySet()) }
-            _toastMessage.tryEmit("Удалено: $deleted файлов")
+            _toastMessage.tryEmit(appContext.getString(R.string.storage_deleted_format, deleted))
             // Rescan
             startScan()
         }

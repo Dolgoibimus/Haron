@@ -117,7 +117,8 @@ class VlcPlayerAdapter(
             Uri.fromFile(java.io.File(item.filePath))
         }
         val media = Media(libVlc, uri)
-        media.setHWDecoderEnabled(false, false)
+        media.setHWDecoderEnabled(true, false)
+        media.addOption(":no-mediacodec-dr")
         media.addOption(":no-avcodec-hurry-up")
         media.addOption(":avcodec-workaround-bugs=5")
         media.addOption(":no-avcodec-dr")

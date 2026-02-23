@@ -14,8 +14,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 
 @Composable
 fun ForceDeleteConfirmDialog(
@@ -27,7 +29,7 @@ fun ForceDeleteConfirmDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                "Принудительное удаление",
+                stringResource(R.string.force_delete_title),
                 color = MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.Bold
             )
@@ -35,14 +37,13 @@ fun ForceDeleteConfirmDialog(
         text = {
             Column {
                 Text(
-                    "Файлы будут удалены НАВСЕГДА без возможности восстановления. " +
-                            "Это действие нельзя отменить.",
+                    stringResource(R.string.force_delete_warning),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Будет удалено: ${names.size}",
+                    stringResource(R.string.will_be_deleted_count, names.size),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -65,7 +66,7 @@ fun ForceDeleteConfirmDialog(
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
-                    "Удалить навсегда",
+                    stringResource(R.string.delete_forever_confirm),
                     color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.Bold
                 )
@@ -73,7 +74,7 @@ fun ForceDeleteConfirmDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

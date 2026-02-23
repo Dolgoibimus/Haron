@@ -62,9 +62,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.usecase.DuplicateGroup
@@ -148,14 +150,14 @@ fun DuplicateDetectorScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (state.isOriginalFolderMode) "Папки-оригиналы" else "Дубликаты")
+                    Text(if (state.isOriginalFolderMode) stringResource(R.string.original_folders_mode) else stringResource(R.string.duplicates))
                 },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (state.isOriginalFolderMode) viewModel.exitOriginalFolderMode()
                         else onBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -163,28 +165,28 @@ fun DuplicateDetectorScreen(
                         IconButton(onClick = { viewModel.toggleSelectAll() }) {
                             Icon(
                                 Icons.Filled.SelectAll,
-                                if (state.selectedPaths.isNotEmpty()) "Снять выделение" else "Выделить копии"
+                                if (state.selectedPaths.isNotEmpty()) stringResource(R.string.deselect) else stringResource(R.string.select_copies)
                             )
                         }
                         IconButton(onClick = {
                             val idx = viewModel.buildPlaylistFromAllGroups()
                             if (idx >= 0) onOpenMediaPlayer(idx)
                         }) {
-                            Icon(Icons.Filled.PlayArrow, "Воспроизвести")
+                            Icon(Icons.Filled.PlayArrow, stringResource(R.string.play))
                         }
                         IconButton(onClick = { viewModel.startScan() }) {
-                            Icon(Icons.Filled.Refresh, "Пересканировать")
+                            Icon(Icons.Filled.Refresh, stringResource(R.string.rescan))
                         }
                         Box {
                             IconButton(onClick = { showMenu = !showMenu }) {
-                                Icon(Icons.Filled.MoreVert, "Меню")
+                                Icon(Icons.Filled.MoreVert, stringResource(R.string.menu))
                             }
                             DropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Папки-оригиналы") },
+                                    text = { Text(stringResource(R.string.original_folders_mode)) },
                                     onClick = {
                                         showMenu = false
                                         viewModel.enterOriginalFolderMode()
@@ -205,9 +207,9 @@ fun DuplicateDetectorScreen(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Filled.Done, "Готово")
+                        Icon(Icons.Filled.Done, stringResource(R.string.done))
                         Spacer(Modifier.width(8.dp))
-                        Text("Готово")
+                        Text(stringResource(R.string.done))
                     }
                 }
             } else if (state.selectedPaths.isNotEmpty() && !state.isDeleting) {
@@ -220,9 +222,9 @@ fun DuplicateDetectorScreen(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Filled.Delete, "Удалить")
+                        Icon(Icons.Filled.Delete, stringResource(R.string.delete))
                         Spacer(Modifier.width(8.dp))
-                        Text("Удалить (${state.selectedPaths.size})")
+                        Text(stringResource(R.string.delete_count_format, state.selectedPaths.size))
                     }
                 }
             }
@@ -237,7 +239,7 @@ fun DuplicateDetectorScreen(
                 // --- Original folder mode ---
                 if (state.originalFolders.isNotEmpty()) {
                     Text(
-                        "Отмечено: ${state.originalFolders.size}",
+                        stringResource(R.string.marked_count, state.originalFolders.size),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -299,8 +301,8 @@ fun DuplicateDetectorScreen(
                     ) {
                         if (progress != null) {
                             Text(
-                                text = if (progress.phase == 1) "Фаза 1: Сканирование файлов..."
-                                else "Фаза 2: Вычисление хешей...",
+                                text = if (progress.phase == 1) stringResource(R.string.phase_1_scanning)
+                                else stringResource(R.string.phase_2_hashing),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Spacer(Modifier.height(8.dp))
@@ -361,9 +363,9 @@ fun DuplicateDetectorScreen(
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            StatItem("Групп", "${state.groups.size}")
-                            StatItem("Файлов", "${state.totalDuplicateFiles}")
-                            StatItem("Потрачено", state.totalWastedSpace.toFileSize())
+                            StatItem(stringResource(R.string.groups_stat), "${state.groups.size}")
+                            StatItem(stringResource(R.string.files_stat), "${state.totalDuplicateFiles}")
+                            StatItem(stringResource(R.string.wasted_stat), state.totalWastedSpace.toFileSize())
                         }
                     }
                 }
@@ -383,7 +385,7 @@ fun DuplicateDetectorScreen(
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                             )
                             Spacer(Modifier.height(16.dp))
-                            Text("Дубликатов не найдено", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.no_duplicates), style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
@@ -399,7 +401,7 @@ fun DuplicateDetectorScreen(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("Удаление...")
+                        Text(stringResource(R.string.deleting))
                     }
                 }
 
@@ -472,11 +474,11 @@ private fun DuplicateGroupCard(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "${group.files.size} файлов \u00B7 ${group.size.toFileSize()} каждый",
+                    stringResource(R.string.duplicate_group_format, group.files.size, group.size.toFileSize()),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    "Потрачено: ${group.wastedSpace.toFileSize()}",
+                    stringResource(R.string.wasted_format, group.wastedSpace.toFileSize()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -493,7 +495,7 @@ private fun DuplicateGroupCard(
             }
             Icon(
                 if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                "Раскрыть",
+                stringResource(R.string.expand),
                 Modifier.size(24.dp)
             )
         }
@@ -512,7 +514,7 @@ private fun DuplicateGroupCard(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onKeepOldest) {
-                        Text("Оставить оригинал", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.keep_original), style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 group.files.forEach { file ->
@@ -563,7 +565,7 @@ private fun DuplicateGroupCard(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 ) {
-                                    Text("Оригинал")
+                                    Text(stringResource(R.string.original_badge))
                                 }
                             }
                         }

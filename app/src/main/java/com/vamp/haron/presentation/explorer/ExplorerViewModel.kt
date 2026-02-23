@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.model.SortOrder
@@ -20,6 +21,7 @@ import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.FileTag
 import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
@@ -43,6 +45,7 @@ import com.vamp.haron.domain.usecase.CalculateHashUseCase
 import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
 import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
 import com.vamp.haron.common.util.HapticManager
+import com.vamp.haron.domain.usecase.BatchRenameUseCase
 import com.vamp.haron.domain.usecase.ForceDeleteUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
@@ -98,7 +101,8 @@ class ExplorerViewModel @Inject constructor(
     private val loadApkInstallInfoUseCase: LoadApkInstallInfoUseCase,
     private val hapticManager: HapticManager,
     private val forceDeleteUseCase: ForceDeleteUseCase,
-    private val findEmptyFoldersUseCase: FindEmptyFoldersUseCase
+    private val findEmptyFoldersUseCase: FindEmptyFoldersUseCase,
+    private val batchRenameUseCase: BatchRenameUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -158,7 +162,9 @@ class ExplorerViewModel @Inject constructor(
                 shelfItems = shelfItems,
                 themeMode = EcosystemPreferences.theme,
                 originalFolders = preferences.getOriginalFolders(),
-                bookmarks = preferences.getBookmarks()
+                bookmarks = preferences.getBookmarks(),
+                tagDefinitions = preferences.getTagDefinitions(),
+                fileTags = preferences.getFileTagMappings()
             )
         }
         val topPath = preferences.topPanelPath.let { p ->
@@ -277,7 +283,7 @@ class ExplorerViewModel @Inject constructor(
                 updatePanel(panelId) {
                     it.copy(
                         isLoading = false,
-                        error = error.message ?: "Неизвестная ошибка"
+                        error = error.message ?: appContext.getString(R.string.unknown_error)
                     )
                 }
                 EcosystemLogger.e(HaronConstants.TAG, "[$panelId] Ошибка навигации: $path — ${error.message}")
@@ -460,7 +466,7 @@ class ExplorerViewModel @Inject constructor(
                                 _uiState.update {
                                     it.copy(dialogState = current.copy(
                                         isLoading = false,
-                                        error = e.message ?: "Ошибка загрузки превью"
+                                        error = e.message ?: appContext.getString(R.string.error_loading_preview)
                                     ))
                                 }
                             }
@@ -516,7 +522,7 @@ class ExplorerViewModel @Inject constructor(
         }
         preferences.saveOriginalFolders(_uiState.value.originalFolders)
         val isNow = path in _uiState.value.originalFolders
-        _toastMessage.tryEmit(if (isNow) "Папка помечена как оригинал" else "Пометка снята")
+        _toastMessage.tryEmit(if (isNow) appContext.getString(R.string.folder_marked_original) else appContext.getString(R.string.marker_removed))
     }
 
     fun cycleTheme() {
@@ -549,7 +555,7 @@ class ExplorerViewModel @Inject constructor(
 
     fun getSdCardLabel(): String {
         val volumes = storageVolumeHelper.getRemovableVolumes()
-        return volumes.firstOrNull()?.label ?: "SD-карта"
+        return volumes.firstOrNull()?.label ?: appContext.getString(R.string.sd_card)
     }
 
     fun navigateToSdCard() {
@@ -761,8 +767,9 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
                     copyFilesUseCase(listOf(path), destinationDir, resolution)
                 }
+                copyTagsToDestination(paths, destinationDir)
                 hapticManager.success()
-                showStatusMessage(targetId, "Скопировано: ${formatFileCount(dirs, files)}")
+                showStatusMessage(targetId, appContext.getString(R.string.copied_format, formatFileCount(dirs, files)))
                 refreshPanel(targetId)
             }
         }
@@ -804,12 +811,15 @@ class ExplorerViewModel @Inject constructor(
             }
             val skipped = total - completed
             val msg = when {
-                completed == 0 -> "Пропущено: $total"
-                skipped > 0 -> "Скопировано: $completed, пропущено: $skipped"
-                else -> "Скопировано: ${formatFileCount(dirs, files)}"
+                completed == 0 -> appContext.getString(R.string.skipped_count, total)
+                skipped > 0 -> appContext.getString(R.string.copied_with_skip, completed, skipped)
+                else -> appContext.getString(R.string.copied_format, formatFileCount(dirs, files))
             }
             showStatusMessage(targetId, msg)
-            if (completed > 0) hapticManager.success() else hapticManager.error()
+            if (completed > 0) {
+                hapticManager.success()
+                copyTagsToDestination(paths, destinationDir)
+            } else hapticManager.error()
             refreshPanel(targetId)
             viewModelScope.launch {
                 delay(2000)
@@ -869,8 +879,9 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
                     moveFilesUseCase(listOf(path), destinationDir, resolution)
                 }
+                migrateTagsToDestination(paths, destinationDir)
                 hapticManager.success()
-                showStatusMessage(targetId, "Перемещено: ${formatFileCount(dirs, files)}")
+                showStatusMessage(targetId, appContext.getString(R.string.moved_format, formatFileCount(dirs, files)))
                 refreshPanel(activeId)
                 refreshPanel(targetId)
             }
@@ -913,12 +924,15 @@ class ExplorerViewModel @Inject constructor(
             }
             val skipped = total - completed
             val msg = when {
-                completed == 0 -> "Пропущено: $total"
-                skipped > 0 -> "Перемещено: $completed, пропущено: $skipped"
-                else -> "Перемещено: ${formatFileCount(dirs, files)}"
+                completed == 0 -> appContext.getString(R.string.skipped_count, total)
+                skipped > 0 -> appContext.getString(R.string.moved_with_skip, completed, skipped)
+                else -> appContext.getString(R.string.moved_format, formatFileCount(dirs, files))
             }
             showStatusMessage(targetId, msg)
-            if (completed > 0) hapticManager.success() else hapticManager.error()
+            if (completed > 0) {
+                hapticManager.success()
+                migrateTagsToDestination(paths, destinationDir)
+            } else hapticManager.error()
             refreshPanel(activeId)
             refreshPanel(targetId)
             viewModelScope.launch {
@@ -995,21 +1009,25 @@ class ExplorerViewModel @Inject constructor(
             }
 
             if (totalEvicted > 0) {
-                _toastMessage.tryEmit("Автоудалено $totalEvicted старых файлов из корзины")
+                _toastMessage.tryEmit(appContext.getString(R.string.auto_evicted_format, totalEvicted))
             }
             updateTrashSizeInfo()
+            // Remove tags for deleted files
+            if (completed > 0) {
+                removeTagsForPaths(paths)
+            }
             if (lastError != null && completed == 0) {
                 _uiState.update {
                     it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE, isComplete = true, error = lastError))
                 }
                 hapticManager.error()
-                _toastMessage.tryEmit("Ошибка удаления: $lastError")
+                _toastMessage.tryEmit(appContext.getString(R.string.delete_error_format, lastError ?: ""))
             } else {
                 _uiState.update {
                     it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.DELETE, isComplete = true))
                 }
                 hapticManager.success()
-                showStatusMessage(activeId, "В корзине: $completed")
+                showStatusMessage(activeId, appContext.getString(R.string.moved_to_trash_count, completed))
             }
 
             viewModelScope.launch {
@@ -1042,7 +1060,7 @@ class ExplorerViewModel @Inject constructor(
             }
             val size = fileSizes[path] ?: 0L
             val displayName = if (size > 1024 * 1024) {
-                "$fileName (${size.toFileSize()})"
+                "$fileName (${size.toFileSize(appContext)})"
             } else {
                 fileName
             }
@@ -1077,7 +1095,7 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { state ->
             val p = state.operationProgress
             if (p != null && !p.isComplete) {
-                state.copy(operationProgress = p.copy(isComplete = true, error = "Отменено"))
+                state.copy(operationProgress = p.copy(isComplete = true, error = appContext.getString(R.string.operation_cancelled_label)))
             } else state
         }
         viewModelScope.launch {
@@ -1111,11 +1129,15 @@ class ExplorerViewModel @Inject constructor(
             renameFileUseCase(path, newName)
                 .onSuccess {
                     hapticManager.success()
+                    val parentDir = path.substringBeforeLast('/')
+                    val newPath = "$parentDir/$newName"
+                    preferences.migrateFileTags(path, newPath)
+                    refreshTags()
                     refreshBothIfSamePath(activeId)
                 }
                 .onFailure { e ->
                     hapticManager.error()
-                    _toastMessage.tryEmit(e.message ?: "Ошибка переименования")
+                    _toastMessage.tryEmit(e.message ?: appContext.getString(R.string.error_rename))
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
                 }
         }
@@ -1128,6 +1150,138 @@ class ExplorerViewModel @Inject constructor(
                 bottomPanel = state.bottomPanel.copy(renamingPath = null)
             )
         }
+    }
+
+    // --- Batch rename ---
+
+    fun requestBatchRename() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val paths = panel.selectedPaths.toList()
+        if (paths.size < 2) return
+        val selected = panel.selectedPaths
+        val matchedEntries = panel.files.filter { e -> e.path in selected }
+        _uiState.update { it.copy(dialogState = DialogState.BatchRename(paths, matchedEntries)) }
+    }
+
+    fun confirmBatchRename(renames: List<Pair<String, String>>) {
+        dismissDialog()
+        val activeId = _uiState.value.activePanel
+        viewModelScope.launch {
+            clearSelection(activeId)
+            batchRenameUseCase(renames)
+                .onSuccess { count ->
+                    // Migrate tags for each renamed file
+                    renames.forEach { (oldPath, newName) ->
+                        val parent = File(oldPath).parent ?: return@forEach
+                        val newPath = "$parent/$newName"
+                        preferences.migrateFileTags(oldPath, newPath)
+                    }
+                    refreshTags()
+                    hapticManager.success()
+                    _toastMessage.tryEmit(appContext.getString(R.string.batch_rename_success, count))
+                    refreshBothIfSamePath(activeId)
+                }
+                .onFailure { e ->
+                    hapticManager.error()
+                    _toastMessage.tryEmit(e.message ?: appContext.getString(R.string.error_rename))
+                    EcosystemLogger.e(HaronConstants.TAG, "Batch rename error: ${e.message}")
+                    refreshBothIfSamePath(activeId)
+                }
+        }
+    }
+
+    fun saveBatchRenamePattern(pattern: String) {
+        preferences.addRenamePattern(pattern)
+    }
+
+    fun getRenamePatterns(): List<String> = preferences.getRenamePatterns()
+
+    // --- Tags ---
+
+    fun requestTagAssign() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val paths = panel.selectedPaths.toList()
+        if (paths.isEmpty()) return
+        _uiState.update { it.copy(dialogState = DialogState.TagAssign(paths)) }
+    }
+
+    fun confirmTagAssign(paths: List<String>, tagNames: List<String>) {
+        dismissDialog()
+        paths.forEach { path -> preferences.setFileTags(path, tagNames) }
+        refreshTags()
+        clearSelection(_uiState.value.activePanel)
+    }
+
+    fun showTagManager() {
+        _uiState.update { it.copy(dialogState = DialogState.TagManage) }
+    }
+
+    fun addTag(name: String, colorIndex: Int) {
+        preferences.addTagDefinition(FileTag(name, colorIndex))
+        refreshTags()
+    }
+
+    fun editTag(oldName: String, newName: String, colorIndex: Int) {
+        preferences.updateTagDefinition(oldName, FileTag(newName, colorIndex))
+        refreshTags()
+    }
+
+    fun deleteTag(name: String) {
+        preferences.removeTagDefinition(name)
+        // Clear active filter if it was this tag
+        if (_uiState.value.activeTagFilter == name) {
+            _uiState.update { it.copy(activeTagFilter = null) }
+        }
+        refreshTags()
+    }
+
+    fun setTagFilter(tagName: String?) {
+        _uiState.update { it.copy(activeTagFilter = tagName) }
+    }
+
+    private fun refreshTags() {
+        _uiState.update {
+            it.copy(
+                tagDefinitions = preferences.getTagDefinitions(),
+                fileTags = preferences.getFileTagMappings()
+            )
+        }
+    }
+
+    /** Copy tags from source paths to destination directory (for copy operations). */
+    private fun copyTagsToDestination(sourcePaths: List<String>, destinationDir: String) {
+        val mappings = preferences.getFileTagMappings()
+        for (path in sourcePaths) {
+            if (path.startsWith("content://")) continue
+            val tags = mappings[path] ?: continue
+            if (tags.isEmpty()) continue
+            val fileName = File(path).name
+            val newPath = "$destinationDir/$fileName"
+            preferences.setFileTags(newPath, tags)
+        }
+        refreshTags()
+    }
+
+    /** Migrate tags from source paths to destination directory (for move operations). */
+    private fun migrateTagsToDestination(sourcePaths: List<String>, destinationDir: String) {
+        for (path in sourcePaths) {
+            if (path.startsWith("content://")) continue
+            val fileName = File(path).name
+            val newPath = "$destinationDir/$fileName"
+            preferences.migrateFileTags(path, newPath)
+        }
+        refreshTags()
+    }
+
+    /** Remove tags for deleted paths. */
+    private fun removeTagsForPaths(paths: List<String>) {
+        for (path in paths) {
+            if (path.startsWith("content://")) continue
+            preferences.removeFileTags(path)
+        }
+        refreshTags()
     }
 
     // --- Templates ---
@@ -1196,18 +1350,18 @@ class ExplorerViewModel @Inject constructor(
                     type = OperationType.COPY,
                     current = 0,
                     total = selectedPaths.size,
-                    currentFileName = "Создание ZIP…",
+                    currentFileName = appContext.getString(R.string.creating_zip),
                     isComplete = false
                 ))
             }
             try {
                 createZipUseCase(selectedPaths, outputPath)
                 hapticManager.success()
-                _toastMessage.tryEmit("Архив создан: $name")
+                _toastMessage.tryEmit(appContext.getString(R.string.archive_created, name))
                 refreshBothIfSamePath(activeId)
             } catch (e: Exception) {
                 hapticManager.error()
-                _toastMessage.tryEmit("Ошибка создания архива: ${e.message}")
+                _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, e.message ?: ""))
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка ZIP: ${e.message}")
             }
             _uiState.update { it.copy(operationProgress = null) }
@@ -1271,7 +1425,7 @@ class ExplorerViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(dialogState = current.copy(
                                 isLoading = false,
-                                error = e.message ?: "Ошибка"
+                                error = e.message ?: appContext.getString(R.string.unknown_error)
                             ))
                         }
                     }
@@ -1361,7 +1515,7 @@ class ExplorerViewModel @Inject constructor(
         val updatedShelf = preferences.getShelfItems()
         _uiState.update { it.copy(shelfItems = updatedShelf) }
         clearSelection(activeId)
-        _toastMessage.tryEmit("На полку: ${selected.size}")
+        _toastMessage.tryEmit(appContext.getString(R.string.added_to_shelf_count, selected.size))
     }
 
     fun removeFromShelf(path: String) {
@@ -1403,10 +1557,11 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
                     moveFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
                 }
+                migrateTagsToDestination(paths, destinationDir)
                 clearShelf()
                 refreshPanel(PanelId.TOP)
                 refreshPanel(PanelId.BOTTOM)
-                _toastMessage.tryEmit("Перемещено с полки: ${paths.size}")
+                _toastMessage.tryEmit(appContext.getString(R.string.moved_from_shelf, paths.size))
             }
         } else {
             val fileSizes = items.associate { it.path to it.size }
@@ -1414,8 +1569,9 @@ class ExplorerViewModel @Inject constructor(
                 runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
                     copyFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
                 }
+                copyTagsToDestination(paths, destinationDir)
                 refreshPanel(activeId)
-                _toastMessage.tryEmit("Скопировано с полки: ${paths.size}")
+                _toastMessage.tryEmit(appContext.getString(R.string.copied_from_shelf, paths.size))
             }
         }
     }
@@ -1448,7 +1604,7 @@ class ExplorerViewModel @Inject constructor(
             restoreFromTrashUseCase(ids)
                 .onSuccess { count ->
                     updateTrashSizeInfo()
-                    showStatusMessage(_uiState.value.activePanel, "Восстановлено: $count")
+                    showStatusMessage(_uiState.value.activePanel, appContext.getString(R.string.restored_count, count))
                     refreshPanel(PanelId.TOP)
                     refreshPanel(PanelId.BOTTOM)
                     // Обновить диалог корзины
@@ -1478,7 +1634,7 @@ class ExplorerViewModel @Inject constructor(
             emptyTrashUseCase()
                 .onSuccess { count ->
                     updateTrashSizeInfo()
-                    showStatusMessage(_uiState.value.activePanel, "Корзина очищена: $count")
+                    showStatusMessage(_uiState.value.activePanel, appContext.getString(R.string.trash_cleared_count, count))
                     dismissDialog()
                 }
                 .onFailure { e ->
@@ -1572,7 +1728,7 @@ class ExplorerViewModel @Inject constructor(
                             )
                         )
                     }
-                    showStatusMessage(targetPanelId, "Перемещено: ${formatFileCount(dirs, files)}")
+                    showStatusMessage(targetPanelId, appContext.getString(R.string.moved_format, formatFileCount(dirs, files)))
                     refreshPanel(sourcePanelId)
                     refreshPanel(targetPanelId)
                 }
@@ -1777,9 +1933,9 @@ class ExplorerViewModel @Inject constructor(
             val maxMb = preferences.trashMaxSizeMb
             val info = if (maxMb > 0) {
                 val maxBytes = maxMb.toLong() * 1024 * 1024
-                "${trashSize.toFileSize()} / ${maxBytes.toFileSize()}"
+                "${trashSize.toFileSize(appContext)} / ${maxBytes.toFileSize(appContext)}"
             } else {
-                trashSize.toFileSize()
+                trashSize.toFileSize(appContext)
             }
             _uiState.update { it.copy(trashSizeInfo = info) }
         }
@@ -1830,17 +1986,17 @@ class ExplorerViewModel @Inject constructor(
             if (dirs > 0) add("$dirs ${pluralDirs(dirs)}")
             if (files > 0) add("$files ${pluralFiles(files)}")
         }
-        return parts.joinToString(" и ").ifEmpty { "0 файлов" }
+        return parts.joinToString(appContext.getString(R.string.and_conjunction)).ifEmpty { appContext.getString(R.string.zero_files) }
     }
 
     private fun pluralDirs(count: Int): String {
         val mod100 = count % 100
         val mod10 = count % 10
         return when {
-            mod100 in 11..14 -> "папок"
-            mod10 == 1 -> "папка"
-            mod10 in 2..4 -> "папки"
-            else -> "папок"
+            mod100 in 11..14 -> appContext.getString(R.string.plural_folders_genitive)
+            mod10 == 1 -> appContext.getString(R.string.plural_folders_nom)
+            mod10 in 2..4 -> appContext.getString(R.string.plural_folders_gen_few)
+            else -> appContext.getString(R.string.plural_folders_genitive)
         }
     }
 
@@ -1848,10 +2004,10 @@ class ExplorerViewModel @Inject constructor(
         val mod100 = count % 100
         val mod10 = count % 10
         return when {
-            mod100 in 11..14 -> "файлов"
-            mod10 == 1 -> "файл"
-            mod10 in 2..4 -> "файла"
-            else -> "файлов"
+            mod100 in 11..14 -> appContext.getString(R.string.plural_files_genitive)
+            mod10 == 1 -> appContext.getString(R.string.plural_files_nom)
+            mod10 in 2..4 -> appContext.getString(R.string.plural_files_gen_few)
+            else -> appContext.getString(R.string.plural_files_genitive)
         }
     }
 
@@ -1934,11 +2090,11 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             val success = getFilePropertiesUseCase.removeExif(entry.path)
             if (success) {
-                _toastMessage.tryEmit("EXIF-данные удалены")
+                _toastMessage.tryEmit(appContext.getString(R.string.exif_data_removed))
                 // Reload properties to reflect removal
                 showFileProperties(entry)
             } else {
-                _toastMessage.tryEmit("Не удалось удалить EXIF")
+                _toastMessage.tryEmit(appContext.getString(R.string.exif_remove_error))
             }
         }
     }
@@ -1965,7 +2121,7 @@ class ExplorerViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(dialogState = current.copy(
                                 isLoading = false,
-                                error = e.message ?: "Ошибка анализа APK"
+                                error = e.message ?: appContext.getString(R.string.apk_analysis_error)
                             ))
                         }
                     }
@@ -1992,7 +2148,7 @@ class ExplorerViewModel @Inject constructor(
             }
             appContext.startActivity(intent)
         } catch (_: Exception) {
-            _toastMessage.tryEmit("Не удалось открыть установщик")
+            _toastMessage.tryEmit(appContext.getString(R.string.installer_open_failed))
         }
     }
 
@@ -2012,7 +2168,7 @@ class ExplorerViewModel @Inject constructor(
 
     fun openWithExternalApp(entry: FileEntry) {
         if (entry.isDirectory) {
-            _toastMessage.tryEmit("Папки нельзя открыть во внешнем приложении")
+            _toastMessage.tryEmit(appContext.getString(R.string.cannot_open_folders_external))
             return
         }
         try {
@@ -2031,12 +2187,12 @@ class ExplorerViewModel @Inject constructor(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val chooser = Intent.createChooser(intent, "Открыть в...").apply {
+            val chooser = Intent.createChooser(intent, appContext.getString(R.string.open_in_chooser)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             appContext.startActivity(chooser)
         } catch (_: Exception) {
-            _toastMessage.tryEmit("Нет приложения для открытия этого файла")
+            _toastMessage.tryEmit(appContext.getString(R.string.no_app_for_file))
         }
     }
 
@@ -2061,7 +2217,7 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(activeId)
         val selected = panel.selectedPaths.toList()
         if (selected.isEmpty()) {
-            _toastMessage.tryEmit("Сначала выделите файлы или папки")
+            _toastMessage.tryEmit(appContext.getString(R.string.select_files_first))
             return
         }
         val names = panel.files
@@ -2089,11 +2245,11 @@ class ExplorerViewModel @Inject constructor(
             }
                 .onSuccess { count ->
                     hapticManager.success()
-                    _toastMessage.tryEmit("Удалено навсегда: $count")
+                    _toastMessage.tryEmit(appContext.getString(R.string.force_deleted_count, count))
                 }
                 .onFailure { e ->
                     hapticManager.error()
-                    _toastMessage.tryEmit("Ошибка: ${e.message}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
                 }
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(total, total, "", OperationType.DELETE, isComplete = true))
@@ -2115,7 +2271,7 @@ class ExplorerViewModel @Inject constructor(
         val activeId = _uiState.value.activePanel
         val path = getPanel(activeId).currentPath
         if (path.startsWith("content://")) {
-            _toastMessage.tryEmit("Недоступно для SAF-хранилищ")
+            _toastMessage.tryEmit(appContext.getString(R.string.saf_unavailable))
             return
         }
         _uiState.update {
@@ -2187,12 +2343,12 @@ class ExplorerViewModel @Inject constructor(
             moveToTrashUseCase(paths)
                 .onSuccess { result ->
                     hapticManager.success()
-                    _toastMessage.tryEmit("Удалено пустых папок: ${result.movedCount}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.empty_folders_deleted, result.movedCount))
                     updateTrashSizeInfo()
                 }
                 .onFailure { e ->
                     hapticManager.error()
-                    _toastMessage.tryEmit("Ошибка: ${e.message}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
                 }
             refreshPanel(PanelId.TOP)
             refreshPanel(PanelId.BOTTOM)
@@ -2275,7 +2431,7 @@ class ExplorerViewModel @Inject constructor(
         preferences.setBookmark(slot, path)
         _uiState.update { it.copy(bookmarks = preferences.getBookmarks()) }
         hapticManager.success()
-        _toastMessage.tryEmit("Закладка $slot сохранена")
+        _toastMessage.tryEmit(appContext.getString(R.string.bookmark_saved, slot))
     }
 
     // --- Tools popup ---
@@ -2303,7 +2459,7 @@ class ExplorerViewModel @Inject constructor(
     private fun openLastMedia() {
         val path = preferences.lastMediaFile
         if (path == null || !File(path).exists()) {
-            _toastMessage.tryEmit("Нет недавних")
+            _toastMessage.tryEmit(appContext.getString(R.string.no_recent_files))
             return
         }
         val file = File(path)
@@ -2326,7 +2482,7 @@ class ExplorerViewModel @Inject constructor(
     private fun openLastDocument() {
         val path = preferences.lastDocumentFile
         if (path == null || !File(path).exists()) {
-            _toastMessage.tryEmit("Нет недавних")
+            _toastMessage.tryEmit(appContext.getString(R.string.no_recent_files))
             return
         }
         val file = File(path)

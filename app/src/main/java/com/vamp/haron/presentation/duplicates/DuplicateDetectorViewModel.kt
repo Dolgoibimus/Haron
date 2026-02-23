@@ -1,8 +1,10 @@
 package com.vamp.haron.presentation.duplicates
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.common.util.iconRes
@@ -16,6 +18,7 @@ import com.vamp.haron.domain.usecase.FindDuplicatesUseCase
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.usecase.LoadPreviewUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +53,7 @@ data class DuplicateDetectorState(
 
 @HiltViewModel
 class DuplicateDetectorViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val findDuplicatesUseCase: FindDuplicatesUseCase,
     private val preferences: HaronPreferences,
     private val loadPreviewUseCase: LoadPreviewUseCase
@@ -171,7 +175,7 @@ class DuplicateDetectorViewModel @Inject constructor(
             st.copy(originalOverrides = newOverrides)
         }
         preferences.saveOriginalOverrides(_state.value.originalOverrides)
-        _toastMessage.tryEmit("Оригинал переназначен")
+        _toastMessage.tryEmit(appContext.getString(R.string.original_reassigned))
     }
 
     fun keepOldestInAllGroups() {
@@ -236,7 +240,7 @@ class DuplicateDetectorViewModel @Inject constructor(
     fun loadPreview(path: String) {
         val file = File(path)
         if (!file.exists()) {
-            _toastMessage.tryEmit("Файл не найден")
+            _toastMessage.tryEmit(appContext.getString(R.string.file_not_found))
             return
         }
 
@@ -290,7 +294,7 @@ class DuplicateDetectorViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     _state.update {
-                        it.copy(previewLoading = false, previewError = e.message ?: "Ошибка загрузки")
+                        it.copy(previewLoading = false, previewError = e.message ?: appContext.getString(R.string.error_loading))
                     }
                 }
         }
@@ -348,7 +352,7 @@ class DuplicateDetectorViewModel @Inject constructor(
                     val current = _state.value
                     if (current.previewEntry?.path == newEntry.path) {
                         _state.update {
-                            it.copy(previewLoading = false, previewError = e.message ?: "Ошибка")
+                            it.copy(previewLoading = false, previewError = e.message ?: appContext.getString(R.string.unknown_error))
                         }
                     }
                 }
@@ -403,7 +407,7 @@ class DuplicateDetectorViewModel @Inject constructor(
             }
         }.distinctBy { it.path }
         if (mediaFiles.isEmpty()) {
-            _toastMessage.tryEmit("Нет медиафайлов среди дубликатов")
+            _toastMessage.tryEmit(appContext.getString(R.string.no_media_in_duplicates))
             return -1
         }
         PlaylistHolder.items = mediaFiles.map { f ->
@@ -444,7 +448,7 @@ class DuplicateDetectorViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "Delete duplicate error: ${e.message}")
                 }
             }
-            _toastMessage.tryEmit("Удалено дубликатов: $deleted")
+            _toastMessage.tryEmit(appContext.getString(R.string.duplicates_deleted_format, deleted))
             _state.update { st ->
                 val updatedGroups = st.groups.mapNotNull { group ->
                     val remaining = group.files.filter { it.path !in deletedPaths }

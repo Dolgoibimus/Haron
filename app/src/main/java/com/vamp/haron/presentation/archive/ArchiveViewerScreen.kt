@@ -51,7 +51,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ArchiveEntry
 
@@ -88,7 +90,7 @@ fun ArchiveViewerScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = archiveName.ifEmpty { "Архив" },
+                        text = archiveName.ifEmpty { stringResource(R.string.archive_title) },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -101,7 +103,7 @@ fun ArchiveViewerScreen(
                         Icon(
                             if (state.isSelectionMode) Icons.Filled.Close
                             else Icons.AutoMirrored.Filled.ArrowBack,
-                            "Назад"
+                            stringResource(R.string.back)
                         )
                     }
                 },
@@ -114,7 +116,7 @@ fun ArchiveViewerScreen(
                                 state.entries.forEach { viewModel.toggleSelection(it.fullPath) }
                             }
                         }) {
-                            Icon(Icons.Filled.SelectAll, "Выделить все")
+                            Icon(Icons.Filled.SelectAll, stringResource(R.string.select_all))
                         }
                     }
                 }
@@ -130,7 +132,7 @@ fun ArchiveViewerScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "Извлечение: ${progress.current}/${progress.total} — ${progress.fileName}",
+                        text = stringResource(R.string.extraction_progress_format, progress.current, progress.total, progress.fileName),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
@@ -154,7 +156,7 @@ fun ArchiveViewerScreen(
                     ) {
                         Icon(Icons.Filled.Unarchive, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Извлечь всё")
+                        Text(stringResource(R.string.extract_all))
                     }
 
                     if (state.isSelectionMode) {
@@ -163,7 +165,7 @@ fun ArchiveViewerScreen(
                             modifier = Modifier.weight(1f),
                             enabled = state.extractProgress == null && state.selectedEntries.isNotEmpty()
                         ) {
-                            Text("Извлечь (${state.selectedEntries.size})")
+                            Text(stringResource(R.string.extract_count_format, state.selectedEntries.size))
                         }
                     }
                 }
@@ -171,7 +173,7 @@ fun ArchiveViewerScreen(
                 // Info
                 if (!state.isLoading && state.entries.isNotEmpty()) {
                     Text(
-                        text = "${state.entries.size} элементов",
+                        text = stringResource(R.string.items_count, state.entries.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
@@ -232,7 +234,7 @@ fun ArchiveViewerScreen(
                             )
                             Spacer(Modifier.height(16.dp))
                             OutlinedButton(onClick = onBack) {
-                                Text("Назад")
+                                Text(stringResource(R.string.back))
                             }
                         }
                     }
@@ -240,7 +242,7 @@ fun ArchiveViewerScreen(
                 state.entries.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "Пустая папка",
+                            stringResource(R.string.empty_folder_item),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

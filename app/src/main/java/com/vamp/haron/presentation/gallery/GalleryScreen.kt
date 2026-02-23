@@ -53,11 +53,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.exifinterface.media.ExifInterface
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.GalleryHolder
 import kotlinx.coroutines.Job
@@ -166,7 +168,7 @@ fun GalleryScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -177,7 +179,7 @@ fun GalleryScreen(
                             }
                         }
                     }) {
-                        Icon(Icons.Filled.Share, "Поделиться")
+                        Icon(Icons.Filled.Share, stringResource(R.string.share))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -305,7 +307,7 @@ private fun ZoomableImagePage(
     val bmp = bitmap
     if (bmp == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Не удалось загрузить", color = Color.White.copy(alpha = 0.6f))
+            Text(stringResource(R.string.failed_to_load), color = Color.White.copy(alpha = 0.6f))
         }
         return
     }
@@ -455,7 +457,7 @@ private fun shareFile(context: android.content.Context, filePath: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Поделиться"))
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.share)))
     } catch (_: Exception) {
         // Silently ignore share errors
     }

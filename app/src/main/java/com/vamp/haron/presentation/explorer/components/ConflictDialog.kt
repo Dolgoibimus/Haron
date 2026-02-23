@@ -14,9 +14,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.ConflictResolution
 
 @Composable
@@ -41,9 +43,9 @@ fun ConflictDialog(
             Column(modifier = Modifier.padding(24.dp)) {
                 Text(
                     text = when {
-                        count == 1 -> "1 файл уже существует"
-                        count in 2..4 -> "$count файла уже существуют"
-                        else -> "$count файлов уже существуют"
+                        count == 1 -> stringResource(R.string.one_file_exists)
+                        count in 2..4 -> stringResource(R.string.few_files_exist, count)
+                        else -> stringResource(R.string.many_files_exist, count)
                     },
                     style = MaterialTheme.typography.headlineSmall
                 )
@@ -64,7 +66,7 @@ fun ConflictDialog(
                 if (conflictNames.size > 5) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "и ещё ${conflictNames.size - 5}\u2026",
+                        text = stringResource(R.string.and_more, conflictNames.size - 5),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -79,13 +81,13 @@ fun ConflictDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     TextButton(onClick = { onResolution(ConflictResolution.SKIP) }) {
-                        Text("Пропустить", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.skip_action), style = MaterialTheme.typography.labelMedium)
                     }
                     TextButton(onClick = { onResolution(ConflictResolution.RENAME) }) {
-                        Text("Переименовать", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.rename_action), style = MaterialTheme.typography.labelMedium)
                     }
                     TextButton(onClick = { onResolution(ConflictResolution.REPLACE) }) {
-                        Text("Заменить", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.replace_action), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }

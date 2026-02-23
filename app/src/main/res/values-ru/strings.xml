@@ -1,0 +1,641 @@
+<resources>
+    <!-- Common -->
+    <string name="cancel">Отмена</string>
+    <string name="close">Закрыть</string>
+    <string name="create">Создать</string>
+    <string name="delete">Удалить</string>
+    <string name="save">Сохранить</string>
+    <string name="clear">Очистить</string>
+    <string name="search">Поиск</string>
+    <string name="menu">Меню</string>
+    <string name="back">Назад</string>
+    <string name="done">Готово</string>
+    <string name="loading">Загрузка…</string>
+    <string name="error_format">Ошибка: %s</string>
+    <string name="name_label">Имя</string>
+    <string name="expand">Развернуть</string>
+    <string name="collapse">Свернуть</string>
+
+    <!-- File panel -->
+    <string name="search_placeholder">Поиск…</string>
+    <string name="selected_count">Выбрано: %s</string>
+    <string name="storage">Хранилище</string>
+    <string name="more">Ещё</string>
+    <string name="hide_hidden">Скрыть скрытые</string>
+    <string name="show_hidden">Показать скрытые</string>
+    <string name="remove_from_favorites">Убрать из избранного</string>
+    <string name="add_to_favorites">Добавить в избранное</string>
+    <string name="remove_original_marker">Убрать пометку оригинала</string>
+    <string name="original_folder">Папка-оригинал</string>
+    <string name="open_in_other_panel">Открыть в другой панели</string>
+    <string name="nothing_found">Ничего не найдено</string>
+    <string name="folder_empty">Папка пуста</string>
+    <string name="and_conjunction"> и </string>
+    <string name="plural_folders">папок</string>
+    <string name="plural_folder">папка</string>
+    <string name="plural_files">файлов</string>
+    <string name="plural_file">файл</string>
+
+    <!-- Sort -->
+    <string name="sort_by_name">По имени</string>
+    <string name="sort_by_date">По дате</string>
+    <string name="sort_by_size">По размеру</string>
+    <string name="sort_by_type">По типу</string>
+
+    <!-- Drawer menu -->
+    <string name="storages">Хранилища</string>
+    <string name="internal_storage">Внутренняя память</string>
+    <string name="sd_card">SD-карта</string>
+    <string name="no_access">Нет доступа</string>
+    <string name="connect">Подключить</string>
+    <string name="favorites">Избранное</string>
+    <string name="no_favorite_folders">Нет избранных папок</string>
+    <string name="recent">Недавние</string>
+    <string name="no_recent_folders">Нет недавних папок</string>
+    <string name="tools">Инструменты</string>
+    <string name="trash">Корзина</string>
+    <string name="storage_analyzer">Анализатор памяти</string>
+    <string name="duplicate_detector">Детектор дубликатов</string>
+    <string name="app_manager">Менеджер приложений</string>
+    <string name="empty_folders">Пустые папки</string>
+    <string name="force_delete">Принудительное удаление</string>
+    <string name="force_delete_subtitle">Без корзины, навсегда</string>
+    <string name="appearance">Оформление</string>
+    <string name="theme_system">Системная</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="settings">Настройки</string>
+
+    <!-- Selection action bar -->
+    <string name="copy_action">Копировать</string>
+    <string name="move_action">Переместить</string>
+    <string name="rename_action">Переименовать</string>
+    <string name="zip_action">ZIP</string>
+    <string name="to_shelf_action">На полку</string>
+    <string name="properties_action">Свойства</string>
+    <string name="open_with_action">Открыть в…</string>
+
+    <!-- Delete dialog -->
+    <string name="to_trash_question">В корзину?</string>
+    <string name="move_one_to_trash">Переместить выбранный элемент в корзину?</string>
+    <string name="move_many_to_trash">Переместить выбранные элементы (%d) в корзину?</string>
+    <string name="to_trash">В корзину</string>
+
+    <!-- Create template -->
+    <string name="template_folder">Папка</string>
+    <string name="template_text_file">Текстовый файл (.txt)</string>
+    <string name="template_markdown">Markdown (.md)</string>
+    <string name="template_dated_folder">Папка с датой</string>
+
+    <!-- Trash dialog -->
+    <string name="trash_of">из</string>
+    <string name="trash_items_summary">%1$d %2$s \u00B7 %3$s</string>
+    <string name="trash_items_summary_limit">%1$d %2$s \u00B7 %3$s из %4$s</string>
+    <string name="plural_items_one">элемент</string>
+    <string name="plural_items_few">элемента</string>
+    <string name="plural_items_many">элементов</string>
+    <string name="restore_action">Восстановить (%d)</string>
+    <string name="restore">Восстановить</string>
+    <string name="delete_forever">Удалить навсегда</string>
+    <string name="empty_trash">Очистить корзину</string>
+    <string name="trash_empty">Корзина пуста</string>
+    <string name="days_short">д.</string>
+    <string name="trash_item_details">%1$s \u00B7 %2$s \u00B7 %3$d%4$s</string>
+
+    <!-- Shelf -->
+    <string name="shelf_title">Полка</string>
+    <string name="shelf_empty">Полка пуста</string>
+    <string name="shelf_empty_hint">Выделите файлы и нажмите кнопку «На полку» в панели действий</string>
+    <string name="paste_here">Вставить сюда</string>
+    <string name="move_here">Переместить сюда</string>
+    <string name="clear_shelf">Очистить полку</string>
+
+    <!-- Conflict dialog -->
+    <string name="file_exists_title">Файл уже существует (%1$d из %2$d)</string>
+    <string name="from_label">Откуда</string>
+    <string name="to_label">Куда</string>
+    <string name="apply_to_all">Применить ко всем (ещё %d)</string>
+    <string name="skip_action">Пропустить</string>
+    <string name="replace_action">Заменить</string>
+    <string name="one_file_exists">1 файл уже существует</string>
+    <string name="few_files_exist">%d файла уже существуют</string>
+    <string name="many_files_exist">%d файлов уже существуют</string>
+    <string name="and_more">и ещё %d…</string>
+
+    <!-- Create archive -->
+    <string name="create_zip_archive">Создать ZIP-архив</string>
+    <string name="archive_name_label">Имя архива:</string>
+
+    <!-- Quick preview -->
+    <string name="play_fullscreen">Во весь экран</string>
+    <string name="open_in_gallery">Открыть в галерее</string>
+    <string name="open_in_reader">Открыть в читалке</string>
+    <string name="open_archive">Открыть архив</string>
+    <string name="edit_action">Редактировать</string>
+    <string name="install_action">Установить</string>
+    <string name="preview_unavailable">Превью недоступно</string>
+    <string name="shown_lines_format">Показано %1$d из %2$d строк</string>
+    <string name="total_lines">%d строк</string>
+    <string name="pages_count">Страниц: %d</string>
+    <string name="archive_summary">%1$d файлов, размер: %2$s</string>
+
+    <!-- File properties -->
+    <string name="properties_title">Свойства</string>
+    <string name="general_section">Общее</string>
+    <string name="path_label">Путь</string>
+    <string name="size_label">Размер</string>
+    <string name="size_dir_format">%1$s (%2$d файлов)</string>
+    <string name="size_file_format">%1$s (%2$d байт)</string>
+    <string name="modified_date_label">Дата изменения</string>
+    <string name="mime_type_label">MIME-тип</string>
+    <string name="permissions_label">Разрешения</string>
+    <string name="exif_section">EXIF-данные</string>
+    <string name="remove_exif">Удалить EXIF</string>
+    <string name="hash_section">Хеш-суммы</string>
+    <string name="calculate_hash">Вычислить хеш</string>
+    <string name="calculating">Вычисление…</string>
+
+    <!-- APK install dialog -->
+    <string name="analyzing_apk">Анализ APK…</string>
+    <string name="unknown_app">Неизвестное приложение</string>
+    <string name="package_label">Пакет</string>
+    <string name="version_label">Версия</string>
+    <string name="apk_size_label">Размер</string>
+    <string name="signature_mismatch">Подписи APK не совпадают с установленной версией! Установка может не пройти.</string>
+    <string name="permissions_count">Разрешения (%d)</string>
+    <string name="show_permissions">Показать</string>
+    <string name="collapse_permissions">Свернуть</string>
+    <string name="dangerous_permissions_count">Опасных: %d</string>
+
+    <!-- Empty folder cleanup -->
+    <string name="empty_folders_title">Пустые папки</string>
+    <string name="including_nested">Включая вложенные</string>
+    <string name="no_empty_folders">Пустых папок не найдено</string>
+    <string name="select_all_count">Выбрать все (%d)</string>
+
+    <!-- Force delete -->
+    <string name="force_delete_title">Принудительное удаление</string>
+    <string name="force_delete_warning">Файлы будут удалены НАВСЕГДА без возможности восстановления. Это действие нельзя отменить.</string>
+    <string name="will_be_deleted_count">Будет удалено: %d</string>
+    <string name="delete_forever_confirm">Удалить навсегда</string>
+
+    <!-- Breadcrumb -->
+    <string name="sd_card_default">SD-карта</string>
+
+    <!-- Tools popup -->
+    <string name="tool_trash">Корзина</string>
+    <string name="tool_analyzer">Анализатор</string>
+    <string name="tool_duplicator">Дупликатор</string>
+    <string name="tool_apk">APK</string>
+    <string name="tool_player">Плеер</string>
+    <string name="tool_reader">Читалка</string>
+
+    <!-- Explorer screen -->
+    <string name="hash_copied">Хеш скопирован</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Настройки</string>
+    <string name="night_mode_section">Ночной режим</string>
+    <string name="night_mode_schedule">Включить по расписанию</string>
+    <string name="night_mode_start">Начало:</string>
+    <string name="night_mode_end">Конец:</string>
+    <string name="font_and_icons">Шрифт и иконки</string>
+    <string name="font_scale_label">Размер шрифта: %d%%</string>
+    <string name="icon_scale_label">Размер иконок: %d%%</string>
+    <string name="preview_text">Пример текста — Предпросмотр</string>
+    <string name="icon_preview">Превью иконки</string>
+    <string name="haptic_section">Тактильный отклик</string>
+    <string name="haptic_vibration">Вибрация при операциях</string>
+    <string name="trash_section">Корзина</string>
+    <string name="trash_max_size_label">Максимальный размер: %s</string>
+    <string name="trash_no_limit">Без лимита</string>
+    <string name="trash_info">0 = без лимита. При превышении старые файлы удаляются автоматически.</string>
+
+    <!-- App manager -->
+    <string name="app_manager_title">Менеджер приложений</string>
+    <string name="search_apps">Поиск приложений…</string>
+    <string name="sort_by_install_date">Дата установки</string>
+    <string name="system_apps">Системные</string>
+    <string name="app_count">Приложений: %d</string>
+    <string name="loading_apps">Загрузка приложений…</string>
+    <string name="extract_apk">Извлечь APK</string>
+    <string name="save_to_downloads">Сохранить в Downloads</string>
+    <string name="uninstall">Удалить</string>
+    <string name="system_app">Системное приложение</string>
+    <string name="uninstall_app">Удалить приложение</string>
+    <string name="app_settings">Настройки приложения</string>
+    <string name="open_in_system_settings">Открыть в системных настройках</string>
+    <string name="apk_extracted_format">APK извлечён: %s</string>
+    <string name="extraction_error_format">Ошибка извлечения: %s</string>
+    <string name="uninstall_dialog_failed">Не удалось открыть диалог удаления</string>
+    <string name="settings_open_failed">Не удалось открыть настройки</string>
+
+    <!-- Text editor -->
+    <string name="read_file_error">Ошибка чтения файла</string>
+    <string name="line_format">Строка %d</string>
+    <string name="file_truncated">Файл обрезан (>1 МБ)</string>
+    <string name="modified">Изменён</string>
+    <string name="saved">Сохранён</string>
+    <string name="unsaved_changes_title">Несохранённые изменения</string>
+    <string name="save_before_exit">Сохранить изменения перед выходом?</string>
+    <string name="stay">Остаться</string>
+    <string name="dont_save">Не сохранять</string>
+    <string name="undo">Отменить</string>
+    <string name="redo">Повтор</string>
+
+    <!-- PDF / Document reader -->
+    <string name="lines_count">Строк: %d</string>
+    <string name="read_document_failed">Не удалось прочитать документ</string>
+    <string name="open_file_failed">Не удалось открыть файл</string>
+    <string name="unsupported_format">Неподдерживаемый формат: %s</string>
+    <string name="apk_not_found">APK не найден: %s</string>
+    <string name="pdf_open_failed">Не удалось открыть PDF</string>
+    <string name="pdf_open_error">Ошибка открытия PDF</string>
+    <string name="page_format">Страница %1$d / %2$d</string>
+    <string name="go_to_page">Перейти к странице</string>
+    <string name="enter_page_number">Введите номер страницы (1 — %d):</string>
+    <string name="go">Перейти</string>
+
+    <!-- Storage analysis -->
+    <string name="storage_analysis_title">Анализ памяти</string>
+    <string name="refresh">Обновить</string>
+    <string name="delete_selected">Удалить выбранные</string>
+    <string name="storage_summary">Занято %1$s из %2$s, свободно %3$s</string>
+    <string name="scanning_format">Сканирование… %1$d файлов — %2$s</string>
+    <string name="category_photos">Фото</string>
+    <string name="category_videos">Видео</string>
+    <string name="category_music">Музыка</string>
+    <string name="category_documents">Документы</string>
+    <string name="category_archives">Архивы</string>
+    <string name="category_apk">APK</string>
+    <string name="category_other">Прочее</string>
+    <string name="no_large_files">Нет крупных файлов (>10 МБ) в этой категории</string>
+    <string name="large_files_title">Крупные файлы (>10 МБ)</string>
+    <string name="files_count">%d файлов</string>
+
+    <!-- Duplicate detector -->
+    <string name="original_folders_mode">Папки-оригиналы</string>
+    <string name="duplicates">Дубликаты</string>
+    <string name="deselect">Снять выделение</string>
+    <string name="select_copies">Выделить копии</string>
+    <string name="play">Воспроизвести</string>
+    <string name="rescan">Пересканировать</string>
+    <string name="delete_count_format">Удалить (%d)</string>
+    <string name="marked_count">Отмечено: %d</string>
+    <string name="phase_1_scanning">Фаза 1: Сканирование файлов…</string>
+    <string name="phase_2_hashing">Фаза 2: Вычисление хешей…</string>
+    <string name="groups_stat">Групп</string>
+    <string name="files_stat">Файлов</string>
+    <string name="wasted_stat">Потрачено</string>
+    <string name="no_duplicates">Дубликатов не найдено</string>
+    <string name="deleting">Удаление…</string>
+    <string name="duplicate_group_format">%1$d файлов · %2$s каждый</string>
+    <string name="wasted_format">Потрачено: %s</string>
+    <string name="keep_original">Оставить оригинал</string>
+    <string name="original_badge">Оригинал</string>
+    <string name="original_reassigned">Оригинал переназначен</string>
+    <string name="file_not_found">Файл не найден</string>
+    <string name="no_media_in_duplicates">Нет медиафайлов среди дубликатов</string>
+    <string name="duplicates_deleted_format">Удалено дубликатов: %d</string>
+
+    <!-- Gallery -->
+    <string name="share">Поделиться</string>
+    <string name="failed_to_load">Не удалось загрузить</string>
+
+    <!-- Media player -->
+    <string name="previous">Предыдущий</string>
+    <string name="next">Следующий</string>
+
+    <!-- Permission screen -->
+    <string name="file_access_title">Доступ к файлам</string>
+    <string name="file_access_description">Для работы проводника необходим доступ к файлам устройства. Это позволит просматривать, копировать и перемещать файлы.</string>
+    <string name="grant_access">Предоставить доступ</string>
+
+    <!-- Archive viewer -->
+    <string name="archive_title">Архив</string>
+    <string name="select_all">Выделить все</string>
+    <string name="extraction_progress_format">Извлечение: %1$d/%2$d — %3$s</string>
+    <string name="extract_all">Извлечь всё</string>
+    <string name="extract_count_format">Извлечь (%d)</string>
+    <string name="items_count">%d элементов</string>
+    <string name="empty_folder_item">Пустая папка</string>
+    <string name="password_protected">Архив защищён паролем</string>
+    <string name="archive_read_error">Ошибка чтения архива</string>
+    <string name="extracted_to_format">Извлечено в %s</string>
+
+    <!-- File operation service -->
+    <string name="notification_preparing">Подготовка…</string>
+    <string name="notification_channel_name">Файловые операции</string>
+    <string name="notification_channel_desc">Прогресс копирования и перемещения файлов</string>
+    <string name="operation_cancelled">Отменено</string>
+    <string name="operation_moved">Перемещено</string>
+    <string name="operation_copied">Скопировано</string>
+
+    <!-- Operation types -->
+    <string name="operation_type_copy">Копирование</string>
+    <string name="operation_type_move">Перемещение</string>
+    <string name="operation_type_delete">Удаление</string>
+
+    <!-- ViewModel toasts -->
+    <string name="bookmark_saved">Закладка %d сохранена</string>
+    <string name="no_recent_files">Нет недавних</string>
+    <string name="cannot_open_folders_external">Папки нельзя открыть во внешнем приложении</string>
+    <string name="copied_count">Скопировано: %d</string>
+    <string name="moved_count">Перемещено: %d</string>
+    <string name="deleted_count">Удалено: %d</string>
+    <string name="renamed_to">Переименовано в %s</string>
+    <string name="archive_created">Архив создан: %s</string>
+    <string name="added_to_shelf">Добавлено на полку: %d</string>
+    <string name="file_operation_progress_format">%1$s: %2$d файл(ов)…</string>
+    <string name="file_operation_current_format">%1$s: %2$d/%3$d — %4$s</string>
+    <string name="file_operation_count_format">%1$s: %2$d/%3$d</string>
+    <string name="folder_created">Папка создана</string>
+    <string name="file_created">Файл создан</string>
+
+    <!-- Format utils -->
+    <string name="size_bytes">Б</string>
+    <string name="size_kb">КБ</string>
+    <string name="size_mb">МБ</string>
+    <string name="size_gb">ГБ</string>
+    <string name="size_tb">ТБ</string>
+    <string name="time_just_now">только что</string>
+    <string name="time_minutes_ago">%d мин. назад</string>
+    <string name="time_hours_ago">%d ч. назад</string>
+    <string name="time_days_ago">%d дн. назад</string>
+
+    <!-- Widget -->
+    <string name="widget_title">Haron Избранное</string>
+    <string name="widget_no_favorites">Нет избранных папок</string>
+
+    <!-- Domain errors -->
+    <string name="error_folder_name_empty">Имя папки не может быть пустым</string>
+    <string name="error_folder_name_slashes">Имя папки не может содержать / или \\</string>
+    <string name="error_file_name_empty">Имя файла не может быть пустым</string>
+    <string name="error_file_name_slashes">Имя файла не может содержать / или \\</string>
+    <string name="error_name_empty">Имя не может быть пустым</string>
+    <string name="error_name_slashes">Имя не может содержать / или \\</string>
+    <string name="hash_error">Ошибка</string>
+
+    <!-- EXIF labels -->
+    <string name="exif_manufacturer">Производитель</string>
+    <string name="exif_camera_model">Модель камеры</string>
+    <string name="exif_date_taken">Дата съёмки</string>
+    <string name="exif_image_size">Размер изображения</string>
+    <string name="exif_iso">ISO</string>
+    <string name="exif_exposure">Выдержка</string>
+    <string name="exif_aperture">Диафрагма</string>
+    <string name="exif_focal_length">Фокусное расстояние</string>
+    <string name="exif_white_balance">Баланс белого</string>
+    <string name="exif_wb_auto">Авто</string>
+    <string name="exif_wb_manual">Ручной</string>
+    <string name="exif_flash">Вспышка</string>
+    <string name="exif_gps">GPS</string>
+    <string name="exif_software">ПО</string>
+
+    <!-- Preview errors -->
+    <string name="preview_error_generic">Ошибка загрузки превью</string>
+    <string name="archive_password_or_corrupt">Архив защищён паролем или повреждён</string>
+    <string name="rar_open_error">Не удалось открыть RAR-архив</string>
+    <string name="document_read_error">Не удалось прочитать документ</string>
+
+    <!-- Repository errors -->
+    <string name="error_path_not_exists">Путь не существует: %s</string>
+    <string name="error_not_a_folder">Не является папкой: %s</string>
+    <string name="error_dest_not_folder">Назначение не является папкой: %s</string>
+    <string name="error_file_not_exists">Файл не существует: %s</string>
+    <string name="error_file_name_exists">Файл с таким именем уже существует: %s</string>
+    <string name="error_rename_failed">Не удалось переименовать файл</string>
+    <string name="error_rename_saf">Не удалось переименовать SAF файл</string>
+    <string name="error_create_folder_saf">Не удалось создать папку через SAF</string>
+    <string name="error_folder_exists">Папка уже существует: %s</string>
+    <string name="error_create_folder">Не удалось создать папку</string>
+    <string name="error_create_file_saf">Не удалось создать файл через SAF</string>
+    <string name="error_parent_not_exists">Родительская папка не существует: %s</string>
+    <string name="error_copy_into_itself">Нельзя копировать папку внутрь себя</string>
+
+    <!-- Storage categories (AnalyzeStorageUseCase) -->
+    <string name="storage_cat_photos">Фото</string>
+    <string name="storage_cat_videos">Видео</string>
+    <string name="storage_cat_music">Музыка</string>
+    <string name="storage_cat_documents">Документы</string>
+    <string name="storage_cat_archives">Архивы</string>
+    <string name="storage_cat_apk">APK</string>
+    <string name="storage_cat_other">Прочее</string>
+
+    <!-- Archive extraction -->
+    <string name="extract_unsupported_format">Неподдерживаемый формат</string>
+    <string name="extract_error_generic">Ошибка извлечения</string>
+
+    <!-- APK parse -->
+    <string name="apk_parse_error">Не удалось прочитать APK</string>
+
+    <!-- Trash repository -->
+    <string name="storage_root_internal">Внутренняя память</string>
+    <string name="storage_root_sd">SD-карта</string>
+
+    <!-- Additional UI strings -->
+    <string name="close_search">Закрыть поиск</string>
+    <string name="cancel_selection">Отменить выделение</string>
+    <string name="forward">Вперёд</string>
+    <string name="sort_label">Сортировка</string>
+    <string name="ascending">По возрастанию</string>
+    <string name="descending">По убыванию</string>
+    <string name="pause">Пауза</string>
+    <string name="select_deselect_all">Выбрать/снять все</string>
+    <string name="disconnect">Отключить</string>
+    <string name="remove_item">Убрать</string>
+    <string name="to_favorites">В избранное</string>
+    <string name="plural_folders_genitive">папок</string>
+    <string name="plural_files_genitive">файлов</string>
+    <string name="zero_files">0 файлов</string>
+
+    <!-- ExplorerViewModel additional -->
+    <string name="folder_marked_original">Папка помечена как оригинал</string>
+    <string name="marker_removed">Пометка снята</string>
+    <string name="auto_evicted_format">Автоудалено %d старых файлов из корзины</string>
+    <string name="delete_error_format">Ошибка удаления: %s</string>
+    <string name="moved_to_trash_count">В корзине: %d</string>
+    <string name="skipped_count">Пропущено: %d</string>
+    <string name="copied_with_skip">Скопировано: %1$d, пропущено: %2$d</string>
+    <string name="moved_with_skip">Перемещено: %1$d, пропущено: %2$d</string>
+    <string name="copied_format">Скопировано: %s</string>
+    <string name="moved_format">Перемещено: %s</string>
+    <string name="restored_count">Восстановлено: %d</string>
+    <string name="creating_zip">Создание ZIP…</string>
+    <string name="archive_create_error">Ошибка создания архива: %s</string>
+    <string name="moved_from_shelf">Перемещено с полки: %d</string>
+    <string name="copied_from_shelf">Скопировано с полки: %d</string>
+    <string name="installer_open_failed">Не удалось открыть установщик</string>
+    <string name="no_app_for_file">Нет приложения для открытия этого файла</string>
+    <string name="select_files_first">Сначала выделите файлы или папки</string>
+    <string name="empty_folders_deleted">Удалено пустых папок: %d</string>
+    <string name="force_deleted_count">Удалено навсегда: %d</string>
+    <string name="error_rename">Ошибка переименования</string>
+    <string name="open_in_chooser">Открыть в\u2026</string>
+    <string name="error_loading_preview">Ошибка загрузки превью</string>
+    <string name="unknown_error">Неизвестная ошибка</string>
+    <string name="operation_cancelled_label">Отменено</string>
+    <string name="error_loading">Ошибка загрузки</string>
+    <string name="added_to_shelf_count">На полку: %d</string>
+    <string name="exif_data_removed">EXIF-данные удалены</string>
+    <string name="exif_remove_error">Не удалось удалить EXIF</string>
+
+    <!-- Missing toast/status strings -->
+    <string name="trash_cleared_count">Корзина очищена: %d</string>
+    <string name="saf_unavailable">Недоступно для SAF-хранилищ</string>
+    <string name="apk_analysis_error">Ошибка анализа APK</string>
+    <string name="version_upgrade">Обновление: v%1$s → v%2$s</string>
+    <string name="version_downgrade">Понижение: v%1$s → v%2$s</string>
+    <string name="version_reinstall">Переустановка: v%s</string>
+    <string name="storage_deleted_format">Удалено: %d файлов</string>
+    <string name="found_candidates_format">Найдено %d кандидатов</string>
+
+    <!-- APK permission descriptions (categories) -->
+    <string name="perm_cat_location">Это разрешение связано с определением вашего местоположения. Приложение может отслеживать где вы находитесь.</string>
+    <string name="perm_cat_camera">Это разрешение даёт доступ к камере. Приложение сможет делать фото или снимать видео.</string>
+    <string name="perm_cat_audio">Это разрешение связано со звуком — запись с микрофона или доступ к аудиофайлам.</string>
+    <string name="perm_cat_sms">Это разрешение связано с SMS. Приложение может читать, отправлять или получать текстовые сообщения.</string>
+    <string name="perm_cat_phone">Это разрешение связано с телефоном — информация об устройстве, звонки или журнал вызовов.</string>
+    <string name="perm_cat_call">Это разрешение связано с телефонными звонками — совершение вызовов или доступ к истории.</string>
+    <string name="perm_cat_contact">Это разрешение даёт доступ к вашим контактам — чтение или изменение списка.</string>
+    <string name="perm_cat_storage">Это разрешение даёт доступ к файлам в памяти устройства — чтение или запись.</string>
+    <string name="perm_cat_media">Это разрешение даёт доступ к медиафайлам — фото, видео или музыке на устройстве.</string>
+    <string name="perm_cat_bluetooth">Это разрешение связано с Bluetooth — подключение к беспроводным устройствам.</string>
+    <string name="perm_cat_wifi">Это разрешение связано с Wi-Fi — информация о сети или подключение.</string>
+    <string name="perm_cat_network">Это разрешение связано с сетью — проверка подключения к интернету.</string>
+    <string name="perm_cat_calendar">Это разрешение даёт доступ к вашему календарю — чтение или добавление событий.</string>
+    <string name="perm_cat_sensor">Это разрешение даёт доступ к датчикам устройства — акселерометр, гироскоп или датчики здоровья.</string>
+    <string name="perm_cat_notification">Это разрешение связано с уведомлениями — показ или управление уведомлениями.</string>
+    <string name="perm_cat_alarm">Это разрешение связано с будильниками и таймерами.</string>
+    <string name="perm_cat_biometric">Это разрешение связано с биометрией — вход по отпечатку пальца или лицу.</string>
+    <string name="perm_cat_nfc">Это разрешение связано с NFC — бесконтактная передача данных.</string>
+    <string name="perm_cat_install">Это разрешение позволяет устанавливать приложения.</string>
+    <string name="perm_cat_billing">Это разрешение связано с покупками внутри приложения.</string>
+    <string name="perm_cat_vibrate">Это разрешение позволяет использовать вибрацию устройства.</string>
+    <string name="perm_cat_boot">Это разрешение позволяет приложению запускаться автоматически после включения устройства.</string>
+    <string name="perm_cat_wake">Это разрешение не даёт экрану или процессору уходить в сон, пока приложение работает.</string>
+    <string name="perm_cat_foreground">Это разрешение позволяет приложению работать в фоне и показывать уведомление об этом.</string>
+    <string name="perm_cat_overlay">Это разрешение позволяет рисовать окна поверх других приложений.</string>
+    <string name="perm_cat_shortcut">Это разрешение позволяет создавать ярлыки на рабочем столе.</string>
+    <string name="perm_cat_fingerprint">Это разрешение даёт доступ к сканеру отпечатков пальцев для входа или подтверждения.</string>
+    <string name="perm_cat_default">Техническое разрешение, которое приложение запрашивает для своей работы. Обычно не влияет на вашу конфиденциальность.</string>
+
+    <!-- APK specific permission descriptions -->
+    <string name="perm_internet">Приложение сможет выходить в интернет — загружать данные, обновляться, показывать рекламу и отправлять информацию на свои серверы. Есть почти у всех приложений.</string>
+    <string name="perm_access_network_state">Приложение будет знать, подключены ли вы к интернету и через что — Wi-Fi или мобильную сеть. Используется чтобы не тратить мобильный трафик.</string>
+    <string name="perm_access_wifi_state">Приложение увидит название вашей Wi-Fi сети и статус подключения. Часто нужно чтобы скачивать обновления и большие файлы только по Wi-Fi.</string>
+    <string name="perm_change_wifi_state">Приложение сможет включать и выключать Wi-Fi на устройстве. Используется для автоматического подключения к сетям.</string>
+    <string name="perm_change_network_state">Приложение сможет менять настройки сети — например, переключаться между Wi-Fi и мобильным интернетом.</string>
+    <string name="perm_nearby_wifi_devices">Приложение сможет искать Wi-Fi устройства поблизости. Нужно для передачи файлов между устройствами по Wi-Fi Direct.</string>
+    <string name="perm_camera">Приложение получит доступ к камере вашего телефона. Сможет снимать фото и видео, сканировать QR-коды или проводить видеозвонки. Камера работает только когда приложение открыто.</string>
+    <string name="perm_record_audio">Приложение сможет записывать звук через микрофон. Используется для голосовых сообщений, видеозвонков, диктофона или голосового поиска. Стоит обращать внимание — микрофон может записывать всё вокруг.</string>
+    <string name="perm_read_contacts">Приложение увидит все ваши контакты — имена, номера телефонов, email. Обычно нужно для поиска друзей в приложении, но может использоваться для сбора данных.</string>
+    <string name="perm_write_contacts">Приложение сможет добавлять новые контакты и менять существующие в вашей адресной книге.</string>
+    <string name="perm_get_accounts">Приложение увидит список аккаунтов на устройстве — Google, почта и другие. Используется для входа в приложение через существующий аккаунт.</string>
+    <string name="perm_read_phone_state">Приложение получит информацию о вашем телефоне — модель, оператор, номер телефона. Часто нужно для идентификации устройства, но может использоваться для отслеживания.</string>
+    <string name="perm_read_phone_numbers">Приложение увидит ваш номер телефона. Обычно нужно для автоматической регистрации по номеру без ручного ввода.</string>
+    <string name="perm_call_phone">Приложение сможет звонить на любой номер без вашего подтверждения! Будьте осторожны — это может привести к платным вызовам.</string>
+    <string name="perm_answer_phone_calls">Приложение сможет автоматически принимать входящие звонки. Используется в приложениях для звонков и автоответчиках.</string>
+    <string name="perm_read_call_log">Приложение увидит всю историю ваших звонков — кому звонили, кто звонил вам, когда и сколько длился разговор.</string>
+    <string name="perm_write_call_log">Приложение сможет добавлять и удалять записи из журнала звонков. Нужно для приложений интернет-телефонии.</string>
+    <string name="perm_process_outgoing_calls">Приложение будет перехватывать исходящие звонки. Используется для блокировки спама или переадресации.</string>
+    <string name="perm_send_sms">Приложение сможет отправлять SMS от вашего имени. Будьте осторожны — отправка SMS на платные номера может стоить денег!</string>
+    <string name="perm_read_sms">Приложение прочитает все ваши SMS-сообщения. Обычно нужно для автоматического считывания кодов подтверждения, но даёт доступ ко всей переписке.</string>
+    <string name="perm_receive_sms">Приложение будет получать входящие SMS в реальном времени. Нужно чтобы автоматически подставить код подтверждения при регистрации.</string>
+    <string name="perm_receive_mms">Приложение будет получать входящие MMS — сообщения с картинками и видео.</string>
+    <string name="perm_access_fine_location">Приложение будет знать ваше точное местоположение с точностью до нескольких метров (через GPS). Нужно для навигации, карт и доставки. Одно из самых чувствительных разрешений.</string>
+    <string name="perm_access_coarse_location">Приложение будет знать ваше приблизительное местоположение — город или район. Менее точное чем GPS, но достаточно для погоды и новостей.</string>
+    <string name="perm_access_background_location">Приложение будет отслеживать ваше местоположение даже когда вы его закрыли! Нужно для навигаторов и фитнес-трекеров, но может разряжать батарею и следить за вами.</string>
+    <string name="perm_read_external_storage">Приложение сможет читать все файлы в памяти телефона — фото, документы, загрузки. На старых версиях Android даёт широкий доступ.</string>
+    <string name="perm_write_external_storage">Приложение сможет сохранять и изменять файлы в памяти телефона. Нужно для скачивания файлов, сохранения фото и документов.</string>
+    <string name="perm_manage_external_storage">Полный доступ ко ВСЕМ файлам на устройстве без ограничений! Такое нужно только файловым менеджерам, антивирусам и приложениям для бэкапа. Если это обычное приложение — это подозрительно.</string>
+    <string name="perm_read_media_images">Приложение получит доступ к вашим фотографиям и картинкам. Нужно для выбора фото профиля, отправки в чат или обработки.</string>
+    <string name="perm_read_media_video">Приложение получит доступ к вашим видеозаписям. Нужно для просмотра, отправки или редактирования видео.</string>
+    <string name="perm_read_media_audio">Приложение получит доступ к вашей музыке и аудиозаписям. Нужно для музыкальных плееров и редакторов.</string>
+    <string name="perm_post_notifications">Приложение сможет показывать вам уведомления — сообщения, напоминания, новости, рекламу. Вы сможете отключить их в настройках в любой момент.</string>
+    <string name="perm_access_notification_policy">Приложение сможет управлять режимом «Не беспокоить». Нужно для приложений-будильников и менеджеров уведомлений.</string>
+    <string name="perm_bluetooth">Приложение сможет подключаться к Bluetooth-устройствам — наушникам, колонкам, умным часам, принтерам.</string>
+    <string name="perm_bluetooth_admin">Приложение сможет управлять Bluetooth — включать, выключать и настраивать подключения к устройствам.</string>
+    <string name="perm_bluetooth_connect">Приложение сможет подключаться к уже знакомым Bluetooth-устройствам — наушникам, колонкам, часам, которые вы ранее сопрягали.</string>
+    <string name="perm_bluetooth_scan">Приложение будет искать Bluetooth-устройства поблизости. Нужно при первом подключении нового устройства.</string>
+    <string name="perm_bluetooth_advertise">Приложение сможет делать ваше устройство видимым для других по Bluetooth. Нужно для передачи файлов между телефонами.</string>
+    <string name="perm_read_calendar">Приложение увидит все ваши события в календаре — встречи, дни рождения, напоминания. Может использоваться для планирования.</string>
+    <string name="perm_write_calendar">Приложение сможет добавлять события в ваш календарь и менять существующие. Нужно для планировщиков и приложений с расписанием.</string>
+    <string name="perm_body_sensors">Приложение получит данные с датчиков здоровья — пульс, давление, уровень кислорода. Нужно для фитнес-приложений и мониторинга здоровья.</string>
+    <string name="perm_body_sensors_background">Приложение будет считывать датчики здоровья даже в фоне. Нужно для постоянного мониторинга пульса или сна.</string>
+    <string name="perm_activity_recognition">Приложение будет определять чем вы занимаетесь — идёте, бежите, едете на велосипеде или в машине. Нужно для фитнес-трекеров и шагомеров.</string>
+    <string name="perm_high_sampling_rate_sensors">Приложение получит ускоренные данные с датчиков движения. Нужно для спортивных трекеров и игр с управлением наклоном.</string>
+    <string name="perm_use_biometric">Приложение предложит войти по отпечатку пальца или распознаванию лица вместо ввода пароля. Ваши биометрические данные не передаются приложению — проверку делает система.</string>
+    <string name="perm_use_fingerprint">Приложение предложит подтвердить действие отпечатком пальца. Ваш отпечаток хранится только в защищённой памяти устройства.</string>
+    <string name="perm_vibrate">Приложение сможет включать вибрацию — для уведомлений, будильников или обратной связи при нажатиях. Безобидное разрешение.</string>
+    <string name="perm_wake_lock">Приложение не даст телефону уйти в сон пока выполняет задачу — скачивание файла, воспроизведение музыки, навигация. Может влиять на расход батареи.</string>
+    <string name="perm_receive_boot_completed">Приложение будет запускаться автоматически после перезагрузки телефона. Нужно для будильников, мессенджеров и мониторинга. Много таких приложений замедляют загрузку устройства.</string>
+    <string name="perm_foreground_service">Приложение сможет работать в фоне и показывать значок в шторке уведомлений. Нужно для музыкальных плееров, загрузчиков и навигаторов.</string>
+    <string name="perm_foreground_service_data_sync">Приложение сможет синхронизировать данные в фоне — загружать или отправлять файлы, даже когда вы его свернули.</string>
+    <string name="perm_foreground_service_media_playback">Приложение сможет играть музыку или видео в фоне — когда экран выключен или открыто другое приложение.</string>
+    <string name="perm_foreground_service_location">Приложение сможет отслеживать местоположение в фоне с уведомлением. Нужно для навигаторов и фитнес-трекеров.</string>
+    <string name="perm_foreground_service_camera">Приложение сможет использовать камеру в фоне. Нужно для видеозвонков и приложений видеонаблюдения.</string>
+    <string name="perm_foreground_service_microphone">Приложение сможет записывать звук в фоне. Нужно для записи звонков, диктофона или голосовых помощников.</string>
+    <string name="perm_request_install_packages">Приложение сможет предлагать установить другие APK-файлы. Нужно для магазинов приложений и автообновления. Если это не магазин — будьте осторожны.</string>
+    <string name="perm_request_delete_packages">Приложение сможет предлагать удалить другие приложения. Нужно для антивирусов и менеджеров приложений.</string>
+    <string name="perm_system_alert_window">Приложение сможет показывать окна поверх всех приложений! Нужно для плавающих плееров, экрана звонка и чат-пузырей. Мошенники могут использовать для подделки интерфейса.</string>
+    <string name="perm_query_all_packages">Приложение увидит список всех установленных приложений на устройстве. Нужно для антивирусов и лаунчеров, но может использоваться для анализа ваших предпочтений.</string>
+    <string name="perm_schedule_exact_alarm">Приложение сможет ставить будильники и напоминания на точное время. Нужно для будильников, планировщиков и приложений с расписанием.</string>
+    <string name="perm_use_exact_alarm">Приложение сможет срабатывать точно в заданное время, даже если телефон в режиме энергосбережения. Нужно для будильников.</string>
+    <string name="perm_request_ignore_battery_optimizations">Приложение попросит отключить для него экономию батареи. Нужно для мессенджеров и приложений с уведомлениями, но увеличит расход заряда.</string>
+    <string name="perm_package_usage_stats">Приложение увидит статистику использования других приложений — какие вы открываете и сколько времени проводите. Нужно для контроля экранного времени.</string>
+    <string name="perm_nfc">Приложение сможет обмениваться данными через NFC — бесконтактная оплата, считывание меток, проездных билетов или пропусков.</string>
+    <string name="perm_nfc_transaction_event">Приложение будет получать уведомления о бесконтактных NFC-платежах.</string>
+    <string name="perm_install_shortcut">Приложение сможет создать ярлык на вашем рабочем столе для быстрого доступа. Безобидное разрешение.</string>
+    <string name="perm_billing">Приложение поддерживает покупки через Google Play — подписки, разблокировка функций, удаление рекламы или виртуальные товары.</string>
+    <string name="perm_check_license">Приложение проверяет лицензию через Google Play — подтверждает что вы его законно купили/скачали.</string>
+
+    <!-- Batch rename -->
+    <string name="batch_rename_title">Пакетное переименование</string>
+    <string name="batch_rename_template">Шаблон</string>
+    <string name="batch_rename_find">Найти</string>
+    <string name="batch_rename_replace_with">Заменить на</string>
+    <string name="batch_rename_prefix">Добавить префикс</string>
+    <string name="batch_rename_suffix">Добавить суффикс</string>
+    <string name="batch_rename_preview">Предпросмотр</string>
+    <string name="batch_rename_apply">Переименовать (%d)</string>
+    <string name="batch_rename_success">Переименовано: %d</string>
+    <string name="batch_rename_error">Ошибка переименования: %s</string>
+    <string name="batch_rename_counter_hint"># = счётчик (фото_### → фото_001)</string>
+    <string name="batch_rename_start_number">Начальный номер</string>
+    <string name="batch_rename_step">Шаг</string>
+    <string name="batch_mode_template">Шаблон</string>
+    <string name="batch_mode_find_replace">Найти и заменить</string>
+    <string name="batch_mode_case">Регистр</string>
+    <string name="case_as_is">Как есть</string>
+    <string name="case_lower">строчные</string>
+    <string name="case_upper">ЗАГЛАВНЫЕ</string>
+    <string name="case_title">Каждое Слово</string>
+    <string name="batch_rename_history">Недавние</string>
+    <string name="batch_rename_no_changes">Нет файлов для переименования</string>
+    <string name="batch_rename_keep_ext">Сохранить расширение</string>
+
+    <!-- Tags -->
+    <string name="tags_title">Метки</string>
+    <string name="tags_manage">Управление метками</string>
+    <string name="tags_assign">Метки</string>
+    <string name="tags_create">Создать метку</string>
+    <string name="tags_edit">Редактировать метку</string>
+    <string name="tags_delete">Удалить метку</string>
+    <string name="tags_name_hint">Название метки</string>
+    <string name="tags_color">Цвет</string>
+    <string name="tags_no_tags">Меток пока нет</string>
+    <string name="tags_create_first">Создать первую метку</string>
+    <string name="tags_delete_confirm">Удалить метку «%s»? Она будет снята со всех файлов.</string>
+    <string name="tags_filter_all">Все файлы</string>
+    <string name="tags_filter_by">Фильтр по метке</string>
+    <string name="tags_action">Метки</string>
+    <string name="tags_name_exists">Метка с таким именем уже существует</string>
+    <string name="tags_apply">Применить</string>
+
+    <!-- Plural forms for file counts -->
+    <string name="plural_folders_nom">папка</string>
+    <string name="plural_folders_gen_few">папки</string>
+    <string name="plural_files_nom">файл</string>
+    <string name="plural_files_gen_few">файла</string>
+</resources>

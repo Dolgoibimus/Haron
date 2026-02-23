@@ -52,9 +52,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
 import android.content.ClipData
@@ -72,10 +74,13 @@ import com.vamp.haron.presentation.explorer.components.ApkInstallDialog
 import com.vamp.haron.presentation.explorer.components.BookmarkPopup
 import com.vamp.haron.presentation.explorer.components.ToolsPopup
 import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
+import com.vamp.haron.presentation.explorer.components.BatchRenameDialog
 import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
 import com.vamp.haron.presentation.explorer.components.ShelfPanel
+import com.vamp.haron.presentation.explorer.components.TagAssignDialog
+import com.vamp.haron.presentation.explorer.components.TagManageDialog
 import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -321,6 +326,10 @@ fun ExplorerScreen(
                 onCloseSearch = { viewModel.closeSearch(PanelId.TOP) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.TOP),
+                fileTags = state.fileTags,
+                tagDefinitions = state.tagDefinitions,
+                activeTagFilter = state.activeTagFilter,
+                onTagFilterChanged = { viewModel.setTagFilter(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -334,6 +343,9 @@ fun ExplorerScreen(
             // Divider
             PanelDivider(
                 totalHeight = totalHeightPx,
+                topFileCount = state.topPanel.files.size,
+                bottomFileCount = state.bottomPanel.files.size,
+                isTopActive = activePanel == PanelId.TOP,
                 onDrag = { delta ->
                     viewModel.updatePanelRatio(state.panelRatio + delta)
                 },
@@ -403,6 +415,10 @@ fun ExplorerScreen(
                 onCloseSearch = { viewModel.closeSearch(PanelId.BOTTOM) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.BOTTOM),
+                fileTags = state.fileTags,
+                tagDefinitions = state.tagDefinitions,
+                activeTagFilter = state.activeTagFilter,
+                onTagFilterChanged = { viewModel.setTagFilter(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -436,7 +452,11 @@ fun ExplorerScreen(
                 },
                 onRename = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    viewModel.requestRename()
+                    if (selectedDirs + selectedFiles == 1) {
+                        viewModel.requestRename()
+                    } else {
+                        viewModel.requestBatchRename()
+                    }
                 },
                 onZip = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
@@ -445,6 +465,10 @@ fun ExplorerScreen(
                 onAddToShelf = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.addToShelf()
+                },
+                onTag = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.requestTagAssign()
                 },
                 onInfo = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
@@ -479,13 +503,14 @@ fun ExplorerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        val typeLabel = stringResource(p.type.labelRes)
                         val progressText = when {
                             p.current == 0 && p.currentFileName.isEmpty() ->
-                                "${p.type.label}: ${p.total} файл(ов)…"
+                                stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
                             p.currentFileName.isNotEmpty() ->
-                                "${p.type.label}: ${p.current}/${p.total} — ${p.currentFileName}"
+                                stringResource(R.string.file_operation_current_format, typeLabel, p.current, p.total, p.currentFileName)
                             else ->
-                                "${p.type.label}: ${p.current}/${p.total}"
+                                stringResource(R.string.file_operation_count_format, typeLabel, p.current, p.total)
                         }
                         Text(
                             text = progressText,
@@ -519,7 +544,7 @@ fun ExplorerScreen(
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Отмена",
+                            contentDescription = stringResource(R.string.cancel),
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -634,7 +659,7 @@ fun ExplorerScreen(
                 onCopyHash = { hash ->
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("hash", hash))
-                    Toast.makeText(context, "Хеш скопирован", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.hash_copied), Toast.LENGTH_SHORT).show()
                 },
                 onRemoveExif = { viewModel.removeExif() },
                 onDismiss = viewModel::dismissDialog,
@@ -666,6 +691,34 @@ fun ExplorerScreen(
             ForceDeleteConfirmDialog(
                 names = dialog.names,
                 onConfirm = { viewModel.confirmForceDelete(dialog.paths) },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.BatchRename -> {
+            BatchRenameDialog(
+                entries = dialog.entries,
+                recentPatterns = viewModel.getRenamePatterns(),
+                onConfirm = { renames -> viewModel.confirmBatchRename(renames) },
+                onSavePattern = { viewModel.saveBatchRenamePattern(it) },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.TagAssign -> {
+            TagAssignDialog(
+                paths = dialog.paths,
+                tagDefinitions = state.tagDefinitions,
+                fileTags = state.fileTags,
+                onConfirm = { paths, tagNames -> viewModel.confirmTagAssign(paths, tagNames) },
+                onManageTags = { viewModel.showTagManager() },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.TagManage -> {
+            TagManageDialog(
+                tagDefinitions = state.tagDefinitions,
+                onAddTag = { name, colorIndex -> viewModel.addTag(name, colorIndex) },
+                onEditTag = { oldName, newName, colorIndex -> viewModel.editTag(oldName, newName, colorIndex) },
+                onDeleteTag = { viewModel.deleteTag(it) },
                 onDismiss = viewModel::dismissDialog
             )
         }
@@ -742,6 +795,7 @@ fun ExplorerScreen(
                     onOpenAppManager = { viewModel.openAppManager() },
                     onFindEmptyFolders = { viewModel.findEmptyFolders() },
                     onForceDelete = { viewModel.requestForceDelete() },
+                    onManageTags = { viewModel.showTagManager() },
                     onOpenSettings = { viewModel.openSettings() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer

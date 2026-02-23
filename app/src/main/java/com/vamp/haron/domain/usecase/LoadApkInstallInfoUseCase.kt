@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.ApkInstallInfo
 import com.vamp.haron.domain.model.ApkPermissionInfo
 import com.vamp.haron.domain.model.FileEntry
@@ -30,7 +31,7 @@ class LoadApkInstallInfoUseCase @Inject constructor(
             val flags = PackageManager.GET_PERMISSIONS or
                     PackageManager.GET_SIGNING_CERTIFICATES
             val info = pm.getPackageArchiveInfo(file.absolutePath, flags)
-                ?: return@withContext Result.failure(Exception("Не удалось прочитать APK"))
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.apk_parse_error)))
 
             info.applicationInfo?.sourceDir = file.absolutePath
             info.applicationInfo?.publicSourceDir = file.absolutePath
@@ -134,211 +135,140 @@ class LoadApkInstallInfoUseCase @Inject constructor(
     private fun generateFallbackDescription(permName: String): String {
         val short = permName.substringAfterLast('.').lowercase()
         val keywords = mapOf(
-            "location" to "Это разрешение связано с определением вашего местоположения. Приложение может отслеживать где вы находитесь.",
-            "camera" to "Это разрешение даёт доступ к камере. Приложение сможет делать фото или снимать видео.",
-            "audio" to "Это разрешение связано со звуком — запись с микрофона или доступ к аудиофайлам.",
-            "sms" to "Это разрешение связано с SMS. Приложение может читать, отправлять или получать текстовые сообщения.",
-            "phone" to "Это разрешение связано с телефоном — информация об устройстве, звонки или журнал вызовов.",
-            "call" to "Это разрешение связано с телефонными звонками — совершение вызовов или доступ к истории.",
-            "contact" to "Это разрешение даёт доступ к вашим контактам — чтение или изменение списка.",
-            "storage" to "Это разрешение даёт доступ к файлам в памяти устройства — чтение или запись.",
-            "media" to "Это разрешение даёт доступ к медиафайлам — фото, видео или музыке на устройстве.",
-            "bluetooth" to "Это разрешение связано с Bluetooth — подключение к беспроводным устройствам.",
-            "wifi" to "Это разрешение связано с Wi-Fi — информация о сети или подключение.",
-            "network" to "Это разрешение связано с сетью — проверка подключения к интернету.",
-            "calendar" to "Это разрешение даёт доступ к вашему календарю — чтение или добавление событий.",
-            "sensor" to "Это разрешение даёт доступ к датчикам устройства — акселерометр, гироскоп или датчики здоровья.",
-            "notification" to "Это разрешение связано с уведомлениями — показ или управление уведомлениями.",
-            "alarm" to "Это разрешение связано с будильниками и таймерами.",
-            "biometric" to "Это разрешение связано с биометрией — вход по отпечатку пальца или лицу.",
-            "nfc" to "Это разрешение связано с NFC — бесконтактная передача данных.",
-            "install" to "Это разрешение позволяет устанавливать приложения.",
-            "billing" to "Это разрешение связано с покупками внутри приложения.",
-            "vibrat" to "Это разрешение позволяет использовать вибрацию устройства.",
-            "boot" to "Это разрешение позволяет приложению запускаться автоматически после включения устройства.",
-            "wake" to "Это разрешение не даёт экрану или процессору уходить в сон, пока приложение работает.",
-            "foreground" to "Это разрешение позволяет приложению работать в фоне и показывать уведомление об этом.",
-            "overlay" to "Это разрешение позволяет рисовать окна поверх других приложений.",
-            "shortcut" to "Это разрешение позволяет создавать ярлыки на рабочем столе.",
-            "fingerprint" to "Это разрешение даёт доступ к сканеру отпечатков пальцев для входа или подтверждения."
+            "location" to context.getString(R.string.perm_cat_location),
+            "camera" to context.getString(R.string.perm_cat_camera),
+            "audio" to context.getString(R.string.perm_cat_audio),
+            "sms" to context.getString(R.string.perm_cat_sms),
+            "phone" to context.getString(R.string.perm_cat_phone),
+            "call" to context.getString(R.string.perm_cat_call),
+            "contact" to context.getString(R.string.perm_cat_contact),
+            "storage" to context.getString(R.string.perm_cat_storage),
+            "media" to context.getString(R.string.perm_cat_media),
+            "bluetooth" to context.getString(R.string.perm_cat_bluetooth),
+            "wifi" to context.getString(R.string.perm_cat_wifi),
+            "network" to context.getString(R.string.perm_cat_network),
+            "calendar" to context.getString(R.string.perm_cat_calendar),
+            "sensor" to context.getString(R.string.perm_cat_sensor),
+            "notification" to context.getString(R.string.perm_cat_notification),
+            "alarm" to context.getString(R.string.perm_cat_alarm),
+            "biometric" to context.getString(R.string.perm_cat_biometric),
+            "nfc" to context.getString(R.string.perm_cat_nfc),
+            "install" to context.getString(R.string.perm_cat_install),
+            "billing" to context.getString(R.string.perm_cat_billing),
+            "vibrat" to context.getString(R.string.perm_cat_vibrate),
+            "boot" to context.getString(R.string.perm_cat_boot),
+            "wake" to context.getString(R.string.perm_cat_wake),
+            "foreground" to context.getString(R.string.perm_cat_foreground),
+            "overlay" to context.getString(R.string.perm_cat_overlay),
+            "shortcut" to context.getString(R.string.perm_cat_shortcut),
+            "fingerprint" to context.getString(R.string.perm_cat_fingerprint)
         )
         for ((key, desc) in keywords) {
             if (short.contains(key)) return desc
         }
-        return "Техническое разрешение, которое приложение запрашивает для своей работы. Обычно не влияет на вашу конфиденциальность."
+        return context.getString(R.string.perm_cat_default)
     }
 
     private val permissionDescriptions = mapOf(
-        // --- Интернет и сеть ---
-        "android.permission.INTERNET" to "Приложение сможет выходить в интернет — загружать данные, обновляться, " +
-                "показывать рекламу и отправлять информацию на свои серверы. Есть почти у всех приложений.",
-        "android.permission.ACCESS_NETWORK_STATE" to "Приложение будет знать, подключены ли вы к интернету " +
-                "и через что — Wi-Fi или мобильную сеть. Используется чтобы не тратить мобильный трафик.",
-        "android.permission.ACCESS_WIFI_STATE" to "Приложение увидит название вашей Wi-Fi сети и статус подключения. " +
-                "Часто нужно чтобы скачивать обновления и большие файлы только по Wi-Fi.",
-        "android.permission.CHANGE_WIFI_STATE" to "Приложение сможет включать и выключать Wi-Fi на устройстве. " +
-                "Используется для автоматического подключения к сетям.",
-        "android.permission.CHANGE_NETWORK_STATE" to "Приложение сможет менять настройки сети — например, " +
-                "переключаться между Wi-Fi и мобильным интернетом.",
-        "android.permission.NEARBY_WIFI_DEVICES" to "Приложение сможет искать Wi-Fi устройства поблизости. " +
-                "Нужно для передачи файлов между устройствами по Wi-Fi Direct.",
+        // --- Internet & network ---
+        "android.permission.INTERNET" to context.getString(R.string.perm_internet),
+        "android.permission.ACCESS_NETWORK_STATE" to context.getString(R.string.perm_access_network_state),
+        "android.permission.ACCESS_WIFI_STATE" to context.getString(R.string.perm_access_wifi_state),
+        "android.permission.CHANGE_WIFI_STATE" to context.getString(R.string.perm_change_wifi_state),
+        "android.permission.CHANGE_NETWORK_STATE" to context.getString(R.string.perm_change_network_state),
+        "android.permission.NEARBY_WIFI_DEVICES" to context.getString(R.string.perm_nearby_wifi_devices),
 
-        // --- Камера и микрофон ---
-        "android.permission.CAMERA" to "Приложение получит доступ к камере вашего телефона. Сможет снимать фото и видео, " +
-                "сканировать QR-коды или проводить видеозвонки. Камера работает только когда приложение открыто.",
-        "android.permission.RECORD_AUDIO" to "Приложение сможет записывать звук через микрофон. Используется для голосовых " +
-                "сообщений, видеозвонков, диктофона или голосового поиска. Стоит обращать внимание — микрофон может " +
-                "записывать всё вокруг.",
+        // --- Camera & microphone ---
+        "android.permission.CAMERA" to context.getString(R.string.perm_camera),
+        "android.permission.RECORD_AUDIO" to context.getString(R.string.perm_record_audio),
 
-        // --- Контакты ---
-        "android.permission.READ_CONTACTS" to "Приложение увидит все ваши контакты — имена, номера телефонов, email. " +
-                "Обычно нужно для поиска друзей в приложении, но может использоваться для сбора данных.",
-        "android.permission.WRITE_CONTACTS" to "Приложение сможет добавлять новые контакты и менять существующие " +
-                "в вашей адресной книге.",
-        "android.permission.GET_ACCOUNTS" to "Приложение увидит список аккаунтов на устройстве — Google, почта и другие. " +
-                "Используется для входа в приложение через существующий аккаунт.",
+        // --- Contacts ---
+        "android.permission.READ_CONTACTS" to context.getString(R.string.perm_read_contacts),
+        "android.permission.WRITE_CONTACTS" to context.getString(R.string.perm_write_contacts),
+        "android.permission.GET_ACCOUNTS" to context.getString(R.string.perm_get_accounts),
 
-        // --- Телефон и звонки ---
-        "android.permission.READ_PHONE_STATE" to "Приложение получит информацию о вашем телефоне — модель, оператор, " +
-                "номер телефона. Часто нужно для идентификации устройства, но может использоваться для отслеживания.",
-        "android.permission.READ_PHONE_NUMBERS" to "Приложение увидит ваш номер телефона. Обычно нужно для автоматической " +
-                "регистрации по номеру без ручного ввода.",
-        "android.permission.CALL_PHONE" to "Приложение сможет звонить на любой номер без вашего подтверждения! " +
-                "Будьте осторожны — это может привести к платным вызовам.",
-        "android.permission.ANSWER_PHONE_CALLS" to "Приложение сможет автоматически принимать входящие звонки. " +
-                "Используется в приложениях для звонков и автоответчиках.",
-        "android.permission.READ_CALL_LOG" to "Приложение увидит всю историю ваших звонков — кому звонили, " +
-                "кто звонил вам, когда и сколько длился разговор.",
-        "android.permission.WRITE_CALL_LOG" to "Приложение сможет добавлять и удалять записи из журнала звонков. " +
-                "Нужно для приложений интернет-телефонии.",
-        "android.permission.PROCESS_OUTGOING_CALLS" to "Приложение будет перехватывать исходящие звонки. " +
-                "Используется для блокировки спама или переадресации.",
+        // --- Phone & calls ---
+        "android.permission.READ_PHONE_STATE" to context.getString(R.string.perm_read_phone_state),
+        "android.permission.READ_PHONE_NUMBERS" to context.getString(R.string.perm_read_phone_numbers),
+        "android.permission.CALL_PHONE" to context.getString(R.string.perm_call_phone),
+        "android.permission.ANSWER_PHONE_CALLS" to context.getString(R.string.perm_answer_phone_calls),
+        "android.permission.READ_CALL_LOG" to context.getString(R.string.perm_read_call_log),
+        "android.permission.WRITE_CALL_LOG" to context.getString(R.string.perm_write_call_log),
+        "android.permission.PROCESS_OUTGOING_CALLS" to context.getString(R.string.perm_process_outgoing_calls),
 
         // --- SMS ---
-        "android.permission.SEND_SMS" to "Приложение сможет отправлять SMS от вашего имени. Будьте осторожны — " +
-                "отправка SMS на платные номера может стоить денег!",
-        "android.permission.READ_SMS" to "Приложение прочитает все ваши SMS-сообщения. Обычно нужно для автоматического " +
-                "считывания кодов подтверждения, но даёт доступ ко всей переписке.",
-        "android.permission.RECEIVE_SMS" to "Приложение будет получать входящие SMS в реальном времени. Нужно чтобы " +
-                "автоматически подставить код подтверждения при регистрации.",
-        "android.permission.RECEIVE_MMS" to "Приложение будет получать входящие MMS — сообщения с картинками и видео.",
+        "android.permission.SEND_SMS" to context.getString(R.string.perm_send_sms),
+        "android.permission.READ_SMS" to context.getString(R.string.perm_read_sms),
+        "android.permission.RECEIVE_SMS" to context.getString(R.string.perm_receive_sms),
+        "android.permission.RECEIVE_MMS" to context.getString(R.string.perm_receive_mms),
 
-        // --- Местоположение ---
-        "android.permission.ACCESS_FINE_LOCATION" to "Приложение будет знать ваше точное местоположение с точностью до " +
-                "нескольких метров (через GPS). Нужно для навигации, карт и доставки. Одно из самых чувствительных разрешений.",
-        "android.permission.ACCESS_COARSE_LOCATION" to "Приложение будет знать ваше приблизительное местоположение — " +
-                "город или район. Менее точное чем GPS, но достаточно для погоды и новостей.",
-        "android.permission.ACCESS_BACKGROUND_LOCATION" to "Приложение будет отслеживать ваше местоположение даже когда " +
-                "вы его закрыли! Нужно для навигаторов и фитнес-трекеров, но может разряжать батарею и следить за вами.",
+        // --- Location ---
+        "android.permission.ACCESS_FINE_LOCATION" to context.getString(R.string.perm_access_fine_location),
+        "android.permission.ACCESS_COARSE_LOCATION" to context.getString(R.string.perm_access_coarse_location),
+        "android.permission.ACCESS_BACKGROUND_LOCATION" to context.getString(R.string.perm_access_background_location),
 
-        // --- Хранилище и файлы ---
-        "android.permission.READ_EXTERNAL_STORAGE" to "Приложение сможет читать все файлы в памяти телефона — фото, " +
-                "документы, загрузки. На старых версиях Android даёт широкий доступ.",
-        "android.permission.WRITE_EXTERNAL_STORAGE" to "Приложение сможет сохранять и изменять файлы в памяти телефона. " +
-                "Нужно для скачивания файлов, сохранения фото и документов.",
-        "android.permission.MANAGE_EXTERNAL_STORAGE" to "Полный доступ ко ВСЕМ файлам на устройстве без ограничений! " +
-                "Такое нужно только файловым менеджерам, антивирусам и приложениям для бэкапа. " +
-                "Если это обычное приложение — это подозрительно.",
-        "android.permission.READ_MEDIA_IMAGES" to "Приложение получит доступ к вашим фотографиям и картинкам. " +
-                "Нужно для выбора фото профиля, отправки в чат или обработки.",
-        "android.permission.READ_MEDIA_VIDEO" to "Приложение получит доступ к вашим видеозаписям. " +
-                "Нужно для просмотра, отправки или редактирования видео.",
-        "android.permission.READ_MEDIA_AUDIO" to "Приложение получит доступ к вашей музыке и аудиозаписям. " +
-                "Нужно для музыкальных плееров и редакторов.",
+        // --- Storage & files ---
+        "android.permission.READ_EXTERNAL_STORAGE" to context.getString(R.string.perm_read_external_storage),
+        "android.permission.WRITE_EXTERNAL_STORAGE" to context.getString(R.string.perm_write_external_storage),
+        "android.permission.MANAGE_EXTERNAL_STORAGE" to context.getString(R.string.perm_manage_external_storage),
+        "android.permission.READ_MEDIA_IMAGES" to context.getString(R.string.perm_read_media_images),
+        "android.permission.READ_MEDIA_VIDEO" to context.getString(R.string.perm_read_media_video),
+        "android.permission.READ_MEDIA_AUDIO" to context.getString(R.string.perm_read_media_audio),
 
-        // --- Уведомления ---
-        "android.permission.POST_NOTIFICATIONS" to "Приложение сможет показывать вам уведомления — " +
-                "сообщения, напоминания, новости, рекламу. Вы сможете отключить их в настройках в любой момент.",
-        "android.permission.ACCESS_NOTIFICATION_POLICY" to "Приложение сможет управлять режимом «Не беспокоить». " +
-                "Нужно для приложений-будильников и менеджеров уведомлений.",
+        // --- Notifications ---
+        "android.permission.POST_NOTIFICATIONS" to context.getString(R.string.perm_post_notifications),
+        "android.permission.ACCESS_NOTIFICATION_POLICY" to context.getString(R.string.perm_access_notification_policy),
 
         // --- Bluetooth ---
-        "android.permission.BLUETOOTH" to "Приложение сможет подключаться к Bluetooth-устройствам — " +
-                "наушникам, колонкам, умным часам, принтерам.",
-        "android.permission.BLUETOOTH_ADMIN" to "Приложение сможет управлять Bluetooth — включать, выключать " +
-                "и настраивать подключения к устройствам.",
-        "android.permission.BLUETOOTH_CONNECT" to "Приложение сможет подключаться к уже знакомым Bluetooth-устройствам — " +
-                "наушникам, колонкам, часам, которые вы ранее сопрягали.",
-        "android.permission.BLUETOOTH_SCAN" to "Приложение будет искать Bluetooth-устройства поблизости. " +
-                "Нужно при первом подключении нового устройства.",
-        "android.permission.BLUETOOTH_ADVERTISE" to "Приложение сможет делать ваше устройство видимым для других " +
-                "по Bluetooth. Нужно для передачи файлов между телефонами.",
+        "android.permission.BLUETOOTH" to context.getString(R.string.perm_bluetooth),
+        "android.permission.BLUETOOTH_ADMIN" to context.getString(R.string.perm_bluetooth_admin),
+        "android.permission.BLUETOOTH_CONNECT" to context.getString(R.string.perm_bluetooth_connect),
+        "android.permission.BLUETOOTH_SCAN" to context.getString(R.string.perm_bluetooth_scan),
+        "android.permission.BLUETOOTH_ADVERTISE" to context.getString(R.string.perm_bluetooth_advertise),
 
-        // --- Календарь ---
-        "android.permission.READ_CALENDAR" to "Приложение увидит все ваши события в календаре — встречи, " +
-                "дни рождения, напоминания. Может использоваться для планирования.",
-        "android.permission.WRITE_CALENDAR" to "Приложение сможет добавлять события в ваш календарь и менять " +
-                "существующие. Нужно для планировщиков и приложений с расписанием.",
+        // --- Calendar ---
+        "android.permission.READ_CALENDAR" to context.getString(R.string.perm_read_calendar),
+        "android.permission.WRITE_CALENDAR" to context.getString(R.string.perm_write_calendar),
 
-        // --- Датчики и активность ---
-        "android.permission.BODY_SENSORS" to "Приложение получит данные с датчиков здоровья — пульс, " +
-                "давление, уровень кислорода. Нужно для фитнес-приложений и мониторинга здоровья.",
-        "android.permission.BODY_SENSORS_BACKGROUND" to "Приложение будет считывать датчики здоровья даже в фоне. " +
-                "Нужно для постоянного мониторинга пульса или сна.",
-        "android.permission.ACTIVITY_RECOGNITION" to "Приложение будет определять чем вы занимаетесь — идёте, " +
-                "бежите, едете на велосипеде или в машине. Нужно для фитнес-трекеров и шагомеров.",
-        "android.permission.HIGH_SAMPLING_RATE_SENSORS" to "Приложение получит ускоренные данные с датчиков " +
-                "движения. Нужно для спортивных трекеров и игр с управлением наклоном.",
+        // --- Sensors & activity ---
+        "android.permission.BODY_SENSORS" to context.getString(R.string.perm_body_sensors),
+        "android.permission.BODY_SENSORS_BACKGROUND" to context.getString(R.string.perm_body_sensors_background),
+        "android.permission.ACTIVITY_RECOGNITION" to context.getString(R.string.perm_activity_recognition),
+        "android.permission.HIGH_SAMPLING_RATE_SENSORS" to context.getString(R.string.perm_high_sampling_rate_sensors),
 
-        // --- Биометрия ---
-        "android.permission.USE_BIOMETRIC" to "Приложение предложит войти по отпечатку пальца или распознаванию лица " +
-                "вместо ввода пароля. Ваши биометрические данные не передаются приложению — проверку делает система.",
-        "android.permission.USE_FINGERPRINT" to "Приложение предложит подтвердить действие отпечатком пальца. " +
-                "Ваш отпечаток хранится только в защищённой памяти устройства.",
+        // --- Biometrics ---
+        "android.permission.USE_BIOMETRIC" to context.getString(R.string.perm_use_biometric),
+        "android.permission.USE_FINGERPRINT" to context.getString(R.string.perm_use_fingerprint),
 
-        // --- Системное ---
-        "android.permission.VIBRATE" to "Приложение сможет включать вибрацию — для уведомлений, " +
-                "будильников или обратной связи при нажатиях. Безобидное разрешение.",
-        "android.permission.WAKE_LOCK" to "Приложение не даст телефону уйти в сон пока выполняет задачу — " +
-                "скачивание файла, воспроизведение музыки, навигация. Может влиять на расход батареи.",
-        "android.permission.RECEIVE_BOOT_COMPLETED" to "Приложение будет запускаться автоматически после " +
-                "перезагрузки телефона. Нужно для будильников, мессенджеров и мониторинга. " +
-                "Много таких приложений замедляют загрузку устройства.",
-        "android.permission.FOREGROUND_SERVICE" to "Приложение сможет работать в фоне и показывать значок " +
-                "в шторке уведомлений. Нужно для музыкальных плееров, загрузчиков и навигаторов.",
-        "android.permission.FOREGROUND_SERVICE_DATA_SYNC" to "Приложение сможет синхронизировать данные в фоне — " +
-                "загружать или отправлять файлы, даже когда вы его свернули.",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" to "Приложение сможет играть музыку или видео в фоне — " +
-                "когда экран выключен или открыто другое приложение.",
-        "android.permission.FOREGROUND_SERVICE_LOCATION" to "Приложение сможет отслеживать местоположение в фоне " +
-                "с уведомлением. Нужно для навигаторов и фитнес-трекеров.",
-        "android.permission.FOREGROUND_SERVICE_CAMERA" to "Приложение сможет использовать камеру в фоне. " +
-                "Нужно для видеозвонков и приложений видеонаблюдения.",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE" to "Приложение сможет записывать звук в фоне. " +
-                "Нужно для записи звонков, диктофона или голосовых помощников.",
-        "android.permission.REQUEST_INSTALL_PACKAGES" to "Приложение сможет предлагать установить другие APK-файлы. " +
-                "Нужно для магазинов приложений и автообновления. Если это не магазин — будьте осторожны.",
-        "android.permission.REQUEST_DELETE_PACKAGES" to "Приложение сможет предлагать удалить другие приложения. " +
-                "Нужно для антивирусов и менеджеров приложений.",
-        "android.permission.SYSTEM_ALERT_WINDOW" to "Приложение сможет показывать окна поверх всех приложений! " +
-                "Нужно для плавающих плееров, экрана звонка и чат-пузырей. " +
-                "Мошенники могут использовать для подделки интерфейса.",
-        "android.permission.QUERY_ALL_PACKAGES" to "Приложение увидит список всех установленных приложений на устройстве. " +
-                "Нужно для антивирусов и лаунчеров, но может использоваться для анализа ваших предпочтений.",
-        "android.permission.SCHEDULE_EXACT_ALARM" to "Приложение сможет ставить будильники и напоминания " +
-                "на точное время. Нужно для будильников, планировщиков и приложений с расписанием.",
-        "android.permission.USE_EXACT_ALARM" to "Приложение сможет срабатывать точно в заданное время, " +
-                "даже если телефон в режиме энергосбережения. Нужно для будильников.",
-        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" to "Приложение попросит отключить для него " +
-                "экономию батареи. Нужно для мессенджеров и приложений с уведомлениями, " +
-                "но увеличит расход заряда.",
-        "android.permission.PACKAGE_USAGE_STATS" to "Приложение увидит статистику использования других приложений — " +
-                "какие вы открываете и сколько времени проводите. Нужно для контроля экранного времени.",
+        // --- System ---
+        "android.permission.VIBRATE" to context.getString(R.string.perm_vibrate),
+        "android.permission.WAKE_LOCK" to context.getString(R.string.perm_wake_lock),
+        "android.permission.RECEIVE_BOOT_COMPLETED" to context.getString(R.string.perm_receive_boot_completed),
+        "android.permission.FOREGROUND_SERVICE" to context.getString(R.string.perm_foreground_service),
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC" to context.getString(R.string.perm_foreground_service_data_sync),
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" to context.getString(R.string.perm_foreground_service_media_playback),
+        "android.permission.FOREGROUND_SERVICE_LOCATION" to context.getString(R.string.perm_foreground_service_location),
+        "android.permission.FOREGROUND_SERVICE_CAMERA" to context.getString(R.string.perm_foreground_service_camera),
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE" to context.getString(R.string.perm_foreground_service_microphone),
+        "android.permission.REQUEST_INSTALL_PACKAGES" to context.getString(R.string.perm_request_install_packages),
+        "android.permission.REQUEST_DELETE_PACKAGES" to context.getString(R.string.perm_request_delete_packages),
+        "android.permission.SYSTEM_ALERT_WINDOW" to context.getString(R.string.perm_system_alert_window),
+        "android.permission.QUERY_ALL_PACKAGES" to context.getString(R.string.perm_query_all_packages),
+        "android.permission.SCHEDULE_EXACT_ALARM" to context.getString(R.string.perm_schedule_exact_alarm),
+        "android.permission.USE_EXACT_ALARM" to context.getString(R.string.perm_use_exact_alarm),
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" to context.getString(R.string.perm_request_ignore_battery_optimizations),
+        "android.permission.PACKAGE_USAGE_STATS" to context.getString(R.string.perm_package_usage_stats),
 
         // --- NFC ---
-        "android.permission.NFC" to "Приложение сможет обмениваться данными через NFC — бесконтактная оплата, " +
-                "считывание меток, проездных билетов или пропусков.",
-        "android.permission.NFC_TRANSACTION_EVENT" to "Приложение будет получать уведомления о бесконтактных NFC-платежах.",
+        "android.permission.NFC" to context.getString(R.string.perm_nfc),
+        "android.permission.NFC_TRANSACTION_EVENT" to context.getString(R.string.perm_nfc_transaction_event),
 
-        // --- Ярлыки и интерфейс ---
-        "android.permission.INSTALL_SHORTCUT" to "Приложение сможет создать ярлык на вашем рабочем столе " +
-                "для быстрого доступа. Безобидное разрешение.",
+        // --- Shortcuts & UI ---
+        "android.permission.INSTALL_SHORTCUT" to context.getString(R.string.perm_install_shortcut),
 
-        // --- Покупки ---
-        "com.android.vending.BILLING" to "Приложение поддерживает покупки через Google Play — подписки, " +
-                "разблокировка функций, удаление рекламы или виртуальные товары.",
-        "com.android.vending.CHECK_LICENSE" to "Приложение проверяет лицензию через Google Play — " +
-                "подтверждает что вы его законно купили/скачали."
+        // --- Purchases ---
+        "com.android.vending.BILLING" to context.getString(R.string.perm_billing),
+        "com.android.vending.CHECK_LICENSE" to context.getString(R.string.perm_check_license)
     )
 
     private fun compareSignatures(apkInfo: PackageInfo, installedInfo: PackageInfo): SignatureStatus {

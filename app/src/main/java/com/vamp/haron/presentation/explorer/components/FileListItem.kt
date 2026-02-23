@@ -52,6 +52,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
@@ -70,6 +75,7 @@ fun FileListItem(
     onRenameConfirm: (String) -> Unit,
     onRenameCancel: () -> Unit,
     isGridMode: Boolean = false,
+    tagColors: List<Color> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -197,6 +203,30 @@ fun FileListItem(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (tagColors.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                        ) {
+                            tagColors.take(3).forEach { color ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .padding(end = 2.dp)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                            }
+                            if (tagColors.size > 3) {
+                                Text(
+                                    "+${tagColors.size - 3}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 7.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -286,15 +316,36 @@ fun FileListItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = if (entry.isDirectory) {
-                            "${entry.childCount} \u044D\u043B\u0435\u043C."
-                        } else {
-                            "${entry.size.toFileSize()} \u00B7 ${entry.lastModified.toRelativeDate()}"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (entry.isDirectory) {
+                                stringResource(R.string.items_count, entry.childCount)
+                            } else {
+                                "${entry.size.toFileSize()} \u00B7 ${entry.lastModified.toRelativeDate()}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (tagColors.isNotEmpty()) {
+                            Spacer(Modifier.width(6.dp))
+                            tagColors.take(3).forEach { color ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                            }
+                            if (tagColors.size > 3) {
+                                Text(
+                                    "+${tagColors.size - 3}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 7.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -37,8 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
@@ -71,18 +73,19 @@ fun TrashDialog(
         ) {
             // Header
             Text(
-                text = "Корзина",
+                text = stringResource(R.string.trash),
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.height(4.dp))
+            val pluralLabel = pluralItems(entries.size)
             val sizeText = if (maxSizeMb > 0) {
                 val maxBytes = maxSizeMb.toLong() * 1024 * 1024
-                "${totalSize.toFileSize()} из ${maxBytes.toFileSize()}"
+                stringResource(R.string.trash_items_summary_limit, entries.size, pluralLabel, totalSize.toFileSize(), maxBytes.toFileSize())
             } else {
-                totalSize.toFileSize()
+                stringResource(R.string.trash_items_summary, entries.size, pluralLabel, totalSize.toFileSize())
             }
             Text(
-                text = "${entries.size} ${pluralItems(entries.size)} \u00B7 $sizeText",
+                text = sizeText,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (maxSizeMb > 0 && totalSize >= maxSizeMb.toLong() * 1024 * 1024)
                     MaterialTheme.colorScheme.error
@@ -104,7 +107,7 @@ fun TrashDialog(
                     }) {
                         Icon(Icons.Filled.RestoreFromTrash, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Восстановить (${selectedIds.size})")
+                        Text(stringResource(R.string.restore_action, selectedIds.size))
                     }
                     TextButton(onClick = {
                         onDeletePermanently(selectedIds.toList())
@@ -117,7 +120,7 @@ fun TrashDialog(
                             tint = MaterialTheme.colorScheme.error
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Удалить навсегда", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.delete_forever), color = MaterialTheme.colorScheme.error)
                     }
                 } else if (entries.isNotEmpty()) {
                     TextButton(onClick = onEmptyTrash) {
@@ -128,7 +131,7 @@ fun TrashDialog(
                             tint = MaterialTheme.colorScheme.error
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Очистить корзину", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -143,7 +146,7 @@ fun TrashDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Корзина пуста",
+                        text = stringResource(R.string.trash_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -223,7 +226,7 @@ private fun TrashItem(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${entry.size.toFileSize()} \u00B7 ${entry.trashedAt.toRelativeDate()} \u00B7 ${remainingDays}д.",
+                text = stringResource(R.string.trash_item_details, entry.size.toFileSize(), entry.trashedAt.toRelativeDate(), remainingDays, stringResource(R.string.days_short)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
@@ -233,20 +236,21 @@ private fun TrashItem(
         IconButton(onClick = onRestore, modifier = Modifier.size(32.dp)) {
             Icon(
                 Icons.Filled.RestoreFromTrash,
-                contentDescription = "Восстановить",
+                contentDescription = stringResource(R.string.restore),
                 modifier = Modifier.size(20.dp)
             )
         }
     }
 }
 
+@Composable
 private fun pluralItems(count: Int): String {
     val mod100 = count % 100
     val mod10 = count % 10
     return when {
-        mod100 in 11..14 -> "элементов"
-        mod10 == 1 -> "элемент"
-        mod10 in 2..4 -> "элемента"
-        else -> "элементов"
+        mod100 in 11..14 -> stringResource(R.string.plural_items_many)
+        mod10 == 1 -> stringResource(R.string.plural_items_one)
+        mod10 in 2..4 -> stringResource(R.string.plural_items_few)
+        else -> stringResource(R.string.plural_items_many)
     }
 }

@@ -9,6 +9,7 @@ import com.vamp.haron.data.saf.SafUriManager
 import com.vamp.haron.data.saf.StorageVolumeHelper
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.R
 import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.core.logger.EcosystemLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,12 +38,12 @@ class FileRepositoryImpl @Inject constructor(
                 val dir = File(path)
                 if (!dir.exists()) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Путь не существует: $path")
+                        IllegalArgumentException(context.getString(R.string.error_path_not_exists, path))
                     )
                 }
                 if (!dir.isDirectory) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Не является папкой: $path")
+                        IllegalArgumentException(context.getString(R.string.error_not_a_folder, path))
                     )
                 }
                 val files = dir.listFiles()?.map { it.toFileEntry() } ?: emptyList()
@@ -75,7 +76,7 @@ class FileRepositoryImpl @Inject constructor(
         if (internal.exists()) {
             roots.add(
                 FileEntry(
-                    name = "Внутренняя память",
+                    name = context.getString(R.string.internal_storage),
                     path = internal.absolutePath,
                     isDirectory = true,
                     size = 0L,
@@ -110,13 +111,13 @@ class FileRepositoryImpl @Inject constructor(
         val treeDocId = try {
             android.provider.DocumentsContract.getTreeDocumentId(uri)
         } catch (_: Exception) {
-            return "SD-карта"
+            return context.getString(R.string.sd_card)
         }
         // Format: "XXXX-XXXX:" for SD card root
         val volumeId = treeDocId.substringBefore(":")
         // Try matching with storage volumes
         val volumes = storageVolumeHelper.getRemovableVolumes()
-        return volumes.firstOrNull()?.label ?: "SD-карта"
+        return volumes.firstOrNull()?.label ?: context.getString(R.string.sd_card)
     }
 
     override fun getParentPath(path: String): String? {
@@ -165,7 +166,7 @@ class FileRepositoryImpl @Inject constructor(
                 val destDir = File(destinationDir)
                 if (!destDir.isDirectory) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Назначение не является папкой: $destinationDir")
+                        IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
                     )
                 }
             }
@@ -275,7 +276,7 @@ class FileRepositoryImpl @Inject constructor(
                 val destDir = File(destinationDir)
                 if (!destDir.isDirectory) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Назначение не является папкой: $destinationDir")
+                        IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
                     )
                 }
             }
@@ -368,13 +369,13 @@ class FileRepositoryImpl @Inject constructor(
                 val file = File(path)
                 if (!file.exists()) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Файл не существует: $path")
+                        IllegalArgumentException(context.getString(R.string.error_file_not_exists, path))
                     )
                 }
                 val dest = File(file.parentFile, newName)
                 if (dest.exists()) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Файл с таким именем уже существует: $newName")
+                        IllegalArgumentException(context.getString(R.string.error_file_name_exists, newName))
                     )
                 }
                 val success = file.renameTo(dest)
@@ -382,7 +383,7 @@ class FileRepositoryImpl @Inject constructor(
                     EcosystemLogger.d(HaronConstants.TAG, "Переименовано: ${file.name} → $newName")
                     Result.success(dest.absolutePath)
                 } else {
-                    Result.failure(Exception("Не удалось переименовать файл"))
+                    Result.failure(Exception(context.getString(R.string.error_rename_failed)))
                 }
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
@@ -397,7 +398,7 @@ class FileRepositoryImpl @Inject constructor(
             EcosystemLogger.d(HaronConstants.TAG, "SAF переименовано: $newName")
             Result.success(newUri.toString())
         } else {
-            Result.failure(Exception("Не удалось переименовать SAF файл"))
+            Result.failure(Exception(context.getString(R.string.error_rename_saf)))
         }
     }
 
@@ -409,14 +410,14 @@ class FileRepositoryImpl @Inject constructor(
                     EcosystemLogger.d(HaronConstants.TAG, "SAF папка создана: $name")
                     Result.success(uri.toString())
                 } else {
-                    Result.failure(Exception("Не удалось создать папку через SAF"))
+                    Result.failure(Exception(context.getString(R.string.error_create_folder_saf)))
                 }
             }
             try {
                 val dir = File(parentPath, name)
                 if (dir.exists()) {
                     return@withContext Result.failure(
-                        IllegalArgumentException("Папка уже существует: $name")
+                        IllegalArgumentException(context.getString(R.string.error_folder_exists, name))
                     )
                 }
                 val created = dir.mkdirs()
@@ -424,7 +425,7 @@ class FileRepositoryImpl @Inject constructor(
                     EcosystemLogger.d(HaronConstants.TAG, "Создана папка: ${dir.absolutePath}")
                     Result.success(dir.absolutePath)
                 } else {
-                    Result.failure(Exception("Не удалось создать папку"))
+                    Result.failure(Exception(context.getString(R.string.error_create_folder)))
                 }
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка создания папки: ${e.message}")
@@ -449,14 +450,14 @@ class FileRepositoryImpl @Inject constructor(
                 EcosystemLogger.d(HaronConstants.TAG, "SAF файл создан: $name")
                 Result.success(uri.toString())
             } else {
-                Result.failure(Exception("Не удалось создать файл через SAF"))
+                Result.failure(Exception(context.getString(R.string.error_create_file_saf)))
             }
         }
         try {
             val parent = File(parentPath)
             if (!parent.isDirectory) {
                 return@withContext Result.failure(
-                    IllegalArgumentException("Родительская папка не существует: $parentPath")
+                    IllegalArgumentException(context.getString(R.string.error_parent_not_exists, parentPath))
                 )
             }
             val target = resolveConflict(parent, name)

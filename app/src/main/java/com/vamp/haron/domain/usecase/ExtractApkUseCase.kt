@@ -1,6 +1,7 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import com.vamp.haron.R
 import android.os.Environment
 import com.vamp.haron.domain.model.InstalledAppInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -16,7 +17,7 @@ class ExtractApkUseCase @Inject constructor(
         try {
             val sourceFile = File(app.apkPath)
             if (!sourceFile.exists()) {
-                return@withContext Result.failure(Exception("APK не найден: ${app.apkPath}"))
+                return@withContext Result.failure(Exception(context.getString(R.string.apk_not_found, app.apkPath)))
             }
 
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)

@@ -62,7 +62,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -136,7 +138,7 @@ private fun DocumentReaderContent(
                 documentText = text
                 lineCount = text.lines().size
             } catch (e: Exception) {
-                error = e.message ?: "Не удалось прочитать документ"
+                error = e.message ?: context.getString(R.string.read_document_failed)
             }
             isLoading = false
         }
@@ -147,7 +149,7 @@ private fun DocumentReaderContent(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(16.dp))
-                TextButton(onClick = onBack) { Text("Назад") }
+                TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
             }
         }
         return
@@ -165,7 +167,7 @@ private fun DocumentReaderContent(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -180,7 +182,7 @@ private fun DocumentReaderContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isLoading) "Загрузка…" else "Строк: $lineCount",
+                    text = if (isLoading) stringResource(R.string.loading) else stringResource(R.string.lines_count, lineCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -389,10 +391,10 @@ private fun PdfReaderContent(
                     renderer = r
                     pageCount = r.pageCount
                 } else {
-                    error = "Не удалось открыть PDF"
+                    error = context.getString(R.string.pdf_open_failed)
                 }
             } catch (e: Exception) {
-                error = e.message ?: "Ошибка открытия PDF"
+                error = e.message ?: context.getString(R.string.pdf_open_error)
             }
         }
     }
@@ -419,7 +421,7 @@ private fun PdfReaderContent(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(16.dp))
-                TextButton(onClick = onBack) { Text("Назад") }
+                TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
             }
         }
         return
@@ -437,7 +439,7 @@ private fun PdfReaderContent(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -453,7 +455,7 @@ private fun PdfReaderContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (pageCount > 0) "Страница ${currentPage + 1} / $pageCount" else "Загрузка…",
+                    text = if (pageCount > 0) stringResource(R.string.page_format, currentPage + 1, pageCount) else stringResource(R.string.loading),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -575,7 +577,7 @@ private fun PdfPageItem(
     if (bmp != null) {
         Image(
             bitmap = bmp.asImageBitmap(),
-            contentDescription = "Страница ${pageIndex + 1}",
+            contentDescription = null,
             contentScale = ContentScale.FillWidth,
             modifier = Modifier
                 .fillMaxWidth()
@@ -605,10 +607,10 @@ private fun GoToPageDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Перейти к странице") },
+        title = { Text(stringResource(R.string.go_to_page)) },
         text = {
             Column {
-                Text("Введите номер страницы (1 — $totalPages):")
+                Text(stringResource(R.string.enter_page_number, totalPages))
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = pageInput,
@@ -637,11 +639,11 @@ private fun GoToPageDialog(
                 },
                 enabled = pageInput.toIntOrNull()?.let { it in 1..totalPages } == true
             ) {
-                Text("Перейти")
+                Text(stringResource(R.string.go))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }

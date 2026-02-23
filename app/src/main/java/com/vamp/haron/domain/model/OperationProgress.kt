@@ -1,5 +1,7 @@
 package com.vamp.haron.domain.model
 
+import com.vamp.haron.R
+
 data class OperationProgress(
     val current: Int,
     val total: Int,
@@ -9,8 +11,8 @@ data class OperationProgress(
     val error: String? = null
 )
 
-enum class OperationType(val label: String) {
-    COPY("Копирование"),
-    MOVE("Перемещение"),
-    DELETE("Удаление")
+enum class OperationType(val labelRes: Int) {
+    COPY(R.string.operation_type_copy),
+    MOVE(R.string.operation_type_move),
+    DELETE(R.string.operation_type_delete)
 }

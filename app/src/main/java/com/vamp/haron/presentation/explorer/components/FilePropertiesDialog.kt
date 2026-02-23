@@ -32,9 +32,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.usecase.FileProperties
 import com.vamp.haron.domain.usecase.HashResult
@@ -58,12 +60,12 @@ fun FilePropertiesDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Закрыть")
+                Text(stringResource(R.string.close))
             }
         },
         title = {
             Text(
-                text = properties?.name ?: "Свойства",
+                text = properties?.name ?: stringResource(R.string.properties_title),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium
@@ -76,31 +78,31 @@ fun FilePropertiesDialog(
             ) {
                 // === General section ===
                 item {
-                    SectionHeader("Общее")
+                    SectionHeader(stringResource(R.string.general_section))
                 }
 
                 if (properties != null) {
-                    item { PropertyRow("Путь", properties.path) }
+                    item { PropertyRow(stringResource(R.string.path_label), properties.path) }
                     item {
                         PropertyRow(
-                            "Размер",
+                            stringResource(R.string.size_label),
                             if (properties.isDirectory) {
-                                "${properties.totalSize.toFileSize()} (${properties.childCount} файлов)"
+                                stringResource(R.string.size_dir_format, properties.totalSize.toFileSize(), properties.childCount)
                             } else {
-                                "${properties.size.toFileSize()} (${properties.size} байт)"
+                                stringResource(R.string.size_file_format, properties.size.toFileSize(), properties.size)
                             }
                         )
                     }
                     item {
                         PropertyRow(
-                            "Дата изменения",
+                            stringResource(R.string.modified_date_label),
                             SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
                                 .format(Date(properties.lastModified))
                         )
                     }
-                    item { PropertyRow("MIME-тип", properties.mimeType) }
+                    item { PropertyRow(stringResource(R.string.mime_type_label), properties.mimeType) }
                     if (properties.permissions.isNotEmpty()) {
-                        item { PropertyRow("Разрешения", properties.permissions) }
+                        item { PropertyRow(stringResource(R.string.permissions_label), properties.permissions) }
                     }
                 } else {
                     item {
@@ -118,7 +120,7 @@ fun FilePropertiesDialog(
                     item {
                         Spacer(Modifier.height(8.dp))
                         HorizontalDivider()
-                        SectionHeader("EXIF-данные")
+                        SectionHeader(stringResource(R.string.exif_section))
                     }
 
                     val exifEntries = properties.exifData.entries.toList()
@@ -143,7 +145,7 @@ fun FilePropertiesDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text("Удалить EXIF")
+                                Text(stringResource(R.string.remove_exif))
                             }
                         }
                     }
@@ -154,7 +156,7 @@ fun FilePropertiesDialog(
                     item {
                         Spacer(Modifier.height(8.dp))
                         HorizontalDivider()
-                        SectionHeader("Хеш-суммы")
+                        SectionHeader(stringResource(R.string.hash_section))
                     }
 
                     if (hashResult == null && !isHashCalculating) {
@@ -169,7 +171,7 @@ fun FilePropertiesDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text("Вычислить хеш")
+                                Text(stringResource(R.string.calculate_hash))
                             }
                         }
                     }
@@ -178,7 +180,7 @@ fun FilePropertiesDialog(
                         item {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
-                                    "Вычисление...",
+                                    stringResource(R.string.calculating),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -255,7 +257,7 @@ private fun HashRow(label: String, hash: String, onCopy: () -> Unit) {
             ) {
                 Icon(
                     Icons.Filled.ContentCopy,
-                    contentDescription = "Копировать",
+                    contentDescription = stringResource(R.string.copy_action),
                     modifier = Modifier.size(16.dp)
                 )
             }

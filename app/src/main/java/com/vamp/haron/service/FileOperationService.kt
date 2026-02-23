@@ -68,7 +68,7 @@ class FileOperationService : Service() {
         } ?: ConflictResolution.RENAME
         currentOperationType = if (isMove) OperationType.MOVE else OperationType.COPY
 
-        val notification = buildNotification("Подготовка...", 0, 0)
+        val notification = buildNotification(getString(R.string.notification_preparing), 0, 0)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
@@ -271,7 +271,7 @@ class FileOperationService : Service() {
         operationJob?.cancel()
         _progress.value = _progress.value?.copy(
             isComplete = true,
-            error = "Отменено"
+            error = getString(R.string.operation_cancelled)
         )
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -280,10 +280,10 @@ class FileOperationService : Service() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Файловые операции",
+            getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Прогресс копирования и перемещения файлов"
+            description = getString(R.string.notification_channel_desc)
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
@@ -310,7 +310,7 @@ class FileOperationService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(currentOperationType.label)
+            .setContentTitle(getString(currentOperationType.labelRes))
             .setContentText("$current/$total — $fileName")
             .setProgress(total, current, total == 0)
             .setOngoing(true)
@@ -318,7 +318,7 @@ class FileOperationService : Service() {
             .setContentIntent(openPendingIntent)
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                "Отмена",
+                getString(R.string.cancel),
                 cancelPendingIntent
             )
             .build()
@@ -332,7 +332,7 @@ class FileOperationService : Service() {
 
     private fun showCompleteNotification(completed: Int, total: Int, isMove: Boolean) {
         stopForeground(STOP_FOREGROUND_REMOVE)
-        val action = if (isMove) "Перемещено" else "Скопировано"
+        val action = if (isMove) getString(R.string.operation_moved) else getString(R.string.operation_copied)
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("$action: $completed/$total")

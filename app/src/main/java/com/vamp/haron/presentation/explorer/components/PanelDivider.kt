@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +21,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun PanelDivider(
     totalHeight: Float,
+    topFileCount: Int,
+    bottomFileCount: Int,
+    isTopActive: Boolean,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDoubleTap: () -> Unit,
@@ -26,6 +31,9 @@ fun PanelDivider(
     onRightZoneTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -47,7 +55,7 @@ fun PanelDivider(
             modifier = Modifier.fillMaxWidth().height(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left zone: tap → bookmarks pie menu
+            // Left zone: top panel file count + tap → bookmarks
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -57,8 +65,15 @@ fun PanelDivider(
                             onTap = { onBookmarkTap() }
                         )
                     },
-                contentAlignment = Alignment.Center
-            ) { }
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = topFileCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isTopActive) activeColor else inactiveColor,
+                    modifier = Modifier.padding(start = 12.dp)
+                )
+            }
 
             // Center zone: tap → reset 50/50
             Box(
@@ -73,7 +88,7 @@ fun PanelDivider(
                 contentAlignment = Alignment.Center
             ) { }
 
-            // Right zone: tap → swap panels / TBD
+            // Right zone: bottom panel file count + tap → tools
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -83,8 +98,15 @@ fun PanelDivider(
                             onTap = { onRightZoneTap() }
                         )
                     },
-                contentAlignment = Alignment.Center
-            ) { }
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Text(
+                    text = bottomFileCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (!isTopActive) activeColor else inactiveColor,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+            }
         }
 
         // Drag handle indicator (centered, on top)

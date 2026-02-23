@@ -1,7 +1,10 @@
 package com.vamp.haron.domain.usecase
 
+import android.content.Context
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.core.logger.EcosystemLogger
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -35,7 +38,9 @@ data class DuplicateScanProgress(
     val isComplete: Boolean = false
 )
 
-class FindDuplicatesUseCase @Inject constructor() {
+class FindDuplicatesUseCase @Inject constructor(
+    @ApplicationContext private val appContext: Context
+) {
 
     operator fun invoke(rootPath: String = HaronConstants.ROOT_PATH): Flow<DuplicateScanProgress> = flow {
         // Phase 1: Group files by size
@@ -67,7 +72,7 @@ class FindDuplicatesUseCase @Inject constructor() {
         val candidates = sizeMap.filter { it.value.size >= 2 }
         val totalToHash = candidates.values.sumOf { it.size }
 
-        emit(DuplicateScanProgress(phase = 1, scannedFiles = scanned, totalFiles = scanned, currentFolder = "Найдено $totalToHash кандидатов", isComplete = false))
+        emit(DuplicateScanProgress(phase = 1, scannedFiles = scanned, totalFiles = scanned, currentFolder = appContext.getString(R.string.found_candidates_format, totalToHash), isComplete = false))
 
         // Phase 2: Calculate MD5 for candidates
         val hashMap = mutableMapOf<String, MutableList<File>>()

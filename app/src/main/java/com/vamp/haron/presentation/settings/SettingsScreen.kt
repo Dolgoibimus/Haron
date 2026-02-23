@@ -38,7 +38,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,10 +54,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Настройки") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 }
             )
@@ -71,7 +73,7 @@ fun SettingsScreen(
             // --- Night Mode ---
             SectionHeader(
                 icon = Icons.Filled.DarkMode,
-                title = "Ночной режим"
+                title = stringResource(R.string.night_mode_section)
             )
             Spacer(Modifier.height(8.dp))
 
@@ -79,7 +81,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Включить по расписанию", modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.night_mode_schedule), modifier = Modifier.weight(1f))
                 Switch(
                     checked = state.nightModeEnabled,
                     onCheckedChange = { viewModel.setNightModeEnabled(it) }
@@ -92,7 +94,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Начало:", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.night_mode_start), modifier = Modifier.weight(1f))
                     OutlinedButton(onClick = {
                         TimePickerDialog(
                             context,
@@ -110,7 +112,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Конец:", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.night_mode_end), modifier = Modifier.weight(1f))
                     OutlinedButton(onClick = {
                         TimePickerDialog(
                             context,
@@ -132,11 +134,11 @@ fun SettingsScreen(
             // --- Font & Icon Scale ---
             SectionHeader(
                 icon = Icons.Filled.FormatSize,
-                title = "Шрифт и иконки"
+                title = stringResource(R.string.font_and_icons)
             )
             Spacer(Modifier.height(8.dp))
 
-            Text("Размер шрифта: ${String.format("%.0f%%", state.fontScale * 100)}")
+            Text(stringResource(R.string.font_scale_label, (state.fontScale * 100).toInt()))
             Slider(
                 value = state.fontScale,
                 onValueChange = { viewModel.setFontScale(it) },
@@ -146,14 +148,14 @@ fun SettingsScreen(
             )
             // Preview text
             Text(
-                "Пример текста — Preview",
+                stringResource(R.string.preview_text),
                 fontSize = (16 * state.fontScale).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(12.dp))
 
-            Text("Размер иконок: ${String.format("%.0f%%", state.iconScale * 100)}")
+            Text(stringResource(R.string.icon_scale_label, (state.iconScale * 100).toInt()))
             Slider(
                 value = state.iconScale,
                 onValueChange = { viewModel.setIconScale(it) },
@@ -171,7 +173,7 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Превью иконки",
+                    stringResource(R.string.icon_preview),
                     fontSize = (14 * state.fontScale).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -184,7 +186,7 @@ fun SettingsScreen(
             // --- Haptic ---
             SectionHeader(
                 icon = Icons.Filled.Vibration,
-                title = "Тактильный отклик"
+                title = stringResource(R.string.haptic_section)
             )
             Spacer(Modifier.height(8.dp))
 
@@ -192,7 +194,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Вибрация при операциях", modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.haptic_vibration), modifier = Modifier.weight(1f))
                 Switch(
                     checked = state.hapticEnabled,
                     onCheckedChange = { viewModel.setHapticEnabled(it) }
@@ -206,13 +208,13 @@ fun SettingsScreen(
             // --- Trash ---
             SectionHeader(
                 icon = Icons.Filled.DeleteOutline,
-                title = "Корзина"
+                title = stringResource(R.string.trash_section)
             )
             Spacer(Modifier.height(8.dp))
 
-            val trashLabel = if (state.trashMaxSizeMb == 0) "Без лимита"
-                else "${state.trashMaxSizeMb} МБ"
-            Text("Максимальный размер: $trashLabel")
+            val trashLabel = if (state.trashMaxSizeMb == 0) stringResource(R.string.trash_no_limit)
+                else "${state.trashMaxSizeMb} ${stringResource(R.string.size_mb)}"
+            Text(stringResource(R.string.trash_max_size_label, trashLabel))
             Slider(
                 value = state.trashMaxSizeMb.toFloat(),
                 onValueChange = { viewModel.setTrashMaxSizeMb(it.toInt()) },
@@ -221,7 +223,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "0 = без лимита. При превышении старые файлы удаляются автоматически.",
+                stringResource(R.string.trash_info),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

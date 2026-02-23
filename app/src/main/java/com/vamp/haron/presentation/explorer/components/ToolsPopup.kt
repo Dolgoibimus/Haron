@@ -15,22 +15,15 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.vamp.haron.R
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
-
-private val toolLabels = listOf(
-    "Корзина",
-    "Анализатор",
-    "Дупликатор",
-    "APK",
-    "Плеер",
-    "Читалка"
-)
 
 @Composable
 fun ToolsPopup(
@@ -49,6 +42,14 @@ fun ToolsPopup(
     ) {
         Layout(
             content = {
+                val labels = listOf(
+                    stringResource(R.string.tool_trash),
+                    stringResource(R.string.tool_analyzer),
+                    stringResource(R.string.tool_duplicator),
+                    stringResource(R.string.tool_apk),
+                    stringResource(R.string.tool_player),
+                    stringResource(R.string.tool_reader)
+                )
                 for (index in 0 until 6) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -64,7 +65,7 @@ fun ToolsPopup(
                             modifier = Modifier.padding(horizontal = 4.dp)
                         ) {
                             Text(
-                                text = toolLabels[index],
+                                text = labels[index],
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

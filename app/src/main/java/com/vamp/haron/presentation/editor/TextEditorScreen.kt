@@ -47,8 +47,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vamp.haron.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -125,7 +127,7 @@ fun TextEditorScreen(
                 savedText = content
                 isLoading = false
             } catch (e: Exception) {
-                loadError = e.message ?: "Ошибка чтения файла"
+                loadError = e.message ?: context.getString(R.string.read_file_error)
                 isLoading = false
             }
         }
@@ -191,7 +193,7 @@ fun TextEditorScreen(
                     }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Назад"
+                            contentDescription = stringResource(R.string.back)
                         )
                     }
                 },
@@ -210,7 +212,7 @@ fun TextEditorScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Undo,
-                            contentDescription = "Отмена",
+                            contentDescription = stringResource(R.string.undo),
                             tint = if (undoStack.isNotEmpty())
                                 MaterialTheme.colorScheme.onSurface
                             else
@@ -223,7 +225,7 @@ fun TextEditorScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Redo,
-                            contentDescription = "Повтор",
+                            contentDescription = stringResource(R.string.redo),
                             tint = if (redoStack.isNotEmpty())
                                 MaterialTheme.colorScheme.onSurface
                             else
@@ -236,7 +238,7 @@ fun TextEditorScreen(
                     ) {
                         Icon(
                             Icons.Filled.Save,
-                            contentDescription = "Сохранить",
+                            contentDescription = stringResource(R.string.save),
                             tint = if (isModified)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -257,21 +259,21 @@ fun TextEditorScreen(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = "Строка $cursorLine",
+                    text = stringResource(R.string.line_format, cursorLine),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.weight(1f))
                 if (isTruncated) {
                     Text(
-                        text = "Файл обрезан (>1 МБ)",
+                        text = stringResource(R.string.file_truncated),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
-                    text = if (isModified) "Изменён" else "Сохранён",
+                    text = if (isModified) stringResource(R.string.modified) else stringResource(R.string.saved),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isModified)
                         MaterialTheme.colorScheme.primary
@@ -289,7 +291,7 @@ fun TextEditorScreen(
             when {
                 isLoading -> {
                     Text(
-                        text = "Загрузка...",
+                        text = stringResource(R.string.loading),
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -297,7 +299,7 @@ fun TextEditorScreen(
                 }
                 loadError != null -> {
                     Text(
-                        text = "Ошибка: $loadError",
+                        text = stringResource(R.string.error_format, loadError ?: ""),
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
@@ -365,15 +367,15 @@ fun TextEditorScreen(
     if (showExitDialog) {
         AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("Несохранённые изменения") },
-            text = { Text("Сохранить изменения перед выходом?") },
+            title = { Text(stringResource(R.string.unsaved_changes_title)) },
+            text = { Text(stringResource(R.string.save_before_exit)) },
             confirmButton = {
                 TextButton(onClick = {
                     saveFile()
                     showExitDialog = false
                     onBack()
                 }) {
-                    Text("Сохранить")
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {
@@ -381,13 +383,13 @@ fun TextEditorScreen(
                     TextButton(onClick = {
                         showExitDialog = false
                     }) {
-                        Text("Остаться")
+                        Text(stringResource(R.string.stay))
                     }
                     TextButton(onClick = {
                         showExitDialog = false
                         onBack()
                     }) {
-                        Text("Не сохранять")
+                        Text(stringResource(R.string.dont_save))
                     }
                 }
             }

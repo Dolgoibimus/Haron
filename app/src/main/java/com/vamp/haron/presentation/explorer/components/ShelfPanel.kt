@@ -35,8 +35,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ShelfItem
 
@@ -69,7 +71,7 @@ fun ShelfPanel(
             ) {
                 Icon(Icons.Filled.Inventory2, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
-                Text("Полка", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.shelf_title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 if (items.isNotEmpty()) {
                     Badge(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -80,7 +82,7 @@ fun ShelfPanel(
                     Spacer(Modifier.width(8.dp))
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Close, "Закрыть", Modifier.size(18.dp))
+                    Icon(Icons.Filled.Close, stringResource(R.string.close), Modifier.size(18.dp))
                 }
             }
 
@@ -103,13 +105,13 @@ fun ShelfPanel(
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Полка пуста",
+                        stringResource(R.string.shelf_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Выделите файлы и нажмите кнопку «На полку» в панели действий",
+                        stringResource(R.string.shelf_empty_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.padding(horizontal = 16.dp)
@@ -152,7 +154,7 @@ fun ShelfPanel(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    Icons.Filled.Close, "Убрать",
+                                    Icons.Filled.Close, stringResource(R.string.remove_item),
                                     Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -175,7 +177,7 @@ fun ShelfPanel(
                     ) {
                         Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Вставить сюда")
+                        Text(stringResource(R.string.paste_here))
                     }
                     Spacer(Modifier.height(4.dp))
                     OutlinedButton(
@@ -184,7 +186,7 @@ fun ShelfPanel(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.DriveFileMove, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Переместить сюда")
+                        Text(stringResource(R.string.move_here))
                     }
                     Spacer(Modifier.height(4.dp))
                     TextButton(
@@ -196,7 +198,7 @@ fun ShelfPanel(
                     ) {
                         Icon(Icons.Filled.DeleteSweep, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Очистить полку")
+                        Text(stringResource(R.string.clear_shelf))
                     }
                 }
             }

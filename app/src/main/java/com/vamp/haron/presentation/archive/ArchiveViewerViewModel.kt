@@ -3,6 +3,7 @@ package com.vamp.haron.presentation.archive
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.ArchiveEntry
 import com.vamp.haron.domain.usecase.BrowseArchiveUseCase
 import com.vamp.haron.domain.usecase.ExtractArchiveUseCase
@@ -102,11 +103,11 @@ class ArchiveViewerViewModel @Inject constructor(
             extractArchiveUseCase(archivePath, destinationDir, selectedEntries).collect { progress ->
                 _state.update { it.copy(extractProgress = progress) }
                 if (progress.isComplete) {
-                    _toastMessage.tryEmit("Извлечено в $destinationDir")
+                    _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
                     clearSelection()
                 }
                 if (progress.error != null) {
-                    _toastMessage.tryEmit("Ошибка: ${progress.error}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
                 }
             }
             _state.update { it.copy(extractProgress = null) }
@@ -126,8 +127,8 @@ class ArchiveViewerViewModel @Inject constructor(
                         e.message?.contains("пароль", ignoreCase = true) == true ||
                         e.message?.contains("password", ignoreCase = true) == true ||
                         e.message?.contains("encrypted", ignoreCase = true) == true ->
-                            "Архив защищён паролем"
-                        else -> e.message ?: "Ошибка чтения архива"
+                            appContext.getString(R.string.password_protected)
+                        else -> e.message ?: appContext.getString(R.string.archive_read_error)
                     }
                     _state.update { it.copy(isLoading = false, error = msg) }
                 }

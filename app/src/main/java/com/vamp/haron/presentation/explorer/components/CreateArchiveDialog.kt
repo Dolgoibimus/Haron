@@ -17,8 +17,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
+import com.vamp.haron.R
 
 @Composable
 fun CreateArchiveDialog(
@@ -34,11 +36,11 @@ fun CreateArchiveDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Создать ZIP-архив") },
+        title = { Text(stringResource(R.string.create_zip_archive)) },
         text = {
             Column {
                 Text(
-                    text = "Имя архива:",
+                    text = stringResource(R.string.archive_name_label),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
@@ -58,12 +60,12 @@ fun CreateArchiveDialog(
                 onClick = { onConfirm(archiveName.trim()) },
                 enabled = archiveName.trim().isNotEmpty()
             ) {
-                Text("Создать")
+                Text(stringResource(R.string.create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

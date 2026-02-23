@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.vamp.haron.domain.model.InstalledAppInfo
 import com.vamp.haron.domain.usecase.ExtractApkUseCase
 import com.vamp.haron.domain.usecase.GetInstalledAppsUseCase
+import com.vamp.haron.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,10 +20,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class AppSortMode(val label: String) {
-    NAME("Имя"),
-    SIZE("Размер"),
-    INSTALL_DATE("Дата установки")
+enum class AppSortMode(val labelRes: Int) {
+    NAME(R.string.name_label),
+    SIZE(R.string.size_label),
+    INSTALL_DATE(R.string.sort_by_install_date)
 }
 
 data class AppManagerUiState(
@@ -88,10 +89,10 @@ class AppManagerViewModel @Inject constructor(
             extractApkUseCase(app)
                 .onSuccess { path ->
                     val fileName = path.substringAfterLast('/')
-                    _toastMessage.tryEmit("APK извлечён: $fileName")
+                    _toastMessage.tryEmit(appContext.getString(R.string.apk_extracted_format, fileName))
                 }
                 .onFailure { e ->
-                    _toastMessage.tryEmit("Ошибка извлечения: ${e.message}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.extraction_error_format, e.message ?: ""))
                 }
         }
         _uiState.update { it.copy(selectedApp = null) }
@@ -105,7 +106,7 @@ class AppManagerViewModel @Inject constructor(
             }
             appContext.startActivity(intent)
         } catch (_: Exception) {
-            _toastMessage.tryEmit("Не удалось открыть диалог удаления")
+            _toastMessage.tryEmit(appContext.getString(R.string.uninstall_dialog_failed))
         }
         _uiState.update { it.copy(selectedApp = null) }
     }
@@ -118,7 +119,7 @@ class AppManagerViewModel @Inject constructor(
             }
             appContext.startActivity(intent)
         } catch (_: Exception) {
-            _toastMessage.tryEmit("Не удалось открыть настройки")
+            _toastMessage.tryEmit(appContext.getString(R.string.settings_open_failed))
         }
         _uiState.update { it.copy(selectedApp = null) }
     }

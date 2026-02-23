@@ -56,10 +56,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.usecase.StorageCategory
@@ -95,10 +97,10 @@ fun StorageAnalysisScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Анализ памяти") },
+                title = { Text(stringResource(R.string.storage_analysis_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -106,7 +108,7 @@ fun StorageAnalysisScreen(
                         onClick = { viewModel.startScan() },
                         enabled = !state.isLoading
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Обновить")
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
                     }
                 }
             )
@@ -119,7 +121,7 @@ fun StorageAnalysisScreen(
                 ) {
                     Icon(
                         Icons.Filled.Delete,
-                        contentDescription = "Удалить выбранные",
+                        contentDescription = stringResource(R.string.delete_selected),
                         tint = MaterialTheme.colorScheme.onError
                     )
                 }
@@ -152,8 +154,7 @@ fun StorageAnalysisScreen(
             // Storage summary text
             item {
                 Text(
-                    text = "Занято ${analysis.usedSize.toFileSize()} из ${analysis.totalSize.toFileSize()}, " +
-                            "свободно ${analysis.freeSize.toFileSize()}",
+                    text = stringResource(R.string.storage_summary, analysis.usedSize.toFileSize(), analysis.totalSize.toFileSize(), analysis.freeSize.toFileSize()),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -171,8 +172,7 @@ fun StorageAnalysisScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text(
-                            text = "Сканирование... ${analysis.scannedFiles} файлов" +
-                                    if (analysis.currentPath.isNotEmpty()) " — ${analysis.currentPath}" else "",
+                            text = stringResource(R.string.scanning_format, analysis.scannedFiles, if (analysis.currentPath.isNotEmpty()) analysis.currentPath else ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -218,7 +218,7 @@ fun StorageAnalysisScreen(
                     Column {
                         if (categoryFiles.isEmpty()) {
                             Text(
-                                text = "Нет крупных файлов (>10 МБ) в этой категории",
+                                text = stringResource(R.string.no_large_files),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp)
@@ -245,7 +245,7 @@ fun StorageAnalysisScreen(
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
                     Text(
-                        text = "Крупные файлы (>10 МБ)",
+                        text = stringResource(R.string.large_files_title),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -369,7 +369,7 @@ private fun CategoryRow(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "${category.fileCount} файлов",
+                    text = stringResource(R.string.files_count, category.fileCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -378,7 +378,7 @@ private fun CategoryRow(
         Spacer(Modifier.width(4.dp))
         Icon(
             imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-            contentDescription = if (isExpanded) "Свернуть" else "Развернуть",
+            contentDescription = if (isExpanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -443,15 +443,16 @@ private fun categoryIcon(icon: String): ImageVector {
     }
 }
 
+@Composable
 private fun mapIconToCategory(iconType: String): String {
     return when (iconType) {
-        "image" -> "Фото"
-        "video" -> "Видео"
-        "audio" -> "Музыка"
-        "pdf", "document", "spreadsheet", "presentation", "text", "code" -> "Документы"
-        "archive" -> "Архивы"
-        "apk" -> "APK"
-        else -> "Прочее"
+        "image" -> stringResource(R.string.storage_cat_photos)
+        "video" -> stringResource(R.string.storage_cat_videos)
+        "audio" -> stringResource(R.string.storage_cat_music)
+        "pdf", "document", "spreadsheet", "presentation", "text", "code" -> stringResource(R.string.storage_cat_documents)
+        "archive" -> stringResource(R.string.storage_cat_archives)
+        "apk" -> stringResource(R.string.storage_cat_apk)
+        else -> stringResource(R.string.storage_cat_other)
     }
 }
 

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -40,8 +41,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 
 @Composable
 fun DrawerMenu(
@@ -61,6 +64,7 @@ fun DrawerMenu(
     onOpenAppManager: () -> Unit,
     onFindEmptyFolders: () -> Unit,
     onForceDelete: () -> Unit,
+    onManageTags: () -> Unit,
     onOpenSettings: () -> Unit,
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -84,13 +88,13 @@ fun DrawerMenu(
             item {
                 SectionHeader(
                     icon = { Icon(Icons.Filled.Storage, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = "Хранилища"
+                    title = stringResource(R.string.storages)
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = "Внутренняя память",
+                    title = stringResource(R.string.internal_storage),
                     onClick = { onNavigateToInternalStorage() }
                 )
             }
@@ -113,15 +117,15 @@ fun DrawerMenu(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!hasAccess) {
-                            Text("Нет доступа", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.no_access), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (hasAccess) {
                         IconButton(onClick = { onRevokeVolumeAccess(safUri) }) {
-                            Icon(Icons.Filled.Delete, "Отключить", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Filled.Delete, stringResource(R.string.disconnect), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
-                        TextButton(onClick = onGrantVolumeAccess) { Text("Подключить") }
+                        TextButton(onClick = onGrantVolumeAccess) { Text(stringResource(R.string.connect)) }
                     }
                 }
             }
@@ -132,13 +136,13 @@ fun DrawerMenu(
             item {
                 SectionHeader(
                     icon = { Icon(Icons.Filled.Star, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = "Избранное"
+                    title = stringResource(R.string.favorites)
                 )
             }
             if (favorites.isEmpty()) {
                 item {
                     Text(
-                        "Нет избранных папок",
+                        stringResource(R.string.no_favorite_folders),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -169,7 +173,7 @@ fun DrawerMenu(
                             )
                         }
                         IconButton(onClick = { onRemoveFavorite(path) }) {
-                            Icon(Icons.Filled.Delete, "Удалить", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Filled.Delete, stringResource(R.string.delete), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -181,13 +185,13 @@ fun DrawerMenu(
             item {
                 SectionHeader(
                     icon = { Icon(Icons.Filled.History, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    title = "Недавние"
+                    title = stringResource(R.string.recent)
                 )
             }
             if (recentPaths.isEmpty()) {
                 item {
                     Text(
-                        "Нет недавних папок",
+                        stringResource(R.string.no_recent_folders),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -227,13 +231,13 @@ fun DrawerMenu(
             item {
                 SectionHeader(
                     icon = { Icon(Icons.Filled.Settings, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = "Инструменты"
+                    title = stringResource(R.string.tools)
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.DeleteOutline, null, Modifier.size(24.dp)) },
-                    title = "Корзина",
+                    title = stringResource(R.string.trash),
                     subtitle = trashSizeInfo.ifEmpty { null },
                     onClick = { onShowTrash(); onDismiss() }
                 )
@@ -241,37 +245,44 @@ fun DrawerMenu(
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.PieChart, null, Modifier.size(24.dp)) },
-                    title = "Анализатор памяти",
+                    title = stringResource(R.string.storage_analyzer),
                     onClick = { onOpenStorageAnalysis(); onDismiss() }
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.FileCopy, null, Modifier.size(24.dp)) },
-                    title = "Детектор дубликатов",
+                    title = stringResource(R.string.duplicate_detector),
                     onClick = { onOpenDuplicateDetector(); onDismiss() }
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.Apps, null, Modifier.size(24.dp)) },
-                    title = "Менеджер приложений",
+                    title = stringResource(R.string.app_manager),
                     onClick = { onOpenAppManager(); onDismiss() }
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.FolderOff, null, Modifier.size(24.dp)) },
-                    title = "Пустые папки",
+                    title = stringResource(R.string.empty_folders),
                     onClick = { onFindEmptyFolders(); onDismiss() }
                 )
             }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.DeleteOutline, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.error) },
-                    title = "Принудительное удаление",
-                    subtitle = "Без корзины, навсегда",
+                    title = stringResource(R.string.force_delete),
+                    subtitle = stringResource(R.string.force_delete_subtitle),
                     onClick = { onForceDelete(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Label, null, Modifier.size(24.dp)) },
+                    title = stringResource(R.string.tags_title),
+                    onClick = { onManageTags(); onDismiss() }
                 )
             }
 
@@ -290,7 +301,7 @@ fun DrawerMenu(
                             null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary
                         )
                     },
-                    title = "Оформление"
+                    title = stringResource(R.string.appearance)
                 )
             }
             item {
@@ -300,11 +311,11 @@ fun DrawerMenu(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ThemeButton("Системная", themeMode == "system", Icons.Filled.BrightnessAuto) { onSetTheme("system") }
+                    ThemeButton(stringResource(R.string.theme_system), themeMode == "system", Icons.Filled.BrightnessAuto) { onSetTheme("system") }
                     Spacer(Modifier.width(8.dp))
-                    ThemeButton("Светлая", themeMode == "light", Icons.Filled.LightMode) { onSetTheme("light") }
+                    ThemeButton(stringResource(R.string.theme_light), themeMode == "light", Icons.Filled.LightMode) { onSetTheme("light") }
                     Spacer(Modifier.width(8.dp))
-                    ThemeButton("Тёмная", themeMode == "dark", Icons.Filled.DarkMode) { onSetTheme("dark") }
+                    ThemeButton(stringResource(R.string.theme_dark), themeMode == "dark", Icons.Filled.DarkMode) { onSetTheme("dark") }
                 }
             }
 
@@ -314,7 +325,7 @@ fun DrawerMenu(
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.Settings, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = "Настройки",
+                    title = stringResource(R.string.settings),
                     onClick = { onOpenSettings(); onDismiss() }
                 )
             }

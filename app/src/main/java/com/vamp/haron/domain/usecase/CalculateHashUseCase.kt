@@ -1,6 +1,7 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import com.vamp.haron.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -23,7 +24,7 @@ class CalculateHashUseCase @Inject constructor(
     operator fun invoke(path: String): Flow<HashResult> = flow {
         val file = File(path)
         if (!file.exists() || !file.isFile) {
-            emit(HashResult(md5 = "Ошибка", sha256 = "Ошибка", progress = 1f))
+            emit(HashResult(md5 = context.getString(R.string.hash_error), sha256 = context.getString(R.string.hash_error), progress = 1f))
             return@flow
         }
 
@@ -64,7 +65,7 @@ class CalculateHashUseCase @Inject constructor(
     fun invokeFromUri(uri: android.net.Uri): Flow<HashResult> = flow {
         val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
         if (inputStream == null) {
-            emit(HashResult(md5 = "Ошибка", sha256 = "Ошибка", progress = 1f))
+            emit(HashResult(md5 = context.getString(R.string.hash_error), sha256 = context.getString(R.string.hash_error), progress = 1f))
             return@flow
         }
 

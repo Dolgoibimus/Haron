@@ -14,7 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.toFileSize
 
@@ -52,7 +54,7 @@ fun BreadcrumbBar(
         ) {
             if (isSaf) {
                 // SAF root label
-                val rootLabel = safVolumeLabel.ifEmpty { "SD-карта" }
+                val rootLabel = safVolumeLabel.ifEmpty { stringResource(R.string.sd_card_default) }
                 Text(
                     text = rootLabel,
                     style = MaterialTheme.typography.labelMedium,
@@ -97,7 +99,7 @@ fun BreadcrumbBar(
             } else {
                 // Regular file system — original logic
                 Text(
-                    text = "Хранилище",
+                    text = stringResource(R.string.storage),
                     style = MaterialTheme.typography.labelMedium,
                     color = if (segments.isEmpty()) {
                         MaterialTheme.colorScheme.onSurface

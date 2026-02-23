@@ -1,10 +1,13 @@
 package com.vamp.haron.domain.usecase
 
+import android.content.Context
 import android.os.Environment
 import android.os.StatFs
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileEntry
 import com.vamp.haron.domain.model.FileEntry
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -36,7 +39,9 @@ data class StorageAnalysis(
     val currentPath: String = ""
 )
 
-class AnalyzeStorageUseCase @Inject constructor() {
+class AnalyzeStorageUseCase @Inject constructor(
+    @ApplicationContext private val appContext: Context
+) {
 
     operator fun invoke(): Flow<StorageAnalysis> = flow {
         val root = Environment.getExternalStorageDirectory()
@@ -55,27 +60,34 @@ class AnalyzeStorageUseCase @Inject constructor() {
         // Category accumulators
         val sizeMap = mutableMapOf<String, Long>()
         val countMap = mutableMapOf<String, Int>()
+        val catPhotos = appContext.getString(R.string.storage_cat_photos)
+        val catVideos = appContext.getString(R.string.storage_cat_videos)
+        val catMusic = appContext.getString(R.string.storage_cat_music)
+        val catDocuments = appContext.getString(R.string.storage_cat_documents)
+        val catArchives = appContext.getString(R.string.storage_cat_archives)
+        val catApk = appContext.getString(R.string.storage_cat_apk)
+        val catOther = appContext.getString(R.string.storage_cat_other)
         val categoryNames = mapOf(
-            "image" to "Фото",
-            "video" to "Видео",
-            "audio" to "Музыка",
-            "pdf" to "Документы",
-            "document" to "Документы",
-            "spreadsheet" to "Документы",
-            "presentation" to "Документы",
-            "text" to "Документы",
-            "code" to "Документы",
-            "archive" to "Архивы",
-            "apk" to "APK"
+            "image" to catPhotos,
+            "video" to catVideos,
+            "audio" to catMusic,
+            "pdf" to catDocuments,
+            "document" to catDocuments,
+            "spreadsheet" to catDocuments,
+            "presentation" to catDocuments,
+            "text" to catDocuments,
+            "code" to catDocuments,
+            "archive" to catArchives,
+            "apk" to catApk
         )
         val categoryIcons = mapOf(
-            "Фото" to "image",
-            "Видео" to "video",
-            "Музыка" to "audio",
-            "Документы" to "document",
-            "Архивы" to "archive",
-            "APK" to "apk",
-            "Прочее" to "file"
+            catPhotos to "image",
+            catVideos to "video",
+            catMusic to "audio",
+            catDocuments to "document",
+            catArchives to "archive",
+            catApk to "apk",
+            catOther to "file"
         )
 
         // Min-heap for top-50 large files (>10MB)
@@ -95,7 +107,7 @@ class AnalyzeStorageUseCase @Inject constructor() {
                     scannedFiles++
                     val entry = file.toFileEntry()
                     val iconType = entry.iconRes()
-                    val category = categoryNames[iconType] ?: "Прочее"
+                    val category = categoryNames[iconType] ?: catOther
 
                     sizeMap[category] = (sizeMap[category] ?: 0L) + file.length()
                     countMap[category] = (countMap[category] ?: 0) + 1

@@ -25,7 +25,6 @@ class PlaybackService : MediaSessionService() {
         instance = this
 
         libVlc = LibVLC(this, arrayListOf(
-            "--avcodec-hw=none",
             "--no-avcodec-hurry-up",
             "--no-avcodec-dr",
             "--avcodec-skiploopfilter=-1",
@@ -35,6 +34,7 @@ class PlaybackService : MediaSessionService() {
             "--no-drop-late-frames",
             "--avcodec-workaround-bugs=5",
             "--file-caching=300",
+            "--aout=opensles",
         ))
 
         vlcPlayer = VlcMediaPlayer(libVlc!!)

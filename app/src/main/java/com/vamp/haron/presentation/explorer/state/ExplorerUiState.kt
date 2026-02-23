@@ -4,8 +4,10 @@ import com.vamp.haron.domain.model.ApkInstallInfo
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.FileTag
 import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.model.ShelfItem
@@ -34,7 +36,10 @@ data class ExplorerUiState(
     val showToolsPopup: Boolean = false,
     val bookmarks: Map<Int, String> = emptyMap(),
     val folderSizeCache: Map<String, Long> = emptyMap(),
-    val folderSizeCalculating: Boolean = false
+    val folderSizeCalculating: Boolean = false,
+    val tagDefinitions: List<FileTag> = emptyList(),
+    val fileTags: Map<String, List<String>> = emptyMap(),
+    val activeTagFilter: String? = null
 )
 
 sealed interface DialogState {
@@ -88,11 +93,17 @@ sealed interface DialogState {
         val paths: List<String>,
         val names: List<String>
     ) : DialogState
+    data class BatchRename(
+        val paths: List<String>,
+        val entries: List<FileEntry>
+    ) : DialogState
+    data class TagAssign(val paths: List<String>) : DialogState
+    data object TagManage : DialogState
 }
 
-enum class FileTemplate(val label: String, val extension: String) {
-    FOLDER("Папка", ""),
-    TXT("Текстовый файл (.txt)", ".txt"),
-    MARKDOWN("Markdown (.md)", ".md"),
-    DATED_FOLDER("Папка с датой", "")
+enum class FileTemplate(val labelRes: Int, val extension: String) {
+    FOLDER(R.string.template_folder, ""),
+    TXT(R.string.template_text_file, ".txt"),
+    MARKDOWN(R.string.template_markdown, ".md"),
+    DATED_FOLDER(R.string.template_dated_folder, "")
 }

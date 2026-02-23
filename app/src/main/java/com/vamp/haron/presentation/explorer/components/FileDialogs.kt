@@ -29,7 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
 import com.vamp.haron.presentation.explorer.state.FileTemplate
 
 @Composable
@@ -40,21 +42,21 @@ fun DeleteConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("В корзину?") },
+        title = { Text(stringResource(R.string.to_trash_question)) },
         text = {
             Text(
-                if (count == 1) "Переместить выбранный элемент в корзину?"
-                else "Переместить выбранные элементы ($count) в корзину?"
+                if (count == 1) stringResource(R.string.move_one_to_trash)
+                else stringResource(R.string.move_many_to_trash, count)
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("В корзину")
+                Text(stringResource(R.string.to_trash))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -71,7 +73,7 @@ fun CreateFromTemplateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Создать") },
+        title = { Text(stringResource(R.string.create)) },
         text = {
             Column {
                 FileTemplate.entries.forEach { template ->
@@ -95,7 +97,7 @@ fun CreateFromTemplateDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = template.label,
+                            text = stringResource(template.labelRes),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -105,7 +107,7 @@ fun CreateFromTemplateDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Имя") },
+                        label = { Text(stringResource(R.string.name_label)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -117,12 +119,12 @@ fun CreateFromTemplateDialog(
                 onClick = { onConfirm(selectedTemplate, name) },
                 enabled = !needsName || name.isNotBlank()
             ) {
-                Text("Создать")
+                Text(stringResource(R.string.create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

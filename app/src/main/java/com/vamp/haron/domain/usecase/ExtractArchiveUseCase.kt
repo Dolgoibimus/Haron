@@ -3,6 +3,7 @@ package com.vamp.haron.domain.usecase
 import android.content.Context
 import android.net.Uri
 import com.github.junrar.Archive
+import com.vamp.haron.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -39,10 +40,10 @@ class ExtractArchiveUseCase @Inject constructor(
                 "zip" -> extractZip(archivePath, destinationDir, selectedEntries, isContentUri)
                 "7z" -> extract7z(archivePath, destinationDir, selectedEntries, isContentUri)
                 "rar" -> extractRar(archivePath, destinationDir, selectedEntries, isContentUri)
-                else -> emit(ExtractProgress(0, 0, "", error = "Неподдерживаемый формат"))
+                else -> emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_unsupported_format)))
             }
         } catch (e: Exception) {
-            emit(ExtractProgress(0, 0, "", error = e.message ?: "Ошибка извлечения"))
+            emit(ExtractProgress(0, 0, "", error = e.message ?: context.getString(R.string.extract_error_generic)))
         }
     }.flowOn(Dispatchers.IO)
 

@@ -43,9 +43,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ApkInstallInfo
 import com.vamp.haron.domain.model.ApkPermissionInfo
@@ -81,7 +83,7 @@ fun ApkInstallDialog(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 CircularProgressIndicator()
                                 Spacer(Modifier.height(16.dp))
-                                Text("Анализ APK...", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.analyzing_apk), style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
@@ -98,7 +100,7 @@ fun ApkInstallDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
                         ) {
-                            OutlinedButton(onClick = onDismiss) { Text("Закрыть") }
+                            OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
                         }
                     }
                     apkInfo != null -> {
@@ -153,7 +155,7 @@ private fun ApkInfoContent(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = info.appName ?: "Неизвестное приложение",
+            text = info.appName ?: stringResource(R.string.unknown_app),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
@@ -173,28 +175,28 @@ private fun ApkInfoContent(
             .verticalScroll(rememberScrollState())
     ) {
         // Package info
-        InfoRow("Пакет", info.packageName ?: "—")
-        InfoRow("Версия", "${info.versionName ?: "?"} (${info.versionCode})")
-        InfoRow("Размер", info.fileSize.toFileSize())
+        InfoRow(stringResource(R.string.package_label), info.packageName ?: "—")
+        InfoRow(stringResource(R.string.version_label), "${info.versionName ?: "?"} (${info.versionCode})")
+        InfoRow(stringResource(R.string.apk_size_label), info.fileSize.toFileSize())
 
         // Upgrade / Downgrade badge
         if (info.isAlreadyInstalled) {
             Spacer(Modifier.height(8.dp))
             val (text, color, icon) = if (info.isUpgrade) {
                 Triple(
-                    "Обновление: v${info.installedVersionName} → v${info.versionName}",
+                    stringResource(R.string.version_upgrade, info.installedVersionName ?: "", info.versionName ?: ""),
                     MaterialTheme.colorScheme.primary,
                     Icons.Filled.ArrowUpward
                 )
             } else if (info.isDowngrade) {
                 Triple(
-                    "Понижение: v${info.installedVersionName} → v${info.versionName}",
+                    stringResource(R.string.version_downgrade, info.installedVersionName ?: "", info.versionName ?: ""),
                     MaterialTheme.colorScheme.error,
                     Icons.Filled.ArrowDownward
                 )
             } else {
                 Triple(
-                    "Переустановка: v${info.versionName}",
+                    stringResource(R.string.version_reinstall, info.versionName ?: ""),
                     MaterialTheme.colorScheme.tertiary,
                     Icons.Filled.ArrowUpward
                 )
@@ -234,8 +236,7 @@ private fun ApkInfoContent(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Подписи APK не совпадают с установленной версией! " +
-                                "Установка может не пройти.",
+                        stringResource(R.string.signature_mismatch),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -262,12 +263,12 @@ private fun ApkInfoContent(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "Разрешения ($totalPerms)",
+                    stringResource(R.string.permissions_count, totalPerms),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Свернуть" else "Показать")
+                    Text(if (expanded) stringResource(R.string.collapse_permissions) else stringResource(R.string.show_permissions))
                 }
             }
 
@@ -295,7 +296,7 @@ private fun ApkInfoContent(
                 // Show count of dangerous permissions
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Опасных: ${dangerousPerms.size}",
+                    stringResource(R.string.dangerous_permissions_count, dangerousPerms.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -311,10 +312,10 @@ private fun ApkInfoContent(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
     ) {
         OutlinedButton(onClick = onDismiss) {
-            Text("Отмена")
+            Text(stringResource(R.string.cancel))
         }
         Button(onClick = onInstall) {
-            Text("Установить")
+            Text(stringResource(R.string.install_action))
         }
     }
 }

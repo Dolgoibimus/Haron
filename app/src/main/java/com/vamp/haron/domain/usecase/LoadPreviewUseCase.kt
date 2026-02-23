@@ -9,6 +9,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.exifinterface.media.ExifInterface
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.domain.model.ArchiveEntryInfo
 import com.vamp.haron.domain.model.FileEntry
@@ -57,7 +58,7 @@ class LoadPreviewUseCase @Inject constructor(
             }
             Result.success(result)
         } catch (e: Throwable) {
-            Result.failure(Exception(e.message ?: "Ошибка загрузки превью", e))
+            Result.failure(Exception(e.message ?: context.getString(R.string.preview_error_generic), e))
         }
     }
 
@@ -301,7 +302,7 @@ class LoadPreviewUseCase @Inject constructor(
                 val allEntries = try {
                     zip.entries().toList()
                 } catch (_: Exception) {
-                    throw IllegalStateException("Архив защищён паролем или повреждён")
+                    throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
                 }
                 val totalEntries = allEntries.size
                 val totalSize = allEntries.sumOf { it.size.coerceAtLeast(0) }
@@ -318,7 +319,7 @@ class LoadPreviewUseCase @Inject constructor(
                 )
             }
         } catch (e: java.util.zip.ZipException) {
-            throw IllegalStateException("Архив защищён паролем или повреждён")
+            throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
         } finally {
             if (entry.isContentUri) file.delete()
         }
@@ -370,7 +371,7 @@ class LoadPreviewUseCase @Inject constructor(
             val archive = try {
                 Archive(file)
             } catch (e: Throwable) {
-                throw IllegalStateException("Не удалось открыть RAR-архив")
+                throw IllegalStateException(context.getString(R.string.rar_open_error))
             }
             archive.use { rar ->
                 val allEntries = mutableListOf<ArchiveEntryInfo>()
@@ -481,7 +482,7 @@ class LoadPreviewUseCase @Inject constructor(
             val zipFile = ZipFile(file)
             zipFile.use { zip ->
                 val xmlEntry = zip.getEntry("word/document.xml")
-                    ?: throw IllegalStateException("Не удалось прочитать документ")
+                    ?: throw IllegalStateException(context.getString(R.string.document_read_error))
                 val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
                 val text = xml.split("</w:p>").map { para ->
                     Regex("<w:t[^>]*>([^<]*)</w:t>").findAll(para)
@@ -501,7 +502,7 @@ class LoadPreviewUseCase @Inject constructor(
             val zipFile = ZipFile(file)
             zipFile.use { zip ->
                 val xmlEntry = zip.getEntry("content.xml")
-                    ?: throw IllegalStateException("Не удалось прочитать документ")
+                    ?: throw IllegalStateException(context.getString(R.string.document_read_error))
                 val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
                 val text = xml.split("</text:p>").map { para ->
                     para.replace(Regex("<[^>]+>"), "")
@@ -516,7 +517,7 @@ class LoadPreviewUseCase @Inject constructor(
     private fun loadDoc(entry: FileEntry): PreviewData {
         val stream = if (entry.isContentUri) {
             context.contentResolver.openInputStream(Uri.parse(entry.path))
-                ?: throw IllegalStateException("Не удалось открыть файл")
+                ?: throw IllegalStateException(context.getString(R.string.open_file_failed))
         } else {
             File(entry.path).inputStream()
         }
@@ -543,7 +544,7 @@ class LoadPreviewUseCase @Inject constructor(
         val raw = if (entry.isContentUri) {
             context.contentResolver.openInputStream(Uri.parse(entry.path))
                 ?.bufferedReader()?.readText()
-                ?: throw IllegalStateException("Не удалось открыть файл")
+                ?: throw IllegalStateException(context.getString(R.string.open_file_failed))
         } else {
             File(entry.path).readText()
         }

@@ -53,7 +53,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.InstalledAppInfo
 import java.text.SimpleDateFormat
@@ -78,10 +80,10 @@ fun AppManagerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Менеджер приложений") },
+                title = { Text(stringResource(R.string.app_manager_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -96,12 +98,12 @@ fun AppManagerScreen(
             TextField(
                 value = state.searchQuery,
                 onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Поиск приложений...") },
+                placeholder = { Text(stringResource(R.string.search_apps)) },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = {
                     if (state.searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Filled.Close, "Очистить")
+                            Icon(Icons.Filled.Close, stringResource(R.string.clear))
                         }
                     }
                 },
@@ -129,11 +131,11 @@ fun AppManagerScreen(
                     FilterChip(
                         selected = state.sortMode == mode,
                         onClick = { viewModel.setSortMode(mode) },
-                        label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(mode.labelRes), style = MaterialTheme.typography.labelSmall) }
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Text("Системные", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.system_apps), style = MaterialTheme.typography.labelSmall)
                 Switch(
                     checked = state.showSystemApps,
                     onCheckedChange = { viewModel.toggleSystemApps() }
@@ -145,7 +147,7 @@ fun AppManagerScreen(
             // App count
             if (!state.isLoading) {
                 Text(
-                    text = "Приложений: ${state.apps.size}",
+                    text = stringResource(R.string.app_count, state.apps.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -163,7 +165,7 @@ fun AppManagerScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(16.dp))
-                        Text("Загрузка приложений...")
+                        Text(stringResource(R.string.loading_apps))
                     }
                 }
             } else {
@@ -325,20 +327,20 @@ private fun AppActionsSheet(
         // Actions
         ActionItem(
             icon = { Icon(Icons.Filled.Download, null) },
-            title = "Извлечь APK",
-            subtitle = "Сохранить в Downloads",
+            title = stringResource(R.string.extract_apk),
+            subtitle = stringResource(R.string.save_to_downloads),
             onClick = onExtract
         )
         ActionItem(
             icon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = "Удалить",
-            subtitle = if (app.isSystemApp) "Системное приложение" else "Удалить приложение",
+            title = stringResource(R.string.uninstall),
+            subtitle = if (app.isSystemApp) stringResource(R.string.system_app) else stringResource(R.string.uninstall_app),
             onClick = onUninstall
         )
         ActionItem(
             icon = { Icon(Icons.Filled.Settings, null) },
-            title = "Настройки приложения",
-            subtitle = "Открыть в системных настройках",
+            title = stringResource(R.string.app_settings),
+            subtitle = stringResource(R.string.open_in_system_settings),
             onClick = onSettings
         )
     }

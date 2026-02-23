@@ -40,12 +40,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
@@ -82,7 +84,7 @@ fun ConflictComparisonCard(
             Column(modifier = Modifier.padding(20.dp)) {
                 // Header
                 Text(
-                    text = "Файл уже существует (${currentIndex + 1} из $totalCount)",
+                    text = stringResource(R.string.file_exists_title, currentIndex + 1, totalCount),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -98,7 +100,7 @@ fun ConflictComparisonCard(
                 ) {
                     // Source column
                     FileInfoColumn(
-                        label = "Откуда",
+                        label = stringResource(R.string.from_label),
                         info = pair.source,
                         isNewer = pair.source.lastModified > pair.destination.lastModified,
                         isLarger = pair.source.size > pair.destination.size,
@@ -107,7 +109,7 @@ fun ConflictComparisonCard(
 
                     // Destination column
                     FileInfoColumn(
-                        label = "Куда",
+                        label = stringResource(R.string.to_label),
                         info = pair.destination,
                         isNewer = pair.destination.lastModified > pair.source.lastModified,
                         isLarger = pair.destination.size > pair.source.size,
@@ -131,7 +133,7 @@ fun ConflictComparisonCard(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = "Применить ко всем (ещё $remaining)",
+                            text = stringResource(R.string.apply_to_all, remaining),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -148,33 +150,33 @@ fun ConflictComparisonCard(
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             TextButton(onClick = { onResolve(ConflictResolution.SKIP, applyToAll) }) {
-                                Text("Пропустить")
+                                Text(stringResource(R.string.skip_action))
                             }
                             TextButton(onClick = { onResolve(ConflictResolution.RENAME, applyToAll) }) {
-                                Text("Переименовать")
+                                Text(stringResource(R.string.rename_action))
                             }
                             TextButton(onClick = { onResolve(ConflictResolution.REPLACE, applyToAll) }) {
-                                Text("Заменить")
+                                Text(stringResource(R.string.replace_action))
                             }
                         }
                     } else {
-                        // Narrow — "Переименовать" сверху, остальные снизу рядом
+                        // Narrow — rename on top, rest below
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             TextButton(onClick = { onResolve(ConflictResolution.RENAME, applyToAll) }) {
-                                Text("Переименовать")
+                                Text(stringResource(R.string.rename_action))
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 TextButton(onClick = { onResolve(ConflictResolution.SKIP, applyToAll) }) {
-                                    Text("Пропустить")
+                                    Text(stringResource(R.string.skip_action))
                                 }
                                 TextButton(onClick = { onResolve(ConflictResolution.REPLACE, applyToAll) }) {
-                                    Text("Заменить")
+                                    Text(stringResource(R.string.replace_action))
                                 }
                             }
                         }

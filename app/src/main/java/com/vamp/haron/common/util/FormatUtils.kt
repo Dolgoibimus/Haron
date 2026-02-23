@@ -1,13 +1,26 @@
 package com.vamp.haron.common.util
 
+import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import com.vamp.haron.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-fun Long.toFileSize(): String {
-    if (this <= 0) return "0 Б"
-    val units = arrayOf("Б", "КБ", "МБ", "ГБ", "ТБ")
+@Composable
+fun Long.toFileSize(): String = toFileSize(LocalContext.current)
+
+fun Long.toFileSize(context: Context): String {
+    if (this <= 0) return "0 ${context.getString(R.string.size_bytes)}"
+    val units = arrayOf(
+        context.getString(R.string.size_bytes),
+        context.getString(R.string.size_kb),
+        context.getString(R.string.size_mb),
+        context.getString(R.string.size_gb),
+        context.getString(R.string.size_tb)
+    )
     val digitGroups = (Math.log10(this.toDouble()) / Math.log10(1024.0)).toInt()
     val index = digitGroups.coerceAtMost(units.lastIndex)
     return String.format(
@@ -30,23 +43,26 @@ fun Long.toDurationString(): String {
     }
 }
 
-fun Long.toRelativeDate(): String {
+@Composable
+fun Long.toRelativeDate(): String = toRelativeDate(LocalContext.current)
+
+fun Long.toRelativeDate(context: Context): String {
     val now = System.currentTimeMillis()
     val diff = now - this
 
     return when {
-        diff < TimeUnit.MINUTES.toMillis(1) -> "только что"
+        diff < TimeUnit.MINUTES.toMillis(1) -> context.getString(R.string.time_just_now)
         diff < TimeUnit.HOURS.toMillis(1) -> {
-            val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
-            "$minutes мин. назад"
+            val minutes = TimeUnit.MILLISECONDS.toMinutes(diff).toInt()
+            context.getString(R.string.time_minutes_ago, minutes)
         }
         diff < TimeUnit.DAYS.toMillis(1) -> {
-            val hours = TimeUnit.MILLISECONDS.toHours(diff)
-            "$hours ч. назад"
+            val hours = TimeUnit.MILLISECONDS.toHours(diff).toInt()
+            context.getString(R.string.time_hours_ago, hours)
         }
         diff < TimeUnit.DAYS.toMillis(7) -> {
-            val days = TimeUnit.MILLISECONDS.toDays(diff)
-            "$days дн. назад"
+            val days = TimeUnit.MILLISECONDS.toDays(diff).toInt()
+            context.getString(R.string.time_days_ago, days)
         }
         else -> {
             SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(this))

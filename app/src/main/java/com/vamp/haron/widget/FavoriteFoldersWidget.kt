@@ -27,6 +27,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.vamp.haron.MainActivity
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import org.json.JSONArray
 
@@ -61,7 +62,7 @@ class FavoriteFoldersWidget : GlanceAppWidget() {
                 .padding(8.dp)
         ) {
             Text(
-                text = "Haron Избранное",
+                text = context.getString(R.string.widget_title),
                 style = TextStyle(
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -72,7 +73,7 @@ class FavoriteFoldersWidget : GlanceAppWidget() {
 
             if (favorites.isEmpty()) {
                 Text(
-                    text = "Нет избранных папок",
+                    text = context.getString(R.string.widget_no_favorites),
                     style = TextStyle(
                         fontSize = 12.sp,
                         color = GlanceTheme.colors.onSurfaceVariant

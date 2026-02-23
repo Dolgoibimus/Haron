@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,6 +79,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.vamp.haron.R
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.service.PlaybackService
@@ -410,7 +412,7 @@ fun MediaPlayerScreen(
                         }
                         onBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = Color.White)
                     }
                     Text(
                         text = fileName,
@@ -441,7 +443,7 @@ fun MediaPlayerScreen(
                             IconButton(onClick = {
                                 controller?.seekToPreviousMediaItem()
                             }) {
-                                Icon(Icons.Filled.SkipPrevious, "Предыдущий", tint = Color.White, modifier = Modifier.size(32.dp))
+                                Icon(Icons.Filled.SkipPrevious, stringResource(R.string.previous), tint = Color.White, modifier = Modifier.size(32.dp))
                             }
                             Spacer(Modifier.width(24.dp))
                             IconButton(onClick = {
@@ -460,7 +462,7 @@ fun MediaPlayerScreen(
                             IconButton(onClick = {
                                 controller?.seekToNextMediaItem()
                             }) {
-                                Icon(Icons.Filled.SkipNext, "Следующий", tint = Color.White, modifier = Modifier.size(32.dp))
+                                Icon(Icons.Filled.SkipNext, stringResource(R.string.next), tint = Color.White, modifier = Modifier.size(32.dp))
                             }
                         }
                     }

@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,7 @@ import androidx.media3.session.SessionToken
 import org.videolan.libvlc.util.VLCVideoLayout
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.common.util.toFileSize
@@ -218,7 +220,7 @@ fun QuickPreviewDialog(
                 ) {
                     Icon(
                         Icons.Filled.Close,
-                        contentDescription = "Закрыть",
+                        contentDescription = stringResource(R.string.close),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -345,7 +347,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Во весь экран")
+                                Text(stringResource(R.string.play_fullscreen))
                             }
                         }
                         isImage && onOpenGallery != null -> {
@@ -355,7 +357,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Открыть в галерее")
+                                Text(stringResource(R.string.open_in_gallery))
                             }
                         }
                         isPdf && onOpenPdf != null -> {
@@ -365,7 +367,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Открыть в читалке")
+                                Text(stringResource(R.string.open_in_reader))
                             }
                         }
                         isArchive && onOpenArchive != null -> {
@@ -375,7 +377,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Открыть архив")
+                                Text(stringResource(R.string.open_archive))
                             }
                         }
                         isDocument && onOpenPdf != null -> {
@@ -385,7 +387,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Открыть в читалке")
+                                Text(stringResource(R.string.open_in_reader))
                             }
                         }
                         isEditableText -> {
@@ -395,7 +397,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Edit, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Редактировать")
+                                Text(stringResource(R.string.edit_action))
                             }
                         }
                         isApk && onInstallApk != null -> {
@@ -405,7 +407,7 @@ fun QuickPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Установить")
+                                Text(stringResource(R.string.install_action))
                             }
                         }
                     }
@@ -614,11 +616,33 @@ private fun InlineVideoContent(
     onTogglePlayPause: () -> Unit
 ) {
     var hasStarted by remember { mutableStateOf(false) }
+    var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(Unit) {
         onDispose {
             PlaybackService.instance?.getVlcPlayer()?.detachViews()
         }
+    }
+
+    // Re-attach VLC surface after screen on/off
+    DisposableEffect(lifecycleOwner, hasStarted) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (!hasStarted) return@LifecycleEventObserver
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    videoLayoutRef?.let { layout ->
+                        PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(
@@ -631,6 +655,7 @@ private fun InlineVideoContent(
             AndroidView(
                 factory = { ctx ->
                     VLCVideoLayout(ctx).also { layout ->
+                        videoLayoutRef = layout
                         PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
                     }
                 },
@@ -673,7 +698,7 @@ private fun InlineVideoContent(
             ) {
                 Icon(
                     Icons.Filled.PlayCircleFilled,
-                    contentDescription = "Воспроизвести",
+                    contentDescription = stringResource(R.string.play),
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
@@ -826,9 +851,9 @@ private fun TextPreviewContent(data: PreviewData.TextPreview) {
         val shownLines = data.content.lines().size
         Text(
             text = if (shownLines < data.totalLines)
-                "Показано $shownLines из ${data.totalLines} строк"
+                stringResource(R.string.shown_lines_format, shownLines, data.totalLines)
             else
-                "${data.totalLines} строк",
+                stringResource(R.string.total_lines, data.totalLines),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -852,7 +877,7 @@ private fun PdfPreviewContent(data: PreviewData.PdfPreview) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Страниц: ${data.pageCount}",
+            text = stringResource(R.string.pages_count, data.pageCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -904,7 +929,7 @@ private fun ArchivePreviewContent(data: PreviewData.ArchivePreview) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "${data.totalEntries} файлов, размер: ${data.totalUncompressedSize.toFileSize()}",
+            text = stringResource(R.string.archive_summary, data.totalEntries, data.totalUncompressedSize.toFileSize()),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -992,13 +1017,14 @@ private fun UnsupportedPreviewContent() {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Превью недоступно",
+            text = stringResource(R.string.preview_unavailable),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
+@Composable
 private fun buildSubtitle(entry: FileEntry): String {
     val parts = mutableListOf<String>()
     parts.add(entry.size.toFileSize())

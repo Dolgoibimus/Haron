@@ -43,7 +43,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Visibility
@@ -82,8 +82,12 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.vamp.haron.R
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.model.FileTag
+import com.vamp.haron.domain.model.TagColors
 import com.vamp.haron.presentation.explorer.state.PanelUiState
 import com.vamp.haron.service.PlaybackService
 import kotlinx.coroutines.delay
@@ -131,7 +135,7 @@ fun FilePanel(
     onDragEnded: (() -> Unit)? = null,
     isDragTarget: Boolean = false,
     hasRemovableStorage: Boolean = false,
-    sdCardLabel: String = "SD-карта",
+    sdCardLabel: String = stringResource(R.string.sd_card),
     hasSafPermission: Boolean = false,
     onSdCardClick: () -> Unit = {},
     onRequestSafAccess: () -> Unit = {},
@@ -141,6 +145,10 @@ fun FilePanel(
     onCloseSearch: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
     initialScrollIndex: Int = 0,
+    fileTags: Map<String, List<String>> = emptyMap(),
+    tagDefinitions: List<FileTag> = emptyList(),
+    activeTagFilter: String? = null,
+    onTagFilterChanged: (String?) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -176,14 +184,17 @@ fun FilePanel(
         }
     }
 
-    // Filter files by search query
-    val filteredFiles = if (state.searchQuery.isBlank()) {
-        state.files
-    } else {
-        state.files.filter {
-            it.name.contains(state.searchQuery, ignoreCase = true)
+    // Filter files by search query and active tag filter
+    val filteredFiles = state.files
+        .let { files ->
+            if (activeTagFilter != null) {
+                files.filter { entry -> fileTags[entry.path]?.contains(activeTagFilter) == true }
+            } else files
         }
-    }
+        .let { files ->
+            if (state.searchQuery.isBlank()) files
+            else files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
+        }
 
     val containerColor = if (isActive) {
         MaterialTheme.colorScheme.surfaceContainer
@@ -223,7 +234,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Закрыть поиск",
+                                contentDescription = stringResource(R.string.close_search),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -238,7 +249,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Отменить выделение",
+                                contentDescription = stringResource(R.string.cancel_selection),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -255,7 +266,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Назад",
+                                contentDescription = stringResource(R.string.back),
                                 modifier = Modifier.size(18.dp),
                                 tint = if (canNavigateBack) {
                                     MaterialTheme.colorScheme.onSurface
@@ -275,7 +286,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Вперёд",
+                                contentDescription = stringResource(R.string.forward),
                                 modifier = Modifier.size(18.dp),
                                 tint = if (canNavigateForward) {
                                     MaterialTheme.colorScheme.onSurface
@@ -305,7 +316,7 @@ fun FilePanel(
                                 Box {
                                     if (state.searchQuery.isEmpty()) {
                                         Text(
-                                            "Поиск...",
+                                            stringResource(R.string.search_placeholder),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -336,7 +347,7 @@ fun FilePanel(
                         val dirs = selected.count { it.isDirectory }
                         val files = selected.size - dirs
                         Text(
-                            text = "Выбрано: ${formatFileCount(dirs, files)}",
+                            text = stringResource(R.string.selected_count, formatFileCount(dirs, files)),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier
                                 .weight(1f)
@@ -366,7 +377,7 @@ fun FilePanel(
                                 Spacer(Modifier.width(3.dp))
                             }
                             Text(
-                                text = state.displayPath.substringAfterLast('/').ifEmpty { "Хранилище" },
+                                text = state.displayPath.substringAfterLast('/').ifEmpty { stringResource(R.string.storage) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -388,7 +399,7 @@ fun FilePanel(
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
-                                    contentDescription = "Очистить",
+                                    contentDescription = stringResource(R.string.clear),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -402,7 +413,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.Filled.SelectAll,
-                                contentDescription = "Выбрать/снять все",
+                                contentDescription = stringResource(R.string.select_deselect_all),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -414,7 +425,7 @@ fun FilePanel(
                             ) {
                                 Icon(
                                     Icons.Filled.ExpandMore,
-                                    contentDescription = "Ещё",
+                                    contentDescription = stringResource(R.string.more),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -423,7 +434,7 @@ fun FilePanel(
                                 onDismissRequest = { showCollapsed = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Поиск") },
+                                    text = { Text(stringResource(R.string.search)) },
                                     onClick = {
                                         onOpenSearch()
                                         showCollapsed = false
@@ -431,7 +442,7 @@ fun FilePanel(
                                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Меню") },
+                                    text = { Text(stringResource(R.string.menu)) },
                                     onClick = {
                                         onShowDrawer()
                                         showCollapsed = false
@@ -439,7 +450,7 @@ fun FilePanel(
                                     leadingIcon = { Icon(Icons.Filled.Menu, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Создать") },
+                                    text = { Text(stringResource(R.string.create)) },
                                     onClick = {
                                         onCreateNew()
                                         showCollapsed = false
@@ -449,7 +460,7 @@ fun FilePanel(
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (state.showHidden) "Скрыть скрытые" else "Показать скрытые")
+                                        Text(if (state.showHidden) stringResource(R.string.hide_hidden) else stringResource(R.string.show_hidden))
                                     },
                                     onClick = {
                                         onToggleHidden()
@@ -465,7 +476,7 @@ fun FilePanel(
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (isFavorite) "Убрать из избранного" else "В избранное")
+                                        Text(if (isFavorite) stringResource(R.string.remove_from_favorites) else stringResource(R.string.to_favorites))
                                     },
                                     onClick = {
                                         onToggleFavorite()
@@ -480,7 +491,7 @@ fun FilePanel(
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (isOriginalFolder) "Убрать пометку оригинала" else "Папка-оригинал")
+                                        Text(if (isOriginalFolder) stringResource(R.string.remove_original_marker) else stringResource(R.string.original_folder))
                                     },
                                     onClick = {
                                         onToggleOriginalFolder()
@@ -509,7 +520,7 @@ fun FilePanel(
                             ) {
                                 Icon(
                                     if (isServicePlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = if (isServicePlaying) "Пауза" else "Воспроизвести",
+                                    contentDescription = if (isServicePlaying) stringResource(R.string.pause) else stringResource(R.string.play),
                                     modifier = Modifier.size(18.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
@@ -524,7 +535,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.Filled.Search,
-                                contentDescription = "Поиск",
+                                contentDescription = stringResource(R.string.search),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -537,7 +548,7 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.Filled.Menu,
-                                contentDescription = "Меню",
+                                contentDescription = stringResource(R.string.menu),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -550,13 +561,16 @@ fun FilePanel(
                         ) {
                             Icon(
                                 Icons.Filled.Add,
-                                contentDescription = "Создать",
+                                contentDescription = stringResource(R.string.create),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                         SortMenu(
                             currentOrder = state.sortOrder,
-                            onSortChanged = onSortChanged
+                            onSortChanged = onSortChanged,
+                            tagDefinitions = tagDefinitions,
+                            activeTagFilter = activeTagFilter,
+                            onTagFilterChanged = onTagFilterChanged
                         )
                         Box {
                             IconButton(
@@ -565,7 +579,7 @@ fun FilePanel(
                             ) {
                                 Icon(
                                     Icons.Filled.MoreVert,
-                                    contentDescription = "Ещё",
+                                    contentDescription = stringResource(R.string.more),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -575,7 +589,7 @@ fun FilePanel(
                             ) {
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (state.showHidden) "Скрыть скрытые" else "Показать скрытые")
+                                        Text(if (state.showHidden) stringResource(R.string.hide_hidden) else stringResource(R.string.show_hidden))
                                     },
                                     onClick = {
                                         onToggleHidden()
@@ -594,7 +608,7 @@ fun FilePanel(
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (isFavorite) "Убрать из избранного" else "Добавить в избранное")
+                                        Text(if (isFavorite) stringResource(R.string.remove_from_favorites) else stringResource(R.string.add_to_favorites))
                                     },
                                     onClick = {
                                         onToggleFavorite()
@@ -609,18 +623,18 @@ fun FilePanel(
                                 )
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("Открыть в другой панели") },
+                                    text = { Text(stringResource(R.string.open_in_other_panel)) },
                                     onClick = {
                                         onOpenInOtherPanel()
                                         showOverflow = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (isOriginalFolder) "Убрать пометку оригинала" else "Папка-оригинал")
+                                        Text(if (isOriginalFolder) stringResource(R.string.remove_original_marker) else stringResource(R.string.original_folder))
                                     },
                                     onClick = {
                                         onToggleOriginalFolder()
@@ -704,7 +718,7 @@ fun FilePanel(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (state.searchQuery.isNotBlank()) "Ничего не найдено" else "Папка пуста",
+                        text = if (state.searchQuery.isNotBlank()) stringResource(R.string.nothing_found) else stringResource(R.string.folder_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -877,6 +891,10 @@ fun FilePanel(
                             else GridItemSpan(1)
                         }
                     ) { _, entry ->
+                        val entryTagColors = fileTags[entry.path]
+                            ?.mapNotNull { name -> tagDefinitions.find { it.name == name } }
+                            ?.map { TagColors.palette.getOrElse(it.colorIndex) { TagColors.palette[0] } }
+                            ?: emptyList()
                         FileListItem(
                             entry = entry,
                             isSelected = entry.path in state.selectedPaths,
@@ -887,7 +905,8 @@ fun FilePanel(
                             onIconClick = { onIconClick(entry) },
                             onRenameConfirm = onRenameConfirm,
                             onRenameCancel = onRenameCancel,
-                            isGridMode = isGridMode
+                            isGridMode = isGridMode,
+                            tagColors = entryTagColors
                         )
                     }
                 }
@@ -935,32 +954,36 @@ private fun findItemIndexAtPosition(
     }
 }
 
+@Composable
 private fun formatFileCount(dirs: Int, files: Int): String {
+    val folderLabel = pluralForm(
+        dirs,
+        stringResource(R.string.plural_folders_nom),
+        stringResource(R.string.plural_folders_gen_few),
+        stringResource(R.string.plural_folders_genitive)
+    )
+    val fileLabel = pluralForm(
+        files,
+        stringResource(R.string.plural_files_nom),
+        stringResource(R.string.plural_files_gen_few),
+        stringResource(R.string.plural_files_genitive)
+    )
+    val andConj = stringResource(R.string.and_conjunction)
+    val zeroFiles = stringResource(R.string.zero_files)
     val parts = buildList {
-        if (dirs > 0) add("$dirs ${pluralDirs(dirs)}")
-        if (files > 0) add("$files ${pluralFiles(files)}")
+        if (dirs > 0) add("$dirs $folderLabel")
+        if (files > 0) add("$files $fileLabel")
     }
-    return parts.joinToString(" и ").ifEmpty { "0 файлов" }
+    return parts.joinToString(andConj).ifEmpty { zeroFiles }
 }
 
-private fun pluralDirs(count: Int): String {
+private fun pluralForm(count: Int, nom: String, genFew: String, genitive: String): String {
     val mod100 = count % 100
     val mod10 = count % 10
     return when {
-        mod100 in 11..14 -> "папок"
-        mod10 == 1 -> "папка"
-        mod10 in 2..4 -> "папки"
-        else -> "папок"
-    }
-}
-
-private fun pluralFiles(count: Int): String {
-    val mod100 = count % 100
-    val mod10 = count % 10
-    return when {
-        mod100 in 11..14 -> "файлов"
-        mod10 == 1 -> "файл"
-        mod10 in 2..4 -> "файла"
-        else -> "файлов"
+        mod100 in 11..14 -> genitive
+        mod10 == 1 -> nom
+        mod10 in 2..4 -> genFew
+        else -> genitive
     }
 }

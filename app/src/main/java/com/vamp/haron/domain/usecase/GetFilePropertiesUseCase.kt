@@ -2,6 +2,7 @@ package com.vamp.haron.domain.usecase
 
 import android.content.Context
 import androidx.exifinterface.media.ExifInterface
+import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.domain.model.FileEntry
@@ -97,30 +98,30 @@ class GetFilePropertiesUseCase @Inject constructor(
 
     private fun buildExifMap(exif: ExifInterface): Map<String, String> {
         val map = linkedMapOf<String, String>()
-        exif.getAttribute(ExifInterface.TAG_MAKE)?.let { map["Производитель"] = it }
-        exif.getAttribute(ExifInterface.TAG_MODEL)?.let { map["Модель камеры"] = it }
-        exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)?.let { map["Дата съёмки"] = it }
+        exif.getAttribute(ExifInterface.TAG_MAKE)?.let { map[context.getString(R.string.exif_manufacturer)] = it }
+        exif.getAttribute(ExifInterface.TAG_MODEL)?.let { map[context.getString(R.string.exif_camera_model)] = it }
+        exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)?.let { map[context.getString(R.string.exif_date_taken)] = it }
         exif.getAttribute(ExifInterface.TAG_IMAGE_WIDTH)?.let { w ->
             exif.getAttribute(ExifInterface.TAG_IMAGE_LENGTH)?.let { h ->
-                map["Размер изображения"] = "${w}x${h}"
+                map[context.getString(R.string.exif_image_size)] = "${w}x${h}"
             }
         }
-        exif.getAttribute(ExifInterface.TAG_ISO_SPEED_RATINGS)?.let { map["ISO"] = it }
-        exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)?.let { map["Выдержка"] = it }
-        exif.getAttribute(ExifInterface.TAG_F_NUMBER)?.let { map["Диафрагма"] = "f/$it" }
-        exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)?.let { map["Фокусное расстояние"] = it }
+        exif.getAttribute(ExifInterface.TAG_ISO_SPEED_RATINGS)?.let { map[context.getString(R.string.exif_iso)] = it }
+        exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)?.let { map[context.getString(R.string.exif_exposure)] = it }
+        exif.getAttribute(ExifInterface.TAG_F_NUMBER)?.let { map[context.getString(R.string.exif_aperture)] = "f/$it" }
+        exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)?.let { map[context.getString(R.string.exif_focal_length)] = it }
         exif.getAttribute(ExifInterface.TAG_WHITE_BALANCE)?.let {
-            map["Баланс белого"] = if (it == "0") "Авто" else "Ручной"
+            map[context.getString(R.string.exif_white_balance)] = if (it == "0") context.getString(R.string.exif_wb_auto) else context.getString(R.string.exif_wb_manual)
         }
-        exif.getAttribute(ExifInterface.TAG_FLASH)?.let { map["Вспышка"] = it }
+        exif.getAttribute(ExifInterface.TAG_FLASH)?.let { map[context.getString(R.string.exif_flash)] = it }
         exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE)?.let { lat ->
             exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE)?.let { lon ->
                 val latRef = exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE_REF) ?: ""
                 val lonRef = exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF) ?: ""
-                map["GPS"] = "$lat $latRef, $lon $lonRef"
+                map[context.getString(R.string.exif_gps)] = "$lat $latRef, $lon $lonRef"
             }
         }
-        exif.getAttribute(ExifInterface.TAG_SOFTWARE)?.let { map["ПО"] = it }
+        exif.getAttribute(ExifInterface.TAG_SOFTWARE)?.let { map[context.getString(R.string.exif_software)] = it }
         return map
     }
 

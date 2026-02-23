@@ -28,9 +28,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.vamp.haron.common.util.requiredPermissions
@@ -74,15 +76,14 @@ fun PermissionScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Доступ к файлам",
+            text = stringResource(R.string.file_access_title),
             style = MaterialTheme.typography.headlineMedium
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Для работы проводника необходим доступ к файлам устройства. " +
-                    "Это позволит просматривать, копировать и перемещать файлы.",
+            text = stringResource(R.string.file_access_description),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -104,7 +105,7 @@ fun PermissionScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Предоставить доступ")
+            Text(stringResource(R.string.grant_access))
         }
     }
 }
