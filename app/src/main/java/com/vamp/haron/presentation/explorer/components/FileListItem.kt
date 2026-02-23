@@ -57,6 +57,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.vamp.haron.R
+import androidx.compose.material.icons.filled.Lock
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
@@ -182,6 +183,17 @@ fun FileListItem(
                             }
                         )
                     }
+                    // Protected file lock badge (top-start)
+                    if (entry.isProtected) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .align(Alignment.TopStart),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -295,6 +307,17 @@ fun FileListItem(
                                 RoundedCornerShape(2.dp)
                             )
                             .padding(horizontal = 2.dp)
+                    )
+                }
+                // Protected file lock badge (top-start)
+                if (entry.isProtected) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(12.dp)
+                            .align(Alignment.TopStart),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }

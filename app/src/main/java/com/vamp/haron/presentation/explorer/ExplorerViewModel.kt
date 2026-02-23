@@ -45,6 +45,8 @@ import com.vamp.haron.domain.usecase.CalculateHashUseCase
 import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
 import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
 import com.vamp.haron.common.util.HapticManager
+import com.vamp.haron.data.security.AuthManager
+import com.vamp.haron.domain.repository.SecureFolderRepository
 import com.vamp.haron.domain.usecase.BatchRenameUseCase
 import com.vamp.haron.domain.usecase.ForceDeleteUseCase
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -102,7 +104,9 @@ class ExplorerViewModel @Inject constructor(
     private val hapticManager: HapticManager,
     private val forceDeleteUseCase: ForceDeleteUseCase,
     private val findEmptyFoldersUseCase: FindEmptyFoldersUseCase,
-    private val batchRenameUseCase: BatchRenameUseCase
+    private val batchRenameUseCase: BatchRenameUseCase,
+    private val secureFolderRepository: SecureFolderRepository,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -227,16 +231,17 @@ class ExplorerViewModel @Inject constructor(
             updatePanel(panelId) { it.copy(isLoading = true, error = null) }
 
             val panel = getPanel(panelId)
-            val displayPath = if (path.startsWith("content://")) {
-                buildSafDisplayPath(path)
-            } else {
-                path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
+            val displayPath = when {
+                path == HaronConstants.VIRTUAL_SECURE_PATH -> appContext.getString(R.string.all_secure_files)
+                path.startsWith("content://") -> buildSafDisplayPath(path)
+                else -> path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
             }
 
             getFilesUseCase(
                 path = path,
                 sortOrder = panel.sortOrder,
-                showHidden = panel.showHidden
+                showHidden = panel.showHidden,
+                showProtected = _uiState.value.isShieldUnlocked
             ).onSuccess { files ->
                 val isNewPath = currentPath != path
                 val savedScroll = if (isNewPath) scrollCache[path] ?: 0 else -1
@@ -260,7 +265,8 @@ class ExplorerViewModel @Inject constructor(
                         error = null,
                         navigationHistory = history,
                         historyIndex = index,
-                        isSafPath = path.startsWith("content://")
+                        isSafPath = path.startsWith("content://"),
+                        showProtected = path == HaronConstants.VIRTUAL_SECURE_PATH
                     )
                     if (savedScroll >= 0) {
                         base.copy(
@@ -269,14 +275,16 @@ class ExplorerViewModel @Inject constructor(
                         )
                     } else base
                 }
-                // Save panel path & track recent
-                when (panelId) {
-                    PanelId.TOP -> preferences.topPanelPath = path
-                    PanelId.BOTTOM -> preferences.bottomPanelPath = path
-                }
-                if (!path.startsWith("content://")) {
-                    preferences.addRecentPath(path)
-                    _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
+                // Save panel path & track recent (skip virtual paths)
+                if (path != HaronConstants.VIRTUAL_SECURE_PATH && !secureFolderRepository.isFileProtected(path)) {
+                    when (panelId) {
+                        PanelId.TOP -> preferences.topPanelPath = path
+                        PanelId.BOTTOM -> preferences.bottomPanelPath = path
+                    }
+                    if (!path.startsWith("content://")) {
+                        preferences.addRecentPath(path)
+                        _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
+                    }
                 }
                 EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Открыта папка: $path (${files.size} файлов)")
             }.onFailure { error ->
@@ -293,6 +301,24 @@ class ExplorerViewModel @Inject constructor(
 
     fun navigateUp(panelId: PanelId, pushHistory: Boolean = true): Boolean {
         val currentPath = getPanel(panelId).currentPath
+        // Virtual secure path — exit virtual view, turn off shield
+        if (currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
+            _uiState.update { it.copy(isShieldUnlocked = false) }
+            if (canNavigateBack(panelId)) {
+                navigateBack(panelId)
+            } else {
+                navigateTo(panelId, HaronConstants.ROOT_PATH, pushHistory = false)
+            }
+            return true
+        }
+        // Protected directory — use history back
+        if (secureFolderRepository.isFileProtected(currentPath)) {
+            if (canNavigateBack(panelId)) {
+                navigateBack(panelId)
+                return true
+            }
+            return false
+        }
         val parentPath = fileRepository.getParentPath(currentPath) ?: return false
         navigateTo(panelId, parentPath, pushHistory = pushHistory)
         return true
@@ -303,6 +329,9 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(panelId)
         if (panel.isSelectionMode) {
             toggleSelection(panelId, entry.path)
+        } else if (entry.isProtected && !entry.isDirectory) {
+            onProtectedFileClick(entry)
+            return
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
         } else {
@@ -430,7 +459,7 @@ class ExplorerViewModel @Inject constructor(
         when {
             panel.isSelectionMode -> toggleSelection(panelId, entry.path)
             entry.isDirectory -> navigateTo(panelId, entry.path)
-            entry.iconRes() == "apk" -> showApkInstallDialog(entry)
+            entry.iconRes() == "apk" && !entry.isProtected -> showApkInstallDialog(entry)
             else -> {
                 val allFiles = panel.files.filter { !it.isDirectory }
                 val fileIndex = allFiles.indexOfFirst { it.path == entry.path }
@@ -444,7 +473,8 @@ class ExplorerViewModel @Inject constructor(
                     ))
                 }
                 viewModelScope.launch {
-                    loadPreviewUseCase(entry)
+                    val previewEntry = resolvePreviewEntry(entry)
+                    loadPreviewUseCase(previewEntry)
                         .onSuccess { data ->
                             val current = _uiState.value.dialogState
                             if (current is DialogState.QuickPreview && current.entry.path == entry.path) {
@@ -477,7 +507,10 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun canNavigateUp(panelId: PanelId): Boolean {
-        return fileRepository.getParentPath(getPanel(panelId).currentPath) != null
+        val path = getPanel(panelId).currentPath
+        if (path == HaronConstants.VIRTUAL_SECURE_PATH) return true
+        if (secureFolderRepository.isFileProtected(path)) return canNavigateBack(panelId)
+        return fileRepository.getParentPath(path) != null
     }
 
     fun navigateBack(panelId: PanelId) {
@@ -499,7 +532,10 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun canNavigateBack(panelId: PanelId): Boolean {
-        return getPanel(panelId).historyIndex > 0
+        val panel = getPanel(panelId)
+        // Virtual secure root — no back (exit via shield button only)
+        if (panel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH) return false
+        return panel.historyIndex > 0
     }
 
     fun canNavigateForward(panelId: PanelId): Boolean {
@@ -727,6 +763,21 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
+        // Block copy TO virtual secure view (only when target panel is in protected context)
+        if (targetPanel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH ||
+            (targetPanel.showProtected && secureFolderRepository.isFileProtected(targetPanel.currentPath))) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cannot_copy_to_virtual))
+            return
+        }
+
+        // Protected source files — check via FileEntry.isProtected, not path index lookup
+        val selectedEntries = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
+        val hasProtected = selectedEntries.any { it.isProtected }
+        if (hasProtected) {
+            copyProtectedFiles(paths, targetPanel.currentPath)
+            return
+        }
+
         val conflictPairs = buildConflictPairs(paths, targetPanel)
         if (conflictPairs.isNotEmpty()) {
             _uiState.update {
@@ -838,6 +889,21 @@ class ExplorerViewModel @Inject constructor(
         val targetPanel = getPanel(targetId)
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
+
+        // Block move TO virtual secure view (only when target panel is in protected context)
+        if (targetPanel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH ||
+            (targetPanel.showProtected && secureFolderRepository.isFileProtected(targetPanel.currentPath))) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cannot_move_to_virtual))
+            return
+        }
+
+        // Protected source files — check via FileEntry.isProtected, not path index lookup
+        val selectedEntries = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
+        val hasProtected = selectedEntries.any { it.isProtected }
+        if (hasProtected) {
+            moveProtectedFiles(paths, targetPanel.currentPath)
+            return
+        }
 
         val conflictPairs = buildConflictPairs(paths, targetPanel)
         if (conflictPairs.isNotEmpty()) {
@@ -957,6 +1023,15 @@ class ExplorerViewModel @Inject constructor(
         dismissDialog()
         val activeId = _uiState.value.activePanel
         clearSelection(activeId)
+
+        // Protected files — delete permanently from secure storage (only for entries marked isProtected)
+        val activePanel = getPanel(activeId)
+        val protectedPaths = paths.filter { p -> activePanel.files.any { it.path == p && it.isProtected } }
+        if (protectedPaths.isNotEmpty()) {
+            deleteProtectedPermanently(protectedPaths)
+            return
+        }
+
         viewModelScope.launch {
             val total = paths.size
             _uiState.update {
@@ -1287,13 +1362,31 @@ class ExplorerViewModel @Inject constructor(
     // --- Templates ---
 
     fun requestCreateFromTemplate() {
-        _uiState.update { it.copy(dialogState = DialogState.CreateFromTemplate) }
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        if (panel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cannot_create_in_virtual))
+            return
+        }
+        val inProtected = secureFolderRepository.isFileProtected(panel.currentPath)
+        val templates = if (inProtected) {
+            listOf(FileTemplate.FOLDER, FileTemplate.TXT)
+        } else {
+            FileTemplate.entries.toList()
+        }
+        _uiState.update { it.copy(dialogState = DialogState.CreateFromTemplate(templates)) }
     }
 
     fun confirmCreateFromTemplate(template: FileTemplate, name: String) {
         dismissDialog()
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
+
+        if (secureFolderRepository.isFileProtected(panel.currentPath)) {
+            // Create in protected context — create file, encrypt, remove original
+            createInProtectedDir(template, name, panel.currentPath, activeId)
+            return
+        }
 
         viewModelScope.launch {
             val result = when (template) {
@@ -1319,6 +1412,42 @@ class ExplorerViewModel @Inject constructor(
                 .onFailure { e ->
                     EcosystemLogger.e(HaronConstants.TAG, "Ошибка создания: ${e.message}")
                 }
+        }
+    }
+
+    private fun createInProtectedDir(template: FileTemplate, name: String, parentPath: String, panelId: PanelId) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    // Recreate the protected directory temporarily
+                    val parentDir = File(parentPath)
+                    parentDir.mkdirs()
+
+                    when (template) {
+                        FileTemplate.FOLDER -> {
+                            val dir = File(parentDir, name)
+                            dir.mkdirs()
+                            secureFolderRepository.protectFiles(listOf(dir.absolutePath)) { _, _ -> }
+                        }
+                        FileTemplate.TXT -> {
+                            val fileName = if (name.endsWith(".txt")) name else "$name.txt"
+                            val file = File(parentDir, fileName)
+                            file.writeText("")
+                            secureFolderRepository.protectFiles(listOf(file.absolutePath)) { _, _ -> }
+                        }
+                        else -> { /* Only FOLDER and TXT allowed in protected view */ }
+                    }
+
+                    // Clean up: remove parent dir if it's now empty (was recreated temporarily)
+                    if (parentDir.exists() && parentDir.isDirectory && (parentDir.listFiles()?.isEmpty() == true)) {
+                        parentDir.delete()
+                    }
+                }
+                refreshPanel(panelId)
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "createInProtectedDir error: ${e.message}")
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
+            }
         }
     }
 
@@ -1404,7 +1533,8 @@ class ExplorerViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            loadPreviewUseCase(newEntry)
+            val resolved = resolvePreviewEntry(newEntry)
+            loadPreviewUseCase(resolved)
                 .onSuccess { data ->
                     val current = _uiState.value.dialogState
                     if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
@@ -1433,6 +1563,16 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    /** Resolve a FileEntry for preview: if protected, decrypt to cache and return entry with temp path. */
+    private suspend fun resolvePreviewEntry(entry: FileEntry): FileEntry {
+        if (!entry.isProtected) return entry
+        val allEntries = secureFolderRepository.getAllProtectedEntries()
+        val secEntry = allEntries.find { it.originalPath == entry.path } ?: return entry
+        return secureFolderRepository.decryptToCache(secEntry.id).getOrNull()?.let { tempFile ->
+            entry.copy(path = tempFile.absolutePath)
+        } ?: entry
+    }
+
     private fun preloadPreview(index: Int, files: List<FileEntry>) {
         if (index !in files.indices) return
         val current = _uiState.value.dialogState
@@ -1440,7 +1580,8 @@ class ExplorerViewModel @Inject constructor(
         if (index in current.previewCache) return
 
         viewModelScope.launch {
-            loadPreviewUseCase(files[index])
+            val resolved = resolvePreviewEntry(files[index])
+            loadPreviewUseCase(resolved)
                 .onSuccess { data ->
                     val dialog = _uiState.value.dialogState
                     if (dialog is DialogState.QuickPreview) {
@@ -2498,5 +2639,479 @@ class ExplorerViewModel @Inject constructor(
             intent.setPackage(appContext.packageName)
             appContext.sendBroadcast(intent)
         } catch (_: Exception) { }
+    }
+
+    // --- Protected file operations (virtual view) ---
+
+    private fun copyProtectedFiles(paths: List<String>, destinationDir: String) {
+        val activeId = _uiState.value.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        clearSelection(activeId)
+
+        viewModelScope.launch {
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+            // Expand directory entries → include children
+            val expandedPaths = mutableListOf<String>()
+            for (path in paths) {
+                expandedPaths.add(path)
+                val entry = allEntries.find { it.originalPath == path }
+                if (entry != null && entry.isDirectory) {
+                    allEntries.filter { it.originalPath.startsWith("$path/") && !it.isDirectory }
+                        .forEach { expandedPaths.add(it.originalPath) }
+                }
+            }
+
+            val fileEntries = expandedPaths.mapNotNull { p -> allEntries.find { it.originalPath == p } }
+                .filter { !it.isDirectory }
+            val total = fileEntries.size
+            if (total == 0) {
+                _toastMessage.tryEmit(appContext.getString(R.string.folder_empty))
+                return@launch
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, appContext.getString(R.string.copying_secure_files), OperationType.COPY))
+            }
+
+            var completed = 0
+            for ((index, entry) in fileEntries.withIndex()) {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, entry.originalName, OperationType.COPY))
+                }
+                secureFolderRepository.decryptToCache(entry.id).onSuccess { tempFile ->
+                    try {
+                        // Preserve relative path inside directory
+                        val relativePath = paths.firstOrNull { entry.originalPath.startsWith("$it/") }
+                            ?.let { entry.originalPath.removePrefix("$it/").substringBeforeLast('/') }
+                        val destDir = if (relativePath != null && relativePath.isNotEmpty()) {
+                            File(destinationDir, relativePath).also { it.mkdirs() }
+                        } else {
+                            File(destinationDir)
+                        }
+                        val destFile = File(destDir, entry.originalName)
+                        if (destFile.exists()) {
+                            // Auto-rename
+                            val baseName = entry.originalName.substringBeforeLast('.')
+                            val ext = entry.originalName.substringAfterLast('.', "")
+                            var counter = 1
+                            var renamed: File
+                            do {
+                                val newName = if (ext.isNotEmpty()) "${baseName}_($counter).$ext" else "${baseName}_($counter)"
+                                renamed = File(destDir, newName)
+                                counter++
+                            } while (renamed.exists())
+                            tempFile.copyTo(renamed)
+                        } else {
+                            tempFile.copyTo(destFile)
+                        }
+                        tempFile.delete()
+                        completed++
+                    } catch (e: Exception) {
+                        tempFile.delete()
+                        EcosystemLogger.e(HaronConstants.TAG, "copyProtectedFiles error: ${e.message}")
+                    }
+                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
+            }
+            if (completed > 0) {
+                hapticManager.success()
+                showStatusMessage(targetId, appContext.getString(R.string.copied_format, formatFileCount(0, completed)))
+            } else {
+                hapticManager.error()
+            }
+            refreshPanel(targetId)
+            delay(2000)
+            _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
+        }
+    }
+
+    private fun moveProtectedFiles(paths: List<String>, destinationDir: String) {
+        val activeId = _uiState.value.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        clearSelection(activeId)
+
+        viewModelScope.launch {
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+            // Expand directory entries → include children
+            val expandedPaths = mutableListOf<String>()
+            for (path in paths) {
+                expandedPaths.add(path)
+                val entry = allEntries.find { it.originalPath == path }
+                if (entry != null && entry.isDirectory) {
+                    allEntries.filter { it.originalPath.startsWith("$path/") && !it.isDirectory }
+                        .forEach { expandedPaths.add(it.originalPath) }
+                }
+            }
+
+            val fileEntries = expandedPaths.mapNotNull { p -> allEntries.find { it.originalPath == p } }
+                .filter { !it.isDirectory }
+            val dirEntries = paths.mapNotNull { p -> allEntries.find { it.originalPath == p && it.isDirectory } }
+            val total = fileEntries.size
+            if (total == 0) {
+                _toastMessage.tryEmit(appContext.getString(R.string.folder_empty))
+                return@launch
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, appContext.getString(R.string.moving_secure_files), OperationType.MOVE))
+            }
+
+            var completed = 0
+            val idsToRemove = mutableListOf<String>()
+
+            for ((index, entry) in fileEntries.withIndex()) {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, entry.originalName, OperationType.MOVE))
+                }
+                secureFolderRepository.decryptToCache(entry.id).onSuccess { tempFile ->
+                    try {
+                        val relativePath = paths.firstOrNull { entry.originalPath.startsWith("$it/") }
+                            ?.let { entry.originalPath.removePrefix("$it/").substringBeforeLast('/') }
+                        val destDir = if (relativePath != null && relativePath.isNotEmpty()) {
+                            File(destinationDir, relativePath).also { it.mkdirs() }
+                        } else {
+                            File(destinationDir)
+                        }
+                        val destFile = File(destDir, entry.originalName)
+                        if (destFile.exists()) {
+                            val baseName = entry.originalName.substringBeforeLast('.')
+                            val ext = entry.originalName.substringAfterLast('.', "")
+                            var counter = 1
+                            var renamed: File
+                            do {
+                                val newName = if (ext.isNotEmpty()) "${baseName}_($counter).$ext" else "${baseName}_($counter)"
+                                renamed = File(destDir, newName)
+                                counter++
+                            } while (renamed.exists())
+                            tempFile.copyTo(renamed)
+                        } else {
+                            tempFile.copyTo(destFile)
+                        }
+                        tempFile.delete()
+                        idsToRemove.add(entry.id)
+                        completed++
+                    } catch (e: Exception) {
+                        tempFile.delete()
+                        EcosystemLogger.e(HaronConstants.TAG, "moveProtectedFiles error: ${e.message}")
+                    }
+                }
+            }
+
+            // Remove from secure storage (files + parent dirs)
+            val allIdsToRemove = idsToRemove + dirEntries.map { it.id }
+            if (allIdsToRemove.isNotEmpty()) {
+                secureFolderRepository.deleteFromSecureStorage(allIdsToRemove) { _, _ -> }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.MOVE, isComplete = true))
+            }
+            if (completed > 0) {
+                hapticManager.success()
+                showStatusMessage(targetId, appContext.getString(R.string.moved_format, formatFileCount(0, completed)))
+            } else {
+                hapticManager.error()
+            }
+            refreshPanel(activeId)
+            refreshPanel(targetId)
+            delay(2000)
+            _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
+        }
+    }
+
+    private fun deleteProtectedPermanently(paths: List<String>) {
+        viewModelScope.launch {
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+            // Collect IDs: exact match + cascade for directories
+            val directIds = allEntries.filter { it.originalPath in paths }.map { it.id }
+            val dirPaths = allEntries.filter { it.isDirectory && it.originalPath in paths }.map { it.originalPath }
+            val cascadeIds = if (dirPaths.isNotEmpty()) {
+                allEntries.filter { entry ->
+                    dirPaths.any { dir -> entry.originalPath.startsWith("$dir/") }
+                }.map { it.id }
+            } else emptyList()
+
+            val ids = (directIds + cascadeIds).distinct()
+            if (ids.isEmpty()) return@launch
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, ids.size, "", OperationType.DELETE))
+            }
+
+            secureFolderRepository.deleteFromSecureStorage(ids) { current, name ->
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(current, ids.size, name, OperationType.DELETE))
+                }
+            }.onSuccess { count ->
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(count, ids.size, "", OperationType.DELETE, isComplete = true))
+                }
+                hapticManager.success()
+                _toastMessage.tryEmit(appContext.getString(R.string.secure_deleted_count, count))
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
+            }.onFailure { e ->
+                _uiState.update { it.copy(operationProgress = null) }
+                hapticManager.error()
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
+            }
+
+            delay(2000)
+            _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
+        }
+    }
+
+    // --- Secure Folder / Shield ---
+
+    fun toggleShield() {
+        val currentState = _uiState.value
+        if (currentState.isShieldUnlocked) {
+            // Turn off shield
+            _uiState.update { it.copy(isShieldUnlocked = false, showShieldAuth = false) }
+            // If any panel is in virtual secure path, navigate back
+            for (panelId in PanelId.entries) {
+                if (getPanel(panelId).currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
+                    if (canNavigateBack(panelId)) {
+                        navigateBack(panelId)
+                    } else {
+                        navigateTo(panelId, HaronConstants.ROOT_PATH, pushHistory = false)
+                    }
+                } else {
+                    refreshPanel(panelId)
+                }
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.shield_off))
+        } else {
+            // Need authentication first
+            if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
+                _uiState.update { it.copy(showShieldAuth = true) }
+            } else {
+                // No auth configured — just enable
+                onShieldAuthenticated()
+            }
+        }
+    }
+
+    fun onShieldAuthenticated() {
+        val showAll = _uiState.value.showAllProtectedAfterAuth
+        _uiState.update { it.copy(isShieldUnlocked = true, showShieldAuth = false, showAllProtectedAfterAuth = false) }
+        if (showAll) {
+            showAllProtectedFiles()
+        } else {
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+            _toastMessage.tryEmit(appContext.getString(R.string.shield_on))
+        }
+    }
+
+    fun dismissShieldAuth() {
+        _uiState.update { it.copy(showShieldAuth = false, showAllProtectedAfterAuth = false) }
+    }
+
+    fun verifyShieldPin(pin: String): Boolean = authManager.verifyPin(pin)
+
+    fun getShieldLockMethod(): com.vamp.haron.domain.model.AppLockMethod = authManager.getAppLockMethod()
+
+    fun hasShieldBiometric(): Boolean = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
+
+    fun getShieldPinLength(): Int = authManager.getPinLength()
+
+    fun showAllProtectedFiles() {
+        val activePanel = _uiState.value.activePanel
+        if (!_uiState.value.isShieldUnlocked) {
+            // Need auth first, then show all
+            if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
+                _uiState.update { it.copy(showShieldAuth = true, showAllProtectedAfterAuth = true) }
+            } else {
+                // No auth — unlock and show
+                _uiState.update { it.copy(isShieldUnlocked = true, showAllProtectedAfterAuth = false) }
+                showAllProtectedFiles()
+            }
+            return
+        }
+        navigateTo(activePanel, HaronConstants.VIRTUAL_SECURE_PATH)
+    }
+
+    fun protectSelectedFiles(explicitPaths: List<String>? = null) {
+        val panelId = _uiState.value.activePanel
+        val panel = getPanel(panelId)
+        val paths = explicitPaths ?: panel.selectedPaths.toList()
+        if (paths.isEmpty()) return
+
+        // Collect protected directory paths to check other panel after operation
+        val protectedDirs = paths.filter { File(it).isDirectory }.map { File(it).absolutePath }.toSet()
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isProtecting = true) }
+            clearSelection(panelId)
+
+            secureFolderRepository.protectFiles(paths) { current, name ->
+                _uiState.update {
+                    it.copy(protectProgress = appContext.getString(R.string.protecting_files, current, paths.size, name))
+                }
+            }.onSuccess { count ->
+                _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_success, count))
+
+                // If other panel is inside a protected (now deleted) directory, navigate up
+                for (panelId in PanelId.entries) {
+                    val panelPath = getPanel(panelId).currentPath
+                    val needsUp = protectedDirs.any { dir ->
+                        panelPath == dir || panelPath.startsWith("$dir/")
+                    }
+                    if (needsUp) {
+                        // Find the nearest existing parent
+                        val parent = protectedDirs
+                            .filter { panelPath == it || panelPath.startsWith("$it/") }
+                            .maxByOrNull { it.length }
+                            ?.let { File(it).parent }
+                            ?: HaronConstants.ROOT_PATH
+                        navigateTo(panelId, parent, pushHistory = false)
+                    } else {
+                        refreshPanel(panelId)
+                    }
+                }
+            }.onFailure { e ->
+                _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
+            }
+        }
+    }
+
+    fun unprotectSelectedFiles(explicitPaths: List<String>? = null) {
+        val panel = getPanel(_uiState.value.activePanel)
+        val paths = explicitPaths ?: panel.selectedPaths.toList()
+        if (paths.isEmpty()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isProtecting = true) }
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+
+            // Collect IDs: exact match + cascade for directories (all children)
+            val directIds = allEntries.filter { it.originalPath in paths }.map { it.id }
+            val dirPaths = allEntries.filter { it.isDirectory && it.originalPath in paths }.map { it.originalPath }
+            val cascadeIds = if (dirPaths.isNotEmpty()) {
+                allEntries.filter { entry ->
+                    !entry.isDirectory && dirPaths.any { dir -> entry.originalPath.startsWith("$dir/") }
+                }.map { it.id }
+            } else emptyList()
+
+            // Merge, directories first (so folder is created before files are written)
+            val dirEntryIds = directIds.filter { id -> allEntries.find { it.id == id }?.isDirectory == true }
+            val fileEntryIds = (directIds + cascadeIds).distinct().filter { id -> allEntries.find { it.id == id }?.isDirectory != true }
+            val ids = dirEntryIds + fileEntryIds
+
+            clearSelection(_uiState.value.activePanel)
+
+            secureFolderRepository.unprotectFiles(ids) { current, name ->
+                _uiState.update {
+                    it.copy(protectProgress = appContext.getString(R.string.unprotecting_files, current, ids.size, name))
+                }
+            }.onSuccess { count ->
+                _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
+                _toastMessage.tryEmit(appContext.getString(R.string.unprotect_success, count))
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
+            }.onFailure { e ->
+                _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
+            }
+        }
+    }
+
+    fun onProtectedFileClick(entry: FileEntry) {
+        if (!entry.isProtected) return
+        viewModelScope.launch {
+            _toastMessage.tryEmit(appContext.getString(R.string.decrypting_file))
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+            val secureEntry = allEntries.find { it.originalPath == entry.path } ?: return@launch
+            secureFolderRepository.decryptToCache(secureEntry.id).onSuccess { tempFile ->
+                val type = entry.iconRes()
+                when (type) {
+                    "video", "audio" -> {
+                        PlaylistHolder.items = listOf(
+                            PlaylistHolder.PlaylistItem(
+                                filePath = tempFile.absolutePath,
+                                fileName = entry.name,
+                                fileType = type
+                            )
+                        )
+                        PlaylistHolder.startIndex = 0
+                        _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(0))
+                    }
+                    "image" -> {
+                        GalleryHolder.items = listOf(
+                            GalleryHolder.GalleryItem(
+                                filePath = tempFile.absolutePath,
+                                fileName = entry.name,
+                                fileSize = entry.size
+                            )
+                        )
+                        GalleryHolder.startIndex = 0
+                        _navigationEvent.tryEmit(NavigationEvent.OpenGallery(0))
+                    }
+                    "text", "code" -> {
+                        _navigationEvent.tryEmit(
+                            NavigationEvent.OpenTextEditor(tempFile.absolutePath, entry.name)
+                        )
+                    }
+                    "pdf", "document" -> {
+                        _navigationEvent.tryEmit(
+                            NavigationEvent.OpenPdfReader(tempFile.absolutePath, entry.name)
+                        )
+                    }
+                    "archive" -> {
+                        _navigationEvent.tryEmit(
+                            NavigationEvent.OpenArchiveViewer(tempFile.absolutePath, entry.name)
+                        )
+                    }
+                    else -> {
+                        openFileWithIntent(tempFile.absolutePath, entry.name)
+                    }
+                }
+            }.onFailure { e ->
+                _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
+            }
+        }
+    }
+
+    private fun openFileWithIntent(path: String, name: String) {
+        try {
+            val file = File(path)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                appContext, "${appContext.packageName}.fileprovider", file
+            )
+            val ext = name.substringAfterLast('.', "").lowercase()
+            val mimeType = android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(ext) ?: "*/*"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(Intent.createChooser(intent, name))
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "openFileWithIntent error: ${e.message}")
+        }
+    }
+
+    fun getSecureFolderInfo(): Pair<Int, Long> {
+        val entries = try {
+            kotlinx.coroutines.runBlocking { secureFolderRepository.getAllProtectedEntries() }
+        } catch (_: Exception) { emptyList() }
+        return entries.size to entries.sumOf { it.originalSize }
+    }
+
+    fun getProtectedCountForDir(dirPath: String): Int {
+        return try {
+            kotlinx.coroutines.runBlocking { secureFolderRepository.getProtectedEntriesForDir(dirPath).size }
+        } catch (_: Exception) { 0 }
+    }
+
+    fun hasAnyProtectedEntry(paths: Set<String>): Boolean {
+        return paths.any { secureFolderRepository.isFileProtected(it) }
     }
 }

@@ -1,8 +1,12 @@
 package com.vamp.haron.presentation.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import com.vamp.haron.data.datastore.HaronPreferences
+import com.vamp.haron.data.security.AuthManager
+import com.vamp.haron.domain.model.AppLockMethod
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,12 +22,20 @@ data class SettingsUiState(
     val fontScale: Float = 1.0f,
     val iconScale: Float = 1.0f,
     val hapticEnabled: Boolean = true,
-    val trashMaxSizeMb: Int = 500
+    val trashMaxSizeMb: Int = 500,
+    // Security
+    val appLockMethod: AppLockMethod = AppLockMethod.NONE,
+    val isPinSet: Boolean = false,
+    val hasBiometric: Boolean = false,
+    val showPinSetupDialog: Boolean = false,
+    val isPinChange: Boolean = false
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val preferences: HaronPreferences
+    @ApplicationContext private val appContext: Context,
+    private val preferences: HaronPreferences,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -36,7 +48,10 @@ class SettingsViewModel @Inject constructor(
             fontScale = preferences.fontScale,
             iconScale = preferences.iconScale,
             hapticEnabled = preferences.hapticEnabled,
-            trashMaxSizeMb = preferences.trashMaxSizeMb
+            trashMaxSizeMb = preferences.trashMaxSizeMb,
+            appLockMethod = authManager.getAppLockMethod(),
+            isPinSet = authManager.isPinSet(),
+            hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
         )
     )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -79,5 +94,48 @@ class SettingsViewModel @Inject constructor(
         val clamped = sizeMb.coerceIn(0, 5000)
         preferences.trashMaxSizeMb = clamped
         _state.update { it.copy(trashMaxSizeMb = clamped) }
+    }
+
+    // --- Security ---
+
+    fun setAppLockMethod(method: AppLockMethod) {
+        // If PIN-required method and no PIN set, prompt to set it
+        if (method != AppLockMethod.NONE && method != AppLockMethod.BIOMETRIC_ONLY && !authManager.isPinSet()) {
+            _state.update { it.copy(showPinSetupDialog = true, isPinChange = false) }
+            return
+        }
+        authManager.setAppLockMethod(method)
+        _state.update { it.copy(appLockMethod = method) }
+    }
+
+    fun showPinSetup(isChange: Boolean) {
+        _state.update { it.copy(showPinSetupDialog = true, isPinChange = isChange) }
+    }
+
+    fun dismissPinSetup() {
+        _state.update { it.copy(showPinSetupDialog = false) }
+    }
+
+    /**
+     * @return true if PIN was successfully set/changed
+     */
+    fun onPinSetupConfirm(currentPin: String?, newPin: String): Boolean {
+        if (currentPin != null && !authManager.verifyPin(currentPin)) {
+            return false
+        }
+        authManager.setPin(newPin)
+        // If lock method was NONE and user just set PIN, auto-enable PIN_ONLY
+        val method = authManager.getAppLockMethod()
+        if (method == AppLockMethod.NONE) {
+            authManager.setAppLockMethod(AppLockMethod.PIN_ONLY)
+        }
+        _state.update {
+            it.copy(
+                isPinSet = true,
+                showPinSetupDialog = false,
+                appLockMethod = authManager.getAppLockMethod()
+            )
+        }
+        return true
     }
 }

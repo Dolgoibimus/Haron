@@ -633,6 +633,55 @@
     <string name="tags_name_exists">Метка с таким именем уже существует</string>
     <string name="tags_apply">Применить</string>
 
+    <!-- Security / App Lock -->
+    <string name="security_section">Безопасность</string>
+    <string name="app_lock_title">Блокировка приложения</string>
+    <string name="app_lock_method_none">Отключена</string>
+    <string name="app_lock_method_pin">PIN-код</string>
+    <string name="app_lock_method_biometric">Биометрия</string>
+    <string name="app_lock_method_biometric_pin">Биометрия + PIN</string>
+    <string name="set_pin">Установить PIN</string>
+    <string name="change_pin">Сменить PIN</string>
+    <string name="pin_setup_title">Установка PIN-кода</string>
+    <string name="pin_enter">Введите PIN (4–8 цифр)</string>
+    <string name="pin_confirm">Подтвердите PIN</string>
+    <string name="pin_mismatch">PIN-коды не совпадают</string>
+    <string name="pin_too_short">PIN должен быть не менее 4 цифр</string>
+    <string name="pin_set_success">PIN-код установлен</string>
+    <string name="pin_changed_success">PIN-код изменён</string>
+    <string name="pin_wrong">Неверный PIN</string>
+    <string name="pin_enter_current">Введите текущий PIN</string>
+    <string name="biometric_prompt_title">Разблокировка Haron</string>
+    <string name="biometric_prompt_subtitle">Используйте отпечаток или лицо</string>
+    <string name="biometric_not_available">Биометрия недоступна на этом устройстве</string>
+    <string name="biometric_not_enrolled">Биометрические данные не зарегистрированы</string>
+    <string name="biometric_use_pin">Ввести PIN</string>
+    <string name="lock_screen_title">Haron заблокирован</string>
+    <string name="app_lock_protects_secure">Также защищает доступ к защищённым файлам</string>
+
+    <!-- Secure Folder -->
+    <string name="secure_folder">Защищённые файлы</string>
+    <string name="secure_folder_subtitle">%1$d файлов · %2$s</string>
+    <string name="protect_action">Защитить</string>
+    <string name="unprotect_action">Снять защиту</string>
+    <string name="protecting_files">Шифрование: %1$d/%2$d — %3$s</string>
+    <string name="unprotecting_files">Расшифровка: %1$d/%2$d — %3$s</string>
+    <string name="protect_success">Защищено файлов: %d</string>
+    <string name="unprotect_success">Расшифровано файлов: %d</string>
+    <string name="protect_error">Ошибка защиты: %s</string>
+    <string name="shield_on">Защищённые файлы видны</string>
+    <string name="shield_off">Защищённые файлы скрыты</string>
+    <string name="shield_button">Показать защищённые файлы</string>
+    <string name="auth_required">Требуется аутентификация</string>
+    <string name="decrypting_file">Расшифровка файла…</string>
+    <string name="all_secure_files">Все защищённые файлы</string>
+    <string name="cannot_copy_to_virtual">Нельзя копировать в режим защиты</string>
+    <string name="cannot_move_to_virtual">Нельзя перемещать в режим защиты</string>
+    <string name="cannot_create_in_virtual">Нельзя создавать файлы в режиме защиты</string>
+    <string name="secure_deleted_count">Удалено из защищённого хранилища: %d</string>
+    <string name="copying_secure_files">Расшифровка и копирование…</string>
+    <string name="moving_secure_files">Расшифровка и перемещение…</string>
+
     <!-- Plural forms for file counts -->
     <string name="plural_folders_nom">папка</string>
     <string name="plural_folders_gen_few">папки</string>

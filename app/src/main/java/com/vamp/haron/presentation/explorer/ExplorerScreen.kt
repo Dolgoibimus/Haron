@@ -83,8 +83,13 @@ import com.vamp.haron.presentation.explorer.components.TagAssignDialog
 import com.vamp.haron.presentation.explorer.components.TagManageDialog
 import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.domain.model.NavigationEvent
+import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
+import com.vamp.haron.presentation.applock.LockScreen
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 
 @Composable
 fun ExplorerScreen(
@@ -178,9 +183,10 @@ fun ExplorerScreen(
     val hasSearch = state.topPanel.isSearchActive || state.bottomPanel.isSearchActive
     val showDrawerOrShelf = state.showDrawer || state.showShelf
 
-    // Back: drawer/shelf → search → rename → selection → history back → navigate up
+    // Back: drawer/shelf → search → rename → selection → history back → navigate up → no-op at root
     val canGoBack = viewModel.canNavigateBack(activePanel)
-    BackHandler(enabled = state.showDrawer || state.showShelf || hasSearch || hasRenaming || hasSelection || canGoBack || viewModel.canNavigateUp(activePanel)) {
+    val canGoUp = viewModel.canNavigateUp(activePanel)
+    BackHandler(enabled = true) {
         when {
             state.showDrawer -> viewModel.dismissDrawer()
             state.showShelf -> viewModel.dismissShelf()
@@ -192,7 +198,8 @@ fun ExplorerScreen(
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> viewModel.clearSelection(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
-            else -> viewModel.navigateUp(activePanel, pushHistory = false)
+            canGoUp -> viewModel.navigateUp(activePanel, pushHistory = false)
+            // At root or virtual root — consume back press, do nothing
         }
     }
 
@@ -330,6 +337,8 @@ fun ExplorerScreen(
                 tagDefinitions = state.tagDefinitions,
                 activeTagFilter = state.activeTagFilter,
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
+                onLongPressShield = { viewModel.showAllProtectedFiles() },
+                onExitProtected = { viewModel.navigateUp(PanelId.TOP) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -419,6 +428,8 @@ fun ExplorerScreen(
                 tagDefinitions = state.tagDefinitions,
                 activeTagFilter = state.activeTagFilter,
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
+                onLongPressShield = { viewModel.showAllProtectedFiles() },
+                onExitProtected = { viewModel.navigateUp(PanelId.BOTTOM) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -478,6 +489,16 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.openSelectedWithExternalApp()
                 },
+                onProtect = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    val paths = selectedEntries.map { it.path }
+                    if (selectedEntries.any { it.isProtected }) {
+                        viewModel.unprotectSelectedFiles(paths)
+                    } else {
+                        viewModel.protectSelectedFiles(paths)
+                    }
+                },
+                hasProtectedFiles = selectedEntries.any { it.isProtected },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -577,7 +598,8 @@ fun ExplorerScreen(
         is DialogState.CreateFromTemplate -> {
             CreateFromTemplateDialog(
                 onConfirm = viewModel::confirmCreateFromTemplate,
-                onDismiss = viewModel::dismissDialog
+                onDismiss = viewModel::dismissDialog,
+                allowedTemplates = dialog.allowedTemplates
             )
         }
         is DialogState.ShowTrash -> {
@@ -611,25 +633,45 @@ fun ExplorerScreen(
                 onDismiss = viewModel::dismissDialog,
                 onFullscreenPlay = { _ ->
                     viewModel.dismissDialog()
-                    val idx = viewModel.buildPlaylistFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
-                    onOpenMediaPlayer(idx)
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        val idx = viewModel.buildPlaylistFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
+                        onOpenMediaPlayer(idx)
+                    }
                 },
                 onEdit = {
                     viewModel.dismissDialog()
-                    onOpenTextEditor(dialog.entry.path, dialog.entry.name)
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        onOpenTextEditor(dialog.entry.path, dialog.entry.name)
+                    }
                 },
                 onOpenGallery = {
                     viewModel.dismissDialog()
-                    val idx = viewModel.buildGalleryFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
-                    onOpenGallery(idx)
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        val idx = viewModel.buildGalleryFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
+                        onOpenGallery(idx)
+                    }
                 },
                 onOpenPdf = {
                     viewModel.dismissDialog()
-                    onOpenPdfReader(dialog.entry.path, dialog.entry.name)
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        onOpenPdfReader(dialog.entry.path, dialog.entry.name)
+                    }
                 },
                 onOpenArchive = {
                     viewModel.dismissDialog()
-                    onOpenArchiveViewer(dialog.entry.path, dialog.entry.name)
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        onOpenArchiveViewer(dialog.entry.path, dialog.entry.name)
+                    }
                 },
                 onInstallApk = {
                     viewModel.installApk(dialog.entry)
@@ -725,6 +767,46 @@ fun ExplorerScreen(
         DialogState.None -> { /* no dialog */ }
     }
 
+    // Shield auth overlay
+    if (state.showShieldAuth) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center
+        ) {
+            LockScreen(
+                lockMethod = viewModel.getShieldLockMethod(),
+                onPinVerified = { pin ->
+                    val ok = viewModel.verifyShieldPin(pin)
+                    if (ok) viewModel.onShieldAuthenticated()
+                    ok
+                },
+                onBiometricRequest = {
+                    val activity = context as? FragmentActivity ?: return@LockScreen
+                    val executor = ContextCompat.getMainExecutor(activity)
+                    val callback = object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            viewModel.onShieldAuthenticated()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) { /* stay */ }
+                        override fun onAuthenticationFailed() { /* retry */ }
+                    }
+                    val prompt = BiometricPrompt(activity, executor, callback)
+                    val info = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle(context.getString(com.vamp.haron.R.string.biometric_prompt_title))
+                        .setSubtitle(context.getString(com.vamp.haron.R.string.biometric_prompt_subtitle))
+                        .setNegativeButtonText(context.getString(com.vamp.haron.R.string.biometric_use_pin))
+                        .build()
+                    prompt.authenticate(info)
+                },
+                hasBiometric = viewModel.hasShieldBiometric(),
+                pinLength = viewModel.getShieldPinLength(),
+                onDismiss = { viewModel.dismissShieldAuth() }
+            )
+        }
+    }
+
     // Bookmark popup
     if (state.showBookmarkPopup) {
         BookmarkPopup(
@@ -796,6 +878,12 @@ fun ExplorerScreen(
                     onFindEmptyFolders = { viewModel.findEmptyFolders() },
                     onForceDelete = { viewModel.requestForceDelete() },
                     onManageTags = { viewModel.showTagManager() },
+                    onToggleShield = { viewModel.toggleShield() },
+                    secureFolderInfo = run {
+                        val (count, size) = viewModel.getSecureFolderInfo()
+                        if (count > 0) "$count · ${size.toFileSize(context)}"
+                        else ""
+                    },
                     onOpenSettings = { viewModel.openSettings() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer

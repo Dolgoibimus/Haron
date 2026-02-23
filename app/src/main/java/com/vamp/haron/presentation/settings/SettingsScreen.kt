@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -25,10 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,6 +44,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.domain.model.AppLockMethod
+import com.vamp.haron.presentation.applock.PinSetupDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +55,17 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+
+    // PIN setup dialog
+    if (state.showPinSetupDialog) {
+        PinSetupDialog(
+            isChange = state.isPinChange,
+            onConfirm = { currentPin, newPin ->
+                viewModel.onPinSetupConfirm(currentPin, newPin)
+            },
+            onDismiss = { viewModel.dismissPinSetup() }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -200,6 +216,81 @@ fun SettingsScreen(
                     onCheckedChange = { viewModel.setHapticEnabled(it) }
                 )
             }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Security ---
+            SectionHeader(
+                icon = Icons.Filled.Lock,
+                title = stringResource(R.string.security_section)
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                stringResource(R.string.app_lock_title),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(4.dp))
+
+            // Lock method radio buttons
+            val lockMethods = listOf(
+                AppLockMethod.NONE to stringResource(R.string.app_lock_method_none),
+                AppLockMethod.PIN_ONLY to stringResource(R.string.app_lock_method_pin),
+                AppLockMethod.BIOMETRIC_ONLY to stringResource(R.string.app_lock_method_biometric),
+                AppLockMethod.BIOMETRIC_WITH_PIN to stringResource(R.string.app_lock_method_biometric_pin)
+            )
+
+            lockMethods.forEach { (method, label) ->
+                val enabled = when (method) {
+                    AppLockMethod.BIOMETRIC_ONLY, AppLockMethod.BIOMETRIC_WITH_PIN -> state.hasBiometric
+                    else -> true
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = state.appLockMethod == method,
+                        onClick = { if (enabled) viewModel.setAppLockMethod(method) },
+                        enabled = enabled
+                    )
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (!state.hasBiometric) {
+                Text(
+                    stringResource(R.string.biometric_not_available),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // PIN buttons
+            if (state.isPinSet) {
+                TextButton(onClick = { viewModel.showPinSetup(isChange = true) }) {
+                    Text(stringResource(R.string.change_pin))
+                }
+            } else {
+                TextButton(onClick = { viewModel.showPinSetup(isChange = false) }) {
+                    Text(stringResource(R.string.set_pin))
+                }
+            }
+
+            Text(
+                stringResource(R.string.app_lock_protects_secure),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()

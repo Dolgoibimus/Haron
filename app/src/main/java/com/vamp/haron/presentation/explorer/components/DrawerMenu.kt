@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -65,6 +66,8 @@ fun DrawerMenu(
     onFindEmptyFolders: () -> Unit,
     onForceDelete: () -> Unit,
     onManageTags: () -> Unit,
+    onToggleShield: () -> Unit = {},
+    secureFolderInfo: String = "",
     onOpenSettings: () -> Unit,
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -283,6 +286,14 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Label, null, Modifier.size(24.dp)) },
                     title = stringResource(R.string.tags_title),
                     onClick = { onManageTags(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Lock, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                    title = stringResource(R.string.secure_folder),
+                    subtitle = secureFolderInfo.ifEmpty { null },
+                    onClick = { onToggleShield(); onDismiss() }
                 )
             }
 

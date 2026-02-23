@@ -39,13 +39,20 @@ data class ExplorerUiState(
     val folderSizeCalculating: Boolean = false,
     val tagDefinitions: List<FileTag> = emptyList(),
     val fileTags: Map<String, List<String>> = emptyMap(),
-    val activeTagFilter: String? = null
+    val activeTagFilter: String? = null,
+    val isShieldUnlocked: Boolean = false,
+    val isProtecting: Boolean = false,
+    val protectProgress: String? = null,
+    val showShieldAuth: Boolean = false,
+    val showAllProtectedAfterAuth: Boolean = false
 )
 
 sealed interface DialogState {
     data object None : DialogState
     data class ConfirmDelete(val paths: List<String>) : DialogState
-    data object CreateFromTemplate : DialogState
+    data class CreateFromTemplate(
+        val allowedTemplates: List<FileTemplate> = FileTemplate.entries.toList()
+    ) : DialogState
     data class ShowTrash(
         val entries: List<TrashEntry> = emptyList(),
         val totalSize: Long = 0L,

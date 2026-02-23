@@ -446,6 +446,20 @@ class HaronPreferences @Inject constructor(
         saveFileTagMappings(mappings)
     }
 
+    // --- App Lock ---
+
+    var appLockMethod: Int
+        get() = prefs.getInt(KEY_APP_LOCK_METHOD, 0)
+        set(value) = prefs.edit().putInt(KEY_APP_LOCK_METHOD, value).apply()
+
+    var pinHash: String?
+        get() = prefs.getString(KEY_PIN_HASH, null)
+        set(value) = prefs.edit().putString(KEY_PIN_HASH, value).apply()
+
+    var pinLength: Int
+        get() = prefs.getInt(KEY_PIN_LENGTH, 4)
+        set(value) = prefs.edit().putInt(KEY_PIN_LENGTH, value).apply()
+
     // --- Panel paths ---
 
     var topPanelPath: String
@@ -485,6 +499,9 @@ class HaronPreferences @Inject constructor(
         const val KEY_RENAME_PATTERNS = "rename_patterns"
         const val KEY_TAG_DEFINITIONS = "tag_definitions"
         const val KEY_FILE_TAG_MAPPINGS = "file_tag_mappings"
+        const val KEY_APP_LOCK_METHOD = "app_lock_method"
+        const val KEY_PIN_HASH = "pin_hash"
+        const val KEY_PIN_LENGTH = "pin_length"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

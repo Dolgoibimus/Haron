@@ -2,10 +2,13 @@ package com.vamp.haron
 
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -13,32 +16,65 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.haron.common.constants.HaronConstants
+import com.vamp.haron.presentation.applock.AppLockViewModel
+import com.vamp.haron.presentation.applock.LockScreen
 import com.vamp.haron.presentation.navigation.HaronNavigation
 import com.vamp.haron.ui.theme.HaronScaling
 import com.vamp.haron.ui.theme.HaronTheme
 import com.vamp.haron.ui.theme.LocalHaronScaling
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    private val appLockViewModel: AppLockViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Handle widget intent
         val navigateToPath = intent?.getStringExtra("navigate_to")
 
+        // Lifecycle observer for app lock
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> appLockViewModel.onStop()
+                Lifecycle.Event.ON_RESUME -> appLockViewModel.onResume()
+                else -> {}
+            }
+        })
+
         setContent {
+            val lockState by appLockViewModel.state.collectAsState()
+            val scope = rememberCoroutineScope()
+
+            // FLAG_SECURE when locked
+            val view = LocalView.current
+            LaunchedEffect(lockState.isLocked) {
+                if (lockState.isLocked) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+            }
+
             var themeMode by remember { mutableStateOf(EcosystemPreferences.theme) }
             val isSystemDark = isSystemInDarkTheme()
 
@@ -105,7 +141,6 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemDark
             }
 
-            val view = LocalView.current
             if (!view.isInEditMode) {
                 SideEffect {
                     val window = (view.context as android.app.Activity).window
@@ -118,13 +153,66 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalHaronScaling provides scaling) {
                 HaronTheme(darkTheme = darkTheme, fontScale = fontScale) {
                     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                        HaronNavigation(
-                            navigateToPath = navigateToPath,
-                            modifier = Modifier.padding(innerPadding)
-                        )
+                        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                            HaronNavigation(
+                                navigateToPath = navigateToPath,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            if (lockState.isLocked) {
+                                LockScreen(
+                                    lockMethod = lockState.lockMethod,
+                                    onPinVerified = { pin ->
+                                        appLockViewModel.onPinEntered(pin)
+                                    },
+                                    onBiometricRequest = {
+                                        launchBiometric()
+                                    },
+                                    hasBiometric = lockState.hasBiometric,
+                                    pinLength = appLockViewModel.getPinLength()
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    private fun launchBiometric() {
+        val authManager = (application as HaronApp).let {
+            // Get AuthManager via Hilt — we use the entry point
+            dagger.hilt.android.EntryPointAccessors.fromApplication(
+                applicationContext,
+                AuthManagerEntryPoint::class.java
+            ).authManager()
+        }
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(this)
+        val callback = object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                appLockViewModel.onBiometricSuccess()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                // User cancelled or error — stay locked
+            }
+
+            override fun onAuthenticationFailed() {
+                // Retry allowed
+            }
+        }
+        val prompt = androidx.biometric.BiometricPrompt(this, executor, callback)
+        val info = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle(getString(R.string.biometric_prompt_title))
+            .setSubtitle(getString(R.string.biometric_prompt_subtitle))
+            .setNegativeButtonText(getString(R.string.biometric_use_pin))
+            .build()
+        prompt.authenticate(info)
+    }
+}
+
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface AuthManagerEntryPoint {
+    fun authManager(): com.vamp.haron.data.security.AuthManager
 }

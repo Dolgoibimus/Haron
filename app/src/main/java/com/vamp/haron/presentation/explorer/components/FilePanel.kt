@@ -1,7 +1,9 @@
 package com.vamp.haron.presentation.explorer.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
@@ -149,6 +152,8 @@ fun FilePanel(
     tagDefinitions: List<FileTag> = emptyList(),
     activeTagFilter: String? = null,
     onTagFilterChanged: (String?) -> Unit = {},
+    onLongPressShield: () -> Unit = {},
+    onExitProtected: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -255,20 +260,21 @@ fun FilePanel(
                         }
                     }
                     else -> {
-                        // Кнопка назад по истории
+                        // Кнопка назад: история → navigateUp (fallback)
+                        val canGoBackOrUp = canNavigateBack || canNavigateUp
                         IconButton(
                             onClick = {
                                 onPanelTap()
-                                onNavigateBack()
+                                if (canNavigateBack) onNavigateBack() else onNavigateUp()
                             },
-                            enabled = canNavigateBack,
+                            enabled = canGoBackOrUp,
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.back),
                                 modifier = Modifier.size(18.dp),
-                                tint = if (canNavigateBack) {
+                                tint = if (canGoBackOrUp) {
                                     MaterialTheme.colorScheme.onSurface
                                 } else {
                                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
@@ -537,6 +543,33 @@ fun FilePanel(
                                 Icons.Filled.Search,
                                 contentDescription = stringResource(R.string.search),
                                 modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Shield button — long press only → show all protected files
+                        @OptIn(ExperimentalFoundationApi::class)
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .combinedClickable(
+                                    onClick = {
+                                        if (state.showProtected) {
+                                            onPanelTap()
+                                            onExitProtected()
+                                        }
+                                    },
+                                    onLongClick = {
+                                        onPanelTap()
+                                        onLongPressShield()
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Shield,
+                                contentDescription = stringResource(R.string.shield_button),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (state.showProtected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(

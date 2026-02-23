@@ -47,6 +47,9 @@
     <!-- Camera (for QR code scanning) -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Biometric -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <!-- Vibration -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

@@ -22,5 +22,6 @@ data class PanelUiState(
     val historyIndex: Int = -1,
     val isSafPath: Boolean = false,
     val scrollToIndex: Int = 0,
-    val scrollToTrigger: Long = 0L
+    val scrollToTrigger: Long = 0L,
+    val showProtected: Boolean = false
 )

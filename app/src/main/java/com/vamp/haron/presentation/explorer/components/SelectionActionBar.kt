@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,8 +45,10 @@ fun SelectionActionBar(
     onZip: () -> Unit,
     onAddToShelf: () -> Unit,
     onTag: () -> Unit,
+    onProtect: () -> Unit = {},
     onInfo: () -> Unit,
     onOpenWith: () -> Unit,
+    hasProtectedFiles: Boolean = false,
     isSizeCalculating: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -106,6 +109,14 @@ fun SelectionActionBar(
                 }
                 IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onProtect, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Filled.Shield,
+                        contentDescription = if (hasProtectedFiles) stringResource(R.string.unprotect_action) else stringResource(R.string.protect_action),
+                        modifier = Modifier.size(20.dp),
+                        tint = if (hasProtectedFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 IconButton(
                     onClick = onInfo,

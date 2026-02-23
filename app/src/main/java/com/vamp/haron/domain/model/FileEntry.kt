@@ -9,5 +9,6 @@ data class FileEntry(
     val extension: String,
     val isHidden: Boolean,
     val childCount: Int,
-    val isContentUri: Boolean = false
+    val isContentUri: Boolean = false,
+    val isProtected: Boolean = false
 )

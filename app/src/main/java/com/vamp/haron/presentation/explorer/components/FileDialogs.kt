@@ -65,9 +65,10 @@ fun DeleteConfirmDialog(
 @Composable
 fun CreateFromTemplateDialog(
     onConfirm: (template: FileTemplate, name: String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    allowedTemplates: List<FileTemplate> = FileTemplate.entries.toList()
 ) {
-    var selectedTemplate by remember { mutableStateOf(FileTemplate.FOLDER) }
+    var selectedTemplate by remember { mutableStateOf(allowedTemplates.first()) }
     var name by remember { mutableStateOf("") }
     val needsName = selectedTemplate != FileTemplate.DATED_FOLDER
 
@@ -76,7 +77,7 @@ fun CreateFromTemplateDialog(
         title = { Text(stringResource(R.string.create)) },
         text = {
             Column {
-                FileTemplate.entries.forEach { template ->
+                allowedTemplates.forEach { template ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
