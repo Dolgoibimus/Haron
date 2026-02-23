@@ -103,7 +103,8 @@ fun ExplorerScreen(
     onOpenStorageAnalysis: () -> Unit = { },
     onOpenDuplicateDetector: () -> Unit = { },
     onOpenAppManager: () -> Unit = { },
-    onOpenSettings: () -> Unit = { }
+    onOpenSettings: () -> Unit = { },
+    onOpenGlobalSearch: () -> Unit = { }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -142,6 +143,9 @@ fun ExplorerScreen(
                 is NavigationEvent.OpenSettings -> {
                     onOpenSettings()
                 }
+                is NavigationEvent.OpenGlobalSearch -> {
+                    onOpenGlobalSearch()
+                }
             }
         }
     }
@@ -149,6 +153,21 @@ fun ExplorerScreen(
     LaunchedEffect(initialNavigatePath) {
         if (!initialNavigatePath.isNullOrEmpty()) {
             viewModel.navigateTo(viewModel.uiState.value.activePanel, initialNavigatePath)
+        }
+    }
+    // Navigate to path from global search result (scroll to specific file)
+    LaunchedEffect(Unit) {
+        val searchParent = com.vamp.haron.domain.model.SearchNavigationHolder.targetParentPath
+        val searchFile = com.vamp.haron.domain.model.SearchNavigationHolder.targetFilePath
+        if (!searchParent.isNullOrEmpty()) {
+            val panel = viewModel.uiState.value.activePanel
+            if (!searchFile.isNullOrEmpty()) {
+                viewModel.navigateToFileLocation(panel, searchParent, searchFile)
+            } else {
+                viewModel.navigateTo(panel, searchParent)
+            }
+            com.vamp.haron.domain.model.SearchNavigationHolder.targetParentPath = null
+            com.vamp.haron.domain.model.SearchNavigationHolder.targetFilePath = null
         }
     }
 
@@ -330,6 +349,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onOpenSearch = { viewModel.openSearch(PanelId.TOP) },
+                onOpenGlobalSearch = { viewModel.openGlobalSearch() },
                 onCloseSearch = { viewModel.closeSearch(PanelId.TOP) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.TOP),
@@ -421,6 +441,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onOpenSearch = { viewModel.openSearch(PanelId.BOTTOM) },
+                onOpenGlobalSearch = { viewModel.openGlobalSearch() },
                 onCloseSearch = { viewModel.closeSearch(PanelId.BOTTOM) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
                 initialScrollIndex = viewModel.getScrollIndex(PanelId.BOTTOM),

@@ -299,6 +299,70 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Navigate to a folder and scroll to a specific file by its full path.
+     * Used when returning from global search to show the file in context.
+     */
+    fun navigateToFileLocation(panelId: PanelId, folderPath: String, filePath: String) {
+        viewModelScope.launch {
+            val currentPath = getPanel(panelId).currentPath
+            if (currentPath.isNotEmpty() && currentPath != folderPath) {
+                scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
+            }
+
+            updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+
+            val panel = getPanel(panelId)
+            val displayPath = when {
+                folderPath == HaronConstants.VIRTUAL_SECURE_PATH -> appContext.getString(R.string.all_secure_files)
+                folderPath.startsWith("content://") -> buildSafDisplayPath(folderPath)
+                else -> folderPath.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
+            }
+
+            getFilesUseCase(
+                path = folderPath,
+                sortOrder = panel.sortOrder,
+                showHidden = panel.showHidden,
+                showProtected = _uiState.value.isShieldUnlocked
+            ).onSuccess { files ->
+                scrollTrigger++
+                val fileIndex = files.indexOfFirst { it.path == filePath }.coerceAtLeast(0)
+                updatePanel(panelId) {
+                    var history = it.navigationHistory
+                    var index = it.historyIndex
+                    history = history.take(index + 1) + folderPath
+                    if (history.size > MAX_HISTORY_SIZE) {
+                        history = history.takeLast(MAX_HISTORY_SIZE)
+                    }
+                    index = history.lastIndex
+                    it.copy(
+                        currentPath = folderPath,
+                        displayPath = displayPath,
+                        files = files,
+                        isLoading = false,
+                        error = null,
+                        navigationHistory = history,
+                        historyIndex = index,
+                        isSafPath = folderPath.startsWith("content://"),
+                        scrollToIndex = fileIndex,
+                        scrollToTrigger = scrollTrigger
+                    )
+                }
+                when (panelId) {
+                    PanelId.TOP -> preferences.topPanelPath = folderPath
+                    PanelId.BOTTOM -> preferences.bottomPanelPath = folderPath
+                }
+            }.onFailure { error ->
+                updatePanel(panelId) {
+                    it.copy(
+                        isLoading = false,
+                        error = error.message ?: appContext.getString(R.string.unknown_error)
+                    )
+                }
+            }
+        }
+    }
+
     fun navigateUp(panelId: PanelId, pushHistory: Boolean = true): Boolean {
         val currentPath = getPanel(panelId).currentPath
         // Virtual secure path — exit virtual view, turn off shield
@@ -2303,6 +2367,10 @@ class ExplorerViewModel @Inject constructor(
 
     fun openStorageAnalysis() {
         _navigationEvent.tryEmit(NavigationEvent.OpenStorageAnalysis)
+    }
+
+    fun openGlobalSearch() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenGlobalSearch)
     }
 
     // --- Open with external app ---

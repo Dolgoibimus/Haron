@@ -689,4 +689,24 @@
     <string name="plural_folders_gen_few">folders</string>
     <string name="plural_files_nom">file</string>
     <string name="plural_files_gen_few">files</string>
+
+    <!-- Global Search (Batch 21) -->
+    <string name="global_search">Global Search</string>
+    <string name="search_hint">File name…</string>
+    <string name="reindex">Re-index</string>
+    <string name="indexing_progress">Indexing: %1$d / %2$d</string>
+    <string name="index_status">%1$d files indexed | Last: %2$s</string>
+    <string name="index_empty">Index empty. Tap refresh to index files.</string>
+    <string name="no_results">No results</string>
+    <string name="filter_all">All</string>
+    <string name="filter_documents">Docs</string>
+    <string name="filter_images">Images</string>
+    <string name="filter_audio">Audio</string>
+    <string name="filter_video">Video</string>
+    <string name="filter_archives">Archives</string>
+    <string name="filter_today">Today</string>
+    <string name="filter_week">7 days</string>
+    <string name="filter_month">30 days</string>
+    <string name="filter_year">Year</string>
+    <string name="filter_older">Older</string>
 </resources>

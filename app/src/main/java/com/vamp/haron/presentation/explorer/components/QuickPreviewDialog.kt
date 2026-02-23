@@ -51,10 +51,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -88,6 +90,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+/** Track which VLCVideoLayout is currently attached — prevents old page's
+ *  onDispose from detaching the NEW page's surface during auto-advance. */
+private var activeVlcLayout: VLCVideoLayout? = null
 
 /** Shared state between inline player and seekbar outside pager */
 private class InlinePlayerState {
@@ -143,6 +149,7 @@ fun QuickPreviewDialog(
         val mediaIndex = pageToMediaIndex[pageIndex] ?: return
         if (serviceConnected) {
             controller?.seekTo(mediaIndex, 0)
+            controller?.play()
             return
         }
         PlaylistHolder.items = mediaFiles.map { (_, f) ->
@@ -447,86 +454,154 @@ private fun PreviewPagerContent(
     val dummyPlayerState = remember { InlinePlayerState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // Notify ViewModel when page changes + sync service
+    // --- Persistent VLC surface overlay (like MediaPlayerScreen) ---
+    // Lives OUTSIDE the pager → never destroyed on page change → seamless video transitions.
+    var videoOverlayActive by remember { mutableStateOf(false) }
+    var autoStartPage by remember { mutableIntStateOf(-1) }
+
+    // Notify ViewModel when page changes
+    val currentOnPageChanged by rememberUpdatedState(onPageChanged)
     LaunchedEffect(pagerState) {
+        var previousPage = pagerState.settledPage
         snapshotFlow { pagerState.settledPage }.collect { page ->
-            if (page != currentIndex) {
-                onPageChanged(page)
-                // If service playing and user swiped to a media page, switch track
-                if (serviceConnected) {
-                    val mediaIdx = pageToMediaIndex[page]
-                    if (mediaIdx != null && mediaIdx != currentAdapterIndex) {
-                        controller?.seekTo(mediaIdx, 0)
-                    }
+            if (page != previousPage) {
+                previousPage = page
+                currentOnPageChanged(page)
+                if (page == autoStartPage) {
+                    // Auto-advance — don't pause
+                    autoStartPage = -1
+                } else {
+                    // Manual swipe — pause and hide overlay
+                    PlaybackService.instance?.getVlcPlayer()?.pause()
+                    videoOverlayActive = false
                 }
             }
         }
     }
 
-    // Auto-advance pager when adapter changes track
+    // Auto-advance pager when adapter changes track (folder repeat)
     LaunchedEffect(currentAdapterIndex) {
         if (currentAdapterIndex < 0) return@LaunchedEffect
         val targetPage = mediaToPageIndex[currentAdapterIndex]
         if (targetPage != null && targetPage != pagerState.currentPage) {
-            pagerState.animateScrollToPage(targetPage)
+            val nextFile = adjacentFiles.getOrNull(targetPage)
+            val isNextVideo = nextFile != null && !nextFile.isDirectory
+                    && nextFile.iconRes() == "video"
+            if (isNextVideo && videoOverlayActive) {
+                // Video→video: surface stays, scroll pager for title update
+                autoStartPage = targetPage
+                pagerState.scrollToPage(targetPage)
+            } else {
+                // Video→non-video: pause VLC, hide overlay, scroll normally
+                PlaybackService.instance?.getVlcPlayer()?.pause()
+                videoOverlayActive = false
+                autoStartPage = targetPage
+                pagerState.animateScrollToPage(targetPage)
+            }
         }
     }
 
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = 1
-    ) { page ->
-        when {
-            // Current page — live data from ViewModel
-            page == currentIndex -> {
-                PreviewContentBlock(
-                    entry = entry,
-                    previewData = previewData,
-                    isLoading = isLoading,
-                    error = error,
-                    onEdit = onEdit,
-                    playerState = playerState,
-                    serviceConnected = serviceConnected,
-                    onStartPlayback = { onStartPlayback?.invoke(page) },
-                    onTogglePlayPause = onTogglePlayPause
-                )
-            }
-            // Cached page — instant display
-            page in previewCache -> {
-                val cachedData = previewCache[page]!!
-                val cachedEntry = adjacentFiles[page]
-                PreviewContentBlock(
-                    entry = cachedEntry,
-                    previewData = cachedData,
-                    isLoading = false,
-                    error = null,
-                    onEdit = null,
-                    playerState = dummyPlayerState
-                )
-            }
-            // Not yet loaded — placeholder
-            else -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.InsertDriveFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = adjacentFiles.getOrNull(page)?.name ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Pager (underneath) — video pages show thumbnail only
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1,
+            userScrollEnabled = !videoOverlayActive
+        ) { page ->
+            when {
+                page == currentIndex -> {
+                    PreviewContentBlock(
+                        entry = entry,
+                        previewData = previewData,
+                        isLoading = isLoading,
+                        error = error,
+                        onEdit = onEdit,
+                        playerState = playerState,
+                        // Never create VLC surface inside pager — overlay handles it
+                        serviceConnected = false,
+                        onStartPlayback = {
+                            videoOverlayActive = true
+                            onStartPlayback?.invoke(page)
+                        },
+                        onTogglePlayPause = onTogglePlayPause
+                    )
+                }
+                page in previewCache -> {
+                    val cachedData = previewCache[page]!!
+                    val cachedEntry = adjacentFiles[page]
+                    PreviewContentBlock(
+                        entry = cachedEntry,
+                        previewData = cachedData,
+                        isLoading = false,
+                        error = null,
+                        onEdit = null,
+                        playerState = if (cachedData is PreviewData.VideoPreview || cachedData is PreviewData.AudioPreview) playerState else dummyPlayerState,
+                        serviceConnected = false,
+                        onStartPlayback = {
+                            videoOverlayActive = true
+                            onStartPlayback?.invoke(page)
+                        },
+                        onTogglePlayPause = onTogglePlayPause
+                    )
+                }
+                else -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.InsertDriveFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = adjacentFiles.getOrNull(page)?.name ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                }
+            }
+        }
+
+        // Persistent VLC surface overlay — ONE surface, never destroyed on track change
+        if (videoOverlayActive && serviceConnected) {
+            AndroidView(
+                factory = { ctx ->
+                    VLCVideoLayout(ctx).also { layout ->
+                        activeVlcLayout = layout
+                        try {
+                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                        } catch (_: IllegalStateException) {
+                            PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp))
+            )
+            // Tap overlay → pause + hide (return to pager for swiping)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable {
+                        PlaybackService.instance?.getVlcPlayer()?.pause()
+                        videoOverlayActive = false
+                    }
+            )
+            DisposableEffect(Unit) {
+                onDispose {
+                    PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                    activeVlcLayout = null
                 }
             }
         }
@@ -545,7 +620,8 @@ private fun PreviewContentBlock(
     playerState: InlinePlayerState = InlinePlayerState(),
     serviceConnected: Boolean = false,
     onStartPlayback: (() -> Unit)? = null,
-    onTogglePlayPause: () -> Unit = {}
+    onTogglePlayPause: () -> Unit = {},
+    autoStart: Boolean = false
 ) {
     when {
         isLoading -> {
@@ -580,7 +656,8 @@ private fun PreviewContentBlock(
                         playerState = playerState,
                         serviceConnected = serviceConnected,
                         onStartPlayback = onStartPlayback,
-                        onTogglePlayPause = onTogglePlayPause
+                        onTogglePlayPause = onTogglePlayPause,
+                        autoStart = autoStart
                     )
                 }
                 is PreviewData.AudioPreview -> {
@@ -613,36 +690,26 @@ private fun InlineVideoContent(
     playerState: InlinePlayerState,
     serviceConnected: Boolean,
     onStartPlayback: (() -> Unit)?,
-    onTogglePlayPause: () -> Unit
+    onTogglePlayPause: () -> Unit,
+    autoStart: Boolean = false
 ) {
-    var hasStarted by remember { mutableStateOf(false) }
-    var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var hasStarted by remember { mutableStateOf(autoStart) }
+    var myLayout by remember { mutableStateOf<VLCVideoLayout?>(null) }
+
+    // Auto-start: skip play button, go straight to video surface
+    LaunchedEffect(autoStart) {
+        if (autoStart && !hasStarted) hasStarted = true
+    }
 
     DisposableEffect(Unit) {
         onDispose {
-            PlaybackService.instance?.getVlcPlayer()?.detachViews()
-        }
-    }
-
-    // Re-attach VLC surface after screen on/off
-    DisposableEffect(lifecycleOwner, hasStarted) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (!hasStarted) return@LifecycleEventObserver
-            when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                    PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                }
-                androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                    videoLayoutRef?.let { layout ->
-                        PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
-                    }
-                }
-                else -> {}
+            // Only detach if OUR layout is still the active one.
+            // During auto-advance, the new page attaches first — don't detach it.
+            if (myLayout != null && activeVlcLayout == myLayout) {
+                PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                activeVlcLayout = null
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(
@@ -655,8 +722,14 @@ private fun InlineVideoContent(
             AndroidView(
                 factory = { ctx ->
                     VLCVideoLayout(ctx).also { layout ->
-                        videoLayoutRef = layout
-                        PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                        myLayout = layout
+                        try {
+                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                        } catch (_: IllegalStateException) {
+                            PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                        }
+                        activeVlcLayout = layout
                     }
                 },
                 modifier = Modifier.fillMaxSize()

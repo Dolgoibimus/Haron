@@ -20,6 +20,8 @@ import com.vamp.haron.presentation.player.MediaPlayerScreen
 import com.vamp.haron.presentation.appmanager.AppManagerScreen
 import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
 import com.vamp.haron.presentation.settings.SettingsScreen
+import com.vamp.haron.domain.model.SearchNavigationHolder
+import com.vamp.haron.presentation.search.SearchScreen
 import com.vamp.haron.presentation.storage.StorageAnalysisScreen
 
 object HaronRoutes {
@@ -39,6 +41,7 @@ object HaronRoutes {
     const val DUPLICATE_DETECTOR = "duplicate_detector"
     const val APP_MANAGER = "app_manager"
     const val SETTINGS = "settings"
+    const val SEARCH = "search"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -114,6 +117,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenSettings = {
                     navController.navigate(HaronRoutes.SETTINGS)
+                },
+                onOpenGlobalSearch = {
+                    navController.navigate(HaronRoutes.SEARCH)
                 }
             )
         }
@@ -130,6 +136,29 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         composable(HaronRoutes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.SEARCH) {
+            SearchScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToFile = { _ ->
+                    navController.popBackStack()
+                },
+                onOpenMediaPlayer = { startIndex ->
+                    navController.navigate(HaronRoutes.mediaPlayer(startIndex))
+                },
+                onOpenTextEditor = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.textEditor(filePath, fileName))
+                },
+                onOpenGallery = { startIndex ->
+                    navController.navigate(HaronRoutes.gallery(startIndex))
+                },
+                onOpenPdfReader = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.pdfReader(filePath, fileName))
+                },
+                onOpenArchiveViewer = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
+                }
             )
         }
         composable(HaronRoutes.DUPLICATE_DETECTOR) {

@@ -68,6 +68,16 @@ dependencies {
     // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
     implementation("org.videolan.android:libvlc-all:3.6.5")
 
+    // Room
+    implementation("androidx.room:room-runtime:2.7.1")
+    implementation("androidx.room:room-ktx:2.7.1")
+    ksp("androidx.room:room-compiler:2.7.1")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    ksp("androidx.hilt:hilt-compiler:1.2.0")
+
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
 

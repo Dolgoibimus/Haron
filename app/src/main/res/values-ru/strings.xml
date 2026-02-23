@@ -687,4 +687,24 @@
     <string name="plural_folders_gen_few">папки</string>
     <string name="plural_files_nom">файл</string>
     <string name="plural_files_gen_few">файла</string>
+
+    <!-- Global Search (Batch 21) -->
+    <string name="global_search">Глобальный поиск</string>
+    <string name="search_hint">Имя файла…</string>
+    <string name="reindex">Переиндексировать</string>
+    <string name="indexing_progress">Индексация: %1$d / %2$d</string>
+    <string name="index_status">%1$d файлов проиндексировано | Последний: %2$s</string>
+    <string name="index_empty">Индекс пуст. Нажмите обновить для индексации.</string>
+    <string name="no_results">Нет результатов</string>
+    <string name="filter_all">Все</string>
+    <string name="filter_documents">Документы</string>
+    <string name="filter_images">Фото</string>
+    <string name="filter_audio">Аудио</string>
+    <string name="filter_video">Видео</string>
+    <string name="filter_archives">Архивы</string>
+    <string name="filter_today">Сегодня</string>
+    <string name="filter_week">7 дней</string>
+    <string name="filter_month">30 дней</string>
+    <string name="filter_year">Год</string>
+    <string name="filter_older">Старее</string>
 </resources>

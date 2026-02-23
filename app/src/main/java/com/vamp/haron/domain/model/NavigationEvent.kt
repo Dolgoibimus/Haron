@@ -31,4 +31,6 @@ sealed interface NavigationEvent {
     data object OpenAppManager : NavigationEvent
 
     data object OpenSettings : NavigationEvent
+
+    data object OpenGlobalSearch : NavigationEvent
 }
