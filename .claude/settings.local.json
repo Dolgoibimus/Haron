@@ -1,8 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebSearch",
+      "WebFetch(*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

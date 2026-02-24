@@ -44,6 +44,9 @@ data class FileIndexEntity(
     @ColumnInfo(name = "is_hidden")
     val isHidden: Boolean,
 
+    @ColumnInfo(name = "content_snippet", defaultValue = "")
+    val contentSnippet: String = "",
+
     @ColumnInfo(name = "indexed_at")
     val indexedAt: Long = System.currentTimeMillis()
 )

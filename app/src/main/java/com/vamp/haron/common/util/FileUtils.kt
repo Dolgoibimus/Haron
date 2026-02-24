@@ -31,7 +31,7 @@ fun FileEntry.iconRes(): String {
         extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp", "3gpp", "ts", "m4v", "mts") -> "video"
         extension in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus") -> "audio"
         extension in listOf("pdf") -> "pdf"
-        extension in listOf("doc", "docx", "odt", "rtf") -> "document"
+        extension in listOf("doc", "docx", "odt", "rtf", "fb2") -> "document"
         extension in listOf("xls", "xlsx", "ods", "csv") -> "spreadsheet"
         extension in listOf("ppt", "pptx", "odp") -> "presentation"
         extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> "archive"
@@ -39,7 +39,7 @@ fun FileEntry.iconRes(): String {
         extension in listOf(
             "txt", "md", "log", "json", "xml", "yml", "yaml",
             "conf", "cfg", "ini", "properties", "env", "toml",
-            "fb2", "csv", "sql", "gradle"
+            "csv", "sql", "gradle"
         ) -> "text"
         extension in listOf(
             "kt", "java", "py", "js", "ts", "html", "css",

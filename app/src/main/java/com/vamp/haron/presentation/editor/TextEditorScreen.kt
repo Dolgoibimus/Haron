@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,15 +45,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.domain.model.SearchNavigationHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -70,6 +80,7 @@ fun TextEditorScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
 
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var savedText by remember { mutableStateOf("") }
@@ -78,6 +89,25 @@ fun TextEditorScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var isTruncated by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
+
+    // Search match navigation
+    val matchIndices = remember(textFieldValue.text, highlightQuery) {
+        if (highlightQuery.isNullOrBlank()) emptyList()
+        else {
+            val indices = mutableListOf<Int>()
+            val lower = textFieldValue.text.lowercase()
+            val lq = highlightQuery.lowercase()
+            var pos = 0
+            while (pos < lower.length) {
+                val idx = lower.indexOf(lq, pos)
+                if (idx < 0) break
+                indices.add(idx)
+                pos = idx + lq.length
+            }
+            indices
+        }
+    }
+    var currentMatchIndex by remember { mutableIntStateOf(0) }
 
     // Undo/Redo stacks
     var undoStack by remember { mutableStateOf(listOf<TextFieldValue>()) }
@@ -206,6 +236,29 @@ fun TextEditorScreen(
                     )
                 },
                 actions = {
+                    if (matchIndices.isNotEmpty()) {
+                        Text(
+                            text = "${currentMatchIndex + 1}/${matchIndices.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = {
+                            val newIdx = if (currentMatchIndex > 0) currentMatchIndex - 1 else matchIndices.size - 1
+                            currentMatchIndex = newIdx
+                            val pos = matchIndices[newIdx]
+                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(onClick = {
+                            val newIdx = if (currentMatchIndex < matchIndices.size - 1) currentMatchIndex + 1 else 0
+                            currentMatchIndex = newIdx
+                            val pos = matchIndices[newIdx]
+                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                    }
                     IconButton(
                         onClick = { undo() },
                         enabled = undoStack.isNotEmpty()
@@ -309,6 +362,25 @@ fun TextEditorScreen(
                     val verticalScroll = rememberScrollState()
                     val horizontalScroll = rememberScrollState()
 
+                    // Scroll to match: proportional position
+                    LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
+                        if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
+                            val pos = matchIndices[currentMatchIndex]
+                            val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
+                            val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
+                            verticalScroll.animateScrollTo(scrollTarget)
+                        }
+                    }
+
+                    // Auto-select first match on load
+                    LaunchedEffect(matchIndices) {
+                        if (matchIndices.isNotEmpty()) {
+                            currentMatchIndex = 0
+                            val pos = matchIndices[0]
+                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                        }
+                    }
+
                     val monoStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
@@ -340,6 +412,11 @@ fun TextEditorScreen(
                         }
 
                         // Editor
+                        val highlightColor = MaterialTheme.colorScheme.primary
+                        val highlightTransformation = remember(highlightQuery, highlightColor) {
+                            if (highlightQuery.isNullOrBlank()) VisualTransformation.None
+                            else SearchHighlightTransformation(highlightQuery, highlightColor)
+                        }
                         BasicTextField(
                             value = textFieldValue,
                             onValueChange = { newValue ->
@@ -351,6 +428,7 @@ fun TextEditorScreen(
                             },
                             textStyle = monoStyle,
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            visualTransformation = highlightTransformation,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
@@ -394,5 +472,31 @@ fun TextEditorScreen(
                 }
             }
         )
+    }
+}
+
+private class SearchHighlightTransformation(
+    private val query: String,
+    private val color: androidx.compose.ui.graphics.Color
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val builder = AnnotatedString.Builder(text.text)
+        // Copy existing spans
+        text.spanStyles.forEach { builder.addStyle(it.item, it.start, it.end) }
+        // Add highlight spans
+        val lower = text.text.lowercase()
+        val lowerQuery = query.lowercase()
+        var pos = 0
+        while (pos < lower.length) {
+            val idx = lower.indexOf(lowerQuery, pos)
+            if (idx < 0) break
+            builder.addStyle(
+                SpanStyle(fontWeight = FontWeight.Bold, color = color),
+                idx,
+                idx + query.length
+            )
+            pos = idx + query.length
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }

@@ -8,11 +8,11 @@ import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.repository.DateFilter
 import com.vamp.haron.domain.repository.FileCategory
+import com.vamp.haron.domain.repository.IndexMode
 import com.vamp.haron.domain.repository.IndexProgress
 import com.vamp.haron.domain.repository.SearchFilter
 import com.vamp.haron.domain.repository.SearchRepository
 import com.vamp.haron.domain.repository.SizeFilter
-import com.vamp.haron.domain.usecase.IndexFilesUseCase
 import com.vamp.haron.domain.usecase.LoadPreviewUseCase
 import com.vamp.haron.domain.usecase.SearchFilesUseCase
 import com.vamp.haron.domain.model.PreviewData
@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -37,11 +38,14 @@ data class SearchUiState(
     val category: FileCategory = FileCategory.ALL,
     val sizeFilter: SizeFilter = SizeFilter.ALL,
     val dateFilter: DateFilter = DateFilter.ALL,
+    val searchInContent: Boolean = false,
+    val expandedSnippetPath: String? = null,
     val results: List<FileIndexEntity> = emptyList(),
     val isSearching: Boolean = false,
     val indexProgress: IndexProgress = IndexProgress(),
     val indexedCount: Int = 0,
     val lastIndexedTime: Long? = null,
+    val contentIndexSize: Long = 0L,
     val currentPage: Int = 0,
     val hasMore: Boolean = false,
     val previewDialog: PreviewDialogState? = null
@@ -63,7 +67,6 @@ sealed interface SearchNavigationEvent {
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val searchFilesUseCase: SearchFilesUseCase,
-    private val indexFilesUseCase: IndexFilesUseCase,
     private val searchRepository: SearchRepository,
     private val loadPreviewUseCase: LoadPreviewUseCase,
     @ApplicationContext private val appContext: Context
@@ -77,7 +80,6 @@ class SearchViewModel @Inject constructor(
 
     private val _queryFlow = MutableStateFlow("")
     private var searchJob: Job? = null
-    private var indexJob: Job? = null
 
     companion object {
         private const val PAGE_SIZE = 200
@@ -92,6 +94,15 @@ class SearchViewModel @Inject constructor(
         searchRepository.indexProgressFlow()
             .onEach { progress ->
                 _uiState.update { it.copy(indexProgress = progress) }
+            }
+            .launchIn(viewModelScope)
+
+        // When indexing completes in background, refresh data
+        searchRepository.indexCompleted
+            .filter { it }
+            .onEach {
+                loadIndexStats()
+                performSearch(resetPage = true)
             }
             .launchIn(viewModelScope)
 
@@ -118,21 +129,33 @@ class SearchViewModel @Inject constructor(
         performSearch(resetPage = true)
     }
 
+    fun setSearchMode(inContent: Boolean) {
+        _uiState.update { it.copy(searchInContent = inContent, expandedSnippetPath = null) }
+        performSearch(resetPage = true)
+    }
+
+    fun toggleSnippet(path: String) {
+        _uiState.update {
+            it.copy(expandedSnippetPath = if (it.expandedSnippetPath == path) null else path)
+        }
+    }
+
     fun loadMore() {
         if (_uiState.value.hasMore && !_uiState.value.isSearching) {
             performSearch(resetPage = false)
         }
     }
 
-    fun startIndexing() {
-        if (indexJob?.isActive == true) return
-        indexJob = viewModelScope.launch {
-            indexFilesUseCase { progress ->
-                _uiState.update { it.copy(indexProgress = progress) }
-            }
-            loadIndexStats()
-            performSearch(resetPage = true)
-        }
+    fun startBasicIndex() {
+        searchRepository.startIndexByMode(IndexMode.BASIC)
+    }
+
+    fun startMediaIndex() {
+        searchRepository.startIndexByMode(IndexMode.MEDIA)
+    }
+
+    fun startVisualIndex() {
+        searchRepository.startIndexByMode(IndexMode.VISUAL)
     }
 
     // --- Icon tap → QuickPreview (single file, no pager) ---
@@ -179,6 +202,9 @@ class SearchViewModel @Inject constructor(
             _navigationEvent.tryEmit(SearchNavigationEvent.NavigateToFile(entity.path, entity.path))
             return
         }
+        val state = _uiState.value
+        SearchNavigationHolder.highlightQuery =
+            if (state.searchInContent && state.query.isNotBlank()) state.query else null
         _navigationEvent.tryEmit(SearchNavigationEvent.OpenFile(fileEntry))
     }
 
@@ -204,6 +230,7 @@ class SearchViewModel @Inject constructor(
                 category = state.category,
                 sizeFilter = state.sizeFilter,
                 dateFilter = state.dateFilter,
+                searchInContent = state.searchInContent,
                 limit = PAGE_SIZE,
                 offset = page * PAGE_SIZE
             )
@@ -225,7 +252,10 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val count = searchRepository.getIndexedCount()
             val lastTime = searchRepository.getLastIndexedTime()
-            _uiState.update { it.copy(indexedCount = count, lastIndexedTime = lastTime) }
+            val contentSize = searchRepository.getContentIndexSize()
+            _uiState.update {
+                it.copy(indexedCount = count, lastIndexedTime = lastTime, contentIndexSize = contentSize)
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.vamp.haron
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.vamp.core.db.EcosystemDatabase
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
@@ -30,6 +31,7 @@ class HaronApp : Application(), Configuration.Provider {
         EcosystemPreferences.init(this)
         EcosystemLogger.init(this)
         EcosystemDatabase.getInstance(this)
+        PDFBoxResourceLoader.init(this)
 
         // Register ContentObserver for media changes
         contentObserver = FileContentObserver(applicationContext).also { it.register() }

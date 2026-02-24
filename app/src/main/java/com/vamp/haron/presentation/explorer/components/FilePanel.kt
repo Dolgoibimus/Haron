@@ -32,7 +32,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Menu
@@ -83,6 +85,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -147,6 +151,7 @@ fun FilePanel(
     onOpenSearch: () -> Unit = {},
     onOpenGlobalSearch: () -> Unit = {},
     onCloseSearch: () -> Unit = {},
+    onToggleSearchInContent: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
     initialScrollIndex: Int = 0,
     fileTags: Map<String, List<String>> = emptyMap(),
@@ -179,9 +184,16 @@ fun FilePanel(
         }
     }
 
-    // Search focus
+    // Search focus + cursor preservation
     val searchFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var searchFieldValue by remember {
+        mutableStateOf(TextFieldValue(state.searchQuery, TextRange(state.searchQuery.length)))
+    }
+    // Sync from external (e.g. clearSearch)
+    if (searchFieldValue.text != state.searchQuery) {
+        searchFieldValue = TextFieldValue(state.searchQuery, TextRange(state.searchQuery.length))
+    }
 
     LaunchedEffect(showSearch) {
         if (showSearch) {
@@ -199,7 +211,14 @@ fun FilePanel(
         }
         .let { files ->
             if (state.searchQuery.isBlank()) files
-            else files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
+            else if (state.searchInContent) {
+                // Content search: filter by paths returned from DB query
+                val snippets = state.contentSearchSnippets
+                if (snippets != null) files.filter { it.path in snippets }
+                else files // still loading
+            } else {
+                files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
+            }
         }
 
     val containerColor = if (isActive) {
@@ -314,14 +333,17 @@ fun FilePanel(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         BasicTextField(
-                            value = state.searchQuery,
-                            onValueChange = onSearchChanged,
+                            value = searchFieldValue,
+                            onValueChange = { newValue ->
+                                searchFieldValue = newValue
+                                onSearchChanged(newValue.text)
+                            },
                             textStyle = searchTextStyle,
                             singleLine = true,
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             decorationBox = { innerTextField ->
                                 Box {
-                                    if (state.searchQuery.isEmpty()) {
+                                    if (searchFieldValue.text.isEmpty()) {
                                         Text(
                                             stringResource(R.string.search_placeholder),
                                             style = MaterialTheme.typography.bodyMedium,
@@ -399,6 +421,36 @@ fun FilePanel(
                         // No action icons — status message uses entire row
                     }
                     showSearch -> {
+                        // Toggle: search by name (Тт)
+                        IconButton(
+                            onClick = {
+                                if (state.searchInContent) onToggleSearchInContent()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.TextFields,
+                                contentDescription = stringResource(R.string.search_by_name),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (!state.searchInContent) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // Toggle: search by content (FindInPage)
+                        IconButton(
+                            onClick = {
+                                if (!state.searchInContent) onToggleSearchInContent()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.FindInPage,
+                                contentDescription = stringResource(R.string.search_by_content),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (state.searchInContent) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (state.searchQuery.isNotEmpty()) {
                             IconButton(
                                 onClick = onClearSearch,
@@ -950,7 +1002,9 @@ fun FilePanel(
                             onRenameConfirm = onRenameConfirm,
                             onRenameCancel = onRenameCancel,
                             isGridMode = isGridMode,
-                            tagColors = entryTagColors
+                            tagColors = entryTagColors,
+                            contentSnippet = if (state.searchInContent) state.contentSearchSnippets?.get(entry.path) else null,
+                            searchQuery = if (state.searchInContent) state.searchQuery else ""
                         )
                     }
                 }

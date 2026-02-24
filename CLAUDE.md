@@ -45,6 +45,8 @@ Package: `com.vamp.haron`. Min SDK 26, Target SDK 34.
   Android Keystore, не хранить в SharedPreferences.
 - **EcosystemLogger** — использовать вместо голого `Log.d` везде.
 - **EcosystemPreferences** — не создавать свои SharedPreferences для темы и языка.
+- **pdfbox-android** — обязательно `PDFBoxResourceLoader.init(context)` в
+  `Application.onCreate()` до любого вызова PDFBox API. Иначе `ExceptionInInitializerError`.
 
 ## Правила сессии
 

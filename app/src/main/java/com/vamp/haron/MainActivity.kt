@@ -7,11 +7,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,10 +37,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vamp.core.db.EcosystemPreferences
@@ -33,6 +52,7 @@ import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.presentation.applock.AppLockViewModel
 import com.vamp.haron.presentation.applock.LockScreen
 import com.vamp.haron.presentation.navigation.HaronNavigation
+import com.vamp.haron.presentation.search.IndexNotificationViewModel
 import com.vamp.haron.ui.theme.HaronScaling
 import com.vamp.haron.ui.theme.HaronTheme
 import com.vamp.haron.ui.theme.LocalHaronScaling
@@ -159,6 +179,13 @@ class MainActivity : FragmentActivity() {
                                 modifier = Modifier.fillMaxSize()
                             )
 
+                            // Index complete notification overlay
+                            val indexNotifVm = hiltViewModel<IndexNotificationViewModel>()
+                            val showIndexComplete by indexNotifVm.showNotification.collectAsState()
+                            if (showIndexComplete) {
+                                IndexCompleteOverlay(onDismiss = { indexNotifVm.dismiss() })
+                            }
+
                             if (lockState.isLocked) {
                                 LockScreen(
                                     lockMethod = lockState.lockMethod,
@@ -208,6 +235,41 @@ class MainActivity : FragmentActivity() {
             .setNegativeButtonText(getString(R.string.biometric_use_pin))
             .build()
         prompt.authenticate(info)
+    }
+}
+
+@Composable
+private fun IndexCompleteOverlay(onDismiss: () -> Unit) {
+    val transition = rememberInfiniteTransition(label = "pulse")
+    val alpha by transition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                modifier = Modifier.size(32.dp)
+            )
+        }
     }
 }
 

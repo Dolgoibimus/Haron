@@ -9,4 +9,6 @@ object SearchNavigationHolder {
     var targetFilePath: String? = null
     /** Parent folder to navigate to */
     var targetParentPath: String? = null
+    /** Search query to highlight in opened file (set by content search) */
+    var highlightQuery: String? = null
 }

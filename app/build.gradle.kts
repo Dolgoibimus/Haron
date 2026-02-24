@@ -53,6 +53,9 @@ dependencies {
     implementation("org.apache.poi:poi:5.2.5")
     implementation("org.apache.poi:poi-scratchpad:5.2.5")
 
+    // PDF text extraction (content search)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     // Archive support (7z, rar)
     implementation("org.apache.commons:commons-compress:1.26.1")
     implementation("org.tukaani:xz:1.9")
@@ -77,6 +80,9 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
+
+    // ML Kit Image Labeling
+    implementation("com.google.mlkit:image-labeling:17.0.9")
 
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")

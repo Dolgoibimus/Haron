@@ -709,4 +709,23 @@
     <string name="filter_month">30 days</string>
     <string name="filter_year">Year</string>
     <string name="filter_older">Older</string>
+
+    <!-- Content search (Batch 22) -->
+    <string name="search_by_name">Search by name</string>
+    <string name="search_by_content">Search in content</string>
+    <string name="content_search_hint">Content search includes text files, documents, PDF, and audio/video metadata. Indexing large files may take time.</string>
+    <string name="expand_snippet">Show context</string>
+
+    <!-- Content indexing modes (Batch 22.5) -->
+    <string name="index_basic">Index text</string>
+    <string name="index_media">Index media</string>
+    <string name="index_visual">Recognize images</string>
+    <string name="indexing_basic">Indexing text content…</string>
+    <string name="indexing_media">Indexing media metadata…</string>
+    <string name="indexing_visual">Recognizing images…</string>
+    <string name="skipped_files">Skipped: %d files</string>
+    <string name="content_index_size">Content index: %s</string>
+
+    <!-- PDF highlight (Batch 23) -->
+    <string name="pdf_extracting_text">Searching text\u2026</string>
 </resources>

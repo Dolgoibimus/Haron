@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -54,17 +57,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.PdfMatch
+import com.vamp.haron.common.util.PdfTextPositionExtractor
+import com.vamp.haron.domain.model.SearchNavigationHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,7 +91,7 @@ import java.util.zip.ZipFile
 private const val MAX_PAGE_WIDTH = 2048
 private const val CACHE_SIZE = 5
 
-private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "odt", "rtf")
+private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "odt", "rtf", "fb2")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,10 +121,14 @@ private fun DocumentReaderContent(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
     var documentText by remember { mutableStateOf<String?>(null) }
     var lineCount by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var textLayoutResult by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    var containerHeight by remember { mutableIntStateOf(0) }
 
     // Zoom state
     var scale by remember { mutableFloatStateOf(1f) }
@@ -155,6 +173,23 @@ private fun DocumentReaderContent(
         return
     }
 
+    val matchIndices = remember(documentText, highlightQuery) {
+        if (highlightQuery.isNullOrBlank() || documentText == null) emptyList()
+        else {
+            val indices = mutableListOf<Int>()
+            val lower = documentText!!.lowercase()
+            val lq = highlightQuery.lowercase()
+            var pos = 0
+            while (pos < lower.length) {
+                val idx = lower.indexOf(lq, pos)
+                if (idx < 0) break
+                indices.add(idx)
+                pos = idx + lq.length
+            }
+            indices
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -168,6 +203,25 @@ private fun DocumentReaderContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    if (matchIndices.isNotEmpty()) {
+                        Text(
+                            text = "${currentMatchIndex + 1}/${matchIndices.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = {
+                            currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else matchIndices.size - 1
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(onClick = {
+                            currentMatchIndex = if (currentMatchIndex < matchIndices.size - 1) currentMatchIndex + 1 else 0
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             )
@@ -202,6 +256,19 @@ private fun DocumentReaderContent(
         }
 
         val text = documentText ?: return@Scaffold
+        val docScrollState = rememberScrollState()
+
+        // Scroll to match using exact pixel position from TextLayoutResult
+        LaunchedEffect(currentMatchIndex, matchIndices, textLayoutResult, containerHeight) {
+            val layout = textLayoutResult ?: return@LaunchedEffect
+            if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && containerHeight > 0) {
+                val pos = matchIndices[currentMatchIndex]
+                val line = layout.getLineForOffset(pos)
+                val lineTop = layout.getLineTop(line).toInt()
+                val scrollTarget = (lineTop - containerHeight / 2).coerceIn(0, docScrollState.maxValue)
+                docScrollState.animateScrollTo(scrollTarget)
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -222,6 +289,7 @@ private fun DocumentReaderContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onSizeChanged { containerHeight = it.height }
                     .transformable(state = transformableState)
                     .graphicsLayer(
                         scaleX = scale,
@@ -230,16 +298,55 @@ private fun DocumentReaderContent(
                         translationY = offsetY
                     )
             ) {
+                val highlightColor = MaterialTheme.colorScheme.primary
+                val currentHighlightBg = MaterialTheme.colorScheme.primaryContainer
+                val annotatedText = remember(text, highlightQuery, currentMatchIndex) {
+                    if (highlightQuery.isNullOrBlank()) AnnotatedString(text)
+                    else buildHighlightedText(text, highlightQuery, highlightColor, matchIndices, currentMatchIndex, currentHighlightBg)
+                }
                 Text(
-                    text = text,
+                    text = annotatedText,
+                    onTextLayout = { textLayoutResult = it },
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(docScrollState)
                         .padding(16.dp)
                 )
             }
         }
+    }
+}
+
+private fun buildHighlightedText(
+    text: String,
+    query: String,
+    color: Color,
+    matchIndices: List<Int> = emptyList(),
+    currentMatchIndex: Int = -1,
+    currentBg: Color = Color.Transparent
+) = buildAnnotatedString {
+    val lower = text.lowercase()
+    val lowerQuery = query.lowercase()
+    var pos = 0
+    var matchNum = 0
+    while (pos < text.length) {
+        val idx = lower.indexOf(lowerQuery, pos)
+        if (idx < 0) {
+            append(text.substring(pos))
+            break
+        }
+        append(text.substring(pos, idx))
+        val isCurrent = matchNum == currentMatchIndex
+        withStyle(SpanStyle(
+            fontWeight = FontWeight.Bold,
+            color = color,
+            background = if (isCurrent) currentBg else Color.Transparent
+        )) {
+            append(text.substring(idx, idx + query.length))
+        }
+        matchNum++
+        pos = idx + query.length
     }
 }
 
@@ -251,6 +358,7 @@ private fun extractDocumentText(context: Context, filePath: String, extension: S
         "odt" -> extractOdt(context, filePath)
         "doc" -> extractDoc(context, filePath)
         "rtf" -> extractRtf(context, filePath)
+        "fb2" -> extractFb2(context, filePath)
         else -> throw IllegalArgumentException("Неподдерживаемый формат: $extension")
     }
 }
@@ -263,11 +371,12 @@ private fun extractDocx(context: Context, filePath: String): String {
             val xmlEntry = zip.getEntry("word/document.xml")
                 ?: throw IllegalStateException("Не удалось прочитать документ")
             val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
-            return xml.split("</w:p>").map { para ->
+            val raw = xml.split("</w:p>").map { para ->
                 Regex("<w:t[^>]*>([^<]*)</w:t>").findAll(para)
                     .map { it.groupValues[1] }
                     .joinToString("")
             }.filter { it.isNotBlank() }.joinToString("\n")
+            return decodeXmlEntities(raw)
         }
     } finally {
         if (isTemp) file.delete()
@@ -282,9 +391,10 @@ private fun extractOdt(context: Context, filePath: String): String {
             val xmlEntry = zip.getEntry("content.xml")
                 ?: throw IllegalStateException("Не удалось прочитать документ")
             val xml = zip.getInputStream(xmlEntry).bufferedReader().readText()
-            return xml.split("</text:p>").map { para ->
+            val raw = xml.split("</text:p>").map { para ->
                 para.replace(Regex("<[^>]+>"), "")
             }.filter { it.isNotBlank() }.joinToString("\n")
+            return decodeXmlEntities(raw)
         }
     } finally {
         if (isTemp) file.delete()
@@ -324,6 +434,100 @@ private fun extractRtf(context: Context, filePath: String): String {
         .trim()
 }
 
+private fun extractFb2(context: Context, filePath: String): String {
+    val raw = if (filePath.startsWith("content://")) {
+        context.contentResolver.openInputStream(Uri.parse(filePath))
+            ?.bufferedReader()?.readText()
+            ?: throw IllegalStateException("Не удалось открыть файл")
+    } else {
+        File(filePath).readText()
+    }
+
+    val sb = StringBuilder()
+
+    // Extract <body> content (skip <description>, <binary>)
+    val bodyMatch = Regex("<body[^>]*>(.*)</body>", RegexOption.DOT_MATCHES_ALL).find(raw)
+    val body = bodyMatch?.groupValues?.get(1) ?: raw
+
+    // Process sections and paragraphs
+    // Replace <title> blocks with formatted title text
+    var text = body
+        // <empty-line/> → blank line
+        .replace(Regex("<empty-line\\s*/?>"), "\n")
+        // <title> → extract inner <p> tags as title lines
+        .replace(Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1]
+            val titleLines = Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(inner)
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .filter { it.isNotBlank() }
+                .joinToString("\n")
+            "\n\n━━━━━━━━━━━━━━━━━━━━\n$titleLines\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        }
+        // <subtitle> → centered-like text
+        .replace(Regex("<subtitle>(.*?)</subtitle>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+            "\n— $inner —\n\n"
+        }
+        // <epigraph> → italic-like indented block
+        .replace(Regex("<epigraph>(.*?)</epigraph>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1]
+            val lines = Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(inner)
+                .map { "        " + it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .joinToString("\n")
+            "\n$lines\n\n"
+        }
+        // <poem> → extract <stanza> → <v> lines
+        .replace(Regex("<poem>(.*?)</poem>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1]
+            val verses = Regex("<v>(.*?)</v>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(inner)
+                .map { "    " + it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .joinToString("\n")
+            "\n$verses\n\n"
+        }
+        // <p> → paragraph with indent
+        .replace(Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+            if (inner.isNotBlank()) "    $inner\n" else "\n"
+        }
+        // <section> open/close → section break
+        .replace(Regex("<section[^>]*>"), "\n")
+        .replace("</section>", "\n")
+
+    // Strip all remaining XML tags
+    text = text.replace(Regex("<[^>]+>"), "")
+    // Decode XML entities
+    text = text
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#160;", " ")
+        .replace(Regex("&#(\\d+);")) { match ->
+            val code = match.groupValues[1].toIntOrNull()
+            if (code != null) code.toChar().toString() else ""
+        }
+    // Collapse excessive blank lines (max 2)
+    text = text.replace(Regex("\n{4,}"), "\n\n\n")
+
+    return text.trim()
+}
+
+private fun decodeXmlEntities(text: String): String = text
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&apos;", "'")
+    .replace("&#160;", " ")
+    .replace(Regex("&#(\\d+);")) { match ->
+        val code = match.groupValues[1].toIntOrNull()
+        if (code != null) code.toChar().toString() else ""
+    }
+
 private fun resolveFile(context: Context, filePath: String, extension: String): File {
     return if (filePath.startsWith("content://")) {
         val tempFile = File(context.cacheDir, "doc_reader_${System.currentTimeMillis()}.$extension")
@@ -357,6 +561,14 @@ private fun PdfReaderContent(
     val pageCache = remember { mutableStateMapOf<Int, Bitmap>() }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    // Highlight state
+    val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
+    var allMatches by remember { mutableStateOf<List<PdfMatch>>(emptyList()) }
+    var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var isExtractingText by remember { mutableStateOf(false) }
+    val pageScaleMap = remember { mutableStateMapOf<Int, Float>() }
+    val matchesByPage = remember(allMatches) { allMatches.groupBy { it.pageIndex } }
 
     // Zoom state
     var scale by remember { mutableFloatStateOf(1f) }
@@ -409,10 +621,51 @@ private fun PdfReaderContent(
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            pageCache.values.forEach { it.recycle() }
+            pageCache.values.forEach { if (!it.isRecycled) it.recycle() }
             pageCache.clear()
             renderer?.close()
             pfd?.close()
+        }
+    }
+
+    // Extract text matches for highlight
+    LaunchedEffect(highlightQuery, pageCount) {
+        if (highlightQuery.isNullOrBlank() || pageCount <= 0) return@LaunchedEffect
+        isExtractingText = true
+        withContext(Dispatchers.IO) {
+            try {
+                val file = if (filePath.startsWith("content://")) {
+                    val tmp = File(context.cacheDir, "pdf_highlight_${System.currentTimeMillis()}.pdf")
+                    context.contentResolver.openInputStream(Uri.parse(filePath))?.use { inp ->
+                        tmp.outputStream().use { out -> inp.copyTo(out) }
+                    }
+                    tmp
+                } else {
+                    File(filePath)
+                }
+                val extractor = PdfTextPositionExtractor(context)
+                val matches = extractor.findMatches(file, highlightQuery, pageCount)
+                allMatches = matches
+                if (filePath.startsWith("content://")) file.delete()
+            } catch (_: Exception) {
+                allMatches = emptyList()
+            }
+        }
+        isExtractingText = false
+    }
+
+    // Auto-scroll to first match
+    LaunchedEffect(allMatches) {
+        if (allMatches.isNotEmpty()) {
+            listState.animateScrollToItem(allMatches[0].pageIndex)
+        }
+    }
+
+    // Navigate between matches
+    LaunchedEffect(currentMatchIndex) {
+        if (allMatches.isNotEmpty() && currentMatchIndex in allMatches.indices) {
+            val targetPage = allMatches[currentMatchIndex].pageIndex
+            listState.animateScrollToItem(targetPage)
         }
     }
 
@@ -440,6 +693,31 @@ private fun PdfReaderContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    if (isExtractingText) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    if (allMatches.isNotEmpty()) {
+                        Text(
+                            text = "${currentMatchIndex + 1}/${allMatches.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = {
+                            currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else allMatches.size - 1
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(onClick = {
+                            currentMatchIndex = if (currentMatchIndex < allMatches.size - 1) currentMatchIndex + 1 else 0
+                        }) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             )
@@ -508,7 +786,10 @@ private fun PdfReaderContent(
                         renderer = r,
                         pageIndex = pageIndex,
                         pageCache = pageCache,
-                        currentPage = currentPage
+                        currentPage = currentPage,
+                        matchesOnPage = matchesByPage[pageIndex] ?: emptyList(),
+                        currentGlobalMatch = allMatches.getOrNull(currentMatchIndex),
+                        pageScaleMap = pageScaleMap
                     )
                 }
             }
@@ -537,7 +818,10 @@ private fun PdfPageItem(
     renderer: PdfRenderer,
     pageIndex: Int,
     pageCache: MutableMap<Int, Bitmap>,
-    currentPage: Int
+    currentPage: Int,
+    matchesOnPage: List<PdfMatch>,
+    currentGlobalMatch: PdfMatch?,
+    pageScaleMap: MutableMap<Int, Float>
 ) {
     var bitmap by remember(pageIndex) { mutableStateOf(pageCache[pageIndex]) }
     var isLoading by remember(pageIndex) { mutableStateOf(bitmap == null) }
@@ -548,6 +832,7 @@ private fun PdfPageItem(
             try {
                 val page = renderer.openPage(pageIndex)
                 val scaleF = MAX_PAGE_WIDTH.toFloat() / page.width.coerceAtLeast(1)
+                pageScaleMap[pageIndex] = scaleF
                 val w = (page.width * scaleF).toInt().coerceAtLeast(1)
                 val h = (page.height * scaleF).toInt().coerceAtLeast(1)
                 val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -555,13 +840,13 @@ private fun PdfPageItem(
                 page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 page.close()
 
-                // Evict old cache entries
+                // Evict old cache entries (no recycle — composables may still reference them)
                 if (pageCache.size >= CACHE_SIZE) {
                     val keysToRemove = pageCache.keys.filter { key ->
                         key < currentPage - 2 || key > currentPage + 2
                     }
                     for (key in keysToRemove) {
-                        pageCache.remove(key)?.recycle()
+                        pageCache.remove(key)
                     }
                 }
                 pageCache[pageIndex] = bmp
@@ -574,15 +859,43 @@ private fun PdfPageItem(
     }
 
     val bmp = bitmap
-    if (bmp != null) {
-        Image(
-            bitmap = bmp.asImageBitmap(),
-            contentDescription = null,
-            contentScale = ContentScale.FillWidth,
+    if (bmp != null && !bmp.isRecycled) {
+        val highlightColor = Color(0x66FFEB3B) // yellow 40% alpha
+        val currentHighlightColor = Color(0x99FF9800) // orange 60% alpha — current match
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 2.dp)
-        )
+        ) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (matchesOnPage.isNotEmpty()) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val displayScale = size.width / bmp.width.toFloat()
+                    val scaleF = pageScaleMap[pageIndex] ?: 1f
+                    val totalScale = scaleF * displayScale
+                    for (match in matchesOnPage) {
+                        val isCurrent = match == currentGlobalMatch
+                        val color = if (isCurrent) currentHighlightColor else highlightColor
+                        for (rect in match.rects) {
+                            drawRect(
+                                color = color,
+                                topLeft = Offset(rect.left * totalScale, rect.top * totalScale),
+                                size = Size(
+                                    (rect.right - rect.left) * totalScale,
+                                    (rect.bottom - rect.top) * totalScale
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
     } else if (isLoading) {
         Box(
             modifier = Modifier

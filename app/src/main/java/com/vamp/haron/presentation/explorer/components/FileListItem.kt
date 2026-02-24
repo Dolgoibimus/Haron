@@ -45,9 +45,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +81,8 @@ fun FileListItem(
     onRenameCancel: () -> Unit,
     isGridMode: Boolean = false,
     tagColors: List<Color> = emptyList(),
+    contentSnippet: String? = null,
+    searchQuery: String = "",
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -369,9 +375,43 @@ fun FileListItem(
                             }
                         }
                     }
+                    // Content search snippet
+                    if (contentSnippet != null && searchQuery.isNotBlank()) {
+                        val highlightColor = MaterialTheme.colorScheme.primary
+                        Text(
+                            text = buildHighlightedSnippet(contentSnippet, searchQuery, highlightColor),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+private fun buildHighlightedSnippet(
+    snippet: String,
+    query: String,
+    highlightColor: Color
+) = buildAnnotatedString {
+    val lowerSnippet = snippet.lowercase()
+    val lowerQuery = query.lowercase()
+    var pos = 0
+    while (pos < snippet.length) {
+        val idx = lowerSnippet.indexOf(lowerQuery, pos)
+        if (idx < 0) {
+            append(snippet.substring(pos))
+            break
+        }
+        append(snippet.substring(pos, idx))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = highlightColor)) {
+            append(snippet.substring(idx, idx + query.length))
+        }
+        pos = idx + query.length
     }
 }
 

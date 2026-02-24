@@ -227,11 +227,30 @@ fun MediaPlayerScreen(
 
     BackHandler {
         if (isVideo) {
-            // Stop service when leaving video
+            // Detach surface before stopping service
+            PlaybackService.instance?.getVlcPlayer()?.detachViews()
             context.stopService(Intent(context, PlaybackService::class.java))
         }
         // For audio — service continues in background
         onBack()
+    }
+
+    // Attach VLC to surface when both layout and service are ready
+    LaunchedEffect(videoLayoutRef) {
+        val layout = videoLayoutRef ?: return@LaunchedEffect
+        while (isActive) {
+            val vlcPlayer = PlaybackService.instance?.getVlcPlayer()
+            if (vlcPlayer != null) {
+                try {
+                    vlcPlayer.attachViews(layout, null, false, false)
+                } catch (_: IllegalStateException) {
+                    vlcPlayer.detachViews()
+                    vlcPlayer.attachViews(layout, null, false, false)
+                }
+                break
+            }
+            delay(50)
+        }
     }
 
     Box(
@@ -244,7 +263,6 @@ fun MediaPlayerScreen(
                 factory = { ctx ->
                     VLCVideoLayout(ctx).also { layout ->
                         videoLayoutRef = layout
-                        PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
                     }
                 },
                 modifier = Modifier.fillMaxSize()

@@ -707,4 +707,23 @@
     <string name="filter_month">30 дней</string>
     <string name="filter_year">Год</string>
     <string name="filter_older">Старее</string>
+
+    <!-- Content search (Batch 22) -->
+    <string name="search_by_name">Поиск по имени</string>
+    <string name="search_by_content">Поиск по содержимому</string>
+    <string name="content_search_hint">Поиск по содержимому включает текстовые файлы, документы, PDF и метаданные медиа. Индексация больших файлов может занять время.</string>
+    <string name="expand_snippet">Показать контекст</string>
+
+    <!-- Content indexing modes (Batch 22.5) -->
+    <string name="index_basic">Индексация текста</string>
+    <string name="index_media">Индексация медиа</string>
+    <string name="index_visual">Распознавание фото</string>
+    <string name="indexing_basic">Индексация текстового содержимого…</string>
+    <string name="indexing_media">Индексация метаданных медиа…</string>
+    <string name="indexing_visual">Распознавание изображений…</string>
+    <string name="skipped_files">Пропущено: %d файлов</string>
+    <string name="content_index_size">Индекс содержимого: %s</string>
+
+    <!-- PDF highlight (Batch 23) -->
+    <string name="pdf_extracting_text">Поиск текста\u2026</string>
 </resources>

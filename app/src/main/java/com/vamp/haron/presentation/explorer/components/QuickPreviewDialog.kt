@@ -51,11 +51,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -71,10 +69,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import org.videolan.libvlc.util.VLCVideoLayout
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.vamp.haron.R
@@ -89,11 +85,6 @@ import com.vamp.haron.service.PlaybackService
 import androidx.compose.foundation.layout.fillMaxSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-
-/** Track which VLCVideoLayout is currently attached — prevents old page's
- *  onDispose from detaching the NEW page's surface during auto-advance. */
-private var activeVlcLayout: VLCVideoLayout? = null
 
 /** Shared state between inline player and seekbar outside pager */
 private class InlinePlayerState {
@@ -261,10 +252,9 @@ fun QuickPreviewDialog(
                             serviceConnected = serviceConnected,
                             currentAdapterIndex = currentAdapterIndex,
                             mediaToPageIndex = mediaToPageIndex,
-                            pageToMediaIndex = pageToMediaIndex,
                             onStartPlayback = ::startMediaPlayback,
                             onTogglePlayPause = onTogglePlayPause,
-                            controller = controller
+                            onFullscreenPlay = onFullscreenPlay?.let { cb -> { cb(0L) } }
                         )
                     } else {
                         PreviewContentBlock(
@@ -276,14 +266,16 @@ fun QuickPreviewDialog(
                             playerState = playerState,
                             serviceConnected = serviceConnected,
                             onStartPlayback = { startMediaPlayback(0) },
-                            onTogglePlayPause = onTogglePlayPause
+                            onTogglePlayPause = onTogglePlayPause,
+                            onFullscreenPlay = onFullscreenPlay?.let { cb -> { cb(0L) } }
                         )
                     }
                 }
 
                 // Bottom controls — always occupy space, invisible for non-media
                 val isMedia = previewData is PreviewData.VideoPreview || previewData is PreviewData.AudioPreview
-                val controlsAlpha = if (isMedia) 1f else 0f
+                val isAudio = previewData is PreviewData.AudioPreview
+                val controlsAlpha = if (isAudio) 1f else 0f
 
                 Spacer(Modifier.height(4.dp))
                 var isDragging by remember { mutableStateOf(false) }
@@ -305,10 +297,10 @@ fun QuickPreviewDialog(
                         }
                         isDragging = false
                     },
-                    enabled = isMedia && playerState.isActive,
+                    enabled = isAudio && playerState.isActive,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .alpha(if (isMedia && playerState.isActive) 1f else 0f)
+                        .alpha(if (isAudio && playerState.isActive) 1f else 0f)
                 )
                 Row(
                     modifier = Modifier
@@ -442,22 +434,15 @@ private fun PreviewPagerContent(
     serviceConnected: Boolean = false,
     currentAdapterIndex: Int = -1,
     mediaToPageIndex: Map<Int, Int> = emptyMap(),
-    pageToMediaIndex: Map<Int, Int> = emptyMap(),
     onStartPlayback: ((Int) -> Unit)? = null,
     onTogglePlayPause: () -> Unit = {},
-    controller: MediaController? = null
+    onFullscreenPlay: (() -> Unit)? = null
 ) {
     val pagerState = rememberPagerState(
         initialPage = currentIndex,
         pageCount = { totalFiles }
     )
     val dummyPlayerState = remember { InlinePlayerState() }
-    val coroutineScope = rememberCoroutineScope()
-
-    // --- Persistent VLC surface overlay (like MediaPlayerScreen) ---
-    // Lives OUTSIDE the pager → never destroyed on page change → seamless video transitions.
-    var videoOverlayActive by remember { mutableStateOf(false) }
-    var autoStartPage by remember { mutableIntStateOf(-1) }
 
     // Notify ViewModel when page changes
     val currentOnPageChanged by rememberUpdatedState(onPageChanged)
@@ -467,14 +452,6 @@ private fun PreviewPagerContent(
             if (page != previousPage) {
                 previousPage = page
                 currentOnPageChanged(page)
-                if (page == autoStartPage) {
-                    // Auto-advance — don't pause
-                    autoStartPage = -1
-                } else {
-                    // Manual swipe — pause and hide overlay
-                    PlaybackService.instance?.getVlcPlayer()?.pause()
-                    videoOverlayActive = false
-                }
             }
         }
     }
@@ -484,20 +461,7 @@ private fun PreviewPagerContent(
         if (currentAdapterIndex < 0) return@LaunchedEffect
         val targetPage = mediaToPageIndex[currentAdapterIndex]
         if (targetPage != null && targetPage != pagerState.currentPage) {
-            val nextFile = adjacentFiles.getOrNull(targetPage)
-            val isNextVideo = nextFile != null && !nextFile.isDirectory
-                    && nextFile.iconRes() == "video"
-            if (isNextVideo && videoOverlayActive) {
-                // Video→video: surface stays, scroll pager for title update
-                autoStartPage = targetPage
-                pagerState.scrollToPage(targetPage)
-            } else {
-                // Video→non-video: pause VLC, hide overlay, scroll normally
-                PlaybackService.instance?.getVlcPlayer()?.pause()
-                videoOverlayActive = false
-                autoStartPage = targetPage
-                pagerState.animateScrollToPage(targetPage)
-            }
+            pagerState.animateScrollToPage(targetPage)
         }
     }
 
@@ -506,8 +470,7 @@ private fun PreviewPagerContent(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1,
-            userScrollEnabled = !videoOverlayActive
+            beyondViewportPageCount = 1
         ) { page ->
             when {
                 page == currentIndex -> {
@@ -518,13 +481,10 @@ private fun PreviewPagerContent(
                         error = error,
                         onEdit = onEdit,
                         playerState = playerState,
-                        // Never create VLC surface inside pager — overlay handles it
-                        serviceConnected = false,
-                        onStartPlayback = {
-                            videoOverlayActive = true
-                            onStartPlayback?.invoke(page)
-                        },
-                        onTogglePlayPause = onTogglePlayPause
+                        serviceConnected = serviceConnected,
+                        onStartPlayback = { onStartPlayback?.invoke(page) },
+                        onTogglePlayPause = onTogglePlayPause,
+                        onFullscreenPlay = onFullscreenPlay
                     )
                 }
                 page in previewCache -> {
@@ -537,12 +497,10 @@ private fun PreviewPagerContent(
                         error = null,
                         onEdit = null,
                         playerState = if (cachedData is PreviewData.VideoPreview || cachedData is PreviewData.AudioPreview) playerState else dummyPlayerState,
-                        serviceConnected = false,
-                        onStartPlayback = {
-                            videoOverlayActive = true
-                            onStartPlayback?.invoke(page)
-                        },
-                        onTogglePlayPause = onTogglePlayPause
+                        serviceConnected = serviceConnected,
+                        onStartPlayback = { onStartPlayback?.invoke(page) },
+                        onTogglePlayPause = onTogglePlayPause,
+                        onFullscreenPlay = onFullscreenPlay
                     )
                 }
                 else -> {
@@ -571,40 +529,6 @@ private fun PreviewPagerContent(
             }
         }
 
-        // Persistent VLC surface overlay — ONE surface, never destroyed on track change
-        if (videoOverlayActive && serviceConnected) {
-            AndroidView(
-                factory = { ctx ->
-                    VLCVideoLayout(ctx).also { layout ->
-                        activeVlcLayout = layout
-                        try {
-                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
-                        } catch (_: IllegalStateException) {
-                            PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-            )
-            // Tap overlay → pause + hide (return to pager for swiping)
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable {
-                        PlaybackService.instance?.getVlcPlayer()?.pause()
-                        videoOverlayActive = false
-                    }
-            )
-            DisposableEffect(Unit) {
-                onDispose {
-                    PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                    activeVlcLayout = null
-                }
-            }
-        }
     }
 }
 
@@ -621,7 +545,7 @@ private fun PreviewContentBlock(
     serviceConnected: Boolean = false,
     onStartPlayback: (() -> Unit)? = null,
     onTogglePlayPause: () -> Unit = {},
-    autoStart: Boolean = false
+    onFullscreenPlay: (() -> Unit)? = null
 ) {
     when {
         isLoading -> {
@@ -653,11 +577,7 @@ private fun PreviewContentBlock(
                 is PreviewData.VideoPreview -> {
                     InlineVideoContent(
                         thumbnail = previewData.thumbnail,
-                        playerState = playerState,
-                        serviceConnected = serviceConnected,
-                        onStartPlayback = onStartPlayback,
-                        onTogglePlayPause = onTogglePlayPause,
-                        autoStart = autoStart
+                        onFullscreenPlay = onFullscreenPlay ?: {}
                     )
                 }
                 is PreviewData.AudioPreview -> {
@@ -681,101 +601,49 @@ private fun PreviewContentBlock(
     }
 }
 
-// --- Inline Video (uses PlaybackService for folder repeat + lock screen) ---
+// --- Inline Video (thumbnail + fullscreen play button) ---
 
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun InlineVideoContent(
     thumbnail: Bitmap?,
-    playerState: InlinePlayerState,
-    serviceConnected: Boolean,
-    onStartPlayback: (() -> Unit)?,
-    onTogglePlayPause: () -> Unit,
-    autoStart: Boolean = false
+    onFullscreenPlay: () -> Unit
 ) {
-    var hasStarted by remember { mutableStateOf(autoStart) }
-    var myLayout by remember { mutableStateOf<VLCVideoLayout?>(null) }
-
-    // Auto-start: skip play button, go straight to video surface
-    LaunchedEffect(autoStart) {
-        if (autoStart && !hasStarted) hasStarted = true
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            // Only detach if OUR layout is still the active one.
-            // During auto-advance, the new page attaches first — don't detach it.
-            if (myLayout != null && activeVlcLayout == myLayout) {
-                PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                activeVlcLayout = null
-            }
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(8.dp)),
         contentAlignment = Alignment.Center
     ) {
-        if (hasStarted && serviceConnected) {
-            AndroidView(
-                factory = { ctx ->
-                    VLCVideoLayout(ctx).also { layout ->
-                        myLayout = layout
-                        try {
-                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
-                        } catch (_: IllegalStateException) {
-                            PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
-                        }
-                        activeVlcLayout = layout
-                    }
-                },
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable { onTogglePlayPause() }
-            )
-        } else if (hasStarted && !serviceConnected) {
-            CircularProgressIndicator(modifier = Modifier.size(32.dp))
         } else {
-            if (thumbnail != null) {
-                Image(
-                    bitmap = thumbnail.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                )
-            }
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .background(
-                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f),
-                        RoundedCornerShape(28.dp)
-                    )
-                    .clickable {
-                        hasStarted = true
-                        onStartPlayback?.invoke()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.PlayCircleFilled,
-                    contentDescription = stringResource(R.string.play),
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(
+                    MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f),
+                    RoundedCornerShape(28.dp)
                 )
-            }
+                .clickable { onFullscreenPlay() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.PlayCircleFilled,
+                contentDescription = stringResource(R.string.play),
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.onPrimary
+            )
         }
     }
 }

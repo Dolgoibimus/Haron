@@ -16,6 +16,7 @@ import com.vamp.haron.data.saf.StorageVolumeHelper
 import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.model.PlaylistHolder
+import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.ShelfItem
 import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
@@ -106,7 +107,8 @@ class ExplorerViewModel @Inject constructor(
     private val findEmptyFoldersUseCase: FindEmptyFoldersUseCase,
     private val batchRenameUseCase: BatchRenameUseCase,
     private val secureFolderRepository: SecureFolderRepository,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    private val searchRepository: com.vamp.haron.domain.repository.SearchRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -135,6 +137,9 @@ class ExplorerViewModel @Inject constructor(
 
     /** Folder size calculation jobs */
     private val folderSizeJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+
+    /** Content search debounce jobs per panel */
+    private val contentSearchJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
 
     fun onScrollPositionChanged(panelId: PanelId, index: Int) {
         panelScrollIndex[panelId] = index
@@ -399,6 +404,8 @@ class ExplorerViewModel @Inject constructor(
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
         } else {
+            // Set highlight query if in content search mode
+            SearchNavigationHolder.highlightQuery = if (panel.searchInContent && panel.searchQuery.isNotBlank()) panel.searchQuery else null
             val type = entry.iconRes()
             when (type) {
                 "video", "audio" -> {
@@ -754,6 +761,10 @@ class ExplorerViewModel @Inject constructor(
 
     fun setSearchQuery(panelId: PanelId, query: String) {
         updatePanel(panelId) { it.copy(searchQuery = query) }
+        val panel = getPanel(panelId)
+        if (panel.searchInContent) {
+            performContentSearch(panelId, query)
+        }
     }
 
     fun openSearch(panelId: PanelId) {
@@ -761,11 +772,35 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun closeSearch(panelId: PanelId) {
-        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "") }
+        contentSearchJobs[panelId]?.cancel()
+        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "", searchInContent = false, contentSearchSnippets = null) }
     }
 
     fun clearSearch(panelId: PanelId) {
-        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false) }
+        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+    }
+
+    fun toggleSearchInContent(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val newInContent = !panel.searchInContent
+        updatePanel(panelId) { it.copy(searchInContent = newInContent, contentSearchSnippets = null) }
+        if (newInContent && panel.searchQuery.isNotBlank()) {
+            performContentSearch(panelId, panel.searchQuery)
+        }
+    }
+
+    private fun performContentSearch(panelId: PanelId, query: String) {
+        contentSearchJobs[panelId]?.cancel()
+        if (query.isBlank()) {
+            updatePanel(panelId) { it.copy(contentSearchSnippets = null) }
+            return
+        }
+        contentSearchJobs[panelId] = viewModelScope.launch {
+            delay(300) // debounce
+            val panel = getPanel(panelId)
+            val paths = searchRepository.searchContentInFolder(panel.currentPath, query)
+            updatePanel(panelId) { it.copy(contentSearchSnippets = paths) }
+        }
     }
 
     // --- Selection ---

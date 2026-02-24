@@ -15,6 +15,8 @@ data class PanelUiState(
     val isSelectionMode: Boolean = false,
     val searchQuery: String = "",
     val isSearchActive: Boolean = false,
+    val searchInContent: Boolean = false,
+    val contentSearchSnippets: Map<String, String>? = null,
     val renamingPath: String? = null,
     val statusMessage: String? = null,
     val gridColumns: Int = 1,
