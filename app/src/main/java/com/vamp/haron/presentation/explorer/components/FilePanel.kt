@@ -212,9 +212,11 @@ fun FilePanel(
         .let { files ->
             if (state.searchQuery.isBlank()) files
             else if (state.searchInContent) {
-                // Content search: filter by paths returned from DB query
+                // Content search: filter files by FTS snippets, keep folders matching name
                 val snippets = state.contentSearchSnippets
-                if (snippets != null) files.filter { it.path in snippets }
+                if (snippets != null) files.filter {
+                    it.path in snippets || (it.isDirectory && it.name.contains(state.searchQuery, ignoreCase = true))
+                }
                 else files // still loading
             } else {
                 files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }

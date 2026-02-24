@@ -229,11 +229,18 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             // Save current scroll position before navigating away (only when actually changing folder)
             val currentPath = getPanel(panelId).currentPath
-            if (currentPath.isNotEmpty() && currentPath != path) {
+            val isNewFolder = currentPath.isNotEmpty() && currentPath != path
+            if (isNewFolder) {
                 scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
             }
 
-            updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+            // Clear search when navigating to a different folder
+            if (isNewFolder) {
+                contentSearchJobs[panelId]?.cancel()
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+            } else {
+                updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+            }
 
             val panel = getPanel(panelId)
             val displayPath = when {
@@ -271,7 +278,13 @@ class ExplorerViewModel @Inject constructor(
                         navigationHistory = history,
                         historyIndex = index,
                         isSafPath = path.startsWith("content://"),
-                        showProtected = path == HaronConstants.VIRTUAL_SECURE_PATH
+                        showProtected = path == HaronConstants.VIRTUAL_SECURE_PATH,
+                        // Ensure search is cleared when entering a new folder
+                        // (guards against BasicTextField race re-emitting old query)
+                        searchQuery = if (isNewPath) "" else it.searchQuery,
+                        isSearchActive = if (isNewPath) false else it.isSearchActive,
+                        searchInContent = if (isNewPath) false else it.searchInContent,
+                        contentSearchSnippets = if (isNewPath) null else it.contentSearchSnippets
                     )
                     if (savedScroll >= 0) {
                         base.copy(
@@ -311,11 +324,18 @@ class ExplorerViewModel @Inject constructor(
     fun navigateToFileLocation(panelId: PanelId, folderPath: String, filePath: String) {
         viewModelScope.launch {
             val currentPath = getPanel(panelId).currentPath
-            if (currentPath.isNotEmpty() && currentPath != folderPath) {
+            val isNewFolder = currentPath.isNotEmpty() && currentPath != folderPath
+            if (isNewFolder) {
                 scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
             }
 
-            updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+            // Clear search when navigating to a different folder
+            if (isNewFolder) {
+                contentSearchJobs[panelId]?.cancel()
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+            } else {
+                updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+            }
 
             val panel = getPanel(panelId)
             val displayPath = when {
@@ -350,7 +370,12 @@ class ExplorerViewModel @Inject constructor(
                         historyIndex = index,
                         isSafPath = folderPath.startsWith("content://"),
                         scrollToIndex = fileIndex,
-                        scrollToTrigger = scrollTrigger
+                        scrollToTrigger = scrollTrigger,
+                        // Clear search when entering a new folder
+                        searchQuery = if (isNewFolder) "" else it.searchQuery,
+                        isSearchActive = if (isNewFolder) false else it.isSearchActive,
+                        searchInContent = if (isNewFolder) false else it.searchInContent,
+                        contentSearchSnippets = if (isNewFolder) null else it.contentSearchSnippets
                     )
                 }
                 when (panelId) {
