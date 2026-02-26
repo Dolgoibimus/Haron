@@ -54,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -75,6 +76,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -82,6 +84,9 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.domain.model.PlaylistHolder
+import com.vamp.haron.presentation.cast.CastViewModel
+import com.vamp.haron.presentation.cast.components.CastButton
+import com.vamp.haron.presentation.cast.components.CastDeviceSheet
 import com.vamp.haron.service.PlaybackService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -95,6 +100,7 @@ fun MediaPlayerScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val castViewModel: CastViewModel = hiltViewModel()
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
@@ -440,6 +446,10 @@ fun MediaPlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    CastButton(
+                        castManager = castViewModel.castManager,
+                        onClick = { castViewModel.showSheet() }
+                    )
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -518,6 +528,25 @@ fun MediaPlayerScreen(
                     Spacer(Modifier.height(16.dp))
                 }
             }
+        }
+
+        // Cast device selection sheet
+        val showCastSheet by castViewModel.showDeviceSheet.collectAsState()
+        val castDevices by castViewModel.devices.collectAsState()
+        val castSearching by castViewModel.isSearching.collectAsState()
+        val castConnectedDevice by castViewModel.connectedDeviceName.collectAsState()
+
+        if (showCastSheet) {
+            CastDeviceSheet(
+                devices = castDevices,
+                isSearching = castSearching,
+                connectedDeviceName = castConnectedDevice,
+                onSelectDevice = { device ->
+                    castViewModel.selectDeviceAndCast(device, filePath, fileName)
+                },
+                onDisconnect = { castViewModel.disconnect() },
+                onDismiss = { castViewModel.hideSheet() }
+            )
         }
     }
 }

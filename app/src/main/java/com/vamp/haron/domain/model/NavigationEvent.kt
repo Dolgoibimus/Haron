@@ -33,4 +33,18 @@ sealed interface NavigationEvent {
     data object OpenSettings : NavigationEvent
 
     data object OpenGlobalSearch : NavigationEvent
+
+    data object OpenTransfer : NavigationEvent
+
+    data object OpenTerminal : NavigationEvent
+
+    data class HandleExternalFile(
+        val filePath: String,
+        val fileName: String,
+        val mimeType: String?
+    ) : NavigationEvent
+
+    data object OpenComparison : NavigationEvent
+
+    data object OpenSteganography : NavigationEvent
 }

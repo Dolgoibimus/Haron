@@ -1,6 +1,13 @@
 package com.vamp.haron.presentation.explorer.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,8 +30,15 @@ import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Eject
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.automirrored.filled.SendToMobile
+import androidx.compose.material.icons.filled.Lan
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PieChart
@@ -42,10 +56,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.data.network.NetworkDevice
+import com.vamp.haron.data.network.NetworkDeviceType
+import com.vamp.haron.data.usb.UsbVolume
 
 @Composable
 fun DrawerMenu(
@@ -67,7 +86,17 @@ fun DrawerMenu(
     onForceDelete: () -> Unit,
     onManageTags: () -> Unit,
     onToggleShield: () -> Unit = {},
+    onOpenTransfer: () -> Unit = {},
     secureFolderInfo: String = "",
+    usbVolumes: List<UsbVolume> = emptyList(),
+    onNavigateUsb: (String) -> Unit = {},
+    onEjectUsb: (String) -> Unit = {},
+    networkDevices: List<NetworkDevice> = emptyList(),
+    onNetworkDeviceTap: (NetworkDevice) -> Unit = {},
+
+    onRefreshNetwork: () -> Unit = {},
+    onOpenTerminal: () -> Unit = {},
+    isListeningForTransfer: Boolean = false,
     onOpenSettings: () -> Unit,
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -133,7 +162,50 @@ fun DrawerMenu(
                 }
             }
 
-            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            // --- USB OTG ---
+            if (usbVolumes.isNotEmpty()) {
+                items(usbVolumes, key = { "usb_${it.path}" }) { volume ->
+                    val context = LocalContext.current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateUsb(volume.path) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Usb, null,
+                            Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                volume.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.usb_free_space,
+                                    volume.freeSpace.toFileSize(context),
+                                    volume.totalSpace.toFileSize(context)
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { onEjectUsb(volume.path) }) {
+                            Icon(
+                                Icons.Filled.Eject,
+                                stringResource(R.string.usb_eject),
+                                Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
 
             // --- Favorites ---
             item {
@@ -296,6 +368,45 @@ fun DrawerMenu(
                     onClick = { onToggleShield(); onDismiss() }
                 )
             }
+            item {
+                if (isListeningForTransfer) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "transfer_pulse")
+                    val alpha = infiniteTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(800),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "transfer_alpha"
+                    )
+                    DrawerItem(
+                        icon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.SendToMobile, null,
+                                Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha.value)
+                            )
+                        },
+                        title = stringResource(R.string.transfer_drawer_item),
+                        subtitle = stringResource(R.string.quick_send_drop_here),
+                        onClick = { onOpenTransfer(); onDismiss() }
+                    )
+                } else {
+                    DrawerItem(
+                        icon = { Icon(Icons.AutoMirrored.Filled.SendToMobile, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                        title = stringResource(R.string.transfer_drawer_item),
+                        onClick = { onOpenTransfer(); onDismiss() }
+                    )
+                }
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Code, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                    title = stringResource(R.string.terminal_title),
+                    onClick = { onOpenTerminal(); onDismiss() }
+                )
+            }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
@@ -372,6 +483,40 @@ private fun DrawerItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        icon()
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DrawerItemLongClickable(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

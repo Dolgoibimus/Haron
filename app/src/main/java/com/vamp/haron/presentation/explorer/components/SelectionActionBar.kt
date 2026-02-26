@@ -14,12 +14,16 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +50,10 @@ fun SelectionActionBar(
     onAddToShelf: () -> Unit,
     onTag: () -> Unit,
     onProtect: () -> Unit = {},
+    onSend: () -> Unit = {},
+    onCast: () -> Unit = {},
+    onCompare: () -> Unit = {},
+    onHideInFile: () -> Unit = {},
     onInfo: () -> Unit,
     onOpenWith: () -> Unit,
     hasProtectedFiles: Boolean = false,
@@ -109,6 +117,26 @@ fun SelectionActionBar(
                 }
                 IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onSend, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.transfer_send), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onCast, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Cast, contentDescription = stringResource(R.string.cast_title), modifier = Modifier.size(20.dp))
+                }
+                IconButton(
+                    onClick = onCompare,
+                    enabled = totalCount == 2,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(20.dp))
+                }
+                IconButton(
+                    onClick = onHideInFile,
+                    enabled = totalCount == 1 && dirCount == 0,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onProtect, modifier = Modifier.size(36.dp)) {
                     Icon(

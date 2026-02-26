@@ -10,6 +10,8 @@ sealed interface DragState {
         val draggedPaths: List<String>,
         val dragOffset: Offset,
         val fileCount: Int,
-        val previewName: String
+        val previewName: String,
+        /** Folder path the drag is currently hovering over (for drop-into-folder) */
+        val hoveredFolderPath: String? = null
     ) : DragState
 }

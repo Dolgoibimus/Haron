@@ -726,4 +726,243 @@
 
     <!-- PDF highlight (Batch 23) -->
     <string name="pdf_extracting_text">Поиск текста\u2026</string>
+
+    <!-- File Transfer (Batch 24) -->
+    <string name="transfer_title">Передача файлов</string>
+    <string name="transfer_preparing">Подготовка передачи\u2026</string>
+    <string name="transfer_paused">Передача приостановлена</string>
+    <string name="transfer_server_running">Файловый сервер запущен</string>
+    <string name="transfer_receive_mode">Ожидание входящих файлов\u2026</string>
+    <string name="transfer_channel_name">Передача файлов</string>
+    <string name="transfer_channel_desc">Передача файлов между устройствами</string>
+    <string name="transfer_notification_title">Передача файлов</string>
+    <string name="transfer_scanning">Поиск устройств\u2026</string>
+    <string name="transfer_no_devices">Устройства не найдены</string>
+    <string name="transfer_connecting">Подключение\u2026</string>
+    <string name="transfer_sending">Отправка: %1$d/%2$d \u2014 %3$s</string>
+    <string name="transfer_receiving">Приём: %1$d/%2$d \u2014 %3$s</string>
+    <string name="transfer_complete">Передача завершена: %d файлов</string>
+    <string name="receive_complete">Принято: %d файлов</string>
+    <string name="transfer_open_folder">Открыть папку</string>
+    <string name="transfer_scan_qr_title">Сканировать QR</string>
+    <string name="transfer_scan_qr_subtitle">Наведите камеру на QR-код другого устройства</string>
+    <string name="transfer_failed">Ошибка передачи: %s</string>
+    <string name="transfer_cancelled">Передача отменена</string>
+    <string name="transfer_speed">%s/с</string>
+    <string name="transfer_eta">Осталось: %s</string>
+    <string name="transfer_wifi_direct">Wi-Fi Direct</string>
+    <string name="transfer_http">Wi-Fi (HTTP)</string>
+    <string name="transfer_bluetooth">Bluetooth</string>
+    <string name="transfer_send">Отправить</string>
+    <string name="transfer_receive">Принять</string>
+    <string name="transfer_qr_title">Сканируйте QR-код</string>
+    <string name="transfer_qr_subtitle">Откройте этот URL в любом браузере для скачивания файлов</string>
+    <string name="transfer_accept_title">Входящая передача</string>
+    <string name="transfer_accept_message">%1$s хочет отправить %2$d файлов</string>
+    <string name="transfer_accept">Принять</string>
+    <string name="transfer_decline">Отклонить</string>
+    <string name="transfer_haron_device">Устройство Haron</string>
+    <string name="transfer_battery_saver_warning">Включён режим энергосбережения. Передача может быть медленнее или прерваться.</string>
+    <string name="transfer_no_wifi">Wi-Fi отключён</string>
+    <string name="transfer_no_wifi_for_qr">Подключите оба устройства к одной Wi-Fi сети для передачи через QR-код</string>
+    <string name="transfer_no_bluetooth">Bluetooth отключён</string>
+    <string name="transfer_no_connection">Нет доступных подключений</string>
+    <string name="transfer_resume">Продолжить</string>
+    <string name="transfer_retry">Повторить</string>
+    <string name="transfer_select_files">Выберите файлы для отправки</string>
+    <string name="transfer_drawer_item">Передача файлов</string>
+
+    <!-- Network Discovery (Batch 31) -->
+    <string name="network">Сеть</string>
+    <string name="network_no_devices">Устройства не найдены</string>
+    <string name="network_haron_device">Haron на %s</string>
+    <string name="network_smb_share">Общая папка SMB</string>
+    <string name="network_scanning">Сканирование сети\u2026</string>
+    <string name="network_refresh">Обновить</string>
+    <string name="network_smb_info">SMB: %s:%d</string>
+
+    <!-- USB OTG (Batch 30) -->
+    <string name="usb_connected">USB подключён: %s</string>
+    <string name="usb_disconnected">USB отключён: %s</string>
+    <string name="usb_ejected_safe">USB безопасно извлечён: %s</string>
+    <string name="usb_safe_to_remove">Можно безопасно отключить: %s</string>
+    <string name="usb_eject">Извлечь</string>
+    <string name="usb_free_space">%1$s свободно из %2$s</string>
+    <string name="usb_bad_removal">USB отключён без безопасного извлечения</string>
+
+    <!-- Gestures (Batch 33) -->
+    <string name="gestures_section">Жесты</string>
+    <string name="gestures_hint">Назначьте действия на свайпы от краёв панели</string>
+    <string name="gestures_reset">Сбросить по умолчанию</string>
+    <string name="gesture_left_edge_top">Левый край (верх)</string>
+    <string name="gesture_left_edge_bottom">Левый край (низ)</string>
+    <string name="gesture_right_edge_top">Правый край (верх)</string>
+    <string name="gesture_right_edge_bottom">Правый край (низ)</string>
+    <string name="gesture_action_none">Отключено</string>
+    <string name="gesture_action_open_drawer">Открыть меню</string>
+    <string name="gesture_action_open_shelf">Открыть полку</string>
+    <string name="gesture_action_toggle_hidden">Скрытые файлы</string>
+    <string name="gesture_action_create_new">Создать</string>
+    <string name="gesture_action_global_search">Глобальный поиск</string>
+    <string name="gesture_action_terminal">Терминал</string>
+    <string name="gesture_action_select_all">Выделить все</string>
+    <string name="gesture_action_refresh">Обновить</string>
+    <string name="gesture_action_go_home">На главную</string>
+    <string name="gesture_action_sort_cycle">Сменить сортировку</string>
+    <string name="gesture_action_settings">Настройки</string>
+    <string name="gesture_action_transfer">Передача файлов</string>
+    <string name="hidden_files_shown">Скрытые файлы: показаны</string>
+    <string name="hidden_files_hidden">Скрытые файлы: скрыты</string>
+    <string name="sort_changed_to">Сортировка: %s</string>
+    <string name="panel_refreshed">Панель обновлена</string>
+    <string name="gestures_and_voice_title">Жесты и голос</string>
+    <string name="gestures_and_voice_section">Жесты и голос</string>
+    <string name="gestures_and_voice_button">Настройки жестов и голоса</string>
+    <string name="tab_gestures">Жесты</string>
+    <string name="tab_voice">Голос</string>
+    <string name="voice_description">Нажмите кнопку микрофона на главном экране и произнесите команду. Приложение распознаёт русский и английский.</string>
+    <string name="voice_available_commands">Доступные команды</string>
+    <string name="voice_usage_hint">Нажмите кнопку микрофона в правом нижнем углу файловой панели, затем произнесите команду. Результат применяется к активной панели.</string>
+    <string name="voice_cmd_menu">"Меню"</string>
+    <string name="voice_cmd_menu_desc">Открыть боковое меню</string>
+    <string name="voice_cmd_shelf">"Полка"</string>
+    <string name="voice_cmd_shelf_desc">Открыть полку буфера обмена</string>
+    <string name="voice_cmd_hidden">"Скрытые"</string>
+    <string name="voice_cmd_hidden_desc">Показать/скрыть скрытые файлы</string>
+    <string name="voice_cmd_create">"Создать"</string>
+    <string name="voice_cmd_create_desc">Создать файл или папку</string>
+    <string name="voice_cmd_search">"Поиск"</string>
+    <string name="voice_cmd_search_desc">Открыть глобальный поиск</string>
+    <string name="voice_cmd_terminal">"Терминал"</string>
+    <string name="voice_cmd_terminal_desc">Открыть терминал</string>
+    <string name="voice_cmd_select_all">"Выделить все"</string>
+    <string name="voice_cmd_select_all_desc">Выделить все файлы</string>
+    <string name="voice_cmd_refresh">"Обновить"</string>
+    <string name="voice_cmd_refresh_desc">Обновить текущую панель</string>
+    <string name="voice_cmd_home">"Домой"</string>
+    <string name="voice_cmd_home_desc">Перейти в корневую папку</string>
+    <string name="voice_cmd_sort">"Сортировка"</string>
+    <string name="voice_cmd_sort_desc">Сменить порядок сортировки</string>
+    <string name="voice_cmd_settings">"Настройки"</string>
+    <string name="voice_cmd_settings_desc">Открыть настройки</string>
+    <string name="voice_cmd_transfer">"Передача"</string>
+    <string name="voice_cmd_transfer_desc">Открыть передачу файлов</string>
+
+    <!-- Terminal (Batch 32 + 37) -->
+    <string name="terminal_title">Терминал</string>
+    <string name="terminal_input_hint">Введите команду\u2026</string>
+    <string name="terminal_send">Отправить</string>
+    <string name="terminal_history_up">Предыдущая команда</string>
+    <string name="terminal_history_down">Следующая команда</string>
+    <string name="terminal_tab">Автодополнение</string>
+    <string name="terminal_ctrl_c">Отмена</string>
+    <string name="terminal_buffer_size">Буфер: %d строк</string>
+    <string name="terminal_timeout">Таймаут: %d сек</string>
+    <string name="terminal_settings">Настройки терминала</string>
+    <string name="terminal_color_test">Тест цвета: ls --color=always</string>
+
+    <!-- Voice Commands (Batch 34) -->
+    <string name="voice_command">Голосовая команда</string>
+    <string name="voice_listening">Слушаю\u2026</string>
+
+    <!-- Steganography (Batch 38) -->
+    <string name="stego_title">Стеганография</string>
+    <string name="stego_mode_hide">Скрыть</string>
+    <string name="stego_mode_extract">Извлечь</string>
+    <string name="stego_carrier">Файл-носитель (фото/видео/аудио)</string>
+    <string name="stego_payload">Файл для скрытия</string>
+    <string name="stego_select_carrier">Выберите файл-носитель в проводнике</string>
+    <string name="stego_select_payload">Выберите файл для скрытия в проводнике</string>
+    <string name="stego_hide_action">Скрыть в файле</string>
+    <string name="stego_extract_action">Извлечь скрытое</string>
+    <string name="stego_hidden_detected">Скрытые данные: %1$s (%2$s)</string>
+    <string name="stego_no_hidden">Скрытых данных не обнаружено</string>
+    <string name="stego_hidden_success">Данные успешно скрыты</string>
+    <string name="stego_extracted_success">Извлечено: %s</string>
+    <string name="stego_error">Ошибка стеганографии: %s</string>
+    <string name="stego_output_file">Файл: %s</string>
+    <string name="stego_phase_copying">Копирование носителя\u2026</string>
+    <string name="stego_phase_encrypting">Шифрование данных\u2026</string>
+    <string name="stego_phase_appending">Запись в носитель\u2026</string>
+    <string name="stego_phase_detecting">Поиск скрытых данных\u2026</string>
+    <string name="stego_phase_extracting">Извлечение данных\u2026</string>
+    <string name="stego_phase_error">Ошибка</string>
+    <string name="stego_hint">Файл-носитель (JPEG, PNG, MP4, MP3) продолжит открываться как обычно. Скрытые данные зашифрованы AES-256 и могут быть извлечены только на этом устройстве.</string>
+
+    <!-- Comparison (Batch 36) -->
+    <string name="compare_title">Сравнение</string>
+    <string name="compare_action">Сравнить</string>
+    <string name="compare_text_summary">+%1$d  -%2$d  ~%3$d</string>
+    <string name="compare_filter_all">Все (%d)</string>
+    <string name="compare_binary_identical">Файлы идентичны</string>
+    <string name="compare_binary_different">Файлы различаются</string>
+    <string name="compare_left">Левый</string>
+    <string name="compare_right">Правый</string>
+    <string name="compare_identical">Совпадают</string>
+    <string name="compare_different">Различаются</string>
+    <string name="compare_left_only">Только слева</string>
+    <string name="compare_right_only">Только справа</string>
+    <string name="compare_text_mode">Текстовый diff</string>
+    <string name="compare_folder_mode">Сравнение папок</string>
+    <string name="compare_binary_mode">Бинарное сравнение</string>
+
+    <!-- Receive files (Batch 35) -->
+    <string name="received_files_title">Получено файлов: %d</string>
+    <string name="received_files_description">Файлы получены из другого приложения. Сохраните в Загрузки или откройте сразу.</string>
+    <string name="received_open">Открыть</string>
+    <string name="received_save_to_downloads">Сохранить в Загрузки</string>
+    <string name="received_saved_count">Сохранено в Загрузки: %d</string>
+    <string name="received_single_file">Получен: %s</string>
+    <string name="received_save_error">Не удалось сохранить файл</string>
+
+    <!-- Cast (Batch 27) -->
+    <string name="cast_title">Трансляция</string>
+    <string name="cast_searching">Поиск устройств\u2026</string>
+    <string name="cast_no_devices">Cast-устройства не найдены</string>
+    <string name="cast_connecting">Подключение к %s\u2026</string>
+    <string name="cast_connected">Подключено к %s</string>
+    <string name="cast_disconnected">Отключено</string>
+    <string name="cast_chromecast">Chromecast</string>
+    <string name="cast_miracast">Miracast</string>
+    <string name="cast_not_available">Трансляция недоступна на этом устройстве</string>
+    <string name="cast_now_playing">Воспроизводится на %s</string>
+
+    <!-- Cast Extended (Batch 39) -->
+    <string name="cast_mode_title">Режим трансляции</string>
+    <string name="cast_mode_single">Одиночный медиа</string>
+    <string name="cast_mode_single_desc">Воспроизвести один файл на ТВ</string>
+    <string name="cast_mode_slideshow">Слайд-шоу</string>
+    <string name="cast_mode_slideshow_desc">Автопролистывание фото на ТВ</string>
+    <string name="cast_mode_pdf">PDF-презентация</string>
+    <string name="cast_mode_pdf_desc">Листайте на телефоне, показывайте на ТВ</string>
+    <string name="cast_mode_info">Информация о файле</string>
+    <string name="cast_mode_info_desc">Показать свойства файла на ТВ</string>
+    <string name="cast_mode_mirror">Зеркало экрана</string>
+    <string name="cast_mode_mirror_desc">Отображение экрана телефона на ТВ</string>
+    <string name="cast_slideshow_config_title">Настройки слайд-шоу</string>
+    <string name="cast_slideshow_interval">Интервал: %d сек</string>
+    <string name="cast_slideshow_loop">Зацикливание</string>
+    <string name="cast_slideshow_shuffle">Перемешивание</string>
+    <string name="cast_slideshow_start">Запустить</string>
+    <string name="cast_presenting_on">Презентация на %s</string>
+    <string name="cast_mirror_notification_title">Зеркалирование экрана</string>
+    <string name="cast_mirror_notification_text">Haron транслирует ваш экран</string>
+    <string name="cast_mirror_channel_name">Зеркалирование экрана</string>
+
+    <!-- Quick Send -->
+    <string name="quick_send_no_devices">Нет устройств Haron поблизости</string>
+    <string name="quick_send_sending">Отправка на %s…</string>
+    <string name="quick_send_done">Отправлено на %s</string>
+    <string name="quick_send_failed">Ошибка отправки: %s</string>
+    <string name="quick_send_declined">Отменено пользователем</string>
+    <string name="quick_send_request_sent">Запрос отправлен на %s</string>
+    <string name="quick_send_drop_here">Перетащите файлы сюда</string>
+
+    <!-- Transfer stats -->
+    <string name="transfer_today_received">Принято сегодня: %d</string>
+
+    <!-- Device trust & rename (Batch 40) -->
+    <string name="device_trusted">Доверенное устройство</string>
+    <string name="device_untrusted">Недоверенное устройство</string>
+    <string name="device_rename_title">Переименовать устройство</string>
 </resources>

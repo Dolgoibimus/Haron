@@ -16,4 +16,15 @@ object HaronConstants {
     const val SECURE_KEYSTORE_ALIAS = "haron_secure_key"
     const val SECURE_TEMP_DIR = "secure_temp"
     const val VIRTUAL_SECURE_PATH = "__haron_secure__"
+
+    // Transfer
+    const val TRANSFER_PORT_START = 8080
+    const val TRANSFER_PORT_END = 8090
+    const val NSD_SERVICE_TYPE = "_haron._tcp."
+    const val TRANSFER_BUFFER_SIZE = 8192
+    const val TRANSFER_MAX_RETRIES = 5
+    const val TRANSFER_RETRY_DELAYS = "1000,2000,4000,8000,16000" // ms, comma-separated
+
+    // Cast
+    const val CAST_APP_ID = "CC1AD845" // Default Media Receiver
 }

@@ -728,4 +728,243 @@
 
     <!-- PDF highlight (Batch 23) -->
     <string name="pdf_extracting_text">Searching text\u2026</string>
+
+    <!-- File Transfer (Batch 24) -->
+    <string name="transfer_title">File Transfer</string>
+    <string name="transfer_preparing">Preparing transfer\u2026</string>
+    <string name="transfer_paused">Transfer paused</string>
+    <string name="transfer_server_running">File server running</string>
+    <string name="transfer_receive_mode">Waiting for incoming files\u2026</string>
+    <string name="transfer_channel_name">File transfer</string>
+    <string name="transfer_channel_desc">File transfer between devices</string>
+    <string name="transfer_notification_title">File Transfer</string>
+    <string name="transfer_scanning">Scanning for devices\u2026</string>
+    <string name="transfer_no_devices">No devices found</string>
+    <string name="transfer_connecting">Connecting\u2026</string>
+    <string name="transfer_sending">Sending: %1$d/%2$d \u2014 %3$s</string>
+    <string name="transfer_receiving">Receiving: %1$d/%2$d \u2014 %3$s</string>
+    <string name="transfer_complete">Transfer complete: %d files</string>
+    <string name="receive_complete">Received: %d files</string>
+    <string name="transfer_open_folder">Open folder</string>
+    <string name="transfer_scan_qr_title">Scan QR code</string>
+    <string name="transfer_scan_qr_subtitle">Point camera at a QR code from another device</string>
+    <string name="transfer_failed">Transfer failed: %s</string>
+    <string name="transfer_cancelled">Transfer cancelled</string>
+    <string name="transfer_speed">%s/s</string>
+    <string name="transfer_eta">%s remaining</string>
+    <string name="transfer_wifi_direct">Wi-Fi Direct</string>
+    <string name="transfer_http">Wi-Fi (HTTP)</string>
+    <string name="transfer_bluetooth">Bluetooth</string>
+    <string name="transfer_send">Send</string>
+    <string name="transfer_receive">Receive</string>
+    <string name="transfer_qr_title">Scan QR code</string>
+    <string name="transfer_qr_subtitle">Open this URL in any browser to download files</string>
+    <string name="transfer_accept_title">Incoming transfer</string>
+    <string name="transfer_accept_message">%1$s wants to send %2$d files</string>
+    <string name="transfer_accept">Accept</string>
+    <string name="transfer_decline">Decline</string>
+    <string name="transfer_haron_device">Haron device</string>
+    <string name="transfer_battery_saver_warning">Battery saver is on. Transfer may be slower or interrupted.</string>
+    <string name="transfer_no_wifi">Wi-Fi is disabled</string>
+    <string name="transfer_no_wifi_for_qr">Connect both devices to the same Wi-Fi network to share via QR code</string>
+    <string name="transfer_no_bluetooth">Bluetooth is disabled</string>
+    <string name="transfer_no_connection">No connection available</string>
+    <string name="transfer_resume">Resume</string>
+    <string name="transfer_retry">Retry</string>
+    <string name="transfer_select_files">Select files to send</string>
+    <string name="transfer_drawer_item">File Transfer</string>
+
+    <!-- Network Discovery (Batch 31) -->
+    <string name="network">Network</string>
+    <string name="network_no_devices">No devices found</string>
+    <string name="network_haron_device">Haron on %s</string>
+    <string name="network_smb_share">SMB share</string>
+    <string name="network_scanning">Scanning network\u2026</string>
+    <string name="network_refresh">Refresh</string>
+    <string name="network_smb_info">SMB: %s:%d</string>
+
+    <!-- USB OTG (Batch 30) -->
+    <string name="usb_connected">USB connected: %s</string>
+    <string name="usb_disconnected">USB disconnected: %s</string>
+    <string name="usb_ejected_safe">USB safely ejected: %s</string>
+    <string name="usb_safe_to_remove">Safe to remove: %s</string>
+    <string name="usb_eject">Eject</string>
+    <string name="usb_free_space">%1$s free of %2$s</string>
+    <string name="usb_bad_removal">USB disconnected without safe ejection</string>
+
+    <!-- Gestures (Batch 33) -->
+    <string name="gestures_section">Gestures</string>
+    <string name="gestures_hint">Assign actions to edge swipes on the file panel</string>
+    <string name="gestures_reset">Reset to defaults</string>
+    <string name="gesture_left_edge_top">Left edge (top)</string>
+    <string name="gesture_left_edge_bottom">Left edge (bottom)</string>
+    <string name="gesture_right_edge_top">Right edge (top)</string>
+    <string name="gesture_right_edge_bottom">Right edge (bottom)</string>
+    <string name="gesture_action_none">Disabled</string>
+    <string name="gesture_action_open_drawer">Open menu</string>
+    <string name="gesture_action_open_shelf">Open shelf</string>
+    <string name="gesture_action_toggle_hidden">Toggle hidden files</string>
+    <string name="gesture_action_create_new">Create new</string>
+    <string name="gesture_action_global_search">Global search</string>
+    <string name="gesture_action_terminal">Terminal</string>
+    <string name="gesture_action_select_all">Select all</string>
+    <string name="gesture_action_refresh">Refresh</string>
+    <string name="gesture_action_go_home">Go to root</string>
+    <string name="gesture_action_sort_cycle">Cycle sort</string>
+    <string name="gesture_action_settings">Settings</string>
+    <string name="gesture_action_transfer">File transfer</string>
+    <string name="hidden_files_shown">Hidden files: shown</string>
+    <string name="hidden_files_hidden">Hidden files: hidden</string>
+    <string name="sort_changed_to">Sort: %s</string>
+    <string name="panel_refreshed">Panel refreshed</string>
+    <string name="gestures_and_voice_title">Gestures &amp; Voice</string>
+    <string name="gestures_and_voice_section">Gestures &amp; Voice</string>
+    <string name="gestures_and_voice_button">Gestures &amp; Voice Settings</string>
+    <string name="tab_gestures">Gestures</string>
+    <string name="tab_voice">Voice</string>
+    <string name="voice_description">Tap the microphone button on the main screen and say a command. The app recognizes Russian and English.</string>
+    <string name="voice_available_commands">Available commands</string>
+    <string name="voice_usage_hint">Tap the microphone button in the bottom-right corner of the file panel, then speak a command. The result is applied to the active panel.</string>
+    <string name="voice_cmd_menu">"Menu"</string>
+    <string name="voice_cmd_menu_desc">Open side menu</string>
+    <string name="voice_cmd_shelf">"Shelf"</string>
+    <string name="voice_cmd_shelf_desc">Open clipboard shelf</string>
+    <string name="voice_cmd_hidden">"Hidden"</string>
+    <string name="voice_cmd_hidden_desc">Toggle hidden files</string>
+    <string name="voice_cmd_create">"Create"</string>
+    <string name="voice_cmd_create_desc">Create new file or folder</string>
+    <string name="voice_cmd_search">"Search"</string>
+    <string name="voice_cmd_search_desc">Open global search</string>
+    <string name="voice_cmd_terminal">"Terminal"</string>
+    <string name="voice_cmd_terminal_desc">Open terminal</string>
+    <string name="voice_cmd_select_all">"Select all"</string>
+    <string name="voice_cmd_select_all_desc">Select all files</string>
+    <string name="voice_cmd_refresh">"Refresh"</string>
+    <string name="voice_cmd_refresh_desc">Refresh current panel</string>
+    <string name="voice_cmd_home">"Home"</string>
+    <string name="voice_cmd_home_desc">Go to root folder</string>
+    <string name="voice_cmd_sort">"Sort"</string>
+    <string name="voice_cmd_sort_desc">Cycle sort order</string>
+    <string name="voice_cmd_settings">"Settings"</string>
+    <string name="voice_cmd_settings_desc">Open settings</string>
+    <string name="voice_cmd_transfer">"Transfer"</string>
+    <string name="voice_cmd_transfer_desc">Open file transfer</string>
+
+    <!-- Terminal (Batch 32 + 37) -->
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_input_hint">Enter command\u2026</string>
+    <string name="terminal_send">Send</string>
+    <string name="terminal_history_up">Previous command</string>
+    <string name="terminal_history_down">Next command</string>
+    <string name="terminal_tab">Tab completion</string>
+    <string name="terminal_ctrl_c">Cancel</string>
+    <string name="terminal_buffer_size">Buffer: %d lines</string>
+    <string name="terminal_timeout">Timeout: %d sec</string>
+    <string name="terminal_settings">Terminal settings</string>
+    <string name="terminal_color_test">Color test: ls --color=always</string>
+
+    <!-- Voice Commands (Batch 34) -->
+    <string name="voice_command">Voice command</string>
+    <string name="voice_listening">Listening\u2026</string>
+
+    <!-- Steganography (Batch 38) -->
+    <string name="stego_title">Steganography</string>
+    <string name="stego_mode_hide">Hide</string>
+    <string name="stego_mode_extract">Extract</string>
+    <string name="stego_carrier">Carrier file (image/video/audio)</string>
+    <string name="stego_payload">File to hide</string>
+    <string name="stego_select_carrier">Select carrier file from Explorer</string>
+    <string name="stego_select_payload">Select file to hide from Explorer</string>
+    <string name="stego_hide_action">Hide in file</string>
+    <string name="stego_extract_action">Extract hidden</string>
+    <string name="stego_hidden_detected">Hidden data: %1$s (%2$s)</string>
+    <string name="stego_no_hidden">No hidden data detected</string>
+    <string name="stego_hidden_success">Data hidden successfully</string>
+    <string name="stego_extracted_success">Extracted: %s</string>
+    <string name="stego_error">Steganography error: %s</string>
+    <string name="stego_output_file">Output: %s</string>
+    <string name="stego_phase_copying">Copying carrier\u2026</string>
+    <string name="stego_phase_encrypting">Encrypting data\u2026</string>
+    <string name="stego_phase_appending">Appending to carrier\u2026</string>
+    <string name="stego_phase_detecting">Detecting hidden data\u2026</string>
+    <string name="stego_phase_extracting">Extracting data\u2026</string>
+    <string name="stego_phase_error">Error</string>
+    <string name="stego_hint">The carrier file (JPEG, PNG, MP4, MP3) will still open normally. Hidden data is encrypted with AES-256 and can only be extracted on this device.</string>
+
+    <!-- Comparison (Batch 36) -->
+    <string name="compare_title">Compare</string>
+    <string name="compare_action">Compare</string>
+    <string name="compare_text_summary">+%1$d  -%2$d  ~%3$d</string>
+    <string name="compare_filter_all">All (%d)</string>
+    <string name="compare_binary_identical">Files are identical</string>
+    <string name="compare_binary_different">Files are different</string>
+    <string name="compare_left">Left</string>
+    <string name="compare_right">Right</string>
+    <string name="compare_identical">Identical</string>
+    <string name="compare_different">Different</string>
+    <string name="compare_left_only">Left only</string>
+    <string name="compare_right_only">Right only</string>
+    <string name="compare_text_mode">Text diff</string>
+    <string name="compare_folder_mode">Folder diff</string>
+    <string name="compare_binary_mode">Binary comparison</string>
+
+    <!-- Receive files (Batch 35) -->
+    <string name="received_files_title">Received files (%d)</string>
+    <string name="received_files_description">Files received from another app. Save to Downloads or open directly.</string>
+    <string name="received_open">Open</string>
+    <string name="received_save_to_downloads">Save to Downloads</string>
+    <string name="received_saved_count">Saved to Downloads: %d</string>
+    <string name="received_single_file">Received: %s</string>
+    <string name="received_save_error">Could not save file</string>
+
+    <!-- Cast (Batch 27) -->
+    <string name="cast_title">Cast</string>
+    <string name="cast_searching">Searching for devices\u2026</string>
+    <string name="cast_no_devices">No Cast devices found</string>
+    <string name="cast_connecting">Connecting to %s\u2026</string>
+    <string name="cast_connected">Connected to %s</string>
+    <string name="cast_disconnected">Disconnected</string>
+    <string name="cast_chromecast">Chromecast</string>
+    <string name="cast_miracast">Miracast</string>
+    <string name="cast_not_available">Cast is not available on this device</string>
+    <string name="cast_now_playing">Now playing on %s</string>
+
+    <!-- Cast Extended (Batch 39) -->
+    <string name="cast_mode_title">Cast mode</string>
+    <string name="cast_mode_single">Single media</string>
+    <string name="cast_mode_single_desc">Play one file on TV</string>
+    <string name="cast_mode_slideshow">Slideshow</string>
+    <string name="cast_mode_slideshow_desc">Auto-cycle photos on TV</string>
+    <string name="cast_mode_pdf">PDF presentation</string>
+    <string name="cast_mode_pdf_desc">Flip pages on phone, show on TV</string>
+    <string name="cast_mode_info">File info</string>
+    <string name="cast_mode_info_desc">Show file details on TV</string>
+    <string name="cast_mode_mirror">Screen mirror</string>
+    <string name="cast_mode_mirror_desc">Mirror phone screen to TV</string>
+    <string name="cast_slideshow_config_title">Slideshow settings</string>
+    <string name="cast_slideshow_interval">Interval: %d sec</string>
+    <string name="cast_slideshow_loop">Loop</string>
+    <string name="cast_slideshow_shuffle">Shuffle</string>
+    <string name="cast_slideshow_start">Start</string>
+    <string name="cast_presenting_on">Presenting on %s</string>
+    <string name="cast_mirror_notification_title">Screen mirroring</string>
+    <string name="cast_mirror_notification_text">Haron is mirroring your screen</string>
+    <string name="cast_mirror_channel_name">Screen mirroring</string>
+
+    <!-- Quick Send -->
+    <string name="quick_send_no_devices">No Haron devices nearby</string>
+    <string name="quick_send_sending">Sending to %s…</string>
+    <string name="quick_send_done">Sent to %s</string>
+    <string name="quick_send_failed">Send failed: %s</string>
+    <string name="quick_send_declined">Cancelled by user</string>
+    <string name="quick_send_request_sent">Request sent to %s</string>
+    <string name="quick_send_drop_here">Drop files here</string>
+
+    <!-- Transfer stats -->
+    <string name="transfer_today_received">Received today: %d</string>
+
+    <!-- Device trust & rename (Batch 40) -->
+    <string name="device_trusted">Trusted device</string>
+    <string name="device_untrusted">Untrusted device</string>
+    <string name="device_rename_title">Rename device</string>
 </resources>

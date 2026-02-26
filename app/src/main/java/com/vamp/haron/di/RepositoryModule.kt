@@ -3,10 +3,12 @@ package com.vamp.haron.di
 import com.vamp.haron.data.repository.FileRepositoryImpl
 import com.vamp.haron.data.repository.SearchRepositoryImpl
 import com.vamp.haron.data.repository.SecureFolderRepositoryImpl
+import com.vamp.haron.data.repository.SteganographyRepositoryImpl
 import com.vamp.haron.data.repository.TrashRepositoryImpl
 import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.haron.domain.repository.SearchRepository
 import com.vamp.haron.domain.repository.SecureFolderRepository
+import com.vamp.haron.domain.repository.SteganographyRepository
 import com.vamp.haron.domain.repository.TrashRepository
 import dagger.Binds
 import dagger.Module
@@ -33,4 +35,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSearchRepository(impl: SearchRepositoryImpl): SearchRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSteganographyRepository(impl: SteganographyRepositoryImpl): SteganographyRepository
 }

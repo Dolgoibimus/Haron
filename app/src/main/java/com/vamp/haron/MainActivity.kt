@@ -1,11 +1,16 @@
 package com.vamp.haron
 
+import android.app.Activity
+import android.content.Intent
 import android.content.SharedPreferences
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -15,17 +20,30 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.SendToMobile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -40,37 +58,86 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.lifecycleScope
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.presentation.applock.AppLockViewModel
 import com.vamp.haron.presentation.applock.LockScreen
+import com.vamp.haron.presentation.cast.CastOverlay
 import com.vamp.haron.presentation.navigation.HaronNavigation
+import com.vamp.haron.presentation.voice.VoiceFab
+import com.vamp.haron.common.util.IntentHandler
+import com.vamp.haron.common.util.ReceivedFile
 import com.vamp.haron.presentation.search.IndexNotificationViewModel
+import com.vamp.haron.domain.model.TransferHolder
+import com.vamp.haron.presentation.transfer.GlobalReceiveViewModel
+import com.vamp.haron.presentation.transfer.ReceiveNotificationViewModel
+import com.vamp.haron.service.ScreenMirrorService
 import com.vamp.haron.ui.theme.HaronScaling
 import com.vamp.haron.ui.theme.HaronTheme
 import com.vamp.haron.ui.theme.LocalHaronScaling
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    @javax.inject.Inject
+    lateinit var receiveFileManager: com.vamp.haron.data.transfer.ReceiveFileManager
+
     private val appLockViewModel: AppLockViewModel by viewModels()
+
+    /** Received files from external intents (ACTION_VIEW / ACTION_SEND) */
+    internal val receivedFiles = mutableStateOf<List<ReceivedFile>>(emptyList())
+
+    /** MediaProjection launcher for screen mirroring */
+    lateinit var mediaProjectionLauncher: ActivityResultLauncher<Intent>
+        private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Start transfer listener — runs in ReceiveFileManager's own scope,
+        // survives Activity recreation and screen transitions
+        receiveFileManager.ensureListening()
+
+        // Register MediaProjection launcher
+        mediaProjectionLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                val serviceIntent = Intent(this, ScreenMirrorService::class.java).apply {
+                    action = ScreenMirrorService.ACTION_START
+                    putExtra(ScreenMirrorService.EXTRA_RESULT_CODE, result.resultCode)
+                    putExtra(ScreenMirrorService.EXTRA_RESULT_DATA, result.data)
+                }
+                startForegroundService(serviceIntent)
+            }
+        }
+
         // Handle widget intent
         val navigateToPath = intent?.getStringExtra("navigate_to")
+
+        // Handle external file intent
+        if (savedInstanceState == null) {
+            processExternalIntent(intent)
+        }
 
         // Lifecycle observer for app lock
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
@@ -179,6 +246,14 @@ class MainActivity : FragmentActivity() {
                                 modifier = Modifier.fillMaxSize()
                             )
 
+                            // Voice command FAB (global overlay)
+                            if (!lockState.isLocked) {
+                                VoiceFab()
+                            }
+
+                            // Cast remote control overlay
+                            CastOverlay()
+
                             // Index complete notification overlay
                             val indexNotifVm = hiltViewModel<IndexNotificationViewModel>()
                             val showIndexComplete by indexNotifVm.showNotification.collectAsState()
@@ -199,9 +274,57 @@ class MainActivity : FragmentActivity() {
                                     pinLength = appLockViewModel.getPinLength()
                                 )
                             }
+
+                            // Friend receive notification overlay (trusted devices only) — on top of everything
+                            val receiveNotifVm = hiltViewModel<ReceiveNotificationViewModel>()
+                            val friendSender by receiveNotifVm.senderName.collectAsState()
+                            if (friendSender != null) {
+                                ReceiveCompleteOverlay(
+                                    senderName = friendSender!!,
+                                    onDismiss = { receiveNotifVm.dismiss() },
+                                    onNavigateToFolder = {
+                                        receiveNotifVm.dismiss()
+                                        val dir = java.io.File(
+                                            android.os.Environment.getExternalStoragePublicDirectory(
+                                                android.os.Environment.DIRECTORY_DOWNLOADS
+                                            ), "Haron"
+                                        )
+                                        TransferHolder.pendingNavigationPath.value = dir.absolutePath
+                                    }
+                                )
+                            }
+
+                            // Global incoming transfer dialog (untrusted devices) — on top of everything
+                            val globalReceiveVm = hiltViewModel<GlobalReceiveViewModel>()
+                            val incomingRequest by globalReceiveVm.incoming.collectAsState()
+                            if (incomingRequest != null) {
+                                IncomingTransferDialog(
+                                    deviceName = incomingRequest!!.deviceName,
+                                    fileCount = incomingRequest!!.fileCount,
+                                    onAccept = { globalReceiveVm.accept() },
+                                    onDecline = { globalReceiveVm.decline() }
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        processExternalIntent(intent)
+    }
+
+    private fun processExternalIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action == Intent.ACTION_VIEW || action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE) {
+            val files = IntentHandler.handleIntent(intent, this)
+            if (files.isNotEmpty()) {
+                receivedFiles.value = files
             }
         }
     }
@@ -271,6 +394,124 @@ private fun IndexCompleteOverlay(onDismiss: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun ReceiveCompleteOverlay(
+    senderName: String,
+    onDismiss: () -> Unit,
+    onNavigateToFolder: () -> Unit
+) {
+    val transition = rememberInfiniteTransition(label = "receive_pulse")
+    val alpha by transition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "receive_alpha"
+    )
+
+    var circleRect by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                val longPressMs = viewConfiguration.longPressTimeoutMillis
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    down.consume()
+                    val inCircle = circleRect.contains(down.position)
+
+                    if (!inCircle) {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                            if (event.changes.all { !it.pressed }) break
+                        }
+                        onDismiss()
+                        return@awaitEachGesture
+                    }
+
+                    val upOrTimeout = withTimeoutOrNull(longPressMs) {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            change.consume()
+                            if (!change.pressed) return@withTimeoutOrNull change
+                        }
+                        null
+                    }
+                    if (upOrTimeout == null) {
+                        onNavigateToFolder()
+                    } else {
+                        onDismiss()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .onGloballyPositioned { coords ->
+                    val pos = coords.positionInParent()
+                    circleRect = androidx.compose.ui.geometry.Rect(
+                        pos.x, pos.y,
+                        pos.x + coords.size.width, pos.y + coords.size.height
+                    )
+                }
+                .clip(RoundedCornerShape(32.dp))
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = alpha))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.SendToMobile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.9f),
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = senderName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun IncomingTransferDialog(
+    deviceName: String,
+    fileCount: Int,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDecline,
+        title = {
+            Text(stringResource(R.string.transfer_receive))
+        },
+        text = {
+            Text("$deviceName — $fileCount ${if (fileCount == 1) "file" else "files"}")
+        },
+        confirmButton = {
+            TextButton(onClick = onAccept) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDecline) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
 }
 
 @dagger.hilt.EntryPoint

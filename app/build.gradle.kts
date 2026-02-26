@@ -81,8 +81,9 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
 
-    // ML Kit Image Labeling
+    // ML Kit Image Labeling + OCR Text Recognition
     implementation("com.google.mlkit:image-labeling:17.0.9")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
@@ -90,6 +91,28 @@ dependencies {
     // Glance widget
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
+
+    // HTTP server (Ktor CIO — file transfer)
+    implementation("io.ktor:ktor-server-core:2.3.12")
+    implementation("io.ktor:ktor-server-cio:2.3.12")
+
+    // Diff utils (file comparison)
+    implementation("io.github.java-diff-utils:java-diff-utils:4.12")
+
+    // ZXing QR code generation
+    implementation("com.google.zxing:core:3.5.3")
+
+    // CameraX + ML Kit Barcode Scanning (QR scanner)
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+    // Google Cast SDK (Chromecast)
+    implementation("com.google.android.gms:play-services-cast-framework:22.0.0")
+
+    // MediaRouter (Miracast + Cast route discovery)
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
 
     // AndroidX
     implementation("androidx.exifinterface:exifinterface:1.4.1")

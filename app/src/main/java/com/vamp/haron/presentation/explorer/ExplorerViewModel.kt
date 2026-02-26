@@ -23,6 +23,8 @@ import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.FileTag
+import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.OperationProgress
 import com.vamp.haron.domain.model.OperationType
 import com.vamp.haron.domain.model.PanelId
@@ -46,7 +48,19 @@ import com.vamp.haron.domain.usecase.CalculateHashUseCase
 import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
 import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
 import com.vamp.haron.common.util.HapticManager
+import com.vamp.haron.data.network.NetworkDevice
+import com.vamp.haron.data.network.NetworkDeviceScanner
+import com.vamp.haron.data.network.NetworkDeviceType
+import com.vamp.haron.data.transfer.ReceiveFileManager
+import com.vamp.haron.domain.model.DiscoveredDevice
+import com.vamp.haron.domain.model.TransferProgressInfo
+import com.vamp.haron.domain.model.TransferProtocol
+import com.vamp.haron.domain.repository.TransferRepository
+import com.vamp.haron.presentation.explorer.state.QuickSendState
+import com.vamp.haron.data.voice.VoiceCommandManager
+import com.vamp.haron.data.voice.VoiceState
 import com.vamp.haron.data.security.AuthManager
+import com.vamp.haron.data.usb.UsbStorageManager
 import com.vamp.haron.domain.repository.SecureFolderRepository
 import com.vamp.haron.domain.usecase.BatchRenameUseCase
 import com.vamp.haron.domain.usecase.ForceDeleteUseCase
@@ -108,7 +122,12 @@ class ExplorerViewModel @Inject constructor(
     private val batchRenameUseCase: BatchRenameUseCase,
     private val secureFolderRepository: SecureFolderRepository,
     private val authManager: AuthManager,
-    private val searchRepository: com.vamp.haron.domain.repository.SearchRepository
+    private val searchRepository: com.vamp.haron.domain.repository.SearchRepository,
+    private val usbStorageManager: UsbStorageManager,
+    private val networkDeviceScanner: NetworkDeviceScanner,
+    val voiceCommandManager: VoiceCommandManager,
+    private val transferRepository: TransferRepository,
+    private val receiveFileManager: ReceiveFileManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -173,7 +192,8 @@ class ExplorerViewModel @Inject constructor(
                 originalFolders = preferences.getOriginalFolders(),
                 bookmarks = preferences.getBookmarks(),
                 tagDefinitions = preferences.getTagDefinitions(),
-                fileTags = preferences.getFileTagMappings()
+                fileTags = preferences.getFileTagMappings(),
+                gestureMappings = preferences.getGestureMappings()
             )
         }
         val topPath = preferences.topPanelPath.let { p ->
@@ -214,6 +234,87 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
         }
+
+        // Badge: track active background operations count
+        viewModelScope.launch {
+            FileOperationService.activeOperations.collect { count ->
+                _uiState.update { it.copy(activeOperationsCount = count) }
+            }
+        }
+
+        // Network discovery — find Haron instances and SMB shares
+        networkDeviceScanner.startDiscovery()
+        viewModelScope.launch {
+            networkDeviceScanner.devices.collect { devices ->
+                val enriched = devices.map { d ->
+                    d.copy(
+                        alias = preferences.getDeviceAlias(d.name),
+                        isTrusted = preferences.isDeviceTrusted(d.name)
+                    )
+                }
+                _uiState.update { it.copy(networkDevices = enriched) }
+            }
+        }
+
+        // Listener is started in MainActivity (lifecycle-level) to stay alive across all screens
+        _uiState.update { it.copy(isListeningForTransfer = true) }
+
+        // USB OTG — register receiver and subscribe to volume changes
+        usbStorageManager.register()
+        viewModelScope.launch {
+            var previousPaths = emptySet<String>()
+            usbStorageManager.usbVolumes.collect { volumes ->
+                _uiState.update { it.copy(usbVolumes = volumes) }
+                val currentPaths = volumes.map { it.path }.toSet()
+                // Detect new USB connections
+                val added = currentPaths - previousPaths
+                for (path in added) {
+                    val vol = volumes.firstOrNull { it.path == path }
+                    if (vol != null) {
+                        _toastMessage.tryEmit(
+                            appContext.getString(R.string.usb_connected, vol.label)
+                        )
+                    }
+                }
+                // Detect USB disconnections
+                val removed = previousPaths - currentPaths
+                for (path in removed) {
+                    // Navigate away from USB path if panel is on it
+                    navigateAwayFromUsb(path)
+                }
+                previousPaths = currentPaths
+            }
+        }
+
+        // Voice commands — subscribe to results
+        // Navigation actions (OPEN_SETTINGS, OPEN_TERMINAL, etc.) are handled by
+        // HaronNavigation's global voice dispatcher. Only local actions handled here.
+        viewModelScope.launch {
+            voiceCommandManager.lastResult.collect { action ->
+                if (action != null && !action.isScreenNavigation) {
+                    executeGestureAction(action)
+                    voiceCommandManager.consumeResult()
+                }
+            }
+        }
+
+        // Quick Send — auto-refresh panels when files received
+        viewModelScope.launch {
+            receiveFileManager.quickReceiveCompleted.collect { dirPath ->
+                // Refresh any panel showing the receive directory
+                if (_uiState.value.topPanel.currentPath == dirPath) refreshPanel(PanelId.TOP)
+                if (_uiState.value.bottomPanel.currentPath == dirPath) refreshPanel(PanelId.BOTTOM)
+            }
+        }
+
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        usbStorageManager.unregister()
+        networkDeviceScanner.stopDiscovery()
+        // Don't call receiveFileManager.stopListening() — the global listener
+        // lives in MainActivity and must survive ViewModel lifecycle
     }
 
     /** Threshold: use foreground service for >10 files or >50MB total */
@@ -221,6 +322,292 @@ class ExplorerViewModel @Inject constructor(
         const val SERVICE_FILE_THRESHOLD = 10
         const val SERVICE_SIZE_THRESHOLD = 50L * 1024 * 1024 // 50 MB
         const val MAX_HISTORY_SIZE = 50
+    }
+
+    // --- USB OTG ---
+
+    private fun navigateAwayFromUsb(usbPath: String) {
+        val topPath = _uiState.value.topPanel.currentPath
+        val bottomPath = _uiState.value.bottomPanel.currentPath
+        if (topPath.startsWith(usbPath)) {
+            navigateTo(PanelId.TOP, HaronConstants.ROOT_PATH)
+        }
+        if (bottomPath.startsWith(usbPath)) {
+            navigateTo(PanelId.BOTTOM, HaronConstants.ROOT_PATH)
+        }
+    }
+
+    fun ejectUsb(usbPath: String) {
+        val volume = usbStorageManager.getVolumeForPath(usbPath)
+        val label = volume?.label ?: usbPath.substringAfterLast('/')
+        // Navigate away first
+        navigateAwayFromUsb(usbPath)
+        viewModelScope.launch {
+            val unmounted = withContext(Dispatchers.IO) {
+                usbStorageManager.safeEject(usbPath)
+            }
+            if (unmounted) {
+                _toastMessage.tryEmit(
+                    appContext.getString(R.string.usb_ejected_safe, label)
+                )
+            } else {
+                _toastMessage.tryEmit(
+                    appContext.getString(R.string.usb_safe_to_remove, label)
+                )
+            }
+        }
+    }
+
+    // --- Network ---
+
+    fun onNetworkDeviceTap(device: com.vamp.haron.data.network.NetworkDevice) {
+        when (device.type) {
+            NetworkDeviceType.HARON -> {
+                // Open transfer screen to send files to this Haron device
+                _toastMessage.tryEmit(
+                    appContext.getString(R.string.network_haron_device, device.address)
+                )
+                openTransfer()
+            }
+            NetworkDeviceType.SMB -> {
+                _toastMessage.tryEmit(
+                    appContext.getString(R.string.network_smb_info, device.address, device.port)
+                )
+            }
+        }
+    }
+
+    fun refreshNetwork() {
+        networkDeviceScanner.refreshDevices()
+    }
+
+    // --- Quick Send ---
+
+    fun startQuickSend(filePath: String, fileName: String, offset: Offset) {
+        val haronDevices = _uiState.value.networkDevices.filter { it.type == NetworkDeviceType.HARON }
+        if (haronDevices.isEmpty()) {
+            _toastMessage.tryEmit(appContext.getString(R.string.quick_send_no_devices))
+            return
+        }
+        _uiState.update {
+            it.copy(
+                quickSendState = QuickSendState.DraggingToDevice(
+                    filePath = filePath,
+                    fileName = fileName,
+                    anchorOffset = offset,
+                    dragOffset = offset,
+                    haronDevices = haronDevices
+                )
+            )
+        }
+    }
+
+    fun updateQuickSendDrag(offset: Offset) {
+        val current = _uiState.value.quickSendState
+        if (current is QuickSendState.DraggingToDevice) {
+            _uiState.update {
+                it.copy(quickSendState = current.copy(dragOffset = offset))
+            }
+        }
+    }
+
+    fun endQuickSendAtPosition(finalOffset: Offset) {
+        val current = _uiState.value.quickSendState
+        if (current !is QuickSendState.DraggingToDevice) {
+            cancelQuickSend()
+            return
+        }
+        // Find nearest device circle using same arc layout as QuickSendOverlay
+        val devices = current.haronDevices
+        val count = devices.size
+        val dm = appContext.resources.displayMetrics
+        val density = dm.density
+        val screenWidthPx = dm.widthPixels.toFloat()
+        val screenHeightPx = dm.heightPixels.toFloat()
+        val circleRadiusPx = 30f * density // 30.dp
+        val circleDiameterPx = circleRadiusPx * 2
+        val nearThresholdPx = 60f * density // 60.dp
+
+        // Arc radius — same formula as QuickSendOverlay
+        val arcAngle = Math.PI * 2 / 3 // 120 degrees
+        val minArcRadius = if (count > 1) {
+            (count * circleDiameterPx * 1.3f / arcAngle).toFloat()
+        } else {
+            circleDiameterPx * 2f
+        }
+        val arcRadiusPx = minArcRadius.coerceIn(circleDiameterPx * 2f, screenWidthPx * 0.4f)
+
+        // Above anchor by default, below if no space above — same as QuickSendOverlay
+        val spaceNeededAbove = arcRadiusPx + circleDiameterPx
+        val placeAbove = current.anchorOffset.y > spaceNeededAbove
+        // Shift anchor 50dp up or down for better visibility
+        val extraOffsetPx = 50f * density
+        val shiftedAnchorY = if (placeAbove) current.anchorOffset.y - extraOffsetPx else current.anchorOffset.y + extraOffsetPx
+
+        val startAngle = if (placeAbove) (Math.PI + Math.PI / 6) else (Math.PI / 6)
+        val endAngle = if (placeAbove) (2 * Math.PI - Math.PI / 6) else (Math.PI - Math.PI / 6)
+        val step = if (count > 1) (endAngle - startAngle) / (count - 1) else 0.0
+
+        var nearest: NetworkDevice? = null
+        var nearestDist = Float.MAX_VALUE
+
+        devices.forEachIndexed { index, device ->
+            val angle = if (count > 1) startAngle + step * index else (startAngle + endAngle) / 2
+            val cx = (current.anchorOffset.x + (arcRadiusPx * kotlin.math.cos(angle)).toFloat())
+                .coerceIn(circleRadiusPx, screenWidthPx - circleRadiusPx)
+            val cy = (shiftedAnchorY + (arcRadiusPx * kotlin.math.sin(angle)).toFloat())
+                .coerceIn(circleRadiusPx, screenHeightPx - circleRadiusPx)
+            val dx = finalOffset.x - cx
+            val dy = finalOffset.y - cy
+            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (dist < nearestDist) {
+                nearestDist = dist
+                nearest = device
+            }
+        }
+
+        if (nearest != null && nearestDist < nearThresholdPx) {
+            performQuickSend(current.filePath, nearest!!.displayName, nearest!!.address, nearest!!.port)
+        } else {
+            cancelQuickSend()
+        }
+    }
+
+    fun cancelQuickSend() {
+        _uiState.update {
+            it.copy(
+                topPanel = it.topPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                bottomPanel = it.bottomPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                quickSendState = QuickSendState.Idle
+            )
+        }
+    }
+
+    /** Find WiFi Network for socket binding (avoids mobile data routing) */
+    private fun findWifiNetwork(): android.net.Network? {
+        val cm = appContext.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager ?: return null
+        for (network in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                return network
+            }
+        }
+        return null
+    }
+
+    /** Try discovered port first, then scan 8080-8090 on ECONNREFUSED */
+    private fun connectWithPortScan(address: String, preferredPort: Int): java.net.Socket {
+        val wifiNetwork = findWifiNetwork()
+        val portsToTry = buildList {
+            add(preferredPort)
+            for (p in HaronConstants.TRANSFER_PORT_START..HaronConstants.TRANSFER_PORT_END) {
+                if (p != preferredPort) add(p)
+            }
+        }
+        var lastError: Exception? = null
+        for (tryPort in portsToTry) {
+            try {
+                val sock = java.net.Socket()
+                // Bind to WiFi to avoid routing through mobile data
+                wifiNetwork?.bindSocket(sock)
+                sock.connect(java.net.InetSocketAddress(address, tryPort), 3_000)
+                if (tryPort != preferredPort) {
+                    EcosystemLogger.d(HaronConstants.TAG, "Port scan: connected on $tryPort (NSD reported $preferredPort)")
+                }
+                return sock
+            } catch (e: java.net.ConnectException) {
+                lastError = e
+            } catch (e: java.net.SocketTimeoutException) {
+                lastError = e
+            }
+        }
+        throw lastError ?: java.io.IOException("Cannot connect to $address")
+    }
+
+    private fun performQuickSend(filePath: String, deviceName: String, address: String, port: Int) {
+        _uiState.update { it.copy(quickSendState = QuickSendState.Sending(deviceName)) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(filePath)
+                if (!file.exists()) {
+                    withContext(Dispatchers.Main) {
+                        _toastMessage.tryEmit(appContext.getString(R.string.quick_send_failed, "File not found"))
+                        _uiState.update { it.copy(quickSendState = QuickSendState.Idle) }
+                    }
+                    return@launch
+                }
+
+                connectWithPortScan(address, port).use { sock ->
+                    val output = java.io.DataOutputStream(sock.getOutputStream())
+                    val reader = java.io.BufferedReader(java.io.InputStreamReader(sock.getInputStream()))
+
+                    // Send QUICK_SEND with sender name for trust verification
+                    val androidId = android.provider.Settings.Secure.getString(appContext.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
+                    val senderName = "Haron-${android.os.Build.MODEL}-${androidId.takeLast(8)}"
+                    val request = com.vamp.haron.data.transfer.TransferProtocolNegotiator.buildQuickSend(listOf(file), senderName)
+                    output.writeUTF(request)
+                    output.flush()
+
+                    // Wait for ACCEPT
+                    val response = reader.readLine() ?: throw java.io.IOException("No response from receiver")
+                    val type = com.vamp.haron.data.transfer.TransferProtocolNegotiator.parseType(response)
+                    if (type == com.vamp.haron.data.transfer.TransferProtocolNegotiator.TYPE_DECLINE) {
+                        withContext(Dispatchers.Main) {
+                            _toastMessage.tryEmit(appContext.getString(R.string.quick_send_declined))
+                            _uiState.update {
+                                it.copy(
+                                    topPanel = it.topPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                                    bottomPanel = it.bottomPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                                    quickSendState = QuickSendState.Idle
+                                )
+                            }
+                        }
+                        return@launch
+                    }
+
+                    // Send file header + data
+                    output.writeUTF(
+                        com.vamp.haron.data.transfer.TransferProtocolNegotiator.buildFileHeader(
+                            file.name, file.length(), 0
+                        )
+                    )
+                    output.flush()
+
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                    output.flush()
+
+                    // Send COMPLETE
+                    output.writeUTF(com.vamp.haron.data.transfer.TransferProtocolNegotiator.buildComplete())
+                    output.flush()
+                }
+
+                withContext(Dispatchers.Main) {
+                    _toastMessage.tryEmit(appContext.getString(R.string.quick_send_done, deviceName))
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "Quick send error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    _toastMessage.tryEmit(appContext.getString(R.string.quick_send_failed, e.message ?: ""))
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update {
+                        it.copy(
+                            topPanel = it.topPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                            bottomPanel = it.bottomPanel.copy(selectedPaths = emptySet(), isSelectionMode = false),
+                            quickSendState = QuickSendState.Idle
+                        )
+                    }
+                }
+            }
+        }
     }
 
     // --- Navigation ---
@@ -780,6 +1167,9 @@ class ExplorerViewModel @Inject constructor(
         preferences.showHidden = newValue
         updatePanel(panelId) { it.copy(showHidden = newValue) }
         refreshPanel(panelId)
+        _toastMessage.tryEmit(
+            appContext.getString(if (newValue) R.string.hidden_files_shown else R.string.hidden_files_hidden)
+        )
     }
 
     // --- Search ---
@@ -1936,10 +2326,35 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun setDragHoveredFolder(folderPath: String?) {
+        val current = _uiState.value.dragState
+        if (current is DragState.Dragging && current.hoveredFolderPath != folderPath) {
+            _uiState.update {
+                it.copy(dragState = current.copy(hoveredFolderPath = folderPath))
+            }
+        }
+    }
+
     fun endDrag(targetPanelId: PanelId?) {
         val current = _uiState.value.dragState
         if (current !is DragState.Dragging) return
+
+        val hoveredFolder = current.hoveredFolderPath
         _uiState.update { it.copy(dragState = DragState.Idle) }
+
+        // Drop into a specific folder (same or other panel)
+        if (hoveredFolder != null) {
+            val paths = current.draggedPaths
+            // Don't move a folder into itself
+            if (paths.any { hoveredFolder.startsWith(it) }) return
+            // Don't move files into their own parent directory (no-op)
+            val sourceDir = getPanel(current.sourcePanelId).currentPath
+            if (hoveredFolder == sourceDir) return
+            clearSelection(current.sourcePanelId)
+            val destPanelId = targetPanelId ?: current.sourcePanelId
+            executeDragMove(paths, hoveredFolder, current.sourcePanelId, destPanelId, current.fileCount, ConflictResolution.RENAME)
+            return
+        }
 
         if (targetPanelId == null || targetPanelId == current.sourcePanelId) return
 
@@ -2433,6 +2848,22 @@ class ExplorerViewModel @Inject constructor(
         _navigationEvent.tryEmit(NavigationEvent.OpenGlobalSearch)
     }
 
+    // --- File Transfer ---
+
+    fun openTransfer() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenTransfer)
+    }
+
+    fun onSendSelected(paths: List<String>) {
+        val files = paths.mapNotNull { path ->
+            java.io.File(path).takeIf { it.exists() }
+        }
+        if (files.isEmpty()) return
+        com.vamp.haron.domain.model.TransferHolder.selectedFiles = files
+        clearSelection(uiState.value.activePanel)
+        _navigationEvent.tryEmit(NavigationEvent.OpenTransfer)
+    }
+
     // --- Open with external app ---
 
     fun openWithExternalApp(entry: FileEntry) {
@@ -2474,8 +2905,113 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun openTerminal() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenTerminal)
+    }
+
+    fun compareSelected() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.size == 2) {
+            com.vamp.haron.domain.model.ComparisonHolder.leftPath = selected[0].path
+            com.vamp.haron.domain.model.ComparisonHolder.rightPath = selected[1].path
+            clearSelection(activeId)
+            _navigationEvent.tryEmit(NavigationEvent.OpenComparison)
+        }
+    }
+
+    fun hideSelectedInFile() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.size == 1 && !selected.first().isDirectory) {
+            com.vamp.haron.domain.model.StegoHolder.payloadPath = selected.first().path
+            com.vamp.haron.domain.model.StegoHolder.carrierPath = ""
+            clearSelection(activeId)
+            _navigationEvent.tryEmit(NavigationEvent.OpenSteganography)
+        }
+    }
+
+    fun openSteganography() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenSteganography)
+    }
+
+    fun castSelected() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.isEmpty()) return
+
+        val modes = mutableListOf<com.vamp.haron.domain.model.CastMode>()
+
+        // Determine available modes based on selection
+        val hasImages = selected.any { !it.isDirectory && it.path.lowercase().let { p ->
+            p.endsWith(".jpg") || p.endsWith(".jpeg") || p.endsWith(".png") ||
+            p.endsWith(".gif") || p.endsWith(".webp") || p.endsWith(".bmp")
+        }}
+        val hasMedia = selected.any { !it.isDirectory && it.path.lowercase().let { p ->
+            p.endsWith(".mp4") || p.endsWith(".mkv") || p.endsWith(".avi") ||
+            p.endsWith(".webm") || p.endsWith(".mp3") || p.endsWith(".flac") ||
+            p.endsWith(".ogg") || p.endsWith(".wav")
+        }}
+        val hasPdf = selected.any { !it.isDirectory && it.path.lowercase().endsWith(".pdf") }
+
+        if (hasMedia || hasImages) modes.add(com.vamp.haron.domain.model.CastMode.SINGLE_MEDIA)
+        if (hasImages && selected.size > 1) modes.add(com.vamp.haron.domain.model.CastMode.SLIDESHOW)
+        if (hasPdf && selected.size == 1) modes.add(com.vamp.haron.domain.model.CastMode.PDF_PRESENTATION)
+        modes.add(com.vamp.haron.domain.model.CastMode.FILE_INFO)
+        modes.add(com.vamp.haron.domain.model.CastMode.SCREEN_MIRROR)
+
+        val paths = selected.map { it.path }
+        _uiState.update { it.copy(dialogState = DialogState.CastModeSelect(paths, modes)) }
+    }
+
     fun openSettings() {
         _navigationEvent.tryEmit(NavigationEvent.OpenSettings)
+    }
+
+    // --- Gesture system ---
+
+    fun executeGestureAction(action: GestureAction) {
+        val panelId = _uiState.value.activePanel
+        when (action) {
+            GestureAction.NONE -> { /* do nothing */ }
+            GestureAction.OPEN_DRAWER -> toggleDrawer()
+            GestureAction.OPEN_SHELF -> toggleShelf()
+            GestureAction.TOGGLE_HIDDEN -> toggleShowHidden(panelId)
+            GestureAction.CREATE_NEW -> requestCreateFromTemplate()
+            GestureAction.GLOBAL_SEARCH -> openGlobalSearch()
+            GestureAction.OPEN_TERMINAL -> openTerminal()
+            GestureAction.SELECT_ALL -> selectAll(panelId)
+            GestureAction.REFRESH -> {
+                refreshPanel(panelId)
+                _toastMessage.tryEmit(appContext.getString(R.string.panel_refreshed))
+            }
+            GestureAction.GO_HOME -> navigateTo(panelId, HaronConstants.ROOT_PATH)
+            GestureAction.SORT_CYCLE -> cycleSortOrder(panelId)
+            GestureAction.OPEN_SETTINGS -> openSettings()
+            GestureAction.OPEN_TRANSFER -> openTransfer()
+        }
+    }
+
+    private fun cycleSortOrder(panelId: PanelId) {
+        val current = getPanel(panelId).sortOrder
+        val fields = com.vamp.haron.data.model.SortField.entries
+        val nextIndex = (fields.indexOf(current.field) + 1) % fields.size
+        val newOrder = current.copy(field = fields[nextIndex])
+        setSortOrder(panelId, newOrder)
+        val sortName = when (newOrder.field) {
+            com.vamp.haron.data.model.SortField.NAME -> appContext.getString(R.string.sort_by_name)
+            com.vamp.haron.data.model.SortField.DATE -> appContext.getString(R.string.sort_by_date)
+            com.vamp.haron.data.model.SortField.SIZE -> appContext.getString(R.string.sort_by_size)
+            com.vamp.haron.data.model.SortField.EXTENSION -> appContext.getString(R.string.sort_by_type)
+        }
+        _toastMessage.tryEmit(appContext.getString(R.string.sort_changed_to, sortName))
+    }
+
+    fun reloadGestureMappings() {
+        _uiState.update { it.copy(gestureMappings = preferences.getGestureMappings()) }
     }
 
     // --- Force Delete ---

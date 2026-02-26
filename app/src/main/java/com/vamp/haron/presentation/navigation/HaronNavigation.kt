@@ -1,7 +1,14 @@
 package com.vamp.haron.presentation.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
@@ -9,7 +16,18 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.os.Environment
+import android.widget.Toast
+import com.vamp.haron.R
+import com.vamp.haron.common.util.ReceivedFile
 import com.vamp.haron.common.util.hasStoragePermission
+import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.data.voice.VoiceCommandManager
+import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.NavigationEvent
+import com.vamp.haron.presentation.receive.ReceiveFilesDialog
+import dagger.hilt.android.EntryPointAccessors
+import java.io.File
 import com.vamp.haron.presentation.archive.ArchiveViewerScreen
 import com.vamp.haron.presentation.editor.TextEditorScreen
 import com.vamp.haron.presentation.explorer.ExplorerScreen
@@ -19,10 +37,21 @@ import com.vamp.haron.presentation.permission.PermissionScreen
 import com.vamp.haron.presentation.player.MediaPlayerScreen
 import com.vamp.haron.presentation.appmanager.AppManagerScreen
 import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
+import com.vamp.haron.presentation.settings.GesturesVoiceScreen
 import com.vamp.haron.presentation.settings.SettingsScreen
 import com.vamp.haron.domain.model.SearchNavigationHolder
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.presentation.search.SearchScreen
 import com.vamp.haron.presentation.storage.StorageAnalysisScreen
+import android.webkit.MimeTypeMap
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.vamp.haron.domain.model.CastMode
+import com.vamp.haron.presentation.cast.CastViewModel
+import com.vamp.haron.presentation.comparison.ComparisonScreen
+import com.vamp.haron.presentation.steganography.SteganographyScreen
+import com.vamp.haron.service.ScreenMirrorService
+import com.vamp.haron.presentation.terminal.TerminalScreen
+import com.vamp.haron.presentation.transfer.TransferScreen
 
 object HaronRoutes {
     const val PERMISSION = "permission"
@@ -42,6 +71,11 @@ object HaronRoutes {
     const val APP_MANAGER = "app_manager"
     const val SETTINGS = "settings"
     const val SEARCH = "search"
+    const val TRANSFER = "transfer"
+    const val TERMINAL = "terminal"
+    const val GESTURES_VOICE = "gestures_voice"
+    const val COMPARISON = "comparison"
+    const val STEGANOGRAPHY = "steganography"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -64,6 +98,12 @@ object HaronRoutes {
     }
 }
 
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface VoiceManagerEntryPoint {
+    fun voiceCommandManager(): VoiceCommandManager
+}
+
 @Composable
 fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifier) {
     val navController = rememberNavController()
@@ -72,6 +112,132 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         HaronRoutes.EXPLORER
     } else {
         HaronRoutes.PERMISSION
+    }
+
+    // Received files from external intent
+    val activity = context as? com.vamp.haron.MainActivity
+    val receivedFiles = activity?.receivedFiles?.value ?: emptyList()
+    var showReceiveDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(receivedFiles) {
+        if (receivedFiles.isNotEmpty()) {
+            showReceiveDialog = true
+        }
+    }
+
+    if (showReceiveDialog && receivedFiles.isNotEmpty()) {
+        ReceiveFilesDialog(
+            files = receivedFiles,
+            onSave = {
+                showReceiveDialog = false
+                saveReceivedFilesToDownloads(context, receivedFiles)
+                activity?.receivedFiles?.value = emptyList()
+            },
+            onOpen = {
+                showReceiveDialog = false
+                val file = receivedFiles.first()
+                openReceivedFile(navController, file)
+                activity?.receivedFiles?.value = emptyList()
+            },
+            onDismiss = {
+                showReceiveDialog = false
+                activity?.receivedFiles?.value = emptyList()
+            }
+        )
+    }
+
+    // Global voice command dispatcher — handles navigation from any screen
+    val voiceCmdMgr = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            VoiceManagerEntryPoint::class.java
+        ).voiceCommandManager()
+    }
+
+    LaunchedEffect(Unit) {
+        voiceCmdMgr.lastResult.collect { action ->
+            if (action == null) return@collect
+            val currentRoute = navController.currentDestination?.route
+
+            if (action.isScreenNavigation) {
+                // Navigation actions — handle directly, avoid duplicate push
+                val targetRoute = when (action) {
+                    GestureAction.OPEN_SETTINGS -> HaronRoutes.SETTINGS
+                    GestureAction.OPEN_TERMINAL -> HaronRoutes.TERMINAL
+                    GestureAction.OPEN_TRANSFER -> HaronRoutes.TRANSFER
+                    GestureAction.GLOBAL_SEARCH -> HaronRoutes.SEARCH
+                    else -> null
+                }
+                voiceCmdMgr.consumeResult()
+                if (targetRoute != null && currentRoute != targetRoute) {
+                    navController.navigate(targetRoute)
+                }
+            } else if (currentRoute != null && currentRoute != HaronRoutes.EXPLORER) {
+                // Local actions (drawer, hidden files, etc.) — pop back to Explorer.
+                // ExplorerViewModel's collector handles the actual action.
+                navController.popBackStack(HaronRoutes.EXPLORER, inclusive = false)
+            }
+            // When on Explorer, ExplorerViewModel handles everything — no action needed here.
+        }
+    }
+
+    // Cast mode action handler (composable context for Hilt ViewModel)
+    val castViewModel: CastViewModel = hiltViewModel()
+    val pendingCastMode = CastActionHolder.pendingMode
+    val pendingCastFiles = CastActionHolder.pendingFilePaths
+    LaunchedEffect(pendingCastMode) {
+        val mode = pendingCastMode ?: return@LaunchedEffect
+        CastActionHolder.pendingMode = null
+        val filePaths = pendingCastFiles
+        CastActionHolder.pendingFilePaths = emptyList()
+
+        when (mode) {
+            CastMode.SINGLE_MEDIA -> {
+                if (filePaths.isNotEmpty()) {
+                    castViewModel.setCastMode(CastMode.SINGLE_MEDIA)
+                    if (castViewModel.isConnected.value) {
+                        castViewModel.castMedia(filePaths.first(), File(filePaths.first()).name)
+                    } else {
+                        castViewModel.showSheet()
+                    }
+                }
+            }
+            CastMode.SLIDESHOW -> {
+                val files = filePaths.map { File(it) }.filter { it.exists() }
+                if (castViewModel.isConnected.value) {
+                    castViewModel.castSlideshow(files, com.vamp.haron.domain.model.SlideshowConfig())
+                } else {
+                    castViewModel.showSheet()
+                }
+            }
+            CastMode.PDF_PRESENTATION -> {
+                if (filePaths.isNotEmpty()) {
+                    if (castViewModel.isConnected.value) {
+                        castViewModel.castPdfPresentation(filePaths.first())
+                    } else {
+                        castViewModel.showSheet()
+                    }
+                }
+            }
+            CastMode.FILE_INFO -> {
+                if (filePaths.isNotEmpty()) {
+                    val file = File(filePaths.first())
+                    if (castViewModel.isConnected.value) {
+                        castViewModel.castFileInfo(
+                            name = file.name,
+                            path = file.absolutePath,
+                            size = file.length().toFileSize(context),
+                            modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                                .format(java.util.Date(file.lastModified())),
+                            mimeType = guessMimeTypeFromFile(file)
+                        )
+                    } else {
+                        castViewModel.showSheet()
+                    }
+                }
+            }
+            CastMode.SCREEN_MIRROR -> { /* handled in non-composable function */ }
+        }
     }
 
     NavHost(
@@ -120,6 +286,21 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenGlobalSearch = {
                     navController.navigate(HaronRoutes.SEARCH)
+                },
+                onOpenTransfer = {
+                    navController.navigate(HaronRoutes.TRANSFER)
+                },
+                onOpenTerminal = {
+                    navController.navigate(HaronRoutes.TERMINAL)
+                },
+                onOpenComparison = {
+                    navController.navigate(HaronRoutes.COMPARISON)
+                },
+                onOpenSteganography = {
+                    navController.navigate(HaronRoutes.STEGANOGRAPHY)
+                },
+                onCastModeSelected = { mode, filePaths ->
+                    handleCastModeSelected(mode, filePaths, context)
                 }
             )
         }
@@ -135,6 +316,36 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         }
         composable(HaronRoutes.SETTINGS) {
             SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenGesturesVoice = { navController.navigate(HaronRoutes.GESTURES_VOICE) }
+            )
+        }
+        composable(HaronRoutes.GESTURES_VOICE) {
+            GesturesVoiceScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.TRANSFER) {
+            TransferScreen(
+                onBack = { navController.popBackStack() },
+                onOpenFolder = { path ->
+                    TransferHolder.pendingNavigationPath.value = path
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable(HaronRoutes.TERMINAL) {
+            TerminalScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.COMPARISON) {
+            ComparisonScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.STEGANOGRAPHY) {
+            SteganographyScreen(
                 onBack = { navController.popBackStack() }
             )
         }
@@ -249,6 +460,116 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 archiveName = fileName,
                 onBack = { navController.popBackStack() }
             )
+        }
+    }
+}
+
+private fun saveReceivedFilesToDownloads(context: android.content.Context, files: List<ReceivedFile>) {
+    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    var saved = 0
+    files.forEach { received ->
+        try {
+            val src = File(received.localPath)
+            var target = File(downloadsDir, received.displayName)
+            if (target.exists()) {
+                val base = received.displayName.substringBeforeLast('.')
+                val ext = received.displayName.substringAfterLast('.', "")
+                var counter = 1
+                while (target.exists()) {
+                    val name = if (ext.isNotEmpty()) "${base}_($counter).$ext" else "${base}_($counter)"
+                    target = File(downloadsDir, name)
+                    counter++
+                }
+            }
+            src.copyTo(target)
+            src.delete()
+            saved++
+        } catch (_: Exception) { }
+    }
+    if (saved > 0) {
+        Toast.makeText(
+            context,
+            context.getString(R.string.received_saved_count, saved),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+/** Holder for cast mode + file paths, set from ExplorerScreen, consumed in HaronNavigation */
+object CastActionHolder {
+    var pendingMode: CastMode? = null
+    var pendingFilePaths: List<String> = emptyList()
+}
+
+private fun handleCastModeSelected(
+    mode: CastMode,
+    filePaths: List<String>,
+    context: android.content.Context
+) {
+    // Save for composable consumption, or handle non-composable actions directly
+    when (mode) {
+        CastMode.SCREEN_MIRROR -> {
+            val activity = context as? com.vamp.haron.MainActivity ?: return
+            val projectionManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
+                    as android.media.projection.MediaProjectionManager
+            activity.mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        }
+        else -> {
+            // Store for composable-level CastViewModel handling
+            CastActionHolder.pendingMode = mode
+            CastActionHolder.pendingFilePaths = filePaths
+        }
+    }
+}
+
+private fun guessMimeTypeFromFile(file: File): String {
+    val ext = file.extension.lowercase()
+    return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+}
+
+private fun openReceivedFile(
+    navController: androidx.navigation.NavController,
+    file: ReceivedFile
+) {
+    val ext = file.displayName.substringAfterLast('.', "").lowercase()
+    val path = file.localPath
+    val name = file.displayName
+    when {
+        ext in listOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "svg") -> {
+            com.vamp.haron.domain.model.GalleryHolder.items = listOf(
+                com.vamp.haron.domain.model.GalleryHolder.GalleryItem(
+                    filePath = path, fileName = name, fileSize = file.size
+                )
+            )
+            com.vamp.haron.domain.model.GalleryHolder.startIndex = 0
+            navController.navigate(HaronRoutes.gallery(0))
+        }
+        ext in listOf("mp4", "avi", "mkv", "mov", "webm", "3gp", "flv", "ts", "m4v") -> {
+            com.vamp.haron.domain.model.PlaylistHolder.items = listOf(
+                com.vamp.haron.domain.model.PlaylistHolder.PlaylistItem(
+                    filePath = path, fileName = name, fileType = "video"
+                )
+            )
+            com.vamp.haron.domain.model.PlaylistHolder.startIndex = 0
+            navController.navigate(HaronRoutes.mediaPlayer(0))
+        }
+        ext in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus") -> {
+            com.vamp.haron.domain.model.PlaylistHolder.items = listOf(
+                com.vamp.haron.domain.model.PlaylistHolder.PlaylistItem(
+                    filePath = path, fileName = name, fileType = "audio"
+                )
+            )
+            com.vamp.haron.domain.model.PlaylistHolder.startIndex = 0
+            navController.navigate(HaronRoutes.mediaPlayer(0))
+        }
+        ext == "pdf" -> {
+            navController.navigate(HaronRoutes.pdfReader(path, name))
+        }
+        ext in listOf("zip", "rar", "7z", "tar", "gz") -> {
+            navController.navigate(HaronRoutes.archiveViewer(path, name))
+        }
+        else -> {
+            navController.navigate(HaronRoutes.textEditor(path, name))
         }
     }
 }

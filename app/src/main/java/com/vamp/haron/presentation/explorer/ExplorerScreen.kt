@@ -77,11 +77,14 @@ import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
 import com.vamp.haron.presentation.explorer.components.BatchRenameDialog
 import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
+import com.vamp.haron.presentation.explorer.components.QuickSendOverlay
+import com.vamp.haron.presentation.explorer.state.QuickSendState
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
 import com.vamp.haron.presentation.explorer.components.ShelfPanel
 import com.vamp.haron.presentation.explorer.components.TagAssignDialog
 import com.vamp.haron.presentation.explorer.components.TagManageDialog
 import com.vamp.haron.presentation.explorer.components.TrashDialog
+import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.explorer.state.DragState
@@ -104,7 +107,12 @@ fun ExplorerScreen(
     onOpenDuplicateDetector: () -> Unit = { },
     onOpenAppManager: () -> Unit = { },
     onOpenSettings: () -> Unit = { },
-    onOpenGlobalSearch: () -> Unit = { }
+    onOpenGlobalSearch: () -> Unit = { },
+    onOpenTransfer: () -> Unit = { },
+    onOpenTerminal: () -> Unit = { },
+    onOpenComparison: () -> Unit = { },
+    onOpenSteganography: () -> Unit = { },
+    onCastModeSelected: (com.vamp.haron.domain.model.CastMode, List<String>) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -146,6 +154,21 @@ fun ExplorerScreen(
                 is NavigationEvent.OpenGlobalSearch -> {
                     onOpenGlobalSearch()
                 }
+                is NavigationEvent.OpenTransfer -> {
+                    onOpenTransfer()
+                }
+                is NavigationEvent.OpenTerminal -> {
+                    onOpenTerminal()
+                }
+                is NavigationEvent.OpenComparison -> {
+                    onOpenComparison()
+                }
+                is NavigationEvent.OpenSteganography -> {
+                    onOpenSteganography()
+                }
+                is NavigationEvent.HandleExternalFile -> {
+                    // Handled at navigation level
+                }
             }
         }
     }
@@ -169,6 +192,28 @@ fun ExplorerScreen(
             com.vamp.haron.domain.model.SearchNavigationHolder.targetParentPath = null
             com.vamp.haron.domain.model.SearchNavigationHolder.targetFilePath = null
         }
+    }
+
+    // Navigate to received files folder (from Transfer screen or receive overlay)
+    val transferPath by com.vamp.haron.domain.model.TransferHolder.pendingNavigationPath.collectAsState()
+    LaunchedEffect(transferPath) {
+        if (!transferPath.isNullOrEmpty()) {
+            val panel = viewModel.uiState.value.activePanel
+            viewModel.navigateTo(panel, transferPath!!)
+            com.vamp.haron.domain.model.TransferHolder.pendingNavigationPath.value = null
+        }
+    }
+
+    // Reload gesture mappings when returning from Settings
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.reloadGestureMappings()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val activePanel = state.activePanel
@@ -263,29 +308,40 @@ fun ExplorerScreen(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { totalHeightPx = it.height.toFloat() }
-            .pointerInput(showDrawerOrShelf, isDragging) {
+            .pointerInput(showDrawerOrShelf, isDragging, state.gestureMappings) {
                 if (showDrawerOrShelf || isDragging) return@pointerInput
                 val edgePx = 24.dp.toPx()
                 val swipeThreshold = 60f
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    if (down.position.x > edgePx) return@awaitEachGesture
+                    val startX = down.position.x
                     val startY = down.position.y
+                    val width = size.width.toFloat()
+                    val height = size.height.toFloat()
+                    val isLeftEdge = startX < edgePx
+                    val isRightEdge = startX > width - edgePx
+                    if (!isLeftEdge && !isRightEdge) return@awaitEachGesture
                     var totalDragX = 0f
                     var consumed = false
                     do {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull() ?: break
                         totalDragX += change.position.x - change.previousPosition.x
-                        if (!consumed && totalDragX > swipeThreshold) {
-                            consumed = true
-                            val height = size.height.toFloat()
-                            if (startY < height / 2) {
-                                viewModel.toggleShelf()
-                            } else {
-                                viewModel.toggleDrawer()
+                        if (!consumed) {
+                            val isTopHalf = startY < height / 2
+                            if (isLeftEdge && totalDragX > swipeThreshold) {
+                                consumed = true
+                                val gestureType = if (isTopHalf) GestureType.LEFT_EDGE_TOP else GestureType.LEFT_EDGE_BOTTOM
+                                val action = state.gestureMappings[gestureType] ?: gestureType.defaultAction
+                                viewModel.executeGestureAction(action)
+                                change.consume()
+                            } else if (isRightEdge && totalDragX < -swipeThreshold) {
+                                consumed = true
+                                val gestureType = if (isTopHalf) GestureType.RIGHT_EDGE_TOP else GestureType.RIGHT_EDGE_BOTTOM
+                                val action = state.gestureMappings[gestureType] ?: gestureType.defaultAction
+                                viewModel.executeGestureAction(action)
+                                change.consume()
                             }
-                            change.consume()
                         }
                     } while (event.changes.any { it.pressed })
                 }
@@ -333,8 +389,13 @@ fun ExplorerScreen(
                     viewModel.startDrag(PanelId.TOP, paths, offset)
                 },
                 onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
-                onDragEnded = { viewModel.endDrag(dragTargetPanel) },
+                onDragEnded = {
+                    viewModel.endDrag(dragTargetPanel)
+                },
                 isDragTarget = dragTargetPanel == PanelId.TOP,
+                externalDragOffset = if (isDragging) (dragState as DragState.Dragging).dragOffset else null,
+                hoveredFolderPath = if (isDragging) (dragState as DragState.Dragging).hoveredFolderPath else null,
+                onDragHoverFolder = { viewModel.setDragHoveredFolder(it) },
                 hasRemovableStorage = hasRemovable,
                 sdCardLabel = sdLabel,
                 hasSafPermission = hasSafPerm,
@@ -360,6 +421,20 @@ fun ExplorerScreen(
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
                 onLongPressShield = { viewModel.showAllProtectedFiles() },
                 onExitProtected = { viewModel.navigateUp(PanelId.TOP) },
+                onQuickSendStart = { path, name, offset ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.startQuickSend(path, name, offset)
+                },
+                onQuickSendDrag = { offset -> viewModel.updateQuickSendDrag(offset) },
+                onQuickSendEnd = {
+                    val qs = state.quickSendState
+                    if (qs is QuickSendState.DraggingToDevice) {
+                        viewModel.endQuickSendAtPosition(qs.dragOffset)
+                    } else {
+                        viewModel.cancelQuickSend()
+                    }
+                },
+                isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -426,8 +501,13 @@ fun ExplorerScreen(
                     viewModel.startDrag(PanelId.BOTTOM, paths, offset)
                 },
                 onDragMoved = { offset -> viewModel.updateDragPosition(offset) },
-                onDragEnded = { viewModel.endDrag(dragTargetPanel) },
+                onDragEnded = {
+                    viewModel.endDrag(dragTargetPanel)
+                },
                 isDragTarget = dragTargetPanel == PanelId.BOTTOM,
+                externalDragOffset = if (isDragging) (dragState as DragState.Dragging).dragOffset else null,
+                hoveredFolderPath = if (isDragging) (dragState as DragState.Dragging).hoveredFolderPath else null,
+                onDragHoverFolder = { viewModel.setDragHoveredFolder(it) },
                 hasRemovableStorage = hasRemovable,
                 sdCardLabel = sdLabel,
                 hasSafPermission = hasSafPerm,
@@ -453,6 +533,20 @@ fun ExplorerScreen(
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
                 onLongPressShield = { viewModel.showAllProtectedFiles() },
                 onExitProtected = { viewModel.navigateUp(PanelId.BOTTOM) },
+                onQuickSendStart = { path, name, offset ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.startQuickSend(path, name, offset)
+                },
+                onQuickSendDrag = { offset -> viewModel.updateQuickSendDrag(offset) },
+                onQuickSendEnd = {
+                    val qs = state.quickSendState
+                    if (qs is QuickSendState.DraggingToDevice) {
+                        viewModel.endQuickSendAtPosition(qs.dragOffset)
+                    } else {
+                        viewModel.cancelQuickSend()
+                    }
+                },
+                isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -511,6 +605,22 @@ fun ExplorerScreen(
                 onOpenWith = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.openSelectedWithExternalApp()
+                },
+                onSend = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.onSendSelected(selectedEntries.map { it.path })
+                },
+                onCast = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.castSelected()
+                },
+                onCompare = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.compareSelected()
+                },
+                onHideInFile = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.hideSelectedInFile()
                 },
                 onProtect = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
@@ -599,6 +709,8 @@ fun ExplorerScreen(
 
         // Left edge swipe detection moved to parent Box modifier
 
+        // Voice FAB moved to global overlay in MainActivity
+
         // Drag overlay — ghost icon following finger
         if (dragState is DragState.Dragging) {
             DragOverlay(
@@ -606,6 +718,11 @@ fun ExplorerScreen(
                 fileCount = dragState.fileCount,
                 offset = dragState.dragOffset
             )
+        }
+
+        // Quick Send overlay — device circles / drop target / sending indicator
+        if (state.quickSendState !is QuickSendState.Idle) {
+            QuickSendOverlay(state = state.quickSendState)
         }
     }
 
@@ -787,6 +904,16 @@ fun ExplorerScreen(
                 onDismiss = viewModel::dismissDialog
             )
         }
+        is DialogState.CastModeSelect -> {
+            com.vamp.haron.presentation.cast.components.CastModeSheet(
+                availableModes = dialog.availableModes,
+                onModeSelected = { mode ->
+                    viewModel.dismissDialog()
+                    onCastModeSelected(mode, dialog.filePaths)
+                },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
 
@@ -902,6 +1029,19 @@ fun ExplorerScreen(
                     onForceDelete = { viewModel.requestForceDelete() },
                     onManageTags = { viewModel.showTagManager() },
                     onToggleShield = { viewModel.toggleShield() },
+                    onOpenTransfer = { viewModel.openTransfer() },
+                    onOpenTerminal = { viewModel.openTerminal() },
+                    isListeningForTransfer = state.isListeningForTransfer,
+                    usbVolumes = state.usbVolumes,
+                    onNavigateUsb = { path ->
+                        viewModel.dismissDrawer()
+                        viewModel.navigateTo(state.activePanel, path)
+                    },
+                    onEjectUsb = { path -> viewModel.ejectUsb(path) },
+                    networkDevices = state.networkDevices,
+                    onNetworkDeviceTap = { device -> viewModel.onNetworkDeviceTap(device) },
+
+                    onRefreshNetwork = { viewModel.refreshNetwork() },
                     secureFolderInfo = run {
                         val (count, size) = viewModel.getSecureFolderInfo()
                         if (count > 0) "$count · ${size.toFileSize(context)}"

@@ -1,6 +1,9 @@
 package com.vamp.haron.presentation.explorer.state
 
+import com.vamp.haron.data.usb.UsbVolume
 import com.vamp.haron.domain.model.ApkInstallInfo
+import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.ConflictPair
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
@@ -44,7 +47,13 @@ data class ExplorerUiState(
     val isProtecting: Boolean = false,
     val protectProgress: String? = null,
     val showShieldAuth: Boolean = false,
-    val showAllProtectedAfterAuth: Boolean = false
+    val showAllProtectedAfterAuth: Boolean = false,
+    val usbVolumes: List<UsbVolume> = emptyList(),
+    val activeOperationsCount: Int = 0,
+    val networkDevices: List<com.vamp.haron.data.network.NetworkDevice> = emptyList(),
+    val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction },
+    val quickSendState: QuickSendState = QuickSendState.Idle,
+    val isListeningForTransfer: Boolean = false
 )
 
 sealed interface DialogState {
@@ -106,6 +115,10 @@ sealed interface DialogState {
     ) : DialogState
     data class TagAssign(val paths: List<String>) : DialogState
     data object TagManage : DialogState
+    data class CastModeSelect(
+        val filePaths: List<String>,
+        val availableModes: List<com.vamp.haron.domain.model.CastMode>
+    ) : DialogState
 }
 
 enum class FileTemplate(val labelRes: Int, val extension: String) {

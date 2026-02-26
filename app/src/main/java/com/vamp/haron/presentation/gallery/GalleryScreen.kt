@@ -38,6 +38,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,9 +60,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.exifinterface.media.ExifInterface
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.GalleryHolder
+import com.vamp.haron.presentation.cast.CastViewModel
+import com.vamp.haron.presentation.cast.components.CastButton
+import com.vamp.haron.presentation.cast.components.CastDeviceSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -85,6 +90,7 @@ fun GalleryScreen(
 
     val context = LocalContext.current
     val activity = context as? Activity
+    val castViewModel: CastViewModel = hiltViewModel()
 
     // Immersive mode: hide system bars, toggle with tap
     DisposableEffect(Unit) {
@@ -172,6 +178,10 @@ fun GalleryScreen(
                     }
                 },
                 actions = {
+                    CastButton(
+                        castManager = castViewModel.castManager,
+                        onClick = { castViewModel.showSheet() }
+                    )
                     IconButton(onClick = {
                         currentItem?.let { item ->
                             coroutineScope.launch {
@@ -219,6 +229,27 @@ fun GalleryScreen(
                     )
                 }
             }
+        }
+
+        // Cast device selection sheet
+        val showCastSheet by castViewModel.showDeviceSheet.collectAsState()
+        val castDevices by castViewModel.devices.collectAsState()
+        val castSearching by castViewModel.isSearching.collectAsState()
+        val castConnectedDevice by castViewModel.connectedDeviceName.collectAsState()
+
+        if (showCastSheet) {
+            CastDeviceSheet(
+                devices = castDevices,
+                isSearching = castSearching,
+                connectedDeviceName = castConnectedDevice,
+                onSelectDevice = { device ->
+                    currentItem?.let { item ->
+                        castViewModel.selectDeviceAndCast(device, item.filePath, item.fileName)
+                    }
+                },
+                onDisconnect = { castViewModel.disconnect() },
+                onDismiss = { castViewModel.hideSheet() }
+            )
         }
     }
 }

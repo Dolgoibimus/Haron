@@ -9,6 +9,7 @@ import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.data.observer.FileContentObserver
 import com.vamp.haron.data.observer.ScreenOnReceiver
+import com.vamp.haron.data.cast.GoogleCastManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -17,6 +18,9 @@ class HaronApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var castManager: GoogleCastManager
 
     private var contentObserver: FileContentObserver? = null
     private var screenOnReceiver: ScreenOnReceiver? = null
@@ -32,6 +36,9 @@ class HaronApp : Application(), Configuration.Provider {
         EcosystemLogger.init(this)
         EcosystemDatabase.getInstance(this)
         PDFBoxResourceLoader.init(this)
+
+        // Initialize Google Cast (graceful degradation — no-op if GMS absent)
+        castManager.initialize()
 
         // Register ContentObserver for media changes
         contentObserver = FileContentObserver(applicationContext).also { it.register() }

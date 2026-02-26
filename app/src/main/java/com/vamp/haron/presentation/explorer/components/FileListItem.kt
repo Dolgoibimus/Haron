@@ -83,9 +83,11 @@ fun FileListItem(
     tagColors: List<Color> = emptyList(),
     contentSnippet: String? = null,
     searchQuery: String = "",
+    isDragHovered: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
+        isDragHovered -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
         isRenaming -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         else -> MaterialTheme.colorScheme.surface

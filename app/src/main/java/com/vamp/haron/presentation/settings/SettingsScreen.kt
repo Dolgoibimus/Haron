@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +52,7 @@ import com.vamp.haron.presentation.applock.PinSetupDialog
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenGesturesVoice: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -318,6 +320,25 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Gestures & Voice ---
+            SectionHeader(
+                icon = Icons.Filled.SwipeRight,
+                title = stringResource(R.string.gestures_and_voice_section)
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenGesturesVoice,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.SwipeRight, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.gestures_and_voice_button))
+            }
 
             Spacer(Modifier.height(32.dp))
         }

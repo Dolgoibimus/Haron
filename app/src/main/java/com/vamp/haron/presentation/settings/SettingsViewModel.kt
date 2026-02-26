@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.security.AuthManager
 import com.vamp.haron.domain.model.AppLockMethod
+import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.GestureType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +30,9 @@ data class SettingsUiState(
     val isPinSet: Boolean = false,
     val hasBiometric: Boolean = false,
     val showPinSetupDialog: Boolean = false,
-    val isPinChange: Boolean = false
+    val isPinChange: Boolean = false,
+    // Gestures
+    val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction }
 )
 
 @HiltViewModel
@@ -51,7 +55,8 @@ class SettingsViewModel @Inject constructor(
             trashMaxSizeMb = preferences.trashMaxSizeMb,
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
-            hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
+            hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled(),
+            gestureMappings = preferences.getGestureMappings()
         )
     )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -137,5 +142,23 @@ class SettingsViewModel @Inject constructor(
             )
         }
         return true
+    }
+
+    // --- Gestures ---
+
+    fun setGestureAction(type: GestureType, action: GestureAction) {
+        preferences.setGestureAction(type, action)
+        _state.update {
+            it.copy(gestureMappings = it.gestureMappings.toMutableMap().apply { put(type, action) })
+        }
+    }
+
+    fun resetGestures() {
+        GestureType.entries.forEach { type ->
+            preferences.setGestureAction(type, type.defaultAction)
+        }
+        _state.update {
+            it.copy(gestureMappings = GestureType.entries.associateWith { t -> t.defaultAction })
+        }
     }
 }

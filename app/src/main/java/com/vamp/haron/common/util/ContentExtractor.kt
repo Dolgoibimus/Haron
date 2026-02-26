@@ -9,6 +9,7 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
+import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import java.io.File
 import java.util.zip.ZipFile
 import javax.inject.Inject
@@ -55,6 +56,10 @@ class ContentExtractor @Inject constructor(
             "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif",
             "heic", "heif", "raw", "cr2", "nef", "arw"
         )
+
+        val ARCHIVE_EXTENSIONS = setOf("zip", "7z", "rar")
+
+        private const val MAX_INNER_FILE_SIZE = 64 * 1024L // 64KB — extract small text files inside ZIP
     }
 
     private val scratchDir: File by lazy {
@@ -182,6 +187,76 @@ class ContentExtractor @Inject constructor(
 
     fun isImageFile(file: File): Boolean {
         return file.extension.lowercase() in IMAGE_EXTENSIONS
+    }
+
+    fun isArchiveFile(file: File): Boolean {
+        return file.extension.lowercase() in ARCHIVE_EXTENSIONS
+    }
+
+    /**
+     * Extract file names (and small text content) from inside ZIP/7Z/RAR archives.
+     * Used for content search — searching "readme.txt" will find archives containing it.
+     */
+    fun extractArchiveEntries(file: File): String {
+        return try {
+            val ext = file.extension.lowercase()
+            when (ext) {
+                "zip" -> extractZipEntries(file)
+                "7z" -> extract7zEntries(file)
+                "rar" -> extractRarEntries(file)
+                else -> ""
+            }
+        } catch (_: OutOfMemoryError) {
+            System.gc()
+            ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun extractZipEntries(file: File): String {
+        ZipFile(file).use { zip ->
+            val sb = StringBuilder()
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                sb.appendLine(entry.name)
+                // Extract small text files content
+                if (!entry.isDirectory && entry.size in 1..MAX_INNER_FILE_SIZE) {
+                    val innerExt = entry.name.substringAfterLast('.', "").lowercase()
+                    if (innerExt in TEXT_EXTENSIONS) {
+                        try {
+                            val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                            sb.appendLine(text)
+                        } catch (_: Exception) { /* skip */ }
+                    }
+                }
+            }
+            return sb.toString().take(MAX_FULL_TEXT)
+        }
+    }
+
+    private fun extract7zEntries(file: File): String {
+        val sb = StringBuilder()
+        SevenZFile(file).use { sevenZ ->
+            var entry = sevenZ.nextEntry
+            while (entry != null) {
+                sb.appendLine(entry.name)
+                entry = sevenZ.nextEntry
+            }
+        }
+        return sb.toString().take(MAX_FULL_TEXT)
+    }
+
+    private fun extractRarEntries(file: File): String {
+        val sb = StringBuilder()
+        val archive = com.github.junrar.Archive(file)
+        archive.use { rar ->
+            for (header in rar.fileHeaders) {
+                sb.appendLine(header.fileName)
+            }
+        }
+        return sb.toString().take(MAX_FULL_TEXT)
     }
 
     // ==================== Private: Snippet extraction (<=500 chars) ====================

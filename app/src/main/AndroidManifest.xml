@@ -34,10 +34,17 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
+    <!-- Network (for file transfer HTTP server) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -50,8 +57,15 @@
     <!-- Biometric -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
+    <!-- Voice commands (SpeechRecognizer) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- Vibration -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- USB OTG / mount/unmount -->
+    <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- APK Installation -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -62,6 +76,7 @@
 
     <application
         android:name=".HaronApp"
+        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -70,6 +85,7 @@
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.Haron">
         <activity
             android:name=".MainActivity"
@@ -81,6 +97,46 @@
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+
+            <!-- Open files from other apps (ACTION_VIEW) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-7z-compressed" />
+                <data android:mimeType="application/x-rar-compressed" />
+                <data android:mimeType="application/vnd.rar" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            </intent-filter>
+
+            <!-- Receive files via Share (ACTION_SEND) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- Receive multiple files via Share (ACTION_SEND_MULTIPLE) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 
@@ -100,6 +156,11 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".service.TransferService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|dataSync" />
+
+        <service
             android:name=".service.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
@@ -107,6 +168,16 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <service
+            android:name=".service.ScreenMirrorService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Google Cast framework -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.vamp.haron.data.cast.CastOptionsProvider" />
+
         <!-- Disable default WorkManager initializer (we use Hilt) -->
         <provider
             android:name="androidx.startup.InitializationProvider"

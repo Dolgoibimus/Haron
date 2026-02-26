@@ -7,6 +7,8 @@ import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.domain.model.FileTag
+import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.ShelfItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
@@ -460,6 +462,70 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_PIN_LENGTH, 4)
         set(value) = prefs.edit().putInt(KEY_PIN_LENGTH, value).apply()
 
+    // --- Gesture mappings ---
+
+    fun getGestureAction(type: GestureType): GestureAction {
+        val name = prefs.getString("${KEY_GESTURE_PREFIX}${type.name}", null)
+        return if (name != null) {
+            try { GestureAction.valueOf(name) } catch (_: Exception) { type.defaultAction }
+        } else {
+            type.defaultAction
+        }
+    }
+
+    fun setGestureAction(type: GestureType, action: GestureAction) {
+        prefs.edit().putString("${KEY_GESTURE_PREFIX}${type.name}", action.name).apply()
+    }
+
+    fun getGestureMappings(): Map<GestureType, GestureAction> {
+        return GestureType.entries.associateWith { getGestureAction(it) }
+    }
+
+    // --- Device aliases & trusted devices ---
+
+    fun getDeviceAlias(nsdName: String): String? {
+        val json = prefs.getString(KEY_DEVICE_ALIASES, null) ?: return null
+        return try {
+            JSONObject(json).optString(nsdName, null)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun setDeviceAlias(nsdName: String, alias: String) {
+        val obj = try {
+            JSONObject(prefs.getString(KEY_DEVICE_ALIASES, null) ?: "{}")
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        obj.put(nsdName, alias)
+        prefs.edit().putString(KEY_DEVICE_ALIASES, obj.toString()).apply()
+    }
+
+    fun removeDeviceAlias(nsdName: String) {
+        val obj = try {
+            JSONObject(prefs.getString(KEY_DEVICE_ALIASES, null) ?: "{}")
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        obj.remove(nsdName)
+        prefs.edit().putString(KEY_DEVICE_ALIASES, obj.toString()).apply()
+    }
+
+    fun getTrustedDevices(): Set<String> {
+        return prefs.getStringSet(KEY_TRUSTED_DEVICES, emptySet()) ?: emptySet()
+    }
+
+    fun isDeviceTrusted(nsdName: String): Boolean {
+        return nsdName in getTrustedDevices()
+    }
+
+    fun setDeviceTrusted(nsdName: String, trusted: Boolean) {
+        val set = getTrustedDevices().toMutableSet()
+        if (trusted) set.add(nsdName) else set.remove(nsdName)
+        prefs.edit().putStringSet(KEY_TRUSTED_DEVICES, set).apply()
+    }
+
     // --- Panel paths ---
 
     var topPanelPath: String
@@ -499,9 +565,12 @@ class HaronPreferences @Inject constructor(
         const val KEY_RENAME_PATTERNS = "rename_patterns"
         const val KEY_TAG_DEFINITIONS = "tag_definitions"
         const val KEY_FILE_TAG_MAPPINGS = "file_tag_mappings"
+        const val KEY_GESTURE_PREFIX = "gesture_"
         const val KEY_APP_LOCK_METHOD = "app_lock_method"
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_PIN_LENGTH = "pin_length"
+        const val KEY_DEVICE_ALIASES = "device_aliases"
+        const val KEY_TRUSTED_DEVICES = "trusted_devices"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

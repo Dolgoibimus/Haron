@@ -309,10 +309,19 @@ class SearchRepositoryImpl @Inject constructor(
                                     contentExtractor.extractFullText(file)
                                 } else if (contentExtractor.isImageFile(file)) {
                                     contentExtractor.extractImageMeta(file)
+                                } else if (contentExtractor.isArchiveFile(file)) {
+                                    contentExtractor.extractArchiveEntries(file)
                                 } else ""
                             }
                             IndexMode.MEDIA -> contentExtractor.extractMediaMeta(file)
-                            IndexMode.VISUAL -> imageLabeler.labelImage(file)
+                            IndexMode.VISUAL -> {
+                                val labels = imageLabeler.labelImage(file)
+                                val ocrText = if (file.length() < 10 * 1024 * 1024) {
+                                    imageLabeler.recognizeText(file)
+                                } else ""
+                                if (labels.isNotBlank() && ocrText.isNotBlank()) "$labels\n$ocrText"
+                                else labels + ocrText
+                            }
                         }
 
                         if (contentText.isNotBlank()) {
@@ -413,7 +422,9 @@ class SearchRepositoryImpl @Inject constructor(
                 }
             } else {
                 val shouldInclude = when (mode) {
-                    IndexMode.BASIC -> contentExtractor.isTextOrDocument(file) || contentExtractor.isImageFile(file)
+                    IndexMode.BASIC -> contentExtractor.isTextOrDocument(file)
+                            || contentExtractor.isImageFile(file)
+                            || contentExtractor.isArchiveFile(file)
                     IndexMode.MEDIA -> contentExtractor.isMediaFile(file)
                     IndexMode.VISUAL -> imageLabeler.isImageFile(file)
                 }
