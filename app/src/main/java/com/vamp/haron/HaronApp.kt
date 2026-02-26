@@ -9,6 +9,7 @@ import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.data.observer.FileContentObserver
 import com.vamp.haron.data.observer.ScreenOnReceiver
+import com.vamp.haron.common.util.TesseractOcr
 import com.vamp.haron.data.cast.GoogleCastManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -21,6 +22,9 @@ class HaronApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var castManager: GoogleCastManager
+
+    @Inject
+    lateinit var tesseractOcr: TesseractOcr
 
     private var contentObserver: FileContentObserver? = null
     private var screenOnReceiver: ScreenOnReceiver? = null
@@ -39,6 +43,9 @@ class HaronApp : Application(), Configuration.Provider {
 
         // Initialize Google Cast (graceful degradation — no-op if GMS absent)
         castManager.initialize()
+
+        // Copy Tesseract trained data (async-safe, skips if already copied)
+        tesseractOcr.init()
 
         // Register ContentObserver for media changes
         contentObserver = FileContentObserver(applicationContext).also { it.register() }

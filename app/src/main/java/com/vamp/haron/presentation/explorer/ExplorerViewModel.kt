@@ -159,6 +159,7 @@ class ExplorerViewModel @Inject constructor(
 
     /** Content search debounce jobs per panel */
     private val contentSearchJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
+    private val folderIndexJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
 
     fun onScrollPositionChanged(panelId: PanelId, index: Int) {
         panelScrollIndex[panelId] = index
@@ -624,7 +625,8 @@ class ExplorerViewModel @Inject constructor(
             // Clear search when navigating to a different folder
             if (isNewFolder) {
                 contentSearchJobs[panelId]?.cancel()
-                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+                folderIndexJobs[panelId]?.cancel()
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
             } else {
                 updatePanel(panelId) { it.copy(isLoading = true, error = null) }
             }
@@ -671,7 +673,9 @@ class ExplorerViewModel @Inject constructor(
                         searchQuery = if (isNewPath) "" else it.searchQuery,
                         isSearchActive = if (isNewPath) false else it.isSearchActive,
                         searchInContent = if (isNewPath) false else it.searchInContent,
-                        contentSearchSnippets = if (isNewPath) null else it.contentSearchSnippets
+                        contentSearchSnippets = if (isNewPath) null else it.contentSearchSnippets,
+                        isContentIndexing = if (isNewPath) false else it.isContentIndexing,
+                        contentIndexProgress = if (isNewPath) null else it.contentIndexProgress
                     )
                     if (savedScroll >= 0) {
                         base.copy(
@@ -719,7 +723,8 @@ class ExplorerViewModel @Inject constructor(
             // Clear search when navigating to a different folder
             if (isNewFolder) {
                 contentSearchJobs[panelId]?.cancel()
-                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+                folderIndexJobs[panelId]?.cancel()
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
             } else {
                 updatePanel(panelId) { it.copy(isLoading = true, error = null) }
             }
@@ -762,7 +767,9 @@ class ExplorerViewModel @Inject constructor(
                         searchQuery = if (isNewFolder) "" else it.searchQuery,
                         isSearchActive = if (isNewFolder) false else it.isSearchActive,
                         searchInContent = if (isNewFolder) false else it.searchInContent,
-                        contentSearchSnippets = if (isNewFolder) null else it.contentSearchSnippets
+                        contentSearchSnippets = if (isNewFolder) null else it.contentSearchSnippets,
+                        isContentIndexing = if (isNewFolder) false else it.isContentIndexing,
+                        contentIndexProgress = if (isNewFolder) null else it.contentIndexProgress
                     )
                 }
                 when (panelId) {
@@ -1188,19 +1195,49 @@ class ExplorerViewModel @Inject constructor(
 
     fun closeSearch(panelId: PanelId) {
         contentSearchJobs[panelId]?.cancel()
-        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "", searchInContent = false, contentSearchSnippets = null) }
+        folderIndexJobs[panelId]?.cancel()
+        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "", searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
+        // Reload files to guarantee they are visible after search close
+        refreshPanel(panelId)
     }
 
     fun clearSearch(panelId: PanelId) {
-        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null) }
+        folderIndexJobs[panelId]?.cancel()
+        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
     }
 
     fun toggleSearchInContent(panelId: PanelId) {
         val panel = getPanel(panelId)
         val newInContent = !panel.searchInContent
         updatePanel(panelId) { it.copy(searchInContent = newInContent, contentSearchSnippets = null) }
-        if (newInContent && panel.searchQuery.isNotBlank()) {
-            performContentSearch(panelId, panel.searchQuery)
+        if (newInContent) {
+            // Auto-index current folder content when enabling content search
+            indexFolderAndSearch(panelId, panel.currentPath, panel.searchQuery)
+        } else {
+            folderIndexJobs[panelId]?.cancel()
+            updatePanel(panelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
+        }
+    }
+
+    private fun indexFolderAndSearch(panelId: PanelId, folderPath: String, query: String) {
+        folderIndexJobs[panelId]?.cancel()
+        folderIndexJobs[panelId] = viewModelScope.launch {
+            updatePanel(panelId) { it.copy(isContentIndexing = true, contentIndexProgress = null) }
+            try {
+                searchRepository.indexFolderContent(folderPath, force = true) { processed, total ->
+                    updatePanel(panelId) {
+                        it.copy(contentIndexProgress = "$processed / $total")
+                    }
+                }
+            } finally {
+                updatePanel(panelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
+            }
+            // After indexing, perform content search if query is present
+            val currentPanel = getPanel(panelId)
+            if (currentPanel.searchInContent && currentPanel.searchQuery.isNotBlank()) {
+                val paths = searchRepository.searchContentInFolder(currentPanel.currentPath, currentPanel.searchQuery)
+                updatePanel(panelId) { it.copy(contentSearchSnippets = paths) }
+            }
         }
     }
 

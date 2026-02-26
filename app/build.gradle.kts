@@ -85,6 +85,9 @@ dependencies {
     implementation("com.google.mlkit:image-labeling:17.0.9")
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // Tesseract OCR (better Cyrillic support)
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
 

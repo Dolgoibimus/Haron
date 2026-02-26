@@ -64,8 +64,10 @@ class UsbStorageManager @Inject constructor(
 
     fun refreshVolumes() {
         val removable = storageVolumeHelper.getRemovableVolumes()
+        val seen = mutableSetOf<String>()
         val volumes = removable.mapNotNull { vol ->
             val path = vol.path ?: return@mapNotNull null
+            if (!seen.add(path)) return@mapNotNull null // skip duplicates
             val dir = File(path)
             if (!dir.exists()) return@mapNotNull null
             UsbVolume(

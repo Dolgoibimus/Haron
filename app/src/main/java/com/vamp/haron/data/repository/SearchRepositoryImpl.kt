@@ -91,6 +91,116 @@ class SearchRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun indexFolderContent(folderPath: String, force: Boolean, onProgress: (Int, Int) -> Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val dir = File(folderPath)
+                if (!dir.exists() || !dir.isDirectory) return@withContext
+
+                // Collect files only in this folder (non-recursive)
+                val files = dir.listFiles()?.filter { f ->
+                    f.isFile && (contentExtractor.isTextOrDocument(f)
+                            || contentExtractor.isArchiveFile(f)
+                            || contentExtractor.isImageFile(f)
+                            || imageLabeler.isImageFile(f))
+                } ?: return@withContext
+
+                if (files.isEmpty()) return@withContext
+
+                val toIndex = if (force) {
+                    files
+                } else {
+                    // Skip files that already have content with OCR/labels
+                    val existingEntities = fileContentDao.getByPaths(files.map { it.absolutePath })
+                    val richPaths = existingEntities
+                        .filter { it.fullText.length > 200 } // EXIF-only is short, OCR is longer
+                        .map { it.path }.toSet()
+                    files.filter { it.absolutePath !in richPaths }
+                }
+
+                if (toIndex.isEmpty()) return@withContext
+
+                val total = toIndex.size
+                val contentBatch = mutableListOf<FileContentEntity>()
+                val indexBatch = mutableListOf<FileIndexEntity>()
+                val startTime = System.currentTimeMillis()
+
+                Log.d("SearchRepo", "indexFolderContent: $total files to index in $folderPath")
+
+                toIndex.forEachIndexed { idx, file ->
+                    if (!coroutineContext.isActive) return@forEachIndexed
+                    onProgress(idx, total)
+
+                    try {
+                        val contentText = when {
+                            contentExtractor.isTextOrDocument(file) ->
+                                contentExtractor.extractFullText(file)
+                            contentExtractor.isArchiveFile(file) ->
+                                contentExtractor.extractArchiveEntries(file)
+                            imageLabeler.isImageFile(file) -> {
+                                // OCR + labels + EXIF for images
+                                Log.d("SearchRepo", "OCR+labels for: ${file.name}")
+                                val meta = contentExtractor.extractImageMeta(file)
+                                val labels = imageLabeler.labelImage(file)
+                                val ocr = if (file.length() < 10 * 1024 * 1024) {
+                                    imageLabeler.recognizeText(file)
+                                } else ""
+                                Log.d("SearchRepo", "  labels=${labels.take(100)}, ocr=${ocr.take(100)}")
+                                listOf(meta, labels, ocr)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString("\n")
+                            }
+                            contentExtractor.isImageFile(file) ->
+                                contentExtractor.extractImageMeta(file)
+                            else -> ""
+                        }
+
+                        if (contentText.isNotBlank()) {
+                            contentBatch.add(
+                                FileContentEntity(
+                                    path = file.absolutePath,
+                                    fullText = contentText,
+                                    indexedAt = startTime
+                                )
+                            )
+                            val ext = file.extension.lowercase()
+                            val mimeType = MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                            indexBatch.add(
+                                FileIndexEntity(
+                                    path = file.absolutePath,
+                                    name = file.name,
+                                    extension = ext,
+                                    size = file.length(),
+                                    lastModified = file.lastModified(),
+                                    mimeType = mimeType,
+                                    parentPath = file.parent ?: "",
+                                    isDirectory = false,
+                                    isHidden = file.isHidden,
+                                    contentSnippet = contentText.take(500),
+                                    indexedAt = startTime
+                                )
+                            )
+                        }
+                    } catch (_: OutOfMemoryError) {
+                        System.gc()
+                    } catch (_: Exception) { }
+                }
+
+                if (contentBatch.isNotEmpty()) {
+                    safeReplaceContent(contentBatch)
+                }
+                if (indexBatch.isNotEmpty()) {
+                    fileIndexDao.upsertAll(indexBatch)
+                }
+                Log.d("SearchRepo", "indexFolderContent done: ${contentBatch.size} content, ${indexBatch.size} index")
+                onProgress(total, total)
+            } catch (e: Exception) {
+                Log.w("SearchRepo", "indexFolderContent failed", e)
+            }
+        }
+    }
+
     override suspend fun searchFiles(filter: SearchFilter): List<FileIndexEntity> {
         if (filter.query.isBlank() && filter.category == FileCategory.ALL
             && filter.sizeFilter == SizeFilter.ALL && filter.dateFilter == DateFilter.ALL
@@ -573,5 +683,55 @@ class SearchRepositoryImpl @Inject constructor(
             }
         }
         fileContentDao.upsertAll(merged)
+    }
+
+    /**
+     * Safely replace content entries by temporarily disabling FTS triggers.
+     * This avoids SQLiteException when FTS table is out of sync with content table.
+     */
+    private fun safeReplaceContent(batch: List<FileContentEntity>) {
+        val db = database.openHelper.writableDatabase
+        try {
+            db.beginTransaction()
+            // Drop FTS triggers to avoid sync issues
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_ai")
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_ad")
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_au")
+
+            // Delete existing entries for these paths
+            for (entity in batch) {
+                db.execSQL("DELETE FROM file_content WHERE path = ?", arrayOf(entity.path))
+            }
+
+            // Insert new entries
+            for (entity in batch) {
+                db.execSQL(
+                    "INSERT INTO file_content (path, full_text, indexed_at) VALUES (?, ?, ?)",
+                    arrayOf(entity.path, entity.fullText, entity.indexedAt)
+                )
+            }
+
+            // Rebuild FTS from source table (no triggers needed)
+            db.execSQL("INSERT INTO file_content_fts(file_content_fts) VALUES('rebuild')")
+
+            // Recreate triggers
+            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ai AFTER INSERT ON file_content BEGIN
+                INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
+            END""")
+            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ad AFTER DELETE ON file_content BEGIN
+                INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
+            END""")
+            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_au AFTER UPDATE ON file_content BEGIN
+                INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
+                INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
+            END""")
+
+            db.setTransactionSuccessful()
+            Log.d("SearchRepo", "safeReplaceContent: ${batch.size} entries saved + FTS rebuilt")
+        } catch (e: Exception) {
+            Log.w("SearchRepo", "safeReplaceContent failed", e)
+        } finally {
+            db.endTransaction()
+        }
     }
 }

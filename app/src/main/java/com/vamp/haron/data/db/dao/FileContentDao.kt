@@ -34,4 +34,7 @@ interface FileContentDao {
 
     @Query("SELECT path FROM file_content WHERE path LIKE :pathPrefix || '/%' AND LOWER(full_text) LIKE '%' || :query || '%'")
     suspend fun searchInFolder(pathPrefix: String, query: String): List<String>
+
+    @Query("DELETE FROM file_content WHERE path IN (:paths)")
+    suspend fun deleteByPaths(paths: List<String>)
 }

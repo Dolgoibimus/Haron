@@ -221,10 +221,14 @@ fun FilePanel(
             else if (state.searchInContent) {
                 // Content search: filter files by FTS snippets, keep folders matching name
                 val snippets = state.contentSearchSnippets
-                if (snippets != null) files.filter {
-                    it.path in snippets || (it.isDirectory && it.name.contains(state.searchQuery, ignoreCase = true))
+                when {
+                    state.isContentIndexing -> files // still indexing — show all
+                    snippets != null && snippets.isNotEmpty() -> files.filter {
+                        it.path in snippets || (it.isDirectory && it.name.contains(state.searchQuery, ignoreCase = true))
+                    }
+                    snippets == null -> files // not yet searched — show all
+                    else -> emptyList() // empty results — nothing found
                 }
-                else files // still loading
             } else {
                 files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
             }
@@ -452,12 +456,27 @@ fun FilePanel(
                             },
                             modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(
-                                Icons.Filled.FindInPage,
-                                contentDescription = stringResource(R.string.search_by_content),
-                                modifier = Modifier.size(18.dp),
-                                tint = if (state.searchInContent) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            if (state.isContentIndexing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Filled.FindInPage,
+                                    contentDescription = stringResource(R.string.search_by_content),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (state.searchInContent) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.contentIndexProgress != null) {
+                            Text(
+                                text = state.contentIndexProgress,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 2.dp)
                             )
                         }
                         if (state.searchQuery.isNotEmpty()) {

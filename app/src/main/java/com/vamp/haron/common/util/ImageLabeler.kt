@@ -5,28 +5,25 @@ import android.graphics.BitmapFactory
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
 /**
- * Wrapper over ML Kit Image Labeling.
- * Downscales images to max 640px to save RAM, runs label detection,
- * returns combined EN+RU tags string.
+ * Wrapper over ML Kit Image Labeling + Tesseract OCR.
+ * ML Kit — for image labels (dog, car, screenshot).
+ * Tesseract — for text recognition (Cyrillic + Latin).
  */
 @Singleton
-class ImageLabeler @Inject constructor() {
+class ImageLabeler @Inject constructor(
+    private val tesseractOcr: TesseractOcr
+) {
 
     companion object {
         private const val MAX_IMAGE_SIZE = 640
-        private const val MAX_OCR_IMAGE_SIZE = 1024 // Larger for better OCR readability
         private const val MIN_CONFIDENCE = 0.7f
-        private const val OCR_TIMEOUT_MS = 10_000L
 
         private val IMAGE_EXTENSIONS = setOf(
             "jpg", "jpeg", "png", "bmp", "webp"
@@ -53,42 +50,14 @@ class ImageLabeler @Inject constructor() {
     }
 
     /**
-     * OCR: recognizes text on an image (signs, screenshots, documents).
+     * OCR: recognizes text on an image using Tesseract (eng+rus).
      * Returns recognized text or empty string on failure.
-     * Timeout: 10 seconds per file.
      */
-    suspend fun recognizeText(file: File): String {
-        val bitmap = decodeBitmapForOcr(file) ?: return ""
-        return try {
-            withTimeoutOrNull(OCR_TIMEOUT_MS) {
-                detectText(bitmap)
-            } ?: ""
-        } finally {
-            bitmap.recycle()
-        }
+    fun recognizeText(file: File): String {
+        return tesseractOcr.recognizeText(file)
     }
 
-    private suspend fun detectText(bitmap: Bitmap): String {
-        return suspendCancellableCoroutine { cont ->
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
-
-            recognizer.process(inputImage)
-                .addOnSuccessListener { result ->
-                    val text = result.textBlocks.joinToString("\n") { it.text }
-                    cont.resume(text)
-                }
-                .addOnFailureListener {
-                    cont.resume("")
-                }
-
-            cont.invokeOnCancellation {
-                recognizer.close()
-            }
-        }
-    }
-
-    private fun decodeBitmapForOcr(file: File): Bitmap? {
+    private fun decodeBitmap(file: File): Bitmap? {
         return try {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, options)
@@ -96,41 +65,10 @@ class ImageLabeler @Inject constructor() {
             val height = options.outHeight
             if (width <= 0 || height <= 0) return null
             var sampleSize = 1
-            while (width / sampleSize > MAX_OCR_IMAGE_SIZE || height / sampleSize > MAX_OCR_IMAGE_SIZE) {
-                sampleSize *= 2
-            }
-            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
-        } catch (_: Exception) {
-            null
-        } catch (_: OutOfMemoryError) {
-            System.gc()
-            null
-        }
-    }
-
-    private fun decodeBitmap(file: File): Bitmap? {
-        return try {
-            // First pass — get dimensions only
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
-            BitmapFactory.decodeFile(file.absolutePath, options)
-
-            val width = options.outWidth
-            val height = options.outHeight
-            if (width <= 0 || height <= 0) return null
-
-            // Calculate inSampleSize to downscale
-            var sampleSize = 1
             while (width / sampleSize > MAX_IMAGE_SIZE || height / sampleSize > MAX_IMAGE_SIZE) {
                 sampleSize *= 2
             }
-
-            // Second pass — decode with downscale
-            val decodeOptions = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize
-            }
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
             BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
         } catch (_: Exception) {
             null

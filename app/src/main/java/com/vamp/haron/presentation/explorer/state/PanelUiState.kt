@@ -17,6 +17,8 @@ data class PanelUiState(
     val isSearchActive: Boolean = false,
     val searchInContent: Boolean = false,
     val contentSearchSnippets: Map<String, String>? = null,
+    val isContentIndexing: Boolean = false,
+    val contentIndexProgress: String? = null,
     val renamingPath: String? = null,
     val statusMessage: String? = null,
     val gridColumns: Int = 1,
