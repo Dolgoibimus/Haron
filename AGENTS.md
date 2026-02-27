@@ -313,7 +313,7 @@ _(нет)_
 - **TerminalViewModel переработан**: `ParsedTerminalLine` вместо простого текста. Потоковый вывод через AnsiParser. Буфер 2000 строк (было 500). Timeout 60 сек (было 30). Tab-автодополнение. Кликабельные пути через PathDetector. Панель быстрых символов.
 - **TerminalScreen переработан**: AnnotatedString рендеринг со стилями (цвет, bold, italic, underline). Чипы автодополнения над полем ввода. Панель быстрых символов (~ / | > < & ; " ' . - _ Tab Ctrl+C) между клавиатурой и полем ввода. Кликабельные пути (primary цвет, pushStringAnnotation). Настройки: размер буфера, таймаут, размер шрифта. BottomSheet настроек.
 
-### Batch 36 — Сравнение файлов и папок ⚠️ не проверено
+### Batch 36 — Сравнение файлов и папок ✅ проверено
 - **Зависимость**: `io.github.java-diff-utils:java-diff-utils:4.12`.
 - **ComparisonResult** (`domain/model/ComparisonResult.kt`): `DiffLineType` (EQUAL, ADDED, REMOVED, CHANGED), `DiffLine(type, leftLine, rightLine, leftNum, rightNum)`, `TextDiffResult(lines, stats)`, `DiffStats(equal, added, removed, changed)`, `FolderComparisonEntry(relativePath, status, leftSize, rightSize, leftModified, rightModified)`, `ComparisonStatus` (SAME, DIFFERENT, LEFT_ONLY, RIGHT_ONLY), `FileMetadataComparison(leftPath, rightPath, leftSize, rightSize, ...)`.
 - **ComparisonHolder** (`domain/model/ComparisonHolder.kt`): static holder для leftPath/rightPath.
@@ -326,14 +326,16 @@ _(нет)_
 - **SelectionActionBar**: кнопка «Сравнить» (Icons.Filled.Compare) при выделении 2 файлов.
 - **ExplorerViewModel**: `compareFiles()` — заполняет ComparisonHolder, эмитит NavigationEvent.OpenComparison.
 - **HaronNavigation**: маршрут COMPARISON.
+- **Доп. фикс**: прогресс-бар при сравнении папок (LinearProgressIndicator + счётчик). Тап на DIFFERENT файл → открытие текстового diff.
 
-### Batch 35 — Открывалка по умолчанию ⚠️ не проверено
+### Batch 35 — Открывалка по умолчанию ✅ проверено
 - **IntentHandler** (`common/util/IntentHandler.kt`): разбор ACTION_VIEW, ACTION_SEND, ACTION_SEND_MULTIPLE. `ReceivedFile(displayName, localPath, mimeType, size)`. Резолв content:// URI через `contentResolver.openInputStream()` → копирование в `cacheDir/received/`. `queryDisplayName()` через OpenableColumns. `generateUniqueFile()` для конфликтов имён.
 - **ReceiveFilesDialog** (`presentation/receive/ReceiveFilesDialog.kt`): AlertDialog со списком полученных файлов (имя + размер). Кнопки «Сохранить в текущую папку» и «Отмена». Иконки по типу файла.
 - **AndroidManifest**: intent-filter на ACTION_VIEW и ACTION_SEND для типов: text/*, image/*, video/*, audio/*, application/pdf, application/zip, application/x-7z-compressed, application/x-rar-compressed, application/vnd.android.package-archive. Также ACTION_SEND_MULTIPLE для image/* и video/*.
 - **MainActivity**: обработка intent в `onCreate()` и `onNewIntent()`. `IntentHandler.handleIntent()` → `receivedFiles` state → NavigationEvent.HandleExternalFile.
 - **HaronNavigation**: обработка receivedFiles — единичный медиа/PDF/архив → открытие во встроенном просмотрщике, множественные/другие → ReceiveFilesDialog с сохранением в текущую папку проводника.
 - **NavigationEvent.HandleExternalFile**: передаёт список ReceivedFile.
+- **Доп. фикс**: ODT/ODS/ODP/RTF MIME-типы добавлены в intent-filter. ACTION_VIEW → прямое открытие без диалога. DOCX/DOC/ODT/RTF/FB2 → DocumentViewerScreen (извлечение текста через ContentExtractor). APK → ACTION_INSTALL_PACKAGE вместо ACTION_VIEW (убрано зацикливание). **DocumentViewerScreen** (`presentation/document/DocumentViewerScreen.kt`): новый экран для просмотра документов. NavigationEvent.OpenDocumentViewer. HaronRoutes.DOCUMENT_VIEWER.
 
 ### Batch 34 — Голосовые команды ⚠️ не проверено
 - **VoiceCommandManager** (`data/voice/VoiceCommandManager.kt`): @Singleton, обёртка над `SpeechRecognizer`. `VoiceState` (IDLE, LISTENING, PROCESSING, ERROR). `startListening()` → создаёт SpeechRecognizer, intent на ru-RU + en-US (additional languages). `stop()` с полным cleanup. `matchPhrase()` — сопоставление распознанного текста с `GestureAction` через PHRASE_MAP (12 пар, `contains` match).
@@ -1132,7 +1134,7 @@ _(нет)_
 - Повтор всей папки из превью (автопереход на следующий медиафайл)
 - Экран блокировки из превью (уведомление MediaSession)
 - Кнопка "Открыть в галерее" для изображений
-- Кнопка "Открыть в читалке" для PDF и документов (DOC/DOCX/ODT/RTF)
+- Кнопка "Открыть в читалке" для PDF и документов (DOC/DOCX/ODT/RTF/FB2)
 - Кнопка "Открыть архив" для ZIP/7z/RAR
 
 ### Медиаплеер
