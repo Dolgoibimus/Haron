@@ -101,7 +101,8 @@ fun SearchScreen(
     onOpenTextEditor: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenGallery: (startIndex: Int) -> Unit = {},
     onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
-    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> }
+    onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenDocumentViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -125,7 +126,8 @@ fun SearchScreen(
                         onOpenTextEditor = onOpenTextEditor,
                         onOpenGallery = onOpenGallery,
                         onOpenPdfReader = onOpenPdfReader,
-                        onOpenArchiveViewer = onOpenArchiveViewer
+                        onOpenArchiveViewer = onOpenArchiveViewer,
+                        onOpenDocumentViewer = onOpenDocumentViewer
                     )
                 }
             }
@@ -163,7 +165,8 @@ fun SearchScreen(
                     onOpenTextEditor = onOpenTextEditor,
                     onOpenGallery = onOpenGallery,
                     onOpenPdfReader = onOpenPdfReader,
-                    onOpenArchiveViewer = onOpenArchiveViewer
+                    onOpenArchiveViewer = onOpenArchiveViewer,
+                    onOpenDocumentViewer = onOpenDocumentViewer
                 )
             },
             onEdit = {
@@ -178,12 +181,17 @@ fun SearchScreen(
                     onOpenTextEditor = onOpenTextEditor,
                     onOpenGallery = onOpenGallery,
                     onOpenPdfReader = onOpenPdfReader,
-                    onOpenArchiveViewer = onOpenArchiveViewer
+                    onOpenArchiveViewer = onOpenArchiveViewer,
+                    onOpenDocumentViewer = onOpenDocumentViewer
                 )
             },
             onOpenPdf = {
                 viewModel.dismissPreview()
                 onOpenPdfReader(preview.entry.path, preview.entry.name)
+            },
+            onOpenDocument = {
+                viewModel.dismissPreview()
+                onOpenDocumentViewer(preview.entry.path, preview.entry.name)
             },
             onOpenArchive = {
                 viewModel.dismissPreview()
@@ -584,7 +592,8 @@ private fun openFileByType(
     onOpenTextEditor: (String, String) -> Unit,
     onOpenGallery: (Int) -> Unit,
     onOpenPdfReader: (String, String) -> Unit,
-    onOpenArchiveViewer: (String, String) -> Unit
+    onOpenArchiveViewer: (String, String) -> Unit,
+    onOpenDocumentViewer: (String, String) -> Unit = { p, n -> onOpenPdfReader(p, n) }
 ) {
     val ext = entry.extension.lowercase()
     when {
@@ -613,8 +622,11 @@ private fun openFileByType(
             "kt", "java", "py", "js", "ts", "html", "css", "sh", "bat", "c", "cpp", "h") -> {
             onOpenTextEditor(entry.path, entry.name)
         }
-        ext in listOf("pdf", "doc", "docx", "odt", "rtf", "fb2") -> {
+        ext == "pdf" -> {
             onOpenPdfReader(entry.path, entry.name)
+        }
+        ext in listOf("doc", "docx", "odt", "rtf", "fb2") -> {
+            onOpenDocumentViewer(entry.path, entry.name)
         }
         ext in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> {
             onOpenArchiveViewer(entry.path, entry.name)

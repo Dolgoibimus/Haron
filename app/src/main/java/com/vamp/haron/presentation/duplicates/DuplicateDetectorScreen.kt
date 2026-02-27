@@ -81,6 +81,7 @@ fun DuplicateDetectorScreen(
     onOpenGallery: (startIndex: Int) -> Unit = {},
     onOpenPdfReader: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onOpenArchiveViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenDocumentViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     viewModel: DuplicateDetectorViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -101,6 +102,7 @@ fun DuplicateDetectorScreen(
                 is NavigationEvent.OpenGallery -> onOpenGallery(event.startIndex)
                 is NavigationEvent.OpenPdfReader -> onOpenPdfReader(event.filePath, event.fileName)
                 is NavigationEvent.OpenArchiveViewer -> onOpenArchiveViewer(event.filePath, event.fileName)
+                is NavigationEvent.OpenDocumentViewer -> onOpenDocumentViewer(event.filePath, event.fileName)
                 else -> {}
             }
         }
@@ -134,6 +136,10 @@ fun DuplicateDetectorScreen(
             onOpenPdf = {
                 viewModel.dismissPreview()
                 onOpenPdfReader(previewEntry.path, previewEntry.name)
+            },
+            onOpenDocument = {
+                viewModel.dismissPreview()
+                onOpenDocumentViewer(previewEntry.path, previewEntry.name)
             },
             onOpenArchive = {
                 viewModel.dismissPreview()

@@ -83,6 +83,9 @@ import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.service.PlaybackService
 import androidx.compose.foundation.layout.fillMaxSize
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -106,6 +109,7 @@ fun QuickPreviewDialog(
     onEdit: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
     onOpenPdf: (() -> Unit)? = null,
+    onOpenDocument: (() -> Unit)? = null,
     onOpenArchive: (() -> Unit)? = null,
     onInstallApk: (() -> Unit)? = null,
     adjacentFiles: List<FileEntry> = emptyList(),
@@ -379,9 +383,9 @@ fun QuickPreviewDialog(
                                 Text(stringResource(R.string.open_archive))
                             }
                         }
-                        isDocument && onOpenPdf != null -> {
+                        isDocument && onOpenDocument != null -> {
                             Button(
-                                onClick = onOpenPdf,
+                                onClick = onOpenDocument,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
@@ -773,26 +777,55 @@ private fun ImagePreviewContent(data: PreviewData.ImagePreview) {
 
 @Composable
 private fun TextPreviewContent(data: PreviewData.TextPreview) {
+    val lines = remember(data.content) { data.content.lines() }
+    val lineNumStyle = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    )
+    val textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = data.content,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .heightIn(max = 300.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(8.dp)
-            )
+                    .padding(vertical = 6.dp)
+            ) {
+                // Line numbers
+                Column(
+                    modifier = Modifier.padding(start = 2.dp, end = 6.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    lines.forEachIndexed { index, _ ->
+                        Text(
+                            text = "${index + 1}",
+                            style = lineNumStyle,
+                            maxLines = 1
+                        )
+                    }
+                }
+                // Text content
+                Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
+                    lines.forEach { line ->
+                        Text(
+                            text = line.ifEmpty { " " },
+                            style = textStyle,
+                            softWrap = true
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
-        val shownLines = data.content.lines().size
         Text(
-            text = if (shownLines < data.totalLines)
-                stringResource(R.string.shown_lines_format, shownLines, data.totalLines)
+            text = if (lines.size < data.totalLines)
+                stringResource(R.string.shown_lines_format, lines.size, data.totalLines)
             else
                 stringResource(R.string.total_lines, data.totalLines),
             style = MaterialTheme.typography.bodySmall,
@@ -803,25 +836,75 @@ private fun TextPreviewContent(data: PreviewData.TextPreview) {
 
 @Composable
 private fun PdfPreviewContent(data: PreviewData.PdfPreview) {
+    if (data.pageCount <= 1 || data.filePath.isEmpty()) {
+        // Single page or no path — just show first page
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Image(
+                bitmap = data.firstPage.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.pages_count, data.pageCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+
+    val pageCache = remember(data.filePath) { mutableMapOf(0 to data.firstPage) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { data.pageCount })
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Image(
-            bitmap = data.firstPage.asImageBitmap(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 300.dp)
-                .clip(RoundedCornerShape(8.dp))
-        )
+                .heightIn(max = 300.dp),
+            beyondViewportPageCount = 1
+        ) { page ->
+            val pageBitmap = remember(data.filePath, page) {
+                pageCache.getOrPut(page) {
+                    renderPdfPage(data.filePath, page)
+                }
+            }
+            Image(
+                bitmap = pageBitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.pages_count, data.pageCount),
+            text = "${pagerState.currentPage + 1} / ${data.pageCount}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+
+    DisposableEffect(data.filePath) {
+        onDispose {
+            pageCache.values.forEach { bmp ->
+                if (bmp !== data.firstPage && !bmp.isRecycled) bmp.recycle()
+            }
+            pageCache.clear()
+        }
     }
 }
 
@@ -972,4 +1055,30 @@ private fun buildSubtitle(entry: FileEntry): String {
     if (entry.extension.isNotEmpty()) parts.add(entry.extension)
     parts.add(entry.lastModified.toRelativeDate())
     return parts.joinToString(" \u00B7 ")
+}
+
+private fun renderPdfPage(filePath: String, pageIndex: Int): Bitmap {
+    return try {
+        val pfd = ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
+        pfd.use { descriptor ->
+            val renderer = PdfRenderer(descriptor)
+            renderer.use { pdf ->
+                if (pageIndex >= pdf.pageCount) {
+                    return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+                }
+                val page = pdf.openPage(pageIndex)
+                val maxSize = 1024
+                val scale = maxSize.toFloat() / maxOf(page.width, page.height).coerceAtLeast(1)
+                val w = (page.width * scale).toInt().coerceAtLeast(1)
+                val h = (page.height * scale).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+                bitmap
+            }
+        }
+    } catch (_: Exception) {
+        Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    }
 }

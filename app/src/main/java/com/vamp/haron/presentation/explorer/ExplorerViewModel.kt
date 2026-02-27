@@ -868,7 +868,7 @@ class ExplorerViewModel @Inject constructor(
                 "document" -> {
                     preferences.lastDocumentFile = entry.path
                     _navigationEvent.tryEmit(
-                        NavigationEvent.OpenPdfReader(entry.path, entry.name)
+                        NavigationEvent.OpenDocumentViewer(entry.path, entry.name)
                     )
                 }
                 "archive" -> {
@@ -2851,10 +2851,12 @@ class ExplorerViewModel @Inject constructor(
                     File(entry.path)
                 )
             }
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = uri
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                putExtra(Intent.EXTRA_RETURN_RESULT, true)
             }
             appContext.startActivity(intent)
         } catch (_: Exception) {

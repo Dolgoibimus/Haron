@@ -50,6 +50,7 @@ import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.comparison.ComparisonScreen
 import com.vamp.haron.presentation.steganography.SteganographyScreen
 import com.vamp.haron.service.ScreenMirrorService
+import com.vamp.haron.presentation.document.DocumentViewerScreen
 import com.vamp.haron.presentation.terminal.TerminalScreen
 import com.vamp.haron.presentation.transfer.TransferScreen
 
@@ -76,6 +77,8 @@ object HaronRoutes {
     const val GESTURES_VOICE = "gestures_voice"
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
+    const val DOCUMENT_VIEWER = "document_viewer"
+    const val DOCUMENT_VIEWER_ROUTE = "document_viewer?filePath={filePath}&fileName={fileName}"
 
     fun mediaPlayer(startIndex: Int): String {
         return "media_player?startIndex=$startIndex"
@@ -95,6 +98,10 @@ object HaronRoutes {
 
     fun archiveViewer(filePath: String, fileName: String): String {
         return "archive_viewer?filePath=${Uri.encode(filePath)}&fileName=${Uri.encode(fileName)}"
+    }
+
+    fun documentViewer(filePath: String, fileName: String): String {
+        return "document_viewer?filePath=${Uri.encode(filePath)}&fileName=${Uri.encode(fileName)}"
     }
 }
 
@@ -308,6 +315,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenSteganography = {
                     navController.navigate(HaronRoutes.STEGANOGRAPHY)
                 },
+                onOpenDocumentViewer = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
+                },
                 onCastModeSelected = { mode, filePaths ->
                     handleCastModeSelected(mode, filePaths, context)
                 }
@@ -378,6 +388,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenArchiveViewer = { filePath, fileName ->
                     navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
+                },
+                onOpenDocumentViewer = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
                 }
             )
         }
@@ -398,6 +411,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenArchiveViewer = { filePath, fileName ->
                     navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
+                },
+                onOpenDocumentViewer = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
                 }
             )
         }
@@ -467,6 +483,21 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             ArchiveViewerScreen(
                 archivePath = filePath,
                 archiveName = fileName,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = HaronRoutes.DOCUMENT_VIEWER_ROUTE,
+            arguments = listOf(
+                navArgument("filePath") { type = NavType.StringType; defaultValue = "" },
+                navArgument("fileName") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+            val fileName = backStackEntry.arguments?.getString("fileName") ?: ""
+            DocumentViewerScreen(
+                filePath = filePath,
+                fileName = fileName,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -576,6 +607,29 @@ private fun openReceivedFile(
         }
         ext in listOf("zip", "rar", "7z", "tar", "gz") -> {
             navController.navigate(HaronRoutes.archiveViewer(path, name))
+        }
+        ext in listOf("doc", "docx", "odt", "rtf", "fb2") -> {
+            navController.navigate(HaronRoutes.documentViewer(path, name))
+        }
+        ext == "apk" -> {
+            // Launch system installer directly
+            try {
+                val context = navController.context
+                val apkFile = File(path)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    apkFile
+                )
+                val intent = android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = uri
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) { }
         }
         else -> {
             navController.navigate(HaronRoutes.textEditor(path, name))

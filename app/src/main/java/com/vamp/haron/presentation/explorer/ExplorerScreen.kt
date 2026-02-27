@@ -112,6 +112,7 @@ fun ExplorerScreen(
     onOpenTerminal: () -> Unit = { },
     onOpenComparison: () -> Unit = { },
     onOpenSteganography: () -> Unit = { },
+    onOpenDocumentViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onCastModeSelected: (com.vamp.haron.domain.model.CastMode, List<String>) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -165,6 +166,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenSteganography -> {
                     onOpenSteganography()
+                }
+                is NavigationEvent.OpenDocumentViewer -> {
+                    onOpenDocumentViewer(event.filePath, event.fileName)
                 }
                 is NavigationEvent.HandleExternalFile -> {
                     // Handled at navigation level
@@ -805,6 +809,14 @@ fun ExplorerScreen(
                         onOpenPdfReader(dialog.entry.path, dialog.entry.name)
                     }
                 },
+                onOpenDocument = {
+                    viewModel.dismissDialog()
+                    if (dialog.entry.isProtected) {
+                        viewModel.onProtectedFileClick(dialog.entry)
+                    } else {
+                        onOpenDocumentViewer(dialog.entry.path, dialog.entry.name)
+                    }
+                },
                 onOpenArchive = {
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
@@ -1028,7 +1040,6 @@ fun ExplorerScreen(
                     onFindEmptyFolders = { viewModel.findEmptyFolders() },
                     onForceDelete = { viewModel.requestForceDelete() },
                     onManageTags = { viewModel.showTagManager() },
-                    onToggleShield = { viewModel.toggleShield() },
                     onOpenTransfer = { viewModel.openTransfer() },
                     onOpenTerminal = { viewModel.openTerminal() },
                     isListeningForTransfer = state.isListeningForTransfer,
@@ -1042,11 +1053,6 @@ fun ExplorerScreen(
                     onNetworkDeviceTap = { device -> viewModel.onNetworkDeviceTap(device) },
 
                     onRefreshNetwork = { viewModel.refreshNetwork() },
-                    secureFolderInfo = run {
-                        val (count, size) = viewModel.getSecureFolderInfo()
-                        if (count > 0) "$count · ${size.toFileSize(context)}"
-                        else ""
-                    },
                     onOpenSettings = { viewModel.openSettings() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer

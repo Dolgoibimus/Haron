@@ -24,6 +24,11 @@ sealed interface NavigationEvent {
         val fileName: String
     ) : NavigationEvent
 
+    data class OpenDocumentViewer(
+        val filePath: String,
+        val fileName: String
+    ) : NavigationEvent
+
     data object OpenStorageAnalysis : NavigationEvent
 
     data object OpenDuplicateDetector : NavigationEvent
