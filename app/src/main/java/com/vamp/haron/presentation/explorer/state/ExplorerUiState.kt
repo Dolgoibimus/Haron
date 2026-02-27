@@ -49,7 +49,6 @@ data class ExplorerUiState(
     val showShieldAuth: Boolean = false,
     val showAllProtectedAfterAuth: Boolean = false,
     val usbVolumes: List<UsbVolume> = emptyList(),
-    val activeOperationsCount: Int = 0,
     val networkDevices: List<com.vamp.haron.data.network.NetworkDevice> = emptyList(),
     val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction },
     val quickSendState: QuickSendState = QuickSendState.Idle,

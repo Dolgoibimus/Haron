@@ -104,6 +104,7 @@ class MainActivity : FragmentActivity() {
 
     /** Received files from external intents (ACTION_VIEW / ACTION_SEND) */
     internal val receivedFiles = mutableStateOf<List<ReceivedFile>>(emptyList())
+    internal val isActionView = mutableStateOf(false)
 
     /** MediaProjection launcher for screen mirroring */
     lateinit var mediaProjectionLauncher: ActivityResultLauncher<Intent>
@@ -324,6 +325,7 @@ class MainActivity : FragmentActivity() {
         if (action == Intent.ACTION_VIEW || action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE) {
             val files = IntentHandler.handleIntent(intent, this)
             if (files.isNotEmpty()) {
+                isActionView.value = action == Intent.ACTION_VIEW
                 receivedFiles.value = files
             }
         }

@@ -28,7 +28,9 @@ data class ComparisonUiState(
     val folderEntries: List<FolderComparisonEntry> = emptyList(),
     val binaryMetadata: FileMetadataComparison? = null,
     val error: String? = null,
-    val filterStatus: String? = null // null = all
+    val filterStatus: String? = null, // null = all
+    val progressCurrent: Int = 0,
+    val progressTotal: Int = 0
 )
 
 @HiltViewModel
@@ -60,7 +62,12 @@ class ComparisonViewModel @Inject constructor(
             try {
                 when {
                     leftFile.isDirectory && rightFile.isDirectory -> {
-                        val entries = compareFolders(leftPath, rightPath)
+                        val entries = compareFolders(leftPath, rightPath) { current, total ->
+                            _state.value = _state.value.copy(
+                                progressCurrent = current,
+                                progressTotal = total
+                            )
+                        }
                         _state.value = _state.value.copy(
                             mode = ComparisonMode.FOLDER,
                             folderEntries = entries
@@ -104,6 +111,26 @@ class ComparisonViewModel @Inject constructor(
 
     fun setFilter(status: String?) {
         _state.value = _state.value.copy(filterStatus = status)
+    }
+
+    fun openFileDiff(relativePath: String) {
+        val leftPath = ComparisonHolder.leftPath
+        val rightPath = ComparisonHolder.rightPath
+        val leftFile = File("$leftPath/$relativePath")
+        val rightFile = File("$rightPath/$relativePath")
+        if (!leftFile.isFile || !rightFile.isFile) return
+
+        viewModelScope.launch {
+            try {
+                val diff = compareTextFiles(leftFile.absolutePath, rightFile.absolutePath)
+                _state.value = _state.value.copy(
+                    mode = ComparisonMode.TEXT,
+                    textDiff = diff,
+                    leftName = leftFile.name,
+                    rightName = rightFile.name
+                )
+            } catch (_: Exception) { }
+        }
     }
 
     private fun isTextFile(file: File): Boolean {

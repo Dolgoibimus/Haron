@@ -90,6 +90,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:windowSoftInputMode="adjustNothing"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:label="@string/app_name"
             android:theme="@style/Theme.Haron">
@@ -123,6 +124,10 @@
                 <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
                 <data android:mimeType="application/vnd.ms-excel" />
                 <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.oasis.opendocument.text" />
+                <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation" />
+                <data android:mimeType="application/rtf" />
             </intent-filter>
 
             <!-- Receive files via Share (ACTION_SEND) -->

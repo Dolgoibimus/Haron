@@ -1,5 +1,6 @@
 package com.vamp.haron.presentation.comparison.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ fun FolderDiffView(
     entries: List<FolderComparisonEntry>,
     filterStatus: String?,
     onFilterChange: (String?) -> Unit,
+    onOpenDiff: (FolderComparisonEntry) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val filtered = if (filterStatus == null) entries else {
@@ -94,14 +96,19 @@ fun FolderDiffView(
 
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(filtered, key = { it.relativePath }) { entry ->
-                FolderEntryRow(entry)
+                FolderEntryRow(
+                    entry = entry,
+                    onClick = if (entry.status == ComparisonStatus.DIFFERENT && !entry.isDirectory) {
+                        { onOpenDiff(entry) }
+                    } else null
+                )
             }
         }
     }
 }
 
 @Composable
-private fun FolderEntryRow(entry: FolderComparisonEntry) {
+private fun FolderEntryRow(entry: FolderComparisonEntry, onClick: (() -> Unit)? = null) {
     val statusIcon = when (entry.status) {
         ComparisonStatus.IDENTICAL -> Icons.Filled.CheckCircle
         ComparisonStatus.DIFFERENT -> Icons.Filled.Difference
@@ -120,6 +127,7 @@ private fun FolderEntryRow(entry: FolderComparisonEntry) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Icon(

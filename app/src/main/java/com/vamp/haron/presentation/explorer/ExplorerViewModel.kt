@@ -236,13 +236,6 @@ class ExplorerViewModel @Inject constructor(
             }
         }
 
-        // Badge: track active background operations count
-        viewModelScope.launch {
-            FileOperationService.activeOperations.collect { count ->
-                _uiState.update { it.copy(activeOperationsCount = count) }
-            }
-        }
-
         // Network discovery — find Haron instances and SMB shares
         networkDeviceScanner.startDiscovery()
         viewModelScope.launch {

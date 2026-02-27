@@ -273,8 +273,6 @@ class FileOperationService : Service() {
             isComplete = true,
             error = getString(R.string.operation_cancelled)
         )
-        decrementActiveOps()
-        updateBadge()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -315,7 +313,6 @@ class FileOperationService : Service() {
             .setContentTitle(getString(currentOperationType.labelRes))
             .setContentText("$current/$total — $fileName")
             .setProgress(total, current, total == 0)
-            .setNumber(_activeOperations.value)
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(openPendingIntent)
@@ -335,8 +332,6 @@ class FileOperationService : Service() {
 
     private fun showCompleteNotification(completed: Int, total: Int, isMove: Boolean) {
         stopForeground(STOP_FOREGROUND_REMOVE)
-        decrementActiveOps()
-        updateBadge()
         val action = if (isMove) getString(R.string.operation_moved) else getString(R.string.operation_copied)
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -345,24 +340,6 @@ class FileOperationService : Service() {
             .build()
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID + 1, notification)
-    }
-
-    /** Update launcher icon badge via system notification badge count */
-    private fun updateBadge() {
-        val count = _activeOperations.value
-        val manager = getSystemService(NotificationManager::class.java)
-        if (count <= 0) {
-            // Clear badge by cancelling any lingering badge notification
-            manager.cancel(BADGE_NOTIFICATION_ID)
-        } else {
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setNumber(count)
-                .setSilent(true)
-                .setPriority(NotificationCompat.PRIORITY_MIN)
-                .build()
-            manager.notify(BADGE_NOTIFICATION_ID, notification)
-        }
     }
 
     /** Snapshot-based directory copy — avoids infinite recursion */
@@ -401,8 +378,6 @@ class FileOperationService : Service() {
     companion object {
         private const val CHANNEL_ID = "file_operations"
         private const val NOTIFICATION_ID = 42001
-        private const val BADGE_NOTIFICATION_ID = 42099
-
         const val ACTION_CANCEL = "com.vamp.haron.CANCEL_OPERATION"
         const val EXTRA_SOURCE_PATHS = "source_paths"
         const val EXTRA_DESTINATION_DIR = "destination_dir"
@@ -411,13 +386,6 @@ class FileOperationService : Service() {
 
         private val _progress = MutableStateFlow<OperationProgress?>(null)
         val progress: StateFlow<OperationProgress?> = _progress.asStateFlow()
-
-        /** Active background operations counter (for app icon badge) */
-        private val _activeOperations = MutableStateFlow(0)
-        val activeOperations: StateFlow<Int> = _activeOperations.asStateFlow()
-
-        fun incrementActiveOps() { _activeOperations.value++ }
-        fun decrementActiveOps() { _activeOperations.value = (_activeOperations.value - 1).coerceAtLeast(0) }
 
         fun start(
             context: Context,
@@ -433,7 +401,6 @@ class FileOperationService : Service() {
                 currentFileName = "",
                 type = type
             )
-            incrementActiveOps()
             val intent = Intent(context, FileOperationService::class.java).apply {
                 putStringArrayListExtra(EXTRA_SOURCE_PATHS, ArrayList(sourcePaths))
                 putExtra(EXTRA_DESTINATION_DIR, destinationDir)

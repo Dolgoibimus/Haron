@@ -117,11 +117,20 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
     // Received files from external intent
     val activity = context as? com.vamp.haron.MainActivity
     val receivedFiles = activity?.receivedFiles?.value ?: emptyList()
+    val isActionView = activity?.isActionView?.value ?: false
     var showReceiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(receivedFiles) {
         if (receivedFiles.isNotEmpty()) {
-            showReceiveDialog = true
+            if (isActionView) {
+                // ACTION_VIEW — open directly without dialog
+                val file = receivedFiles.first()
+                openReceivedFile(navController, file)
+                activity?.receivedFiles?.value = emptyList()
+                activity?.isActionView?.value = false
+            } else {
+                showReceiveDialog = true
+            }
         }
     }
 

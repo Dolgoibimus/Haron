@@ -10,7 +10,11 @@ import javax.inject.Inject
 
 class CompareFoldersUseCase @Inject constructor() {
 
-    suspend operator fun invoke(leftPath: String, rightPath: String): List<FolderComparisonEntry> =
+    suspend operator fun invoke(
+        leftPath: String,
+        rightPath: String,
+        onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }
+    ): List<FolderComparisonEntry> =
         withContext(Dispatchers.IO) {
             val leftDir = File(leftPath)
             val rightDir = File(rightPath)
@@ -19,8 +23,10 @@ class CompareFoldersUseCase @Inject constructor() {
             val rightMap = collectRelativePaths(rightDir)
 
             val allPaths = (leftMap.keys + rightMap.keys).sorted()
+            val total = allPaths.size
 
-            allPaths.map { relPath ->
+            allPaths.mapIndexed { index, relPath ->
+                onProgress(index + 1, total)
                 val leftFile = leftMap[relPath]
                 val rightFile = rightMap[relPath]
 

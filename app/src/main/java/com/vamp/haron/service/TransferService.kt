@@ -93,7 +93,6 @@ class TransferService : Service() {
         }
 
         acquireWakeLock()
-        FileOperationService.incrementActiveOps()
         return START_STICKY
     }
 
@@ -234,7 +233,6 @@ class TransferService : Service() {
 
     override fun onDestroy() {
         releaseWakeLock()
-        FileOperationService.decrementActiveOps()
         scope.cancel()
         super.onDestroy()
     }

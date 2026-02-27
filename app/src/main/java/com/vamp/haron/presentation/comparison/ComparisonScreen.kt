@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,7 +86,25 @@ fun ComparisonScreen(
                     )
                 }
                 state.mode == ComparisonMode.LOADING -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        if (state.progressTotal > 0) {
+                            Spacer(Modifier.height(12.dp))
+                            LinearProgressIndicator(
+                                progress = { state.progressCurrent.toFloat() / state.progressTotal },
+                                modifier = Modifier.width(200.dp)
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "${state.progressCurrent} / ${state.progressTotal}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
                 state.mode == ComparisonMode.TEXT && state.textDiff != null -> {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -116,7 +135,10 @@ fun ComparisonScreen(
                     FolderDiffView(
                         entries = state.folderEntries,
                         filterStatus = state.filterStatus,
-                        onFilterChange = { viewModel.setFilter(it) }
+                        onFilterChange = { viewModel.setFilter(it) },
+                        onOpenDiff = { entry ->
+                            viewModel.openFileDiff(entry.relativePath)
+                        }
                     )
                 }
                 state.mode == ComparisonMode.BINARY && state.binaryMetadata != null -> {
