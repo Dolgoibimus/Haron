@@ -217,7 +217,7 @@ fun FilePanel(
             } else files
         }
         .let { files ->
-            if (state.searchQuery.isBlank()) files
+            if (state.searchQuery.isBlank() || !state.isSearchActive) files
             else if (state.searchInContent) {
                 // Content search: filter files by FTS snippets, keep folders matching name
                 val snippets = state.contentSearchSnippets

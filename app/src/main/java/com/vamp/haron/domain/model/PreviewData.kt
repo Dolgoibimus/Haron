@@ -49,7 +49,8 @@ sealed interface PreviewData {
         override val fileSize: Long,
         override val lastModified: Long,
         val firstPage: Bitmap,
-        val pageCount: Int
+        val pageCount: Int,
+        val filePath: String = ""
     ) : PreviewData
 
     data class ArchivePreview(

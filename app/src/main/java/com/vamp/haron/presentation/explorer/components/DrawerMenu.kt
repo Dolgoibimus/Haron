@@ -85,9 +85,7 @@ fun DrawerMenu(
     onFindEmptyFolders: () -> Unit,
     onForceDelete: () -> Unit,
     onManageTags: () -> Unit,
-    onToggleShield: () -> Unit = {},
     onOpenTransfer: () -> Unit = {},
-    secureFolderInfo: String = "",
     usbVolumes: List<UsbVolume> = emptyList(),
     onNavigateUsb: (String) -> Unit = {},
     onEjectUsb: (String) -> Unit = {},
@@ -358,14 +356,6 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Label, null, Modifier.size(24.dp)) },
                     title = stringResource(R.string.tags_title),
                     onClick = { onManageTags(); onDismiss() }
-                )
-            }
-            item {
-                DrawerItem(
-                    icon = { Icon(Icons.Filled.Lock, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = stringResource(R.string.secure_folder),
-                    subtitle = secureFolderInfo.ifEmpty { null },
-                    onClick = { onToggleShield(); onDismiss() }
                 )
             }
             item {

@@ -2,7 +2,9 @@ package com.vamp.haron.presentation.explorer.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -85,6 +87,7 @@ fun SortMenu(
                 }
                 val isSelected = currentOrder.field == field
                 DropdownMenuItem(
+                    modifier = Modifier.defaultMinSize(minHeight = 36.dp),
                     text = {
                         Text(
                             text = label,
@@ -105,6 +108,7 @@ fun SortMenu(
                         onSortChanged(SortOrder(field, newDirection))
                         expanded = false
                     },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
                     trailingIcon = if (isSelected) {
                         {
                             Icon(
@@ -129,6 +133,7 @@ fun SortMenu(
             if (tagDefinitions.isNotEmpty() && onTagFilterChanged != null) {
                 HorizontalDivider()
                 DropdownMenuItem(
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp),
                     text = {
                         Text(
                             stringResource(R.string.tags_filter_by),
@@ -137,10 +142,12 @@ fun SortMenu(
                         )
                     },
                     onClick = {},
-                    enabled = false
+                    enabled = false,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
                 )
                 // "All files" option
                 DropdownMenuItem(
+                    modifier = Modifier.defaultMinSize(minHeight = 36.dp),
                     text = {
                         Text(
                             stringResource(R.string.tags_filter_all),
@@ -151,12 +158,14 @@ fun SortMenu(
                     onClick = {
                         onTagFilterChanged(null)
                         expanded = false
-                    }
+                    },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)
                 )
                 tagDefinitions.forEach { tag ->
                     val color = TagColors.palette.getOrElse(tag.colorIndex) { TagColors.palette[0] }
                     val isActive = activeTagFilter == tag.name
                     DropdownMenuItem(
+                        modifier = Modifier.defaultMinSize(minHeight = 36.dp),
                         text = {
                             Box {
                                 androidx.compose.foundation.layout.Row(
@@ -180,7 +189,8 @@ fun SortMenu(
                         onClick = {
                             onTagFilterChanged(tag.name)
                             expanded = false
-                        }
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)
                     )
                 }
             }

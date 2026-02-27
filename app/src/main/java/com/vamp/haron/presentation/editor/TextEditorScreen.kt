@@ -3,17 +3,23 @@ package com.vamp.haron.presentation.editor
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +43,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,7 +51,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -54,7 +63,6 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -108,6 +116,9 @@ fun TextEditorScreen(
         }
     }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
+
+    // Pinch-to-zoom font size
+    var fontSizeSp by remember { mutableFloatStateOf(13f) }
 
     // Undo/Redo stacks
     var undoStack by remember { mutableStateOf(listOf<TextFieldValue>()) }
@@ -304,12 +315,123 @@ fun TextEditorScreen(
                 )
             )
         },
-        bottomBar = {
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .consumeWindowInsets(paddingValues)
+                .imePadding()
+        ) {
+            when {
+                isLoading -> {
+                    Text(
+                        text = stringResource(R.string.loading),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                loadError != null -> {
+                    Text(
+                        text = stringResource(R.string.error_format, loadError ?: ""),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                else -> {
+                    val verticalScroll = rememberScrollState()
+                    val density = LocalDensity.current
+                    val imeBottom = WindowInsets.ime.getBottom(density)
+
+                    // Scroll to cursor when keyboard appears or cursor moves
+                    LaunchedEffect(imeBottom, cursorLine) {
+                        if (imeBottom > 0 && verticalScroll.maxValue > 0 && totalLines > 0) {
+                            val lineHeight = verticalScroll.maxValue.toFloat() / totalLines.coerceAtLeast(1)
+                            val cursorY = (cursorLine - 1) * lineHeight
+                            val viewportHeight = verticalScroll.viewportSize.toFloat()
+                            val targetScroll = (cursorY - viewportHeight / 2).toInt()
+                                .coerceIn(0, verticalScroll.maxValue)
+                            verticalScroll.animateScrollTo(targetScroll)
+                        }
+                    }
+
+                    // Scroll to match: proportional position
+                    LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
+                        if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
+                            val pos = matchIndices[currentMatchIndex]
+                            val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
+                            val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
+                            verticalScroll.animateScrollTo(scrollTarget)
+                        }
+                    }
+
+                    // Auto-select first match on load
+                    LaunchedEffect(matchIndices) {
+                        if (matchIndices.isNotEmpty()) {
+                            currentMatchIndex = 0
+                            val pos = matchIndices[0]
+                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                        }
+                    }
+
+                    val monoStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = fontSizeSp.sp,
+                        lineHeight = (fontSizeSp * 1.54f).sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    val highlightColor = MaterialTheme.colorScheme.primary
+                    val highlightTransformation = remember(highlightQuery, highlightColor) {
+                        if (highlightQuery.isNullOrBlank()) VisualTransformation.None
+                        else SearchHighlightTransformation(highlightQuery, highlightColor)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.size >= 2) {
+                                            val zoom = event.calculateZoom()
+                                            fontSizeSp = (fontSizeSp * zoom).coerceIn(8f, 32f)
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }
+                            .verticalScroll(verticalScroll)
+                    ) {
+                        BasicTextField(
+                            value = textFieldValue,
+                            onValueChange = { newValue ->
+                                if (newValue.text != textFieldValue.text) {
+                                    pushUndo(textFieldValue)
+                                    isModified = newValue.text != savedText
+                                }
+                                textFieldValue = newValue
+                            },
+                            textStyle = monoStyle,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            visualTransformation = highlightTransformation,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                        )
+                    }
+                }
+            }
+            // Status bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = stringResource(R.string.line_format, cursorLine),
@@ -333,110 +455,6 @@ fun TextEditorScreen(
                     else
                         MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when {
-                isLoading -> {
-                    Text(
-                        text = stringResource(R.string.loading),
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                loadError != null -> {
-                    Text(
-                        text = stringResource(R.string.error_format, loadError ?: ""),
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                else -> {
-                    val verticalScroll = rememberScrollState()
-                    val horizontalScroll = rememberScrollState()
-
-                    // Scroll to match: proportional position
-                    LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
-                        if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
-                            val pos = matchIndices[currentMatchIndex]
-                            val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
-                            val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
-                            verticalScroll.animateScrollTo(scrollTarget)
-                        }
-                    }
-
-                    // Auto-select first match on load
-                    LaunchedEffect(matchIndices) {
-                        if (matchIndices.isNotEmpty()) {
-                            currentMatchIndex = 0
-                            val pos = matchIndices[0]
-                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
-                        }
-                    }
-
-                    val monoStyle = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(verticalScroll)
-                    ) {
-                        // Line numbers
-                        Column(
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                                .padding(horizontal = 6.dp, vertical = 8.dp)
-                        ) {
-                            for (i in 1..totalLines) {
-                                Text(
-                                    text = i.toString(),
-                                    style = monoStyle.copy(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        textAlign = TextAlign.End
-                                    ),
-                                    modifier = Modifier.width(36.dp)
-                                )
-                            }
-                        }
-
-                        // Editor
-                        val highlightColor = MaterialTheme.colorScheme.primary
-                        val highlightTransformation = remember(highlightQuery, highlightColor) {
-                            if (highlightQuery.isNullOrBlank()) VisualTransformation.None
-                            else SearchHighlightTransformation(highlightQuery, highlightColor)
-                        }
-                        BasicTextField(
-                            value = textFieldValue,
-                            onValueChange = { newValue ->
-                                if (newValue.text != textFieldValue.text) {
-                                    pushUndo(textFieldValue)
-                                    isModified = newValue.text != savedText
-                                }
-                                textFieldValue = newValue
-                            },
-                            textStyle = monoStyle,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            visualTransformation = highlightTransformation,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .horizontalScroll(horizontalScroll)
-                                .padding(8.dp)
-                        )
-                    }
-                }
             }
         }
     }

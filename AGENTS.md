@@ -18,9 +18,18 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-Batch 41 — Доверенные устройства + ренейм + условный Quick Send. Реализовано.
+Batch 42 — Просмотрщик документов: 100% оригинальное форматирование. Реализовано.
 
-**Решено:** Долгий тап на пульсирующем кругу приёма — исправлен (см. Batch 41 bugfix).
+**Добавлено:**
+- Парсинг `word/styles.xml` (именованные стили → шрифт, размер, отступы, интервалы)
+- Парсинг `word/numbering.xml` (нумерованные/маркированные списки: 1. 2. 3., a) b) c), I II III и т.д.)
+- `w:pBdr` → горизонтальные линии-разделители
+- `w:gridSpan` → горизонтальное объединение ячеек таблиц (colspan)
+- `w:vAlign` → вертикальное выравнивание в ячейках таблиц
+- `w:rFonts` → шрифты (Times→Serif, Arial/Calibri→SansSerif, Courier→Monospace)
+- `w:tabs` с `w:leader` → позиционные табуляторы с подчёркиванием/точками/дефисами
+- `w:br` → переносы строк и разрывы страниц
+- Стили из `styles.xml` как fallback для paragraph/run-свойств (alignment, spacing, indent, bold, italic, fontSize, fontFamily, textColor)
 
 ### План до релиза 1.0:
 | Батч | Задача | Статус |
@@ -44,6 +53,7 @@ Batch 41 — Доверенные устройства + ренейм + усло
 | 39 | Расширенный шаринг на ТВ | ⚠️ не проверено |
 | 40 | Quick Send DnD (быстрая отправка) | ⚠️ не проверено |
 | 41 | Доверенные устройства + ренейм + условный Quick Send | ⚠️ не проверено |
+| 42 | Просмотрщик документов — 100% оригинальное форматирование | ⚠️ не проверено |
 
 ---
 
@@ -327,6 +337,21 @@ _(нет)_
 - **ExplorerViewModel**: `compareFiles()` — заполняет ComparisonHolder, эмитит NavigationEvent.OpenComparison.
 - **HaronNavigation**: маршрут COMPARISON.
 - **Доп. фикс**: прогресс-бар при сравнении папок (LinearProgressIndicator + счётчик). Тап на DIFFERENT файл → открытие текстового diff.
+
+### Batch 42 — Просмотрщик документов: 100% оригинальное форматирование ⚠️ не проверено
+- **DocumentParser.kt**: полная переработка DOCX-парсера для максимально точного воспроизведения документа:
+  - `parseDocxStyles()` — парсинг `word/styles.xml` (docDefaults + именованные стили). Резолвит paragraph и run свойства по styleId. Fallback: inline → style → docDefaults.
+  - `parseDocxNumbering()` — парсинг `word/numbering.xml` (abstractNum + num маппинг). Поддержка форматов: decimal, lowerLetter, upperLetter, lowerRoman, upperRoman, bullet.
+  - `formatNumBullet()` + `toRoman()` — форматирование номеров списков с поддержкой lvlText шаблонов (%1., %1) и т.д.).
+  - Data-классы: `DocxRunDef`, `DocxParaDef`, `DocxNumLevel`, `DocxTabStop`.
+  - `docxParagraph()`: стили из styles.xml как fallback, `w:pBdr` → `hasBorderBottom`, tab stops с лидерами, нумерация из numbering.xml.
+  - `docxRunSpans()`: `w:rFonts` → fontFamily, `w:br` → перенос строки, табы с лидерами (underscore/dot/hyphen → символы-заполнители).
+  - Таблицы: `w:gridSpan` → горизонтальное объединение ячеек, `w:vAlign` → вертикальное выравнивание.
+- **DocumentViewerScreen.kt**: обновлён рендеринг:
+  - `TblRow` + `buildDocItems()`: поддержка gridSpans и vAligns, правильный подсчёт логических колонок.
+  - `CompactTableRow()`: gridSpan → объединённые веса колонок, vAlign → contentAlignment в Box, fontFamily в SpanStyle.
+  - `RichParagraph()`: `hasBorderBottom` → горизонтальная линия, fontFamily → маппинг на FontFamily (Serif/SansSerif/Monospace).
+  - `mapFontFamily()` — хелпер для маппинга имён шрифтов документа на Android FontFamily.
 
 ### Batch 35 — Открывалка по умолчанию ✅ проверено
 - **IntentHandler** (`common/util/IntentHandler.kt`): разбор ACTION_VIEW, ACTION_SEND, ACTION_SEND_MULTIPLE. `ReceivedFile(displayName, localPath, mimeType, size)`. Резолв content:// URI через `contentResolver.openInputStream()` → копирование в `cacheDir/received/`. `queryDisplayName()` через OpenableColumns. `generateUniqueFile()` для конфликтов имён.

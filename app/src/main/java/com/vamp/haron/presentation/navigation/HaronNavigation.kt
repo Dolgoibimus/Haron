@@ -608,7 +608,7 @@ private fun openReceivedFile(
         ext in listOf("zip", "rar", "7z", "tar", "gz") -> {
             navController.navigate(HaronRoutes.archiveViewer(path, name))
         }
-        ext in listOf("doc", "docx", "odt", "rtf", "fb2") -> {
+        ext in listOf("doc", "docx", "odt", "rtf", "fb2", "xls", "xlsx", "csv", "tsv") -> {
             navController.navigate(HaronRoutes.documentViewer(path, name))
         }
         ext == "apk" -> {

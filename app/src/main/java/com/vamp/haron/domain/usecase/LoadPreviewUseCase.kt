@@ -274,7 +274,8 @@ class LoadPreviewUseCase @Inject constructor(
                     fileSize = entry.size,
                     lastModified = entry.lastModified,
                     firstPage = bitmap,
-                    pageCount = pageCount
+                    pageCount = pageCount,
+                    filePath = entry.path
                 )
             }
         }
