@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.vamp.haron.data.terminal.AnsiParser
 import com.vamp.haron.data.terminal.ParsedLine
 import com.vamp.haron.data.terminal.TabCompletionEngine
+import android.content.SharedPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import org.json.JSONArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
@@ -46,7 +49,12 @@ class TerminalViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(TerminalState())
+    private val prefs: SharedPreferences =
+        appContext.getSharedPreferences("terminal_history", Context.MODE_PRIVATE)
+
+    private val _state = MutableStateFlow(
+        TerminalState(commandHistory = loadHistory())
+    )
     val state: StateFlow<TerminalState> = _state.asStateFlow()
 
     private val ansiParser = AnsiParser()
@@ -54,6 +62,20 @@ class TerminalViewModel @Inject constructor(
 
     companion object {
         private const val MAX_HISTORY = 200
+        private const val KEY_HISTORY = "cmd_history"
+    }
+
+    private fun loadHistory(): List<String> {
+        val json = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun saveHistory(history: List<String>) {
+        val arr = JSONArray(history)
+        prefs.edit().putString(KEY_HISTORY, arr.toString()).commit()
     }
 
     fun executeCommand(input: String) {
@@ -65,6 +87,7 @@ class TerminalViewModel @Inject constructor(
 
         // Add to history
         val newHistory = (_state.value.commandHistory + trimmed).takeLast(MAX_HISTORY)
+        saveHistory(newHistory)
 
         // Show prompt + command
         val prompt = "\$ $trimmed"
@@ -216,25 +239,43 @@ class TerminalViewModel @Inject constructor(
                 pb.environment()["TERM"] = "xterm-256color"
 
                 val process = pb.start()
+                val reader = process.inputStream.bufferedReader()
+                val collectedLines = mutableListOf<String>()
+                val deadline = System.currentTimeMillis() + timeoutMs
 
-                val output = withTimeoutOrNull(timeoutMs) {
-                    process.inputStream.bufferedReader().readText()
+                val readerThread = Thread {
+                    try {
+                        reader.forEachLine { line ->
+                            if (Thread.currentThread().isInterrupted) return@forEachLine
+                            synchronized(collectedLines) {
+                                if (collectedLines.size < maxLines) collectedLines.add(line)
+                            }
+                        }
+                    } catch (_: Exception) { }
                 }
+                readerThread.start()
+                readerThread.join(timeoutMs)
 
-                if (output == null) {
+                if (readerThread.isAlive) {
+                    readerThread.interrupt()
                     process.destroyForcibly()
-                    return@withContext listOf(
+                    ansiParser.reset()
+                    val partial = synchronized(collectedLines) { collectedLines.toList() }
+                    val parsed = partial.map { rawLine ->
                         TerminalLine(
-                            "Command timed out (${_state.value.timeoutSec}s)",
-                            isError = true
+                            text = rawLine,
+                            parsed = ansiParser.parseLine(rawLine)
                         )
+                    }
+                    return@withContext parsed + TerminalLine(
+                        "Command timed out (${_state.value.timeoutSec}s) — partial output above",
+                        isError = true
                     )
                 }
 
                 val exitCode = process.waitFor()
                 ansiParser.reset()
-                val lines = output.lines()
-                    .take(maxLines)
+                val lines = synchronized(collectedLines) { collectedLines.toList() }
                     .map { rawLine ->
                         val parsed = ansiParser.parseLine(rawLine)
                         TerminalLine(
