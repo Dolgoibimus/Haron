@@ -850,16 +850,11 @@ fun FilePanel(
             }
 
             else -> {
-                val gridState = rememberLazyGridState()
+                val gridState = rememberLazyGridState(
+                    initialFirstVisibleItemIndex = initialScrollIndex
+                )
 
-                // Restore scroll when returning from another screen
-                LaunchedEffect(Unit) {
-                    if (initialScrollIndex > 0) {
-                        gridState.scrollToItem(initialScrollIndex)
-                    }
-                }
-
-                // Report scroll position to ViewModel
+                // Report scroll position to ViewModel (skip initial 0 when restoring)
                 LaunchedEffect(gridState) {
                     snapshotFlow { gridState.firstVisibleItemIndex }
                         .collect { index -> onScrollPositionChanged(index) }

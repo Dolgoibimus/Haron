@@ -3,15 +3,21 @@ package com.vamp.haron.domain.usecase
 import android.content.Context
 import android.net.Uri
 import com.github.junrar.Archive
+import com.vamp.haron.R
 import com.vamp.haron.domain.model.ArchiveEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.lingala.zip4j.ZipFile as Zip4jFile
+import net.sf.sevenzipjbinding.IInArchive
+import net.sf.sevenzipjbinding.PropID
+import net.sf.sevenzipjbinding.SevenZip
+import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.ZipFile
+import java.io.RandomAccessFile
 import javax.inject.Inject
 
 class BrowseArchiveUseCase @Inject constructor(
@@ -19,47 +25,66 @@ class BrowseArchiveUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(
         archivePath: String,
-        virtualPath: String = ""
+        virtualPath: String = "",
+        password: String? = null
     ): Result<List<ArchiveEntry>> = withContext(Dispatchers.IO) {
         try {
             val isContentUri = archivePath.startsWith("content://")
             val extension = archivePath.substringAfterLast('.').lowercase()
             val entries = when (extension) {
-                "zip" -> browseZip(archivePath, virtualPath, isContentUri)
-                "7z" -> browse7z(archivePath, virtualPath, isContentUri)
-                "rar" -> browseRar(archivePath, virtualPath, isContentUri)
+                "zip" -> browseZip(archivePath, virtualPath, isContentUri, password)
+                "7z" -> browse7z(archivePath, virtualPath, isContentUri, password)
+                "rar" -> browseRar(archivePath, virtualPath, isContentUri, password)
                 else -> emptyList()
             }
             Result.success(entries)
         } catch (e: Exception) {
-            Result.failure(e)
+            val className = e.javaClass.simpleName
+            val causeClass = e.cause?.javaClass?.simpleName ?: ""
+            val msg = e.message ?: ""
+            val causeMsg = e.cause?.message ?: ""
+            when {
+                // Encrypted archive
+                className.contains("Encrypt", ignoreCase = true) ||
+                    causeClass.contains("Encrypt", ignoreCase = true) ||
+                    msg.contains("encrypted", ignoreCase = true) ||
+                    msg.contains("password", ignoreCase = true) ||
+                    causeMsg.contains("encrypted", ignoreCase = true) ||
+                    causeMsg.contains("password", ignoreCase = true) ->
+                    Result.failure(IllegalStateException("encrypted"))
+                else -> Result.failure(e)
+            }
         }
     }
 
-    private fun browseZip(archivePath: String, virtualPath: String, isContentUri: Boolean): List<ArchiveEntry> {
+    private fun browseZip(archivePath: String, virtualPath: String, isContentUri: Boolean, password: String?): List<ArchiveEntry> {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            val zipFile = ZipFile(file)
-            return zipFile.use { zip ->
-                val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
-                val allEntries = zip.entries().toList()
-                filterDirectChildren(allEntries.map { ze ->
-                    ArchiveEntry(
-                        name = ze.name.trimEnd('/').substringAfterLast('/'),
-                        fullPath = ze.name.trimEnd('/'),
-                        size = ze.size.coerceAtLeast(0),
-                        isDirectory = ze.isDirectory,
-                        compressedSize = ze.compressedSize.coerceAtLeast(0),
-                        lastModified = ze.time
-                    )
-                }, prefix)
+            val zip4j = Zip4jFile(file)
+            if (zip4j.isEncrypted && password == null) {
+                throw IllegalStateException("encrypted")
             }
+            if (password != null) {
+                zip4j.setPassword(password.toCharArray())
+            }
+            val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
+            val headers = zip4j.fileHeaders
+            return filterDirectChildren(headers.map { h ->
+                ArchiveEntry(
+                    name = h.fileName.trimEnd('/').substringAfterLast('/'),
+                    fullPath = h.fileName.trimEnd('/'),
+                    size = h.uncompressedSize.coerceAtLeast(0),
+                    isDirectory = h.isDirectory,
+                    compressedSize = h.compressedSize.coerceAtLeast(0),
+                    lastModified = h.lastModifiedTimeEpoch
+                )
+            }, prefix)
         } finally {
             if (isContentUri) file.delete()
         }
     }
 
-    private fun browse7z(archivePath: String, virtualPath: String, isContentUri: Boolean): List<ArchiveEntry> {
+    private fun browse7z(archivePath: String, virtualPath: String, isContentUri: Boolean, password: String?): List<ArchiveEntry> {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
             val channel = if (isContentUri) {
@@ -70,7 +95,9 @@ class BrowseArchiveUseCase @Inject constructor(
                 )
             }
             return channel.use { ch ->
-                val sevenZ = SevenZFile.builder().setSeekableByteChannel(ch).get()
+                val builder = SevenZFile.builder().setSeekableByteChannel(ch)
+                if (password != null) builder.setPassword(password.toCharArray())
+                val sevenZ = builder.get()
                 sevenZ.use { archive ->
                     val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
                     val all = mutableListOf<ArchiveEntry>()
@@ -92,26 +119,78 @@ class BrowseArchiveUseCase @Inject constructor(
         }
     }
 
-    private fun browseRar(archivePath: String, virtualPath: String, isContentUri: Boolean): List<ArchiveEntry> {
+    private fun browseRar(archivePath: String, virtualPath: String, isContentUri: Boolean, password: String?): List<ArchiveEntry> {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            val archive = Archive(file)
-            return archive.use { rar ->
-                val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
-                val all = (rar.fileHeaders ?: emptyList()).map { h ->
-                    ArchiveEntry(
-                        name = (h.fileName ?: "?").replace('\\', '/').trimEnd('/').substringAfterLast('/'),
-                        fullPath = (h.fileName ?: "?").replace('\\', '/').trimEnd('/'),
-                        size = h.fullUnpackSize.coerceAtLeast(0),
-                        isDirectory = h.isDirectory,
-                        compressedSize = h.fullPackSize.coerceAtLeast(0),
-                        lastModified = h.mTime?.time ?: 0
-                    )
+            // Try junrar first (RAR4)
+            return try {
+                val archive = if (password != null) Archive(file, password) else Archive(file)
+                archive.use { rar ->
+                    if (rar.isEncrypted && password == null) {
+                        throw IllegalStateException("encrypted")
+                    }
+                    val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
+                    val all = (rar.fileHeaders ?: emptyList()).map { h ->
+                        ArchiveEntry(
+                            name = (h.fileName ?: "?").replace('\\', '/').trimEnd('/').substringAfterLast('/'),
+                            fullPath = (h.fileName ?: "?").replace('\\', '/').trimEnd('/'),
+                            size = h.fullUnpackSize.coerceAtLeast(0),
+                            isDirectory = h.isDirectory,
+                            compressedSize = h.fullPackSize.coerceAtLeast(0),
+                            lastModified = h.mTime?.time ?: 0
+                        )
+                    }
+                    filterDirectChildren(all, prefix)
                 }
-                filterDirectChildren(all, prefix)
+            } catch (e: Exception) {
+                // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
+                if (e is IllegalStateException && e.message == "encrypted") throw e
+                browseRarWith7Zip(file, virtualPath, password)
             }
         } finally {
             if (isContentUri) file.delete()
+        }
+    }
+
+    /** Browse RAR (including RAR5) using 7-Zip-JBinding native engine */
+    private fun browseRarWith7Zip(file: File, virtualPath: String, password: String?): List<ArchiveEntry> {
+        SevenZip.initSevenZipFromPlatformJAR()
+        val raf = RandomAccessFile(file, "r")
+        val stream = RandomAccessFileInStream(raf)
+        val archive: IInArchive = if (password != null) {
+            SevenZip.openInArchive(null, stream, password)
+        } else {
+            SevenZip.openInArchive(null, stream)
+        }
+        try {
+            val count = archive.numberOfItems
+            // Check if encrypted and no password
+            if (password == null && count > 0) {
+                val encrypted = archive.getProperty(0, PropID.ENCRYPTED) as? Boolean ?: false
+                if (encrypted) throw IllegalStateException("encrypted")
+            }
+            val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
+            val all = mutableListOf<ArchiveEntry>()
+            for (i in 0 until count) {
+                val path = (archive.getProperty(i, PropID.PATH) as? String ?: "").replace('\\', '/')
+                val isDir = archive.getProperty(i, PropID.IS_FOLDER) as? Boolean ?: false
+                val size = (archive.getProperty(i, PropID.SIZE) as? Long) ?: 0L
+                val packedSize = (archive.getProperty(i, PropID.PACKED_SIZE) as? Long) ?: 0L
+                val lastMod = (archive.getProperty(i, PropID.LAST_MODIFICATION_TIME) as? java.util.Date)?.time ?: 0L
+                all.add(ArchiveEntry(
+                    name = path.trimEnd('/').substringAfterLast('/'),
+                    fullPath = path.trimEnd('/'),
+                    size = size.coerceAtLeast(0),
+                    isDirectory = isDir,
+                    compressedSize = packedSize.coerceAtLeast(0),
+                    lastModified = lastMod
+                ))
+            }
+            return filterDirectChildren(all, prefix)
+        } finally {
+            archive.close()
+            stream.close()
+            raf.close()
         }
     }
 

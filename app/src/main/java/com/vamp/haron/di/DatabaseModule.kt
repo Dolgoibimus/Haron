@@ -4,6 +4,7 @@ import android.content.Context
 import com.vamp.haron.data.db.HaronDatabase
 import com.vamp.haron.data.db.dao.FileContentDao
 import com.vamp.haron.data.db.dao.FileIndexDao
+import com.vamp.haron.data.db.dao.ReadingPositionDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -31,5 +32,11 @@ object DatabaseModule {
     @Singleton
     fun provideFileContentDao(database: HaronDatabase): FileContentDao {
         return database.fileContentDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideReadingPositionDao(database: HaronDatabase): ReadingPositionDao {
+        return database.readingPositionDao()
     }
 }

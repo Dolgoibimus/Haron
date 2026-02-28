@@ -815,6 +815,9 @@ class ExplorerViewModel @Inject constructor(
             return
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
+        } else if (entry.name.lowercase().endsWith(".fb2.zip")) {
+            preferences.lastDocumentFile = entry.path
+            _navigationEvent.tryEmit(NavigationEvent.OpenDocumentViewer(entry.path, entry.name))
         } else {
             // Set highlight query if in content search mode
             SearchNavigationHolder.highlightQuery = if (panel.searchInContent && panel.searchQuery.isNotBlank()) panel.searchQuery else null

@@ -91,6 +91,9 @@ private data class DocxTabStop(val pos: Int, val leader: String?)
 object DocumentParser {
 
     fun parse(file: File): List<DocParagraph> {
+        if (file.name.lowercase().endsWith(".fb2.zip")) {
+            return parseFb2FromZip(file)
+        }
         return when (file.extension.lowercase()) {
             "docx" -> parseDocx(file)
             "doc" -> parseDoc(file)
@@ -101,6 +104,16 @@ object DocumentParser {
             "xls" -> parseXls(file)
             "csv", "tsv" -> parseCsv(file)
             else -> emptyList()
+        }
+    }
+
+    fun parseFb2FromZip(zipFile: File): List<DocParagraph> {
+        ZipFile(zipFile).use { zip ->
+            val fb2Entry = zip.entries().toList().firstOrNull { entry ->
+                entry.name.lowercase().endsWith(".fb2")
+            } ?: return emptyList()
+            val rawBytes = zip.getInputStream(fb2Entry).readBytes()
+            return parseFb2Internal(rawBytes)
         }
     }
 
@@ -1578,8 +1591,10 @@ object DocumentParser {
     // ======================== FB2 ========================
 
     private fun parseFb2(file: File): List<DocParagraph> {
-        // Detect charset from XML declaration
-        val rawBytes = file.readBytes()
+        return parseFb2Internal(file.readBytes())
+    }
+
+    private fun parseFb2Internal(rawBytes: ByteArray): List<DocParagraph> {
         val charset = detectFb2Charset(rawBytes)
         val raw = String(rawBytes, charset)
 

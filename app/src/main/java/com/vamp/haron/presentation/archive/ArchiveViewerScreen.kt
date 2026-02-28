@@ -56,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ArchiveEntry
+import com.vamp.haron.presentation.common.PasswordDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +77,24 @@ fun ArchiveViewerScreen(
         viewModel.toastMessage.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.closeEvent.collect {
+            onBack()
+        }
+    }
+
+    if (state.showPasswordDialog) {
+        PasswordDialog(
+            fileName = archiveName,
+            errorMessage = state.passwordError,
+            onConfirm = { viewModel.onPasswordSubmit(it) },
+            onDismiss = {
+                viewModel.onPasswordDismiss()
+                onBack()
+            }
+        )
     }
 
     BackHandler(enabled = state.isSelectionMode || state.virtualPath.isNotEmpty()) {

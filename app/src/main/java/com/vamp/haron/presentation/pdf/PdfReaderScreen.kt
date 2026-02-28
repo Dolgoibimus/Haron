@@ -77,11 +77,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
 import com.vamp.haron.common.util.PdfMatch
+import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.common.util.PdfTextPositionExtractor
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.vamp.haron.presentation.common.PasswordDialog
+import com.tom_roush.pdfbox.pdmodel.PDDocument
 import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
 import java.io.File
@@ -101,10 +106,12 @@ fun PdfReaderScreen(
     onBack: () -> Unit
 ) {
     val extension = fileName.substringAfterLast('.', "").lowercase()
-    val isDocumentMode = extension in DOCUMENT_EXTENSIONS
+    val isFb2Zip = fileName.lowercase().endsWith(".fb2.zip")
+    val isDocumentMode = extension in DOCUMENT_EXTENSIONS || isFb2Zip
 
     if (isDocumentMode) {
-        DocumentReaderContent(filePath, fileName, extension, onBack)
+        val ext = if (isFb2Zip) "fb2.zip" else extension
+        DocumentReaderContent(filePath, fileName, ext, onBack)
     } else {
         PdfReaderContent(filePath, fileName, onBack)
     }
@@ -129,6 +136,7 @@ private fun DocumentReaderContent(
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var textLayoutResult by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     var containerHeight by remember { mutableIntStateOf(0) }
+    var savedScrollPos by remember { mutableIntStateOf(0) }
 
     // Zoom state
     var scale by remember { mutableFloatStateOf(1f) }
@@ -148,18 +156,47 @@ private fun DocumentReaderContent(
         scale = newScale
     }
 
-    // Extract text
+    // Extract text + restore zoom + saved scroll position
     LaunchedEffect(filePath) {
-        withContext(Dispatchers.IO) {
+        data class DocLoadResult(
+            val text: String? = null,
+            val err: String? = null,
+            val zoomValue: Int = 0,
+            val scrollPos: Int = 0
+        )
+        val result = withContext(Dispatchers.IO) {
+            // Read saved position first (fast)
+            val posSaved = if (highlightQuery.isNullOrBlank()) ReadingPositionManager.get(filePath) else null
+            val zoomSaved = ReadingPositionManager.get("zoom:$filePath")
+            // Then parse document (slow)
             try {
                 val text = extractDocumentText(context, filePath, extension)
-                documentText = text
-                lineCount = text.lines().size
+                DocLoadResult(
+                    text = text,
+                    zoomValue = zoomSaved?.position ?: 0,
+                    scrollPos = posSaved?.position ?: 0
+                )
             } catch (e: Exception) {
-                error = e.message ?: context.getString(R.string.read_document_failed)
+                val msg = e.message ?: ""
+                val isEncrypted = e.javaClass.simpleName.contains("Encrypted", ignoreCase = true) ||
+                    msg.contains("encrypted", ignoreCase = true) ||
+                    msg.contains("password", ignoreCase = true)
+                val errMsg = if (isEncrypted) context.getString(R.string.doc_encrypted_not_supported)
+                    else msg.ifEmpty { context.getString(R.string.read_document_failed) }
+                DocLoadResult(err = errMsg)
             }
-            isLoading = false
         }
+        if (result.text != null) {
+            savedScrollPos = result.scrollPos
+            documentText = result.text
+            lineCount = result.text.lines().size
+            if (result.zoomValue > 100) {
+                scale = (result.zoomValue.toFloat() / 100f).coerceIn(1f, 5f)
+            }
+        } else {
+            error = result.err
+        }
+        isLoading = false
     }
 
     if (error != null) {
@@ -256,7 +293,26 @@ private fun DocumentReaderContent(
         }
 
         val text = documentText ?: return@Scaffold
-        val docScrollState = rememberScrollState()
+        val docScrollState = rememberScrollState(initial = savedScrollPos)
+
+        // Save reading position + zoom (debounced)
+        LaunchedEffect(filePath) {
+            snapshotFlow { docScrollState.value to scale }.collectLatest { (scroll, zoom) ->
+                delay(1000)
+                withContext(Dispatchers.IO) {
+                    ReadingPositionManager.save(filePath, scroll)
+                    ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
+                }
+            }
+        }
+
+        // Save on exit
+        DisposableEffect(filePath) {
+            onDispose {
+                ReadingPositionManager.saveAsync(filePath, docScrollState.value)
+                ReadingPositionManager.saveAsync("zoom:$filePath", (scale * 100).toInt())
+            }
+        }
 
         // Scroll to match using exact pixel position from TextLayoutResult
         LaunchedEffect(currentMatchIndex, matchIndices, textLayoutResult, containerHeight) {
@@ -359,6 +415,7 @@ private fun extractDocumentText(context: Context, filePath: String, extension: S
         "doc" -> extractDoc(context, filePath)
         "rtf" -> extractRtf(context, filePath)
         "fb2" -> extractFb2(context, filePath)
+        "fb2.zip" -> extractFb2FromZip(context, filePath)
         else -> throw IllegalArgumentException("Неподдерживаемый формат: $extension")
     }
 }
@@ -516,6 +573,75 @@ private fun extractFb2(context: Context, filePath: String): String {
     return text.trim()
 }
 
+private fun extractFb2FromZip(context: Context, filePath: String): String {
+    val file = resolveFile(context, filePath, "fb2.zip")
+    val isTemp = filePath.startsWith("content://")
+    try {
+        ZipFile(file).use { zip ->
+            val fb2Entry = zip.entries().toList().firstOrNull { entry ->
+                entry.name.lowercase().endsWith(".fb2")
+            } ?: throw IllegalStateException("FB2 file not found in archive")
+            val raw = zip.getInputStream(fb2Entry).bufferedReader().readText()
+            return extractFb2Content(raw)
+        }
+    } finally {
+        if (isTemp) file.delete()
+    }
+}
+
+private fun extractFb2Content(raw: String): String {
+    val bodyMatch = Regex("<body[^>]*>(.*)</body>", RegexOption.DOT_MATCHES_ALL).find(raw)
+    val body = bodyMatch?.groupValues?.get(1) ?: raw
+    var text = body
+        .replace(Regex("<empty-line\\s*/?>"), "\n")
+        .replace(Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1]
+            val titleLines = Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(inner)
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .filter { it.isNotBlank() }
+                .joinToString("\n")
+            "\n\n━━━━━━━━━━━━━━━━━━━━\n$titleLines\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        }
+        .replace(Regex("<subtitle>(.*?)</subtitle>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            "\n— ${match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()} —\n\n"
+        }
+        .replace(Regex("<epigraph>(.*?)</epigraph>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val lines = Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(match.groupValues[1])
+                .map { "        " + it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .joinToString("\n")
+            "\n$lines\n\n"
+        }
+        .replace(Regex("<poem>(.*?)</poem>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val verses = Regex("<v>(.*?)</v>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(match.groupValues[1])
+                .map { "    " + it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .joinToString("\n")
+            "\n$verses\n\n"
+        }
+        .replace(Regex("<p>(.*?)</p>", RegexOption.DOT_MATCHES_ALL)) { match ->
+            val inner = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+            if (inner.isNotBlank()) "    $inner\n" else "\n"
+        }
+        .replace(Regex("<section[^>]*>"), "\n")
+        .replace("</section>", "\n")
+    text = text.replace(Regex("<[^>]+>"), "")
+    text = text
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#160;", " ")
+        .replace(Regex("&#(\\d+);")) { match ->
+            val code = match.groupValues[1].toIntOrNull()
+            if (code != null) code.toChar().toString() else ""
+        }
+    text = text.replace(Regex("\n{4,}"), "\n\n\n")
+    return text.trim()
+}
+
 private fun decodeXmlEntities(text: String): String = text
     .replace("&amp;", "&")
     .replace("&lt;", "<")
@@ -562,6 +688,13 @@ private fun PdfReaderContent(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
+    // PDF password state
+    var isEncrypted by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var pdfPassword by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var decryptedTempFile by remember { mutableStateOf<File?>(null) }
+
     // Highlight state
     val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
     var allMatches by remember { mutableStateOf<List<PdfMatch>>(emptyList()) }
@@ -605,9 +738,76 @@ private fun PdfReaderContent(
                 } else {
                     error = context.getString(R.string.pdf_open_failed)
                 }
+            } catch (e: SecurityException) {
+                isEncrypted = true
+                showPasswordDialog = true
             } catch (e: Exception) {
-                error = e.message ?: context.getString(R.string.pdf_open_error)
+                val msg = e.message ?: ""
+                if (msg.contains("password", ignoreCase = true) || msg.contains("encrypted", ignoreCase = true)) {
+                    isEncrypted = true
+                    showPasswordDialog = true
+                } else {
+                    error = msg.ifEmpty { context.getString(R.string.pdf_open_error) }
+                }
             }
+        }
+    }
+
+    // Decrypt PDF with password
+    LaunchedEffect(pdfPassword) {
+        val pw = pdfPassword ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val sourceFile = if (filePath.startsWith("content://")) {
+                    val tmp = File(context.cacheDir, "pdf_src_${System.currentTimeMillis()}.pdf")
+                    context.contentResolver.openInputStream(Uri.parse(filePath))?.use { inp ->
+                        tmp.outputStream().use { out -> inp.copyTo(out) }
+                    }
+                    tmp
+                } else {
+                    File(filePath)
+                }
+                val doc = PDDocument.load(sourceFile, pw)
+                doc.isAllSecurityToBeRemoved = true
+                val tempOut = File(context.cacheDir, "pdf_decrypted_${System.currentTimeMillis()}.pdf")
+                doc.save(tempOut)
+                doc.close()
+                if (filePath.startsWith("content://")) sourceFile.delete()
+
+                val descriptor = ParcelFileDescriptor.open(tempOut, ParcelFileDescriptor.MODE_READ_ONLY)
+                pfd = descriptor
+                val r = PdfRenderer(descriptor)
+                renderer = r
+                pageCount = r.pageCount
+                decryptedTempFile = tempOut
+                isEncrypted = false
+                passwordError = null
+                error = null
+            } catch (e: Exception) {
+                val msg = e.message ?: ""
+                if (msg.contains("password", ignoreCase = true) || msg.contains("decrypt", ignoreCase = true) ||
+                    e is java.io.IOException) {
+                    passwordError = context.getString(R.string.wrong_password)
+                    showPasswordDialog = true
+                    pdfPassword = null
+                } else {
+                    error = msg.ifEmpty { context.getString(R.string.pdf_open_error) }
+                }
+            }
+        }
+    }
+
+    // Restore reading position + zoom
+    LaunchedEffect(filePath, pageCount) {
+        if (pageCount <= 0) return@LaunchedEffect
+        val zoomSaved = withContext(Dispatchers.IO) { ReadingPositionManager.get("zoom:$filePath") }
+        if (zoomSaved != null && zoomSaved.position > 100) {
+            scale = (zoomSaved.position.toFloat() / 100f).coerceIn(1f, 5f)
+        }
+        if (!highlightQuery.isNullOrBlank()) return@LaunchedEffect
+        val saved = withContext(Dispatchers.IO) { ReadingPositionManager.get(filePath) }
+        if (saved != null && saved.position in 1 until pageCount) {
+            listState.scrollToItem(saved.position)
         }
     }
 
@@ -618,13 +818,28 @@ private fun PdfReaderContent(
         }
     }
 
+    // Save reading position + zoom (debounced)
+    LaunchedEffect(filePath, pageCount) {
+        if (pageCount <= 0) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to scale }.collectLatest { (page, zoom) ->
+            delay(1000)
+            withContext(Dispatchers.IO) {
+                ReadingPositionManager.save(filePath, page)
+                ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
+            }
+        }
+    }
+
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
+            ReadingPositionManager.saveAsync(filePath, currentPage)
+            ReadingPositionManager.saveAsync("zoom:$filePath", (scale * 100).toInt())
             pageCache.values.forEach { if (!it.isRecycled) it.recycle() }
             pageCache.clear()
             renderer?.close()
             pfd?.close()
+            decryptedTempFile?.delete()
         }
     }
 
@@ -667,6 +882,32 @@ private fun PdfReaderContent(
             val targetPage = allMatches[currentMatchIndex].pageIndex
             listState.animateScrollToItem(targetPage)
         }
+    }
+
+    if (showPasswordDialog) {
+        PasswordDialog(
+            fileName = fileName,
+            errorMessage = passwordError,
+            onConfirm = { pw ->
+                showPasswordDialog = false
+                pdfPassword = pw
+            },
+            onDismiss = {
+                showPasswordDialog = false
+                onBack()
+            }
+        )
+    }
+
+    if (isEncrypted && !showPasswordDialog && pdfPassword == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(stringResource(R.string.pdf_encrypted), color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
+            }
+        }
+        return
     }
 
     if (error != null) {

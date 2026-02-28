@@ -322,6 +322,12 @@
     <string name="password_protected">Архив защищён паролем</string>
     <string name="archive_read_error">Ошибка чтения архива</string>
     <string name="extracted_to_format">Извлечено в %s</string>
+    <string name="password_required">Требуется пароль</string>
+    <string name="enter_password">Введите пароль</string>
+    <string name="wrong_password">Неверный пароль</string>
+    <string name="pdf_encrypted">PDF защищён паролем</string>
+    <string name="doc_encrypted_not_supported">Зашифрованные документы не поддерживаются</string>
+    <string name="rar5_not_supported">Формат RAR5 не поддерживается. Используйте ZIP или 7z</string>
 
     <!-- File operation service -->
     <string name="notification_preparing">Подготовка…</string>

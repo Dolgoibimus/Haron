@@ -11,6 +11,8 @@ import com.vamp.haron.data.observer.FileContentObserver
 import com.vamp.haron.data.observer.ScreenOnReceiver
 import com.vamp.haron.common.util.TesseractOcr
 import com.vamp.haron.data.cast.GoogleCastManager
+import com.vamp.haron.data.db.dao.ReadingPositionDao
+import com.vamp.haron.data.reading.ReadingPositionManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -26,6 +28,9 @@ class HaronApp : Application(), Configuration.Provider {
     @Inject
     lateinit var tesseractOcr: TesseractOcr
 
+    @Inject
+    lateinit var readingPositionDao: ReadingPositionDao
+
     private var contentObserver: FileContentObserver? = null
     private var screenOnReceiver: ScreenOnReceiver? = null
 
@@ -40,6 +45,7 @@ class HaronApp : Application(), Configuration.Provider {
         EcosystemLogger.init(this)
         EcosystemDatabase.getInstance(this)
         PDFBoxResourceLoader.init(this)
+        ReadingPositionManager.init(readingPositionDao)
 
         // Initialize Google Cast (graceful degradation — no-op if GMS absent)
         castManager.initialize()

@@ -605,6 +605,9 @@ private fun openReceivedFile(
         ext == "pdf" -> {
             navController.navigate(HaronRoutes.pdfReader(path, name))
         }
+        name.lowercase().endsWith(".fb2.zip") -> {
+            navController.navigate(HaronRoutes.documentViewer(path, name))
+        }
         ext in listOf("zip", "rar", "7z", "tar", "gz") -> {
             navController.navigate(HaronRoutes.archiveViewer(path, name))
         }

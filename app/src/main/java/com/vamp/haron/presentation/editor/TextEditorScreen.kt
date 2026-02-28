@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -49,6 +50,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -68,6 +71,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -97,6 +101,7 @@ fun TextEditorScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var isTruncated by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
+    var savedScrollTarget by remember { mutableIntStateOf(0) }
 
     // Search match navigation
     val matchIndices = remember(textFieldValue.text, highlightQuery) {
@@ -138,7 +143,15 @@ fun TextEditorScreen(
 
     // Load file
     LaunchedEffect(filePath) {
-        withContext(Dispatchers.IO) {
+        data class LoadResult(
+            val content: String? = null,
+            val error: String? = null,
+            val truncated: Boolean = false,
+            val cursorPos: Int = 0,
+            val scrollTarget: Int = 0,
+            val zoomSp: Float = 0f
+        )
+        val result = withContext(Dispatchers.IO) {
             try {
                 val content = if (filePath.startsWith("content://")) {
                     val uri = Uri.parse(filePath)
@@ -164,13 +177,27 @@ fun TextEditorScreen(
                         file.readText(Charsets.UTF_8)
                     }
                 }
-                textFieldValue = TextFieldValue(content, TextRange(0))
-                savedText = content
-                isLoading = false
+                val saved = ReadingPositionManager.get(filePath)
+                val cursor = if (!highlightQuery.isNullOrBlank()) 0
+                    else saved?.position?.coerceIn(0, content.length) ?: 0
+                val scroll = if (highlightQuery.isNullOrBlank()) saved?.positionExtra?.toInt() ?: 0 else 0
+                val zoomSaved = ReadingPositionManager.get("zoom:$filePath")
+                val zoom = if (zoomSaved != null && zoomSaved.position > 0)
+                    (zoomSaved.position.toFloat() / 100f).coerceIn(8f, 32f) else 0f
+                LoadResult(content = content, truncated = isTruncated, cursorPos = cursor, scrollTarget = scroll, zoomSp = zoom)
             } catch (e: Exception) {
-                loadError = e.message ?: context.getString(R.string.read_file_error)
-                isLoading = false
+                LoadResult(error = e.message ?: context.getString(R.string.read_file_error))
             }
+        }
+        if (result.content != null) {
+            textFieldValue = TextFieldValue(result.content, TextRange(result.cursorPos))
+            savedScrollTarget = result.scrollTarget
+            if (result.zoomSp > 0f) fontSizeSp = result.zoomSp
+            savedText = result.content
+            isLoading = false
+        } else {
+            loadError = result.error
+            isLoading = false
         }
     }
 
@@ -344,6 +371,34 @@ fun TextEditorScreen(
                     val verticalScroll = rememberScrollState()
                     val density = LocalDensity.current
                     val imeBottom = WindowInsets.ime.getBottom(density)
+
+                    // Restore scroll position
+                    LaunchedEffect(savedScrollTarget) {
+                        if (savedScrollTarget > 0) {
+                            verticalScroll.scrollTo(savedScrollTarget)
+                        }
+                    }
+
+                    // Save scroll + cursor position (debounced)
+                    LaunchedEffect(filePath) {
+                        snapshotFlow {
+                            Triple(verticalScroll.value, textFieldValue.selection.start, fontSizeSp)
+                        }.collectLatest { (scroll, cursor, zoom) ->
+                            delay(1000)
+                            withContext(Dispatchers.IO) {
+                                ReadingPositionManager.save(filePath, cursor, scroll.toLong())
+                                ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
+                            }
+                        }
+                    }
+
+                    // Save on exit
+                    DisposableEffect(filePath) {
+                        onDispose {
+                            ReadingPositionManager.saveAsync(filePath, textFieldValue.selection.start, verticalScroll.value.toLong())
+                            ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
+                        }
+                    }
 
                     // Scroll to cursor when keyboard appears or cursor moves
                     LaunchedEffect(imeBottom, cursorLine) {

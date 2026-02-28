@@ -324,6 +324,12 @@
     <string name="password_protected">Archive is password protected</string>
     <string name="archive_read_error">Archive read error</string>
     <string name="extracted_to_format">Extracted to %s</string>
+    <string name="password_required">Password required</string>
+    <string name="enter_password">Enter password</string>
+    <string name="wrong_password">Wrong password</string>
+    <string name="pdf_encrypted">PDF is password protected</string>
+    <string name="doc_encrypted_not_supported">Encrypted documents are not supported</string>
+    <string name="rar5_not_supported">RAR5 format is not supported. Use ZIP or 7z</string>
 
     <!-- File operation service -->
     <string name="notification_preparing">Preparing…</string>

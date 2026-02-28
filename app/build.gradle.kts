@@ -56,11 +56,14 @@ dependencies {
     // PDF text extraction (content search)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
-    // Archive support (7z, rar)
+    // Archive support (7z, rar, password-protected zip)
     implementation("org.apache.commons:commons-compress:1.26.1")
     implementation("org.tukaani:xz:1.9")
     implementation("com.github.junrar:junrar:7.5.5")
     implementation("org.slf4j:slf4j-nop:2.0.13")
+    implementation("net.lingala.zip4j:zip4j:2.11.5")
+    // 7-Zip-JBinding for Android (RAR5 + password support via native 7z engine)
+    implementation("com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.03")
 
     // Media3 ExoPlayer (inline previews)
     implementation("androidx.media3:media3-exoplayer:1.5.1")

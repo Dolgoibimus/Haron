@@ -32,12 +32,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,12 +61,15 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.common.util.DocParagraph
 import com.vamp.haron.common.util.DocSpan
 import com.vamp.haron.common.util.DocumentParser
 import com.vamp.haron.common.util.ParaAlignment
 import com.vamp.haron.common.util.VerticalAlign
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -170,8 +175,24 @@ fun DocumentViewerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // Pre-load saved position (fast DB read finishes before slow document parsing)
+    var savedItemIndex by remember { mutableStateOf(0) }
+    var savedItemOffset by remember { mutableStateOf(0) }
+    var savedZoomScale by remember { mutableFloatStateOf(1f) }
+
     LaunchedEffect(filePath) {
         withContext(Dispatchers.IO) {
+            // Read saved position first (< 1ms)
+            val pos = ReadingPositionManager.get(filePath)
+            if (pos != null) {
+                savedItemIndex = pos.position
+                savedItemOffset = pos.positionExtra.toInt()
+            }
+            val zoom = ReadingPositionManager.get("zoom:$filePath")
+            if (zoom != null && zoom.position > 0) {
+                savedZoomScale = (zoom.position.toFloat() / 100f).coerceIn(0.5f, 3f)
+            }
+            // Then parse document (slow)
             try {
                 val file = File(filePath)
                 val result = DocumentParser.parse(file)
@@ -181,7 +202,12 @@ fun DocumentViewerScreen(
                     docItems = buildDocItems(result)
                 }
             } catch (e: Throwable) {
-                error = e.message ?: context.getString(R.string.document_read_error)
+                val msg = e.message ?: ""
+                val isEncrypted = e.javaClass.simpleName.contains("Encrypted", ignoreCase = true) ||
+                    msg.contains("encrypted", ignoreCase = true) ||
+                    msg.contains("password", ignoreCase = true)
+                error = if (isEncrypted) context.getString(R.string.doc_encrypted_not_supported)
+                    else msg.ifEmpty { context.getString(R.string.document_read_error) }
             } finally {
                 isLoading = false
             }
@@ -216,8 +242,36 @@ fun DocumentViewerScreen(
                 )
                 docItems != null -> {
                     val items = docItems!!
-                    var textScale by remember { mutableFloatStateOf(1f) }
-                    val listState = rememberLazyListState()
+                    var textScale by remember { mutableFloatStateOf(savedZoomScale) }
+                    val listState = rememberLazyListState(
+                        initialFirstVisibleItemIndex = savedItemIndex.coerceIn(0, items.lastIndex),
+                        initialFirstVisibleItemScrollOffset = savedItemOffset
+                    )
+
+                    // Save reading position + zoom (debounced)
+                    LaunchedEffect(filePath) {
+                        snapshotFlow {
+                            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, textScale)
+                        }.collectLatest { (index, offset, zoom) ->
+                            delay(1000)
+                            withContext(Dispatchers.IO) {
+                                ReadingPositionManager.save(filePath, index, offset.toLong())
+                                ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
+                            }
+                        }
+                    }
+
+                    // Save on exit
+                    DisposableEffect(filePath) {
+                        onDispose {
+                            ReadingPositionManager.saveAsync(
+                                filePath,
+                                listState.firstVisibleItemIndex,
+                                listState.firstVisibleItemScrollOffset.toLong()
+                            )
+                            ReadingPositionManager.saveAsync("zoom:$filePath", (textScale * 100).toInt())
+                        }
+                    }
 
                     Box(
                         modifier = Modifier

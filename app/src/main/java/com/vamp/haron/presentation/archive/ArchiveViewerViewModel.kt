@@ -28,7 +28,10 @@ data class ArchiveViewerState(
     val selectedEntries: Set<String> = emptySet(),
     val isSelectionMode: Boolean = false,
     val extractProgress: ExtractProgress? = null,
-    val breadcrumbs: List<String> = listOf("")
+    val breadcrumbs: List<String> = listOf(""),
+    val showPasswordDialog: Boolean = false,
+    val password: String? = null,
+    val passwordError: String? = null
 )
 
 @HiltViewModel
@@ -43,6 +46,9 @@ class ArchiveViewerViewModel @Inject constructor(
 
     private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val toastMessage = _toastMessage.asSharedFlow()
+
+    private val _closeEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val closeEvent = _closeEvent.asSharedFlow()
 
     fun init(archivePath: String, archiveName: String) {
         _state.update { it.copy(archivePath = archivePath, archiveName = archiveName) }
@@ -87,6 +93,15 @@ class ArchiveViewerViewModel @Inject constructor(
         _state.update { it.copy(selectedEntries = emptySet(), isSelectionMode = false) }
     }
 
+    fun onPasswordSubmit(password: String) {
+        _state.update { it.copy(password = password, showPasswordDialog = false, passwordError = null) }
+        loadEntries(_state.value.virtualPath)
+    }
+
+    fun onPasswordDismiss() {
+        _state.update { it.copy(showPasswordDialog = false) }
+    }
+
     fun extractAll(destinationDir: String) {
         extract(destinationDir, null)
     }
@@ -99,12 +114,14 @@ class ArchiveViewerViewModel @Inject constructor(
 
     private fun extract(destinationDir: String, selectedEntries: Set<String>?) {
         val archivePath = _state.value.archivePath
+        val password = _state.value.password
         viewModelScope.launch {
-            extractArchiveUseCase(archivePath, destinationDir, selectedEntries).collect { progress ->
+            extractArchiveUseCase(archivePath, destinationDir, selectedEntries, password).collect { progress ->
                 _state.update { it.copy(extractProgress = progress) }
                 if (progress.isComplete) {
                     _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
                     clearSelection()
+                    _closeEvent.tryEmit(Unit)
                 }
                 if (progress.error != null) {
                     _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
@@ -116,21 +133,38 @@ class ArchiveViewerViewModel @Inject constructor(
 
     private fun loadEntries(virtualPath: String) {
         val archivePath = _state.value.archivePath
+        val password = _state.value.password
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            browseArchiveUseCase(archivePath, virtualPath)
+            browseArchiveUseCase(archivePath, virtualPath, password)
                 .onSuccess { entries ->
-                    _state.update { it.copy(entries = entries, isLoading = false) }
+                    _state.update { it.copy(entries = entries, isLoading = false, passwordError = null) }
                 }
                 .onFailure { e ->
-                    val msg = when {
-                        e.message?.contains("пароль", ignoreCase = true) == true ||
-                        e.message?.contains("password", ignoreCase = true) == true ||
-                        e.message?.contains("encrypted", ignoreCase = true) == true ->
-                            appContext.getString(R.string.password_protected)
-                        else -> e.message ?: appContext.getString(R.string.archive_read_error)
+                    val msg = e.message ?: ""
+                    val causeName = e.cause?.javaClass?.simpleName ?: ""
+                    val isPasswordError = msg.contains("password", ignoreCase = true) ||
+                        msg.contains("encrypted", ignoreCase = true) ||
+                        msg.contains("пароль", ignoreCase = true) ||
+                        e.javaClass.simpleName.contains("Encrypt", ignoreCase = true) ||
+                        causeName.contains("Encrypt", ignoreCase = true)
+                    if (isPasswordError) {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = null,
+                                showPasswordDialog = true,
+                                passwordError = if (password != null) appContext.getString(R.string.wrong_password) else null
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = e.message ?: appContext.getString(R.string.archive_read_error)
+                            )
+                        }
                     }
-                    _state.update { it.copy(isLoading = false, error = msg) }
                 }
         }
     }

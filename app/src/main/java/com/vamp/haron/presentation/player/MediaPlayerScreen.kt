@@ -83,13 +83,16 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toDurationString
+import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.cast.components.CastButton
 import com.vamp.haron.presentation.cast.components.CastDeviceSheet
 import com.vamp.haron.service.PlaybackService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import org.videolan.libvlc.util.VLCVideoLayout
 
 @Composable
@@ -155,6 +158,43 @@ fun MediaPlayerScreen(
                 if (d > 0) duration = d else if (adapterIndex != currentIndex) duration = 0
             }
             delay(100)
+        }
+    }
+
+    // Restore playback position
+    var positionRestored by remember { mutableStateOf(false) }
+    LaunchedEffect(controller, currentIndex) {
+        val ctrl = controller ?: return@LaunchedEffect
+        if (positionRestored) return@LaunchedEffect
+        val item = PlaylistHolder.items.getOrNull(currentIndex) ?: return@LaunchedEffect
+        val saved = withContext(Dispatchers.IO) { ReadingPositionManager.get(item.filePath) }
+        if (saved != null && saved.positionExtra > 0) {
+            delay(500) // wait for playback to initialize
+            ctrl.seekTo(saved.positionExtra)
+        }
+        positionRestored = true
+    }
+
+    // Save playback position every 5 seconds
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(5000)
+            val item = PlaylistHolder.items.getOrNull(currentIndex)
+            if (item != null && currentPosition > 0 && duration > 0) {
+                withContext(Dispatchers.IO) {
+                    ReadingPositionManager.save(item.filePath, 0, currentPosition)
+                }
+            }
+        }
+    }
+
+    // Save position on exit
+    DisposableEffect(Unit) {
+        onDispose {
+            val item = PlaylistHolder.items.getOrNull(currentIndex)
+            if (item != null && currentPosition > 0) {
+                ReadingPositionManager.saveAsync(item.filePath, 0, currentPosition)
+            }
         }
     }
 
