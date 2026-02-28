@@ -40,15 +40,16 @@ class ExtractArchiveUseCase @Inject constructor(
         archivePath: String,
         destinationDir: String,
         selectedEntries: Set<String>? = null, // null = extract all
-        password: String? = null
+        password: String? = null,
+        basePrefix: String = "" // strip this prefix from output paths (for inline archive browsing)
     ): Flow<ExtractProgress> = flow {
         try {
             val isContentUri = archivePath.startsWith("content://")
             val extension = archivePath.substringAfterLast('.').lowercase()
             when (extension) {
-                "zip" -> extractZip(archivePath, destinationDir, selectedEntries, isContentUri, password)
-                "7z" -> extract7z(archivePath, destinationDir, selectedEntries, isContentUri, password)
-                "rar" -> extractRar(archivePath, destinationDir, selectedEntries, isContentUri, password)
+                "zip" -> extractZip(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
+                "7z" -> extract7z(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
+                "rar" -> extractRar(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
                 else -> emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_unsupported_format)))
             }
         } catch (e: Exception) {
@@ -61,12 +62,13 @@ class ExtractArchiveUseCase @Inject constructor(
         destinationDir: String,
         selectedEntries: Set<String>?,
         isContentUri: Boolean,
-        password: String?
+        password: String?,
+        basePrefix: String
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
             if (password != null) {
-                extractZipWithPassword(file, destinationDir, selectedEntries, password)
+                extractZipWithPassword(file, destinationDir, selectedEntries, password, basePrefix)
                 return
             }
             val zipFile = ZipFile(file)
@@ -79,7 +81,8 @@ class ExtractArchiveUseCase @Inject constructor(
                 val total = entries.size
                 entries.forEachIndexed { index, ze ->
                     emit(ExtractProgress(index, total, ze.name.substringAfterLast('/')))
-                    val outFile = File(destinationDir, ze.name)
+                    val outputName = stripPrefix(ze.name, basePrefix)
+                    val outFile = File(destinationDir, outputName)
                     outFile.parentFile?.mkdirs()
                     zip.getInputStream(ze).use { input ->
                         FileOutputStream(outFile).use { output ->
@@ -98,7 +101,8 @@ class ExtractArchiveUseCase @Inject constructor(
         file: File,
         destinationDir: String,
         selectedEntries: Set<String>?,
-        password: String
+        password: String,
+        basePrefix: String
     ) {
         val zip4j = Zip4jFile(file)
         zip4j.setPassword(password.toCharArray())
@@ -110,7 +114,8 @@ class ExtractArchiveUseCase @Inject constructor(
         val total = headers.size
         headers.forEachIndexed { index, header ->
             emit(ExtractProgress(index, total, header.fileName.substringAfterLast('/')))
-            val outFile = File(destinationDir, header.fileName)
+            val outputName = stripPrefix(header.fileName, basePrefix)
+            val outFile = File(destinationDir, outputName)
             outFile.parentFile?.mkdirs()
             zip4j.getInputStream(header).use { input ->
                 FileOutputStream(outFile).use { output ->
@@ -126,7 +131,8 @@ class ExtractArchiveUseCase @Inject constructor(
         destinationDir: String,
         selectedEntries: Set<String>?,
         isContentUri: Boolean,
-        password: String?
+        password: String?,
+        basePrefix: String
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
@@ -163,7 +169,8 @@ class ExtractArchiveUseCase @Inject constructor(
                         while (entry != null) {
                             if (!entry.isDirectory && entry.name in selectedNames) {
                                 emit(ExtractProgress(current, total, entry.name.substringAfterLast('/')))
-                                val outFile = File(destinationDir, entry.name)
+                                val outputName = stripPrefix(entry.name, basePrefix)
+                                val outFile = File(destinationDir, outputName)
                                 outFile.parentFile?.mkdirs()
                                 FileOutputStream(outFile).use { output ->
                                     val buf = ByteArray(8192)
@@ -190,7 +197,8 @@ class ExtractArchiveUseCase @Inject constructor(
         destinationDir: String,
         selectedEntries: Set<String>?,
         isContentUri: Boolean,
-        password: String?
+        password: String?,
+        basePrefix: String
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
@@ -207,7 +215,8 @@ class ExtractArchiveUseCase @Inject constructor(
                     headers.forEachIndexed { index, header ->
                         val name = (header.fileName ?: "?").replace('\\', '/')
                         emit(ExtractProgress(index, total, name.substringAfterLast('/')))
-                        val outFile = File(destinationDir, name)
+                        val outputName = stripPrefix(name, basePrefix)
+                        val outFile = File(destinationDir, outputName)
                         outFile.parentFile?.mkdirs()
                         FileOutputStream(outFile).use { output ->
                             rar.extractFile(header, output)
@@ -217,7 +226,7 @@ class ExtractArchiveUseCase @Inject constructor(
                 }
             } catch (e: Exception) {
                 // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
-                extractRarWith7Zip(file, destinationDir, selectedEntries, password)
+                extractRarWith7Zip(file, destinationDir, selectedEntries, password, basePrefix)
             }
         } finally {
             if (isContentUri) file.delete()
@@ -229,7 +238,8 @@ class ExtractArchiveUseCase @Inject constructor(
         file: File,
         destinationDir: String,
         selectedEntries: Set<String>?,
-        password: String?
+        password: String?,
+        basePrefix: String
     ) {
         SevenZip.initSevenZipFromPlatformJAR()
         val raf = RandomAccessFile(file, "r")
@@ -258,7 +268,8 @@ class ExtractArchiveUseCase @Inject constructor(
                 val path = (archive.getProperty(idx, PropID.PATH) as? String ?: "").replace('\\', '/')
                 val fileName = path.substringAfterLast('/')
                 emit(ExtractProgress(current, total, fileName))
-                val outFile = File(destinationDir, path)
+                val outputName = stripPrefix(path, basePrefix)
+                val outFile = File(destinationDir, outputName)
                 outFile.parentFile?.mkdirs()
                 FileOutputStream(outFile).use { fos ->
                     archive.extractSlow(idx, ISequentialOutStream { data ->
@@ -274,6 +285,12 @@ class ExtractArchiveUseCase @Inject constructor(
             stream.close()
             raf.close()
         }
+    }
+
+    private fun stripPrefix(path: String, prefix: String): String {
+        if (prefix.isEmpty()) return path
+        val p = "$prefix/"
+        return if (path.startsWith(p)) path.removePrefix(p) else path
     }
 
     private fun copyToTemp(contentUri: String): File {

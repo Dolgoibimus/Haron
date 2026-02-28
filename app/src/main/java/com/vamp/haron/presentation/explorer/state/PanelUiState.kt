@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.explorer.state
 
 import com.vamp.haron.data.model.SortOrder
 import com.vamp.haron.domain.model.FileEntry
+import com.vamp.haron.domain.usecase.ExtractProgress
 
 data class PanelUiState(
     val currentPath: String = "",
@@ -27,5 +28,12 @@ data class PanelUiState(
     val isSafPath: Boolean = false,
     val scrollToIndex: Int = 0,
     val scrollToTrigger: Long = 0L,
-    val showProtected: Boolean = false
-)
+    val showProtected: Boolean = false,
+    // Archive inline browsing
+    val archivePath: String? = null,
+    val archiveVirtualPath: String = "",
+    val archivePassword: String? = null,
+    val archiveExtractProgress: ExtractProgress? = null
+) {
+    val isArchiveMode: Boolean get() = archivePath != null
+}

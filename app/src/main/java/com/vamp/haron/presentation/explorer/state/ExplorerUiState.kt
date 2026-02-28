@@ -118,6 +118,17 @@ sealed interface DialogState {
         val filePaths: List<String>,
         val availableModes: List<com.vamp.haron.domain.model.CastMode>
     ) : DialogState
+    data class ArchivePassword(
+        val panelId: PanelId,
+        val archivePath: String,
+        val errorMessage: String? = null
+    ) : DialogState
+    data class ArchiveExtractConflict(
+        val archivePanelId: PanelId,
+        val destinationDir: String,
+        val conflictNames: List<String>,
+        val selectedOnly: Boolean
+    ) : DialogState
 }
 
 enum class FileTemplate(val labelRes: Int, val extension: String) {

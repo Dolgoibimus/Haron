@@ -24,6 +24,10 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +62,9 @@ fun SelectionActionBar(
     onOpenWith: () -> Unit,
     hasProtectedFiles: Boolean = false,
     isSizeCalculating: Boolean = false,
+    isArchiveMode: Boolean = false,
+    onExtract: () -> Unit = {},
+    onExtractAll: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val totalCount = dirCount + fileCount
@@ -72,11 +79,15 @@ fun SelectionActionBar(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${formatFileCount(dirCount, fileCount)} \u00B7 ${totalSize.toFileSize()}",
+                    text = if (isArchiveMode) {
+                        formatFileCount(dirCount, fileCount)
+                    } else {
+                        "${formatFileCount(dirCount, fileCount)} \u00B7 ${totalSize.toFileSize()}"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (isSizeCalculating) {
+                if (isSizeCalculating && !isArchiveMode) {
                     Spacer(Modifier.width(6.dp))
                     CircularProgressIndicator(
                         modifier = Modifier.size(12.dp),
@@ -84,81 +95,118 @@ fun SelectionActionBar(
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onMove, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Filled.DeleteOutline,
-                        contentDescription = stringResource(R.string.to_trash),
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(
-                    onClick = onRename,
-                    modifier = Modifier.size(36.dp)
+            if (isArchiveMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.rename_action), modifier = Modifier.size(20.dp))
+                    Button(
+                        onClick = onExtractAll,
+                        modifier = Modifier.height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.extract_all),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Button(
+                        onClick = onExtract,
+                        modifier = Modifier.height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.extract_count_format, totalCount),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                 }
-                IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.zip_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onAddToShelf, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Inventory2, contentDescription = stringResource(R.string.to_shelf_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onSend, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.transfer_send), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onCast, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Cast, contentDescription = stringResource(R.string.cast_title), modifier = Modifier.size(20.dp))
-                }
-                IconButton(
-                    onClick = onCompare,
-                    enabled = totalCount == 2,
-                    modifier = Modifier.size(36.dp)
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(
-                    onClick = onHideInFile,
-                    enabled = totalCount == 1 && dirCount == 0,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onProtect, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Filled.Shield,
-                        contentDescription = if (hasProtectedFiles) stringResource(R.string.unprotect_action) else stringResource(R.string.protect_action),
-                        modifier = Modifier.size(20.dp),
-                        tint = if (hasProtectedFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    onClick = onInfo,
-                    enabled = totalCount == 1,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.properties_action), modifier = Modifier.size(20.dp))
-                }
-                IconButton(
-                    onClick = onOpenWith,
-                    enabled = totalCount == 1 && dirCount == 0,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_with_action), modifier = Modifier.size(20.dp))
+                    IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onMove, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.DeleteOutline,
+                            contentDescription = stringResource(R.string.to_trash),
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onRename,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.rename_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.zip_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onAddToShelf, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Inventory2, contentDescription = stringResource(R.string.to_shelf_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onSend, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.transfer_send), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onCast, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Cast, contentDescription = stringResource(R.string.cast_title), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(
+                        onClick = onCompare,
+                        enabled = totalCount == 2,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(
+                        onClick = onHideInFile,
+                        enabled = totalCount == 1 && dirCount == 0,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onProtect, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Shield,
+                            contentDescription = if (hasProtectedFiles) stringResource(R.string.unprotect_action) else stringResource(R.string.protect_action),
+                            modifier = Modifier.size(20.dp),
+                            tint = if (hasProtectedFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = onInfo,
+                        enabled = totalCount == 1,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.properties_action), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(
+                        onClick = onOpenWith,
+                        enabled = totalCount == 1 && dirCount == 0,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_with_action), modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }

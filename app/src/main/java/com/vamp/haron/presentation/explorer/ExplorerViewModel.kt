@@ -45,6 +45,8 @@ import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilePropertiesUseCase
 import com.vamp.haron.domain.usecase.CalculateHashUseCase
+import com.vamp.haron.domain.usecase.BrowseArchiveUseCase
+import com.vamp.haron.domain.usecase.ExtractArchiveUseCase
 import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
 import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
 import com.vamp.haron.common.util.HapticManager
@@ -127,7 +129,9 @@ class ExplorerViewModel @Inject constructor(
     private val networkDeviceScanner: NetworkDeviceScanner,
     val voiceCommandManager: VoiceCommandManager,
     private val transferRepository: TransferRepository,
-    private val receiveFileManager: ReceiveFileManager
+    private val receiveFileManager: ReceiveFileManager,
+    private val browseArchiveUseCase: BrowseArchiveUseCase,
+    private val extractArchiveUseCase: ExtractArchiveUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -781,7 +785,23 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun navigateUp(panelId: PanelId, pushHistory: Boolean = true): Boolean {
-        val currentPath = getPanel(panelId).currentPath
+        val panel = getPanel(panelId)
+        // Archive mode — navigate up inside archive or exit archive
+        if (panel.isArchiveMode) {
+            if (panel.archiveVirtualPath.isNotEmpty()) {
+                // Go up one level inside the archive
+                val parentVirtual = panel.archiveVirtualPath.trimEnd('/').substringBeforeLast('/', "")
+                navigateIntoArchive(panelId, panel.archivePath!!, parentVirtual, panel.archivePassword)
+            } else {
+                // Exit archive — return to the folder containing the archive file
+                val archiveParent = File(panel.archivePath!!).parent ?: HaronConstants.ROOT_PATH
+                // Force navigateTo to treat this as a "new folder" so scroll is restored
+                updatePanel(panelId) { it.copy(archivePath = null, archiveVirtualPath = "", archivePassword = null, archiveExtractProgress = null, currentPath = "") }
+                navigateTo(panelId, archiveParent, pushHistory = pushHistory)
+            }
+            return true
+        }
+        val currentPath = panel.currentPath
         // Virtual secure path — exit virtual view, turn off shield
         if (currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
             _uiState.update { it.copy(isShieldUnlocked = false) }
@@ -810,6 +830,11 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(panelId)
         if (panel.isSelectionMode) {
             toggleSelection(panelId, entry.path)
+        } else if (panel.isArchiveMode && entry.isDirectory) {
+            // Navigate deeper inside the archive
+            val virtualPath = entry.path.substringAfter("!/", "")
+            navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
+            return
         } else if (entry.isProtected && !entry.isDirectory) {
             onProtectedFileClick(entry)
             return
@@ -875,9 +900,7 @@ class ExplorerViewModel @Inject constructor(
                     )
                 }
                 "archive" -> {
-                    _navigationEvent.tryEmit(
-                        NavigationEvent.OpenArchiveViewer(entry.path, entry.name)
-                    )
+                    navigateIntoArchive(panelId, entry.path, "", null)
                 }
                 "apk" -> {
                     showApkInstallDialog(entry)
@@ -993,7 +1016,9 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun canNavigateUp(panelId: PanelId): Boolean {
-        val path = getPanel(panelId).currentPath
+        val panel = getPanel(panelId)
+        if (panel.isArchiveMode) return true
+        val path = panel.currentPath
         if (path == HaronConstants.VIRTUAL_SECURE_PATH) return true
         if (secureFolderRepository.isFileProtected(path)) return canNavigateBack(panelId)
         return fileRepository.getParentPath(path) != null
@@ -1001,11 +1026,29 @@ class ExplorerViewModel @Inject constructor(
 
     fun navigateBack(panelId: PanelId) {
         val panel = getPanel(panelId)
-        if (panel.historyIndex <= 0) return
+        if (panel.historyIndex <= 0) {
+            // No history — if in archive mode, exit archive
+            if (panel.isArchiveMode) {
+                val archiveParent = File(panel.archivePath!!).parent ?: HaronConstants.ROOT_PATH
+                updatePanel(panelId) { it.copy(archivePath = null, archiveVirtualPath = "", archivePassword = null, archiveExtractProgress = null) }
+                navigateTo(panelId, archiveParent, pushHistory = false)
+            }
+            return
+        }
         val newIndex = panel.historyIndex - 1
         val path = panel.navigationHistory[newIndex]
         updatePanel(panelId) { it.copy(historyIndex = newIndex) }
-        navigateTo(panelId, path, pushHistory = false)
+        if (path.contains("!/")) {
+            val archivePath = path.substringBefore("!/")
+            val virtualPath = path.substringAfter("!/", "")
+            navigateIntoArchive(panelId, archivePath, virtualPath, panel.archivePassword, pushHistory = false)
+        } else {
+            // Exiting archive mode — clear archive state, reset currentPath to trigger scroll restore
+            if (panel.isArchiveMode) {
+                updatePanel(panelId) { it.copy(archivePath = null, archiveVirtualPath = "", archivePassword = null, archiveExtractProgress = null, currentPath = "") }
+            }
+            navigateTo(panelId, path, pushHistory = false)
+        }
     }
 
     fun navigateForward(panelId: PanelId) {
@@ -1014,7 +1057,16 @@ class ExplorerViewModel @Inject constructor(
         val newIndex = panel.historyIndex + 1
         val path = panel.navigationHistory[newIndex]
         updatePanel(panelId) { it.copy(historyIndex = newIndex) }
-        navigateTo(panelId, path, pushHistory = false)
+        if (path.contains("!/")) {
+            val archivePath = path.substringBefore("!/")
+            val virtualPath = path.substringAfter("!/", "")
+            navigateIntoArchive(panelId, archivePath, virtualPath, panel.archivePassword, pushHistory = false)
+        } else {
+            if (panel.isArchiveMode) {
+                updatePanel(panelId) { it.copy(archivePath = null, archiveVirtualPath = "", archivePassword = null, archiveExtractProgress = null) }
+            }
+            navigateTo(panelId, path, pushHistory = false)
+        }
     }
 
     fun canNavigateBack(panelId: PanelId): Boolean {
@@ -2664,7 +2716,12 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun refreshPanel(panelId: PanelId) {
-        val path = getPanel(panelId).currentPath
+        val panel = getPanel(panelId)
+        if (panel.isArchiveMode) {
+            navigateIntoArchive(panelId, panel.archivePath!!, panel.archiveVirtualPath, panel.archivePassword, pushHistory = false)
+            return
+        }
+        val path = panel.currentPath
         if (path.isNotEmpty()) {
             navigateTo(panelId, path, pushHistory = false)
         }
@@ -2675,6 +2732,206 @@ class ExplorerViewModel @Inject constructor(
         val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         if (getPanel(panelId).currentPath == getPanel(otherId).currentPath) {
             refreshPanel(otherId)
+        }
+    }
+
+    // --- Inline Archive Browsing ---
+
+    fun navigateIntoArchive(panelId: PanelId, archivePath: String, virtualPath: String, password: String?, pushHistory: Boolean = true) {
+        // Save scroll position when entering archive from regular folder
+        val panel = getPanel(panelId)
+        if (!panel.isArchiveMode && panel.currentPath.isNotEmpty()) {
+            scrollCache[panel.currentPath] = panelScrollIndex[panelId] ?: 0
+        }
+        viewModelScope.launch {
+            updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+            browseArchiveUseCase(archivePath, virtualPath, password).onSuccess { entries ->
+                val archiveName = File(archivePath).name
+                val displayPath = if (virtualPath.isEmpty()) archiveName else "$archiveName/$virtualPath"
+                val fileEntries = entries.map { ae ->
+                    FileEntry(
+                        name = ae.name,
+                        path = "$archivePath!/${ae.fullPath}",
+                        isDirectory = ae.isDirectory,
+                        size = ae.size,
+                        lastModified = ae.lastModified,
+                        extension = ae.name.substringAfterLast('.', ""),
+                        isHidden = false,
+                        childCount = ae.childCount
+                    )
+                }
+                updatePanel(panelId) { panel ->
+                    var history = panel.navigationHistory
+                    var index = panel.historyIndex
+                    if (pushHistory) {
+                        val historyKey = "$archivePath!/$virtualPath"
+                        history = history.take(index + 1) + historyKey
+                        if (history.size > MAX_HISTORY_SIZE) {
+                            history = history.takeLast(MAX_HISTORY_SIZE)
+                        }
+                        index = history.lastIndex
+                    }
+                    panel.copy(
+                        files = fileEntries,
+                        isLoading = false,
+                        error = null,
+                        archivePath = archivePath,
+                        archiveVirtualPath = virtualPath,
+                        archivePassword = password,
+                        displayPath = displayPath,
+                        currentPath = panel.currentPath, // keep real path for extraction target
+                        selectedPaths = emptySet(),
+                        isSelectionMode = false,
+                        navigationHistory = history,
+                        historyIndex = index,
+                        searchQuery = "",
+                        isSearchActive = false
+                    )
+                }
+            }.onFailure { error ->
+                val message = error.message ?: ""
+                if (message == "encrypted" || message.contains("password", ignoreCase = true)) {
+                    // Show password dialog
+                    updatePanel(panelId) { it.copy(isLoading = false) }
+                    val errorMsg = if (password != null) appContext.getString(R.string.wrong_password) else null
+                    _uiState.update {
+                        it.copy(dialogState = DialogState.ArchivePassword(
+                            panelId = panelId,
+                            archivePath = archivePath,
+                            errorMessage = errorMsg
+                        ))
+                    }
+                } else {
+                    updatePanel(panelId) {
+                        it.copy(
+                            isLoading = false,
+                            error = message.ifEmpty { appContext.getString(R.string.archive_read_error) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun onArchivePasswordSubmit(panelId: PanelId, archivePath: String, password: String) {
+        _uiState.update { it.copy(dialogState = DialogState.None) }
+        navigateIntoArchive(panelId, archivePath, "", password)
+    }
+
+    fun onBreadcrumbClick(panelId: PanelId, segmentPath: String) {
+        val panel = getPanel(panelId)
+        if (panel.isArchiveMode) {
+            val archiveName = File(panel.archivePath!!).name
+            val displayPrefix = archiveName
+            // segmentPath is built by BreadcrumbBar as ROOT_PATH + /segments
+            // But in archive mode, displayPath = "archiveName/subfolder/..."
+            // BreadcrumbBar builds segmentPath = ROOT_PATH + "/" + segments[0..index]
+            // We need to extract the virtual path from the segment
+            // The segments from displayPath are: [archiveName, folder, subfolder, ...]
+            // Segment 0 = archiveName → click = archive root (virtualPath = "")
+            // Segment 1 = folder → virtualPath = "folder"
+            // etc.
+            // segmentPath = ROOT_PATH + "/" + segments[0..clickedIndex]
+            val afterRoot = segmentPath.removePrefix(HaronConstants.ROOT_PATH).trimStart('/')
+            val parts = afterRoot.split('/').filter { it.isNotEmpty() }
+            // First part = archive name → skip it, rest = virtual path
+            val virtualPath = if (parts.size <= 1) "" else parts.drop(1).joinToString("/")
+            navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
+        } else {
+            navigateTo(panelId, segmentPath)
+        }
+    }
+
+    fun extractFromArchive(archivePanelId: PanelId, selectedOnly: Boolean = true) {
+        val archivePanel = getPanel(archivePanelId)
+        if (!archivePanel.isArchiveMode) return
+
+        val activeId = _uiState.value.activePanel
+        val destinationDir = if (activeId == archivePanelId) {
+            File(archivePanel.archivePath!!).parent ?: HaronConstants.ROOT_PATH
+        } else {
+            getPanel(activeId).currentPath
+        }
+
+        // Check for conflicts: files that already exist in destination
+        val archiveFileNames = if (selectedOnly && archivePanel.selectedPaths.isNotEmpty()) {
+            archivePanel.files.filter { it.path in archivePanel.selectedPaths }.map { it.name }
+        } else {
+            archivePanel.files.filter { !it.isDirectory }.map { it.name }
+        }
+        val destDir = File(destinationDir)
+        val conflictNames = archiveFileNames.filter { File(destDir, it).exists() }
+
+        if (conflictNames.isNotEmpty()) {
+            _uiState.update {
+                it.copy(dialogState = DialogState.ArchiveExtractConflict(
+                    archivePanelId = archivePanelId,
+                    destinationDir = destinationDir,
+                    conflictNames = conflictNames,
+                    selectedOnly = selectedOnly
+                ))
+            }
+            return
+        }
+
+        doExtractFromArchive(archivePanelId, destinationDir, selectedOnly)
+    }
+
+    fun confirmArchiveExtract(archivePanelId: PanelId, destinationDir: String, selectedOnly: Boolean) {
+        _uiState.update { it.copy(dialogState = DialogState.None) }
+        doExtractFromArchive(archivePanelId, destinationDir, selectedOnly)
+    }
+
+    private fun doExtractFromArchive(archivePanelId: PanelId, destinationDir: String, selectedOnly: Boolean) {
+        val archivePanel = getPanel(archivePanelId)
+        if (!archivePanel.isArchiveMode) return
+        val activeId = _uiState.value.activePanel
+        val virtualPath = archivePanel.archiveVirtualPath
+
+        val selectedEntries = if (selectedOnly && archivePanel.selectedPaths.isNotEmpty()) {
+            archivePanel.selectedPaths.map { path ->
+                path.substringAfter("!/", "")
+            }.toSet()
+        } else {
+            // Extract all visible files in current virtual path
+            archivePanel.files.map { fe ->
+                fe.path.substringAfter("!/", "")
+            }.toSet()
+        }
+
+        viewModelScope.launch {
+            extractArchiveUseCase(
+                archivePath = archivePanel.archivePath!!,
+                destinationDir = destinationDir,
+                selectedEntries = selectedEntries,
+                password = archivePanel.archivePassword,
+                basePrefix = virtualPath
+            ).collect { progress ->
+                updatePanel(archivePanelId) { it.copy(archiveExtractProgress = progress) }
+                if (progress.isComplete) {
+                    delay(300)
+                    val targetPanelId = if (activeId == archivePanelId) archivePanelId else activeId
+                    if (!getPanel(targetPanelId).isArchiveMode) {
+                        refreshPanel(targetPanelId)
+                    }
+                    val otherId = if (targetPanelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                    if (!getPanel(otherId).isArchiveMode && getPanel(otherId).currentPath == destinationDir) {
+                        refreshPanel(otherId)
+                    }
+                    updatePanel(archivePanelId) {
+                        it.copy(
+                            selectedPaths = emptySet(),
+                            isSelectionMode = false,
+                            archiveExtractProgress = null
+                        )
+                    }
+                    if (progress.error != null) {
+                        _toastMessage.tryEmit(progress.error)
+                    } else {
+                        _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
+                    }
+                }
+            }
         }
     }
 
@@ -3763,9 +4020,8 @@ class ExplorerViewModel @Inject constructor(
                         )
                     }
                     "archive" -> {
-                        _navigationEvent.tryEmit(
-                            NavigationEvent.OpenArchiveViewer(tempFile.absolutePath, entry.name)
-                        )
+                        val panelId = _uiState.value.activePanel
+                        navigateIntoArchive(panelId, tempFile.absolutePath, "", null)
                     }
                     else -> {
                         openFileWithIntent(tempFile.absolutePath, entry.name)

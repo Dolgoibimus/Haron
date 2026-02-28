@@ -226,6 +226,21 @@ class BrowseArchiveUseCase @Inject constructor(
             }
         }
 
+        // Count direct children for each directory
+        for ((name, entry) in directChildren.toMap()) {
+            if (entry.isDirectory) {
+                val dirPrefix = "${entry.fullPath}/"
+                val childNames = mutableSetOf<String>()
+                for (e in allEntries) {
+                    if (!e.fullPath.startsWith(dirPrefix)) continue
+                    val relative = e.fullPath.removePrefix(dirPrefix)
+                    if (relative.isEmpty()) continue
+                    childNames.add(relative.split('/')[0])
+                }
+                directChildren[name] = entry.copy(childCount = childNames.size)
+            }
+        }
+
         return directChildren.values
             .sortedWith(compareByDescending<ArchiveEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
     }

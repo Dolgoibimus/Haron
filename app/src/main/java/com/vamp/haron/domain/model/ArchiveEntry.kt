@@ -6,5 +6,6 @@ data class ArchiveEntry(
     val size: Long,
     val isDirectory: Boolean,
     val compressedSize: Long = 0L,
-    val lastModified: Long = 0L
+    val lastModified: Long = 0L,
+    val childCount: Int = 0
 )

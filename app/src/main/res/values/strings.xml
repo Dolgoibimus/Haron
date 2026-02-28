@@ -319,6 +319,11 @@
     <string name="extraction_progress_format">Extracting: %1$d/%2$d — %3$s</string>
     <string name="extract_all">Extract all</string>
     <string name="extract_count_format">Extract (%d)</string>
+    <string name="extract_action">Extract</string>
+    <string name="extracting_progress">Extracting…</string>
+    <string name="extract_progress_format">Extracting: %1$d/%2$d — %3$s</string>
+    <string name="extract_conflict_title">Files already exist</string>
+    <string name="extract_conflict_message">%1$d file(s) already exist in the destination folder. Replace them?</string>
     <string name="items_count">%d items</string>
     <string name="empty_folder_item">Empty folder</string>
     <string name="password_protected">Archive is password protected</string>

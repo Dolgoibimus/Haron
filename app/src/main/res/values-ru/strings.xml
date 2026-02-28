@@ -317,6 +317,11 @@
     <string name="extraction_progress_format">Извлечение: %1$d/%2$d — %3$s</string>
     <string name="extract_all">Извлечь всё</string>
     <string name="extract_count_format">Извлечь (%d)</string>
+    <string name="extract_action">Извлечь</string>
+    <string name="extracting_progress">Извлечение…</string>
+    <string name="extract_progress_format">Извлечение: %1$d/%2$d — %3$s</string>
+    <string name="extract_conflict_title">Файлы уже существуют</string>
+    <string name="extract_conflict_message">%1$d файл(ов) уже есть в папке назначения. Заменить?</string>
     <string name="items_count">%d элементов</string>
     <string name="empty_folder_item">Пустая папка</string>
     <string name="password_protected">Архив защищён паролем</string>

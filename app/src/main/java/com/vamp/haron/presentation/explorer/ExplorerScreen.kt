@@ -31,7 +31,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -264,7 +266,7 @@ fun ExplorerScreen(
                 if (state.bottomPanel.isSearchActive) viewModel.closeSearch(PanelId.BOTTOM)
             }
             hasRenaming -> viewModel.cancelInlineRename()
-            hasSelection -> viewModel.clearSelection(activePanel)
+            hasSelection -> selectionPanelId?.let { viewModel.clearSelection(it) }
             canGoBack -> viewModel.navigateBack(activePanel)
             canGoUp -> viewModel.navigateUp(activePanel, pushHistory = false)
             // At root or virtual root — consume back press, do nothing
@@ -376,7 +378,7 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
-                onBreadcrumbClick = { viewModel.navigateTo(PanelId.TOP, it) },
+                onBreadcrumbClick = { viewModel.onBreadcrumbClick(PanelId.TOP, it) },
                 onNavigateBack = { viewModel.navigateBack(PanelId.TOP) },
                 onNavigateForward = { viewModel.navigateForward(PanelId.TOP) },
                 canNavigateBack = viewModel.canNavigateBack(PanelId.TOP),
@@ -488,7 +490,7 @@ fun ExplorerScreen(
                 onRenameCancel = { viewModel.cancelInlineRename() },
                 onCreateNew = { viewModel.requestCreateFromTemplate() },
                 onShowTrash = { viewModel.showTrash() },
-                onBreadcrumbClick = { viewModel.navigateTo(PanelId.BOTTOM, it) },
+                onBreadcrumbClick = { viewModel.onBreadcrumbClick(PanelId.BOTTOM, it) },
                 onNavigateBack = { viewModel.navigateBack(PanelId.BOTTOM) },
                 onNavigateForward = { viewModel.navigateForward(PanelId.BOTTOM) },
                 canNavigateBack = viewModel.canNavigateBack(PanelId.BOTTOM),
@@ -636,8 +638,48 @@ fun ExplorerScreen(
                     }
                 },
                 hasProtectedFiles = selectedEntries.any { it.isProtected },
+                isArchiveMode = selectionPanelState.isArchiveMode,
+                onExtract = {
+                    selectionPanelId?.let { viewModel.extractFromArchive(it, selectedOnly = true) }
+                },
+                onExtractAll = {
+                    selectionPanelId?.let { viewModel.extractFromArchive(it, selectedOnly = false) }
+                },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+
+        // Archive extract progress bar
+        val archiveProgress = state.topPanel.archiveExtractProgress ?: state.bottomPanel.archiveExtractProgress
+        if (archiveProgress != null && !archiveProgress.isComplete) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.extract_progress_format, archiveProgress.current, archiveProgress.total, archiveProgress.fileName),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { if (archiveProgress.total > 0) archiveProgress.current.toFloat() / archiveProgress.total else 0f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                    )
+                }
+            }
         }
 
         // File operation progress bar
@@ -822,7 +864,7 @@ fun ExplorerScreen(
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
                     } else {
-                        onOpenArchiveViewer(dialog.entry.path, dialog.entry.name)
+                        viewModel.navigateIntoArchive(state.activePanel, dialog.entry.path, "", null)
                     }
                 },
                 onInstallApk = {
@@ -924,6 +966,41 @@ fun ExplorerScreen(
                     onCastModeSelected(mode, dialog.filePaths)
                 },
                 onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ArchivePassword -> {
+            com.vamp.haron.presentation.common.PasswordDialog(
+                fileName = java.io.File(dialog.archivePath).name,
+                errorMessage = dialog.errorMessage,
+                onConfirm = { password ->
+                    viewModel.onArchivePasswordSubmit(dialog.panelId, dialog.archivePath, password)
+                },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ArchiveExtractConflict -> {
+            AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { Text(stringResource(R.string.extract_conflict_title)) },
+                text = {
+                    Text(stringResource(R.string.extract_conflict_message, dialog.conflictNames.size))
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.confirmArchiveExtract(
+                            dialog.archivePanelId,
+                            dialog.destinationDir,
+                            dialog.selectedOnly
+                        )
+                    }) {
+                        Text(stringResource(R.string.replace_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissDialog) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
             )
         }
         DialogState.None -> { /* no dialog */ }
