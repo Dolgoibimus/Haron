@@ -44,7 +44,9 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
@@ -167,6 +169,15 @@ fun FilePanel(
     onQuickSendDrag: ((Offset) -> Unit)? = null,
     onQuickSendEnd: (() -> Unit)? = null,
     isQuickSendActive: Boolean = false,
+    // Selection toolbar extra actions (moved from bottom bar)
+    onProtectSelection: () -> Unit = {},
+    onInfoSelection: () -> Unit = {},
+    onOpenWithSelection: () -> Unit = {},
+    onCompareSelection: () -> Unit = {},
+    onHideInFileSelection: () -> Unit = {},
+    selectionHasProtected: Boolean = false,
+    selectionTotalCount: Int = 0,
+    selectionDirCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -493,7 +504,7 @@ fun FilePanel(
                         }
                     }
                     state.isSelectionMode -> {
-                        // Compact: SelectAll + collapsed chevron menu
+                        // SelectAll + extra selection actions + collapsed chevron menu
                         IconButton(
                             onClick = onSelectAll,
                             modifier = Modifier.size(32.dp)
@@ -503,6 +514,42 @@ fun FilePanel(
                                 contentDescription = stringResource(R.string.select_deselect_all),
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+                        IconButton(
+                            onClick = onCompareSelection,
+                            enabled = selectionTotalCount == 2,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = onProtectSelection, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                Icons.Filled.Shield,
+                                contentDescription = stringResource(if (selectionHasProtected) R.string.unprotect_action else R.string.protect_action),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (selectionHasProtected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(
+                            onClick = onHideInFileSelection,
+                            enabled = selectionTotalCount == 1 && selectionDirCount == 0,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(
+                            onClick = onInfoSelection,
+                            enabled = selectionTotalCount == 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.properties_action), modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(
+                            onClick = onOpenWithSelection,
+                            enabled = selectionTotalCount == 1 && selectionDirCount == 0,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_with_action), modifier = Modifier.size(18.dp))
                         }
                         var showCollapsed by remember { mutableStateOf(false) }
                         Box {
@@ -636,23 +683,47 @@ fun FilePanel(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        // Shield button — long press only → show all protected files
-                        @OptIn(ExperimentalFoundationApi::class)
+                        // Shield button — long press = enter, tap = exit
+                        val currentOnLongPressShield by rememberUpdatedState(onLongPressShield)
+                        val currentOnExitProtected by rememberUpdatedState(onExitProtected)
+                        val currentOnPanelTap by rememberUpdatedState(onPanelTap)
+                        val currentShowProtected by rememberUpdatedState(state.showProtected)
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (state.showProtected) {
-                                            onPanelTap()
-                                            onExitProtected()
+                                .pointerInput(Unit) {
+                                    val longPressMs = viewConfiguration.longPressTimeoutMillis
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown()
+                                        var longFired = false
+                                        val result = withTimeoutOrNull(longPressMs) {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                if (event.changes.all { !it.pressed }) break
+                                            }
                                         }
-                                    },
-                                    onLongClick = {
-                                        onPanelTap()
-                                        onLongPressShield()
+                                        if (result == null && down.pressed) {
+                                            // Timeout expired, finger still down → long press
+                                            longFired = true
+                                            currentOnPanelTap()
+                                            currentOnLongPressShield()
+                                            // Wait for finger up
+                                            try {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    if (event.changes.all { !it.pressed }) break
+                                                }
+                                            } catch (_: Exception) { }
+                                        }
+                                        if (!longFired) {
+                                            // Short tap
+                                            if (currentShowProtected) {
+                                                currentOnPanelTap()
+                                                currentOnExitProtected()
+                                            }
+                                        }
                                     }
-                                ),
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -660,7 +731,7 @@ fun FilePanel(
                                 contentDescription = stringResource(R.string.shield_button),
                                 modifier = Modifier.size(18.dp),
                                 tint = if (state.showProtected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
                             )
                         }
                         IconButton(

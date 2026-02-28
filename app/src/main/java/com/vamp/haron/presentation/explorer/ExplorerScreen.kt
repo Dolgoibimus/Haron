@@ -210,6 +210,14 @@ fun ExplorerScreen(
         }
     }
 
+    // Execute pending voice/gesture action after returning from another screen
+    val pendingVoiceAction by com.vamp.haron.domain.model.TransferHolder.pendingVoiceAction.collectAsState()
+    LaunchedEffect(pendingVoiceAction) {
+        val action = pendingVoiceAction ?: return@LaunchedEffect
+        com.vamp.haron.domain.model.TransferHolder.pendingVoiceAction.value = null
+        viewModel.executeGestureAction(action)
+    }
+
     // Reload gesture mappings when returning from Settings
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -426,7 +434,7 @@ fun ExplorerScreen(
                 activeTagFilter = state.activeTagFilter,
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
                 onLongPressShield = { viewModel.showAllProtectedFiles() },
-                onExitProtected = { viewModel.navigateUp(PanelId.TOP) },
+                onExitProtected = { viewModel.exitProtectedMode(PanelId.TOP) },
                 onQuickSendStart = { path, name, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.startQuickSend(path, name, offset)
@@ -441,6 +449,31 @@ fun ExplorerScreen(
                     }
                 },
                 isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
+                onProtectSelection = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    val paths = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.map { it.path }
+                    val hasProtected = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.any { it.isProtected }
+                    if (hasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
+                },
+                onCompareSelection = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    viewModel.compareSelected()
+                },
+                onHideInFileSelection = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    viewModel.hideSelectedInFile()
+                },
+                onInfoSelection = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    viewModel.showSelectedFileProperties()
+                },
+                onOpenWithSelection = {
+                    viewModel.setActivePanel(PanelId.TOP)
+                    viewModel.openSelectedWithExternalApp()
+                },
+                selectionHasProtected = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.any { it.isProtected },
+                selectionTotalCount = state.topPanel.selectedPaths.size,
+                selectionDirCount = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.count { it.isDirectory },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -538,7 +571,7 @@ fun ExplorerScreen(
                 activeTagFilter = state.activeTagFilter,
                 onTagFilterChanged = { viewModel.setTagFilter(it) },
                 onLongPressShield = { viewModel.showAllProtectedFiles() },
-                onExitProtected = { viewModel.navigateUp(PanelId.BOTTOM) },
+                onExitProtected = { viewModel.exitProtectedMode(PanelId.BOTTOM) },
                 onQuickSendStart = { path, name, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.startQuickSend(path, name, offset)
@@ -553,6 +586,31 @@ fun ExplorerScreen(
                     }
                 },
                 isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
+                onProtectSelection = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    val paths = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.map { it.path }
+                    val hasProtected = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.any { it.isProtected }
+                    if (hasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
+                },
+                onCompareSelection = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    viewModel.compareSelected()
+                },
+                onHideInFileSelection = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    viewModel.hideSelectedInFile()
+                },
+                onInfoSelection = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    viewModel.showSelectedFileProperties()
+                },
+                onOpenWithSelection = {
+                    viewModel.setActivePanel(PanelId.BOTTOM)
+                    viewModel.openSelectedWithExternalApp()
+                },
+                selectionHasProtected = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.any { it.isProtected },
+                selectionTotalCount = state.bottomPanel.selectedPaths.size,
+                selectionDirCount = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.count { it.isDirectory },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -604,14 +662,6 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.requestTagAssign()
                 },
-                onInfo = {
-                    selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    viewModel.showSelectedFileProperties()
-                },
-                onOpenWith = {
-                    selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    viewModel.openSelectedWithExternalApp()
-                },
                 onSend = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.onSendSelected(selectedEntries.map { it.path })
@@ -620,24 +670,6 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.castSelected()
                 },
-                onCompare = {
-                    selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    viewModel.compareSelected()
-                },
-                onHideInFile = {
-                    selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    viewModel.hideSelectedInFile()
-                },
-                onProtect = {
-                    selectionPanelId?.let { viewModel.setActivePanel(it) }
-                    val paths = selectedEntries.map { it.path }
-                    if (selectedEntries.any { it.isProtected }) {
-                        viewModel.unprotectSelectedFiles(paths)
-                    } else {
-                        viewModel.protectSelectedFiles(paths)
-                    }
-                },
-                hasProtectedFiles = selectedEntries.any { it.isProtected },
                 isArchiveMode = selectionPanelState.isArchiveMode,
                 onExtract = {
                     selectionPanelId?.let { viewModel.extractFromArchive(it, selectedOnly = true) }

@@ -19,13 +19,20 @@ enum class GestureAction(val labelRes: Int) {
     GO_HOME(R.string.gesture_action_go_home),
     SORT_CYCLE(R.string.gesture_action_sort_cycle),
     OPEN_SETTINGS(R.string.gesture_action_settings),
-    OPEN_TRANSFER(R.string.gesture_action_transfer);
+    OPEN_TRANSFER(R.string.gesture_action_transfer),
+    OPEN_TRASH(R.string.gesture_action_trash),
+    OPEN_STORAGE(R.string.gesture_action_storage),
+    OPEN_DUPLICATES(R.string.gesture_action_duplicates),
+    OPEN_APPS(R.string.gesture_action_apps);
 
     /** Actions that navigate to a separate screen (handled at NavHost level for voice). */
     val isScreenNavigation: Boolean get() = this in SCREEN_NAV_ACTIONS
 
     companion object {
-        private val SCREEN_NAV_ACTIONS = setOf(OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER, GLOBAL_SEARCH)
+        private val SCREEN_NAV_ACTIONS = setOf(
+            OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER, GLOBAL_SEARCH,
+            OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS
+        )
     }
 }
 

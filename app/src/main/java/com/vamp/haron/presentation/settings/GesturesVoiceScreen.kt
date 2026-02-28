@@ -50,10 +50,11 @@ import com.vamp.haron.domain.model.GestureType
 @Composable
 fun GesturesVoiceScreen(
     onBack: () -> Unit,
+    initialTab: Int = 0,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
 
     Scaffold(
         topBar = {
@@ -164,7 +165,11 @@ private fun VoiceTab() {
             R.string.voice_cmd_home to R.string.voice_cmd_home_desc,
             R.string.voice_cmd_sort to R.string.voice_cmd_sort_desc,
             R.string.voice_cmd_settings to R.string.voice_cmd_settings_desc,
-            R.string.voice_cmd_transfer to R.string.voice_cmd_transfer_desc
+            R.string.voice_cmd_transfer to R.string.voice_cmd_transfer_desc,
+            R.string.voice_cmd_trash to R.string.voice_cmd_trash_desc,
+            R.string.voice_cmd_storage to R.string.voice_cmd_storage_desc,
+            R.string.voice_cmd_duplicates to R.string.voice_cmd_duplicates_desc,
+            R.string.voice_cmd_apps to R.string.voice_cmd_apps_desc
         )
 
         commands.forEach { (cmdRes, descRes) ->

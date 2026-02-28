@@ -82,7 +82,7 @@ fun FilePropertiesDialog(
                 }
 
                 if (properties != null) {
-                    item { PropertyRow(stringResource(R.string.path_label), properties.path) }
+                    item { PropertyRow(stringResource(R.string.path_label), properties.path, maxLines = 5) }
                     item {
                         PropertyRow(
                             stringResource(R.string.size_label),
@@ -222,7 +222,7 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun PropertyRow(label: String, value: String) {
+private fun PropertyRow(label: String, value: String, maxLines: Int = 3) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(
             text = label,
@@ -232,7 +232,7 @@ private fun PropertyRow(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            maxLines = 3,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis
         )
     }

@@ -822,6 +822,10 @@
     <string name="gesture_action_sort_cycle">Сменить сортировку</string>
     <string name="gesture_action_settings">Настройки</string>
     <string name="gesture_action_transfer">Передача файлов</string>
+    <string name="gesture_action_trash">Корзина</string>
+    <string name="gesture_action_storage">Анализ памяти</string>
+    <string name="gesture_action_duplicates">Детектор дубликатов</string>
+    <string name="gesture_action_apps">Менеджер приложений</string>
     <string name="hidden_files_shown">Скрытые файлы: показаны</string>
     <string name="hidden_files_hidden">Скрытые файлы: скрыты</string>
     <string name="sort_changed_to">Сортировка: %s</string>
@@ -858,6 +862,14 @@
     <string name="voice_cmd_settings_desc">Открыть настройки</string>
     <string name="voice_cmd_transfer">"Передача"</string>
     <string name="voice_cmd_transfer_desc">Открыть передачу файлов</string>
+    <string name="voice_cmd_trash">"Корзина"</string>
+    <string name="voice_cmd_trash_desc">Открыть корзину</string>
+    <string name="voice_cmd_storage">"Анализ"</string>
+    <string name="voice_cmd_storage_desc">Открыть анализ памяти</string>
+    <string name="voice_cmd_duplicates">"Дубликаты"</string>
+    <string name="voice_cmd_duplicates_desc">Открыть детектор дубликатов</string>
+    <string name="voice_cmd_apps">"Приложения"</string>
+    <string name="voice_cmd_apps_desc">Открыть менеджер приложений</string>
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Терминал</string>
@@ -875,6 +887,7 @@
     <!-- Voice Commands (Batch 34) -->
     <string name="voice_command">Голосовая команда</string>
     <string name="voice_listening">Слушаю\u2026</string>
+    <string name="mic_hint">Нажмите и удерживайте кнопку микрофона, чтобы увидеть список голосовых команд</string>
 
     <!-- Steganography (Batch 38) -->
     <string name="stego_title">Стеганография</string>

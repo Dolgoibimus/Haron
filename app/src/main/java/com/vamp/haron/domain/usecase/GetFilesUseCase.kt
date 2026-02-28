@@ -31,35 +31,80 @@ class GetFilesUseCase @Inject constructor(
             }
         }
 
-        // Protected directory (dir was deleted when protected) — show only protected children
+        // Protected directory (dir itself is in the secure index — was deleted when protected)
         if (showProtected && secureFolderRepository.isFileProtected(path)) {
-            return try {
-                val allEntries = secureFolderRepository.getAllProtectedEntries()
-                val children = allEntries.filter { entry ->
-                    val parent = java.io.File(entry.originalPath).parent ?: ""
-                    parent == path
-                }
-                val virtualEntries = children.map { it.toFileEntry(allEntries) }
-                Result.success(sortFiles(virtualEntries, sortOrder))
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
+            return buildProtectedDirListing(path, sortOrder)
         }
 
-        return repository.getFiles(path).map { files ->
-            var filtered = if (showHidden) files else files.filter { !it.isHidden }
+        // Normal file listing — try reading real directory
+        val realResult = repository.getFiles(path)
+        val realFiles = realResult.getOrNull()
+
+        if (realFiles != null) {
+            // Real directory exists — apply filtering and optionally mix in protected entries
+            var filtered = if (showHidden) realFiles else realFiles.filter { !it.isHidden }
             if (showProtected) {
                 val allEntries = secureFolderRepository.getAllProtectedEntries()
+                val prefix = "$path/"
                 val protectedEntries = allEntries.filter { entry ->
-                    val parent = java.io.File(entry.originalPath).parent ?: ""
-                    parent == path
+                    entry.originalPath.startsWith(prefix) &&
+                        !entry.isDirectory &&
+                        !entry.originalPath.removePrefix(prefix).contains('/')
                 }
                 val virtualEntries = protectedEntries.map { it.toFileEntry(allEntries) }
-                // Exclude protected entries whose path already exists as a real file (avoids duplicate keys)
                 val existingPaths = filtered.map { it.path }.toSet()
                 filtered = filtered + virtualEntries.filter { it.path !in existingPaths }
             }
-            sortFiles(filtered, sortOrder)
+            return Result.success(sortFiles(filtered, sortOrder))
+        }
+
+        // getFiles failed (dir doesn't exist) — check if virtual protected subdirectory
+        if (showProtected && secureFolderRepository.hasProtectedDescendants(path)) {
+            return buildProtectedDirListing(path, sortOrder)
+        }
+
+        // Nothing found — return the original failure
+        return realResult.map { sortFiles(it, sortOrder) }
+    }
+
+    private suspend fun buildProtectedDirListing(
+        path: String,
+        sortOrder: SortOrder
+    ): Result<List<FileEntry>> {
+        return try {
+            val allEntries = secureFolderRepository.getAllProtectedEntries()
+            val prefix = "$path/"
+            val descendants = allEntries.filter { it.originalPath.startsWith(prefix) && !it.isDirectory }
+            val directChildren = mutableMapOf<String, FileEntry>()
+            for (entry in descendants) {
+                val relative = entry.originalPath.removePrefix(prefix)
+                val parts = relative.split('/')
+                val childName = parts[0]
+                if (parts.size == 1) {
+                    directChildren[childName] = entry.toFileEntry(allEntries)
+                } else {
+                    if (childName !in directChildren) {
+                        val dirPath = "$path/$childName"
+                        val childCount = allEntries.count { e ->
+                            e.originalPath.startsWith("$dirPath/") && !e.isDirectory
+                        }
+                        directChildren[childName] = FileEntry(
+                            name = childName,
+                            path = dirPath,
+                            isDirectory = true,
+                            size = 0L,
+                            lastModified = 0L,
+                            extension = "",
+                            isHidden = false,
+                            childCount = childCount,
+                            isProtected = true
+                        )
+                    }
+                }
+            }
+            Result.success(sortFiles(directChildren.values.toList(), sortOrder))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

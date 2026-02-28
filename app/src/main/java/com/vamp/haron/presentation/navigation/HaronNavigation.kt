@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +76,11 @@ object HaronRoutes {
     const val TRANSFER = "transfer"
     const val TERMINAL = "terminal"
     const val GESTURES_VOICE = "gestures_voice"
+    const val GESTURES_VOICE_ROUTE = "gestures_voice?tab={tab}"
+
+    fun gesturesVoice(tab: Int = 0): String {
+        return "gestures_voice?tab=$tab"
+    }
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
     const val DOCUMENT_VIEWER = "document_viewer"
@@ -176,24 +182,32 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             val currentRoute = navController.currentDestination?.route
 
             if (action.isScreenNavigation) {
-                // Navigation actions — handle directly, avoid duplicate push
+                // Screen navigation — navigate directly, clean backstack to Explorer
                 val targetRoute = when (action) {
                     GestureAction.OPEN_SETTINGS -> HaronRoutes.SETTINGS
                     GestureAction.OPEN_TERMINAL -> HaronRoutes.TERMINAL
                     GestureAction.OPEN_TRANSFER -> HaronRoutes.TRANSFER
                     GestureAction.GLOBAL_SEARCH -> HaronRoutes.SEARCH
+                    GestureAction.OPEN_STORAGE -> HaronRoutes.STORAGE_ANALYSIS
+                    GestureAction.OPEN_DUPLICATES -> HaronRoutes.DUPLICATE_DETECTOR
+                    GestureAction.OPEN_APPS -> HaronRoutes.APP_MANAGER
                     else -> null
                 }
                 voiceCmdMgr.consumeResult()
                 if (targetRoute != null && currentRoute != targetRoute) {
-                    navController.navigate(targetRoute)
+                    navController.navigate(targetRoute) {
+                        popUpTo(HaronRoutes.EXPLORER) { inclusive = false }
+                    }
                 }
-            } else if (currentRoute != null && currentRoute != HaronRoutes.EXPLORER) {
-                // Local actions (drawer, hidden files, etc.) — pop back to Explorer.
-                // ExplorerViewModel's collector handles the actual action.
-                navController.popBackStack(HaronRoutes.EXPLORER, inclusive = false)
+            } else {
+                // Local actions (drawer, shelf, trash, hidden files, etc.)
+                // Pass via pendingVoiceAction → ExplorerScreen executes.
+                voiceCmdMgr.consumeResult()
+                TransferHolder.pendingVoiceAction.value = action
+                if (currentRoute != null && currentRoute != HaronRoutes.EXPLORER) {
+                    navController.popBackStack(HaronRoutes.EXPLORER, inclusive = false)
+                }
             }
-            // When on Explorer, ExplorerViewModel handles everything — no action needed here.
         }
     }
 
@@ -253,6 +267,28 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 }
             }
             CastMode.SCREEN_MIRROR -> { /* handled in non-composable function */ }
+        }
+    }
+
+    // Navigate back to Explorer when pendingNavigationPath is set from any screen
+    val pendingNavPath by TransferHolder.pendingNavigationPath.collectAsState()
+    LaunchedEffect(pendingNavPath) {
+        if (pendingNavPath != null) {
+            val currentRoute = navController.currentDestination?.route
+            if (currentRoute != null && currentRoute != HaronRoutes.EXPLORER) {
+                navController.popBackStack(HaronRoutes.EXPLORER, inclusive = false)
+            }
+        }
+    }
+
+    // Mic FAB long press → open voice commands list
+    val pendingVoiceList by TransferHolder.pendingOpenVoiceList.collectAsState()
+    LaunchedEffect(pendingVoiceList) {
+        if (pendingVoiceList) {
+            TransferHolder.pendingOpenVoiceList.value = false
+            navController.navigate(HaronRoutes.gesturesVoice(tab = 1)) {
+                popUpTo(HaronRoutes.EXPLORER) { inclusive = false }
+            }
         }
     }
 
@@ -336,12 +372,21 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         composable(HaronRoutes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenGesturesVoice = { navController.navigate(HaronRoutes.GESTURES_VOICE) }
+                onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) }
             )
         }
-        composable(HaronRoutes.GESTURES_VOICE) {
+        composable(
+            HaronRoutes.GESTURES_VOICE_ROUTE,
+            arguments = listOf(
+                androidx.navigation.navArgument("tab") {
+                    type = androidx.navigation.NavType.IntType
+                    defaultValue = 0
+                }
+            )
+        ) { backStackEntry ->
             GesturesVoiceScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                initialTab = backStackEntry.arguments?.getInt("tab") ?: 0
             )
         }
         composable(HaronRoutes.TRANSFER) {

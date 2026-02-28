@@ -287,6 +287,11 @@ class SecureFolderRepositoryImpl @Inject constructor(
     override fun isFileProtected(path: String): Boolean =
         getProtectedPaths().contains(path)
 
+    override fun hasProtectedDescendants(path: String): Boolean {
+        val prefix = "$path/"
+        return getProtectedPaths().any { it.startsWith(prefix) }
+    }
+
     override fun getProtectedPaths(): Set<String> {
         protectedPathsCache?.let { return it }
         val paths = try {

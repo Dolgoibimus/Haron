@@ -12,5 +12,6 @@ interface SecureFolderRepository {
     suspend fun deleteFromSecureStorage(ids: List<String>, onProgress: (Int, String) -> Unit): Result<Int>
     suspend fun getSecureFolderSize(): Long
     fun isFileProtected(path: String): Boolean
+    fun hasProtectedDescendants(path: String): Boolean
     fun getProtectedPaths(): Set<String>
 }

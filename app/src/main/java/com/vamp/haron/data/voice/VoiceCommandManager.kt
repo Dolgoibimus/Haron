@@ -138,7 +138,15 @@ class VoiceCommandManager @Inject constructor(
             // Settings
             listOf("настройки", "settings", "параметры") to GestureAction.OPEN_SETTINGS,
             // Transfer
-            listOf("передача", "передать", "отправить", "transfer", "send") to GestureAction.OPEN_TRANSFER
+            listOf("передача", "передать", "отправить", "transfer", "send") to GestureAction.OPEN_TRANSFER,
+            // Trash
+            listOf("корзин", "trash", "мусор") to GestureAction.OPEN_TRASH,
+            // Storage analysis
+            listOf("анализ", "память", "storage", "analysis", "хранилище") to GestureAction.OPEN_STORAGE,
+            // Duplicate detector
+            listOf("дубликат", "duplicate", "duplicates", "копии") to GestureAction.OPEN_DUPLICATES,
+            // App manager
+            listOf("приложения", "apps", "applications", "менеджер приложений", "app manager") to GestureAction.OPEN_APPS
         )
     }
 }

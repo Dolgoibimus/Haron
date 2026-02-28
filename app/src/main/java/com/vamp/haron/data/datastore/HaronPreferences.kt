@@ -536,6 +536,18 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getString(KEY_BOTTOM_PANEL_PATH, HaronConstants.ROOT_PATH) ?: HaronConstants.ROOT_PATH
         set(value) = prefs.edit().putString(KEY_BOTTOM_PANEL_PATH, value).apply()
 
+    var micFabOffsetX: Float
+        get() = prefs.getFloat(KEY_MIC_FAB_OFFSET_X, 0f)
+        set(value) = prefs.edit().putFloat(KEY_MIC_FAB_OFFSET_X, value).apply()
+
+    var micFabOffsetY: Float
+        get() = prefs.getFloat(KEY_MIC_FAB_OFFSET_Y, 0f)
+        set(value) = prefs.edit().putFloat(KEY_MIC_FAB_OFFSET_Y, value).apply()
+
+    var micHintShown: Boolean
+        get() = prefs.getBoolean(KEY_MIC_HINT_SHOWN, false)
+        set(value) = prefs.edit().putBoolean(KEY_MIC_HINT_SHOWN, value).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -571,6 +583,9 @@ class HaronPreferences @Inject constructor(
         const val KEY_PIN_LENGTH = "pin_length"
         const val KEY_DEVICE_ALIASES = "device_aliases"
         const val KEY_TRUSTED_DEVICES = "trusted_devices"
+        const val KEY_MIC_FAB_OFFSET_X = "mic_fab_offset_x"
+        const val KEY_MIC_FAB_OFFSET_Y = "mic_fab_offset_y"
+        const val KEY_MIC_HINT_SHOWN = "mic_hint_shown"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

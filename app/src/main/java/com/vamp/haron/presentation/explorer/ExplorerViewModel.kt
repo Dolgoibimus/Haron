@@ -284,17 +284,8 @@ class ExplorerViewModel @Inject constructor(
             }
         }
 
-        // Voice commands — subscribe to results
-        // Navigation actions (OPEN_SETTINGS, OPEN_TERMINAL, etc.) are handled by
-        // HaronNavigation's global voice dispatcher. Only local actions handled here.
-        viewModelScope.launch {
-            voiceCommandManager.lastResult.collect { action ->
-                if (action != null && !action.isScreenNavigation) {
-                    executeGestureAction(action)
-                    voiceCommandManager.consumeResult()
-                }
-            }
-        }
+        // Voice commands are handled globally by HaronNavigation's dispatcher.
+        // Local actions are passed via TransferHolder.pendingVoiceAction → ExplorerScreen.
 
         // Quick Send — auto-refresh panels when files received
         viewModelScope.launch {
@@ -664,7 +655,9 @@ class ExplorerViewModel @Inject constructor(
                         navigationHistory = history,
                         historyIndex = index,
                         isSafPath = path.startsWith("content://"),
-                        showProtected = path == HaronConstants.VIRTUAL_SECURE_PATH,
+                        showProtected = path == HaronConstants.VIRTUAL_SECURE_PATH ||
+                            secureFolderRepository.isFileProtected(path) ||
+                            (!java.io.File(path).exists() && secureFolderRepository.hasProtectedDescendants(path)),
                         // Ensure search is cleared when entering a new folder
                         // (guards against BasicTextField race re-emitting old query)
                         searchQuery = if (isNewPath) "" else it.searchQuery,
@@ -682,7 +675,8 @@ class ExplorerViewModel @Inject constructor(
                     } else base
                 }
                 // Save panel path & track recent (skip virtual paths)
-                if (path != HaronConstants.VIRTUAL_SECURE_PATH && !secureFolderRepository.isFileProtected(path)) {
+                if (path != HaronConstants.VIRTUAL_SECURE_PATH && !secureFolderRepository.isFileProtected(path) &&
+                    !((!java.io.File(path).exists()) && secureFolderRepository.hasProtectedDescendants(path))) {
                     when (panelId) {
                         PanelId.TOP -> preferences.topPanelPath = path
                         PanelId.BOTTOM -> preferences.bottomPanelPath = path
@@ -812,8 +806,9 @@ class ExplorerViewModel @Inject constructor(
             }
             return true
         }
-        // Protected directory — use history back
-        if (secureFolderRepository.isFileProtected(currentPath)) {
+        // Protected directory (real or virtual subdirectory) — use history back
+        if (secureFolderRepository.isFileProtected(currentPath) ||
+            (!java.io.File(currentPath).exists() && secureFolderRepository.hasProtectedDescendants(currentPath))) {
             if (canNavigateBack(panelId)) {
                 navigateBack(panelId)
                 return true
@@ -1020,7 +1015,8 @@ class ExplorerViewModel @Inject constructor(
         if (panel.isArchiveMode) return true
         val path = panel.currentPath
         if (path == HaronConstants.VIRTUAL_SECURE_PATH) return true
-        if (secureFolderRepository.isFileProtected(path)) return canNavigateBack(panelId)
+        if (secureFolderRepository.isFileProtected(path) ||
+            (!java.io.File(path).exists() && secureFolderRepository.hasProtectedDescendants(path))) return canNavigateBack(panelId)
         return fileRepository.getParentPath(path) != null
     }
 
@@ -3284,6 +3280,10 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.SORT_CYCLE -> cycleSortOrder(panelId)
             GestureAction.OPEN_SETTINGS -> openSettings()
             GestureAction.OPEN_TRANSFER -> openTransfer()
+            GestureAction.OPEN_TRASH -> showTrash()
+            GestureAction.OPEN_STORAGE -> _navigationEvent.tryEmit(NavigationEvent.OpenStorageAnalysis)
+            GestureAction.OPEN_DUPLICATES -> _navigationEvent.tryEmit(NavigationEvent.OpenDuplicateDetector)
+            GestureAction.OPEN_APPS -> _navigationEvent.tryEmit(NavigationEvent.OpenAppManager)
         }
     }
 
@@ -3889,6 +3889,20 @@ class ExplorerViewModel @Inject constructor(
             return
         }
         navigateTo(activePanel, HaronConstants.VIRTUAL_SECURE_PATH)
+    }
+
+    /** Exit protected mode completely — find the last real folder in history and go there */
+    fun exitProtectedMode(panelId: PanelId) {
+        _uiState.update { it.copy(isShieldUnlocked = false, showShieldAuth = false) }
+        val panel = getPanel(panelId)
+        // Find last non-protected path in history
+        val history = panel.navigationHistory
+        val realPath = history.lastOrNull { path ->
+            path != HaronConstants.VIRTUAL_SECURE_PATH &&
+                !secureFolderRepository.isFileProtected(path) &&
+                java.io.File(path).exists()
+        }
+        navigateTo(panelId, realPath ?: HaronConstants.ROOT_PATH, pushHistory = false)
     }
 
     fun protectSelectedFiles(explicitPaths: List<String>? = null) {
