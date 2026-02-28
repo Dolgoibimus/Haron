@@ -198,7 +198,11 @@ class BrowseArchiveUseCase @Inject constructor(
      * From a flat list of all archive entries, filter to show only direct children of [prefix].
      * Also synthesizes virtual directories for entries that have intermediate paths.
      */
-    private fun filterDirectChildren(allEntries: List<ArchiveEntry>, prefix: String): List<ArchiveEntry> {
+    internal fun filterDirectChildren(allEntries: List<ArchiveEntry>, prefix: String): List<ArchiveEntry> =
+        Companion.filterDirectChildren(allEntries, prefix)
+
+    companion object {
+        internal fun filterDirectChildren(allEntries: List<ArchiveEntry>, prefix: String): List<ArchiveEntry> {
         val directChildren = mutableMapOf<String, ArchiveEntry>()
 
         for (entry in allEntries) {
@@ -243,6 +247,7 @@ class BrowseArchiveUseCase @Inject constructor(
 
         return directChildren.values
             .sortedWith(compareByDescending<ArchiveEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
+        }
     }
 
     private fun copyToTemp(contentUri: String): File {

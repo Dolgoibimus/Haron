@@ -287,10 +287,15 @@ class ExtractArchiveUseCase @Inject constructor(
         }
     }
 
-    private fun stripPrefix(path: String, prefix: String): String {
-        if (prefix.isEmpty()) return path
-        val p = "$prefix/"
-        return if (path.startsWith(p)) path.removePrefix(p) else path
+    internal fun stripPrefix(path: String, prefix: String): String =
+        Companion.stripPrefix(path, prefix)
+
+    companion object {
+        internal fun stripPrefix(path: String, prefix: String): String {
+            if (prefix.isEmpty()) return path
+            val p = "$prefix/"
+            return if (path.startsWith(p)) path.removePrefix(p) else path
+        }
     }
 
     private fun copyToTemp(contentUri: String): File {
