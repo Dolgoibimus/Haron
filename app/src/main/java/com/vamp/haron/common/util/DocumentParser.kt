@@ -34,6 +34,7 @@ data class DocParagraph(
     val tableCellVMerge: List<Boolean>? = null,
     val tableCellGridSpans: List<Int>? = null, // horizontal merge: how many cols each cell spans
     val tableCellVAligns: List<String>? = null, // "top","center","bottom"
+    val tableCellBorders: List<Int>? = null,   // per cell border bitmask: 1=left 2=right 4=top 8=bottom
     val tableHasBorders: Boolean = true,
     val imageData: ByteArray? = null
 )
@@ -1840,6 +1841,36 @@ object DocumentParser {
                 }
             }
 
+            // Parse styles.xml for per-cell border info
+            // bitmask: 1=left, 2=right, 4=top, 8=bottom, 15=all
+            val styleBorderMasks = mutableListOf<Int>()
+            val xfBorderIds = mutableListOf<Int>()
+            val stylesEntry = zip.getEntry("xl/styles.xml")
+            if (stylesEntry != null) {
+                val stylesXml = zip.getInputStream(stylesEntry).bufferedReader().readText()
+                val bordersContent = Regex("""<borders\b[^>]*>(.*?)</borders>""", RegexOption.DOT_MATCHES_ALL)
+                    .find(stylesXml)?.groupValues?.get(1) ?: ""
+                for (bm in Regex("""<border\b[^>]*>.*?</border>""", RegexOption.DOT_MATCHES_ALL).findAll(bordersContent)) {
+                    val bXml = bm.value
+                    var mask = 0
+                    if (Regex("""<left\s+style=""").containsMatchIn(bXml)) mask = mask or 1
+                    if (Regex("""<right\s+style=""").containsMatchIn(bXml)) mask = mask or 2
+                    if (Regex("""<top\s+style=""").containsMatchIn(bXml)) mask = mask or 4
+                    if (Regex("""<bottom\s+style=""").containsMatchIn(bXml)) mask = mask or 8
+                    styleBorderMasks.add(mask)
+                }
+                val cellXfsContent = Regex("""<cellXfs\b[^>]*>(.*?)</cellXfs>""", RegexOption.DOT_MATCHES_ALL)
+                    .find(stylesXml)?.groupValues?.get(1) ?: ""
+                for (xm in Regex("""<xf\b[^>]*""").findAll(cellXfsContent)) {
+                    val bid = Regex("""borderId="(\d+)""").find(xm.value)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    xfBorderIds.add(bid)
+                }
+            }
+            fun cellBorderMask(styleIdx: Int): Int {
+                val borderId = xfBorderIds.getOrNull(styleIdx) ?: 0
+                return styleBorderMasks.getOrNull(borderId) ?: 15
+            }
+
             val result = mutableListOf<DocParagraph>()
             var sheetIndex = 1
             while (true) {
@@ -1854,43 +1885,126 @@ object DocumentParser {
                     ))
                 }
 
+                // Parse column widths from <cols> section
+                val xlsxColWidths = mutableMapOf<Int, Float>()
+                val colsSection = extractTagContent(sheetXml, "cols")
+                if (colsSection.isNotEmpty()) {
+                    val colRe = Regex("""<col\b[^/]*/?>""")
+                    for (cm in colRe.findAll(colsSection)) {
+                        val tag = cm.value
+                        val minCol = Regex("""min="(\d+)"""").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+                        val maxCol = Regex("""max="(\d+)"""").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: minCol
+                        val width = Regex("""width="([\d.]+)"""").find(tag)?.groupValues?.get(1)?.toFloatOrNull() ?: continue
+                        if (maxCol - minCol < 100) {
+                            for (c in minCol..maxCol) {
+                                xlsxColWidths[c - 1] = width
+                            }
+                        }
+                    }
+                }
+
+                // First pass: parse all rows (both self-closing and regular cells)
                 val rowRe = Regex("""<row\b[^>]*>(.*?)</row>""", RegexOption.DOT_MATCHES_ALL)
+                val cellRe = Regex("""<c\b([^>]*?)(?:>(.*?)</c>|/>)""", RegexOption.DOT_MATCHES_ALL)
+                data class ParsedRow(
+                    val cellMap: Map<Int, List<DocSpan>>,
+                    val borderMap: Map<Int, Int>,
+                    val maxCol: Int
+                )
+                val parsedRows = mutableListOf<ParsedRow>()
+                var globalMinCol = Int.MAX_VALUE
+                var globalMaxCol = -1
+
                 for (rowMatch in rowRe.findAll(sheetXml)) {
                     val cellMap = mutableMapOf<Int, List<DocSpan>>()
+                    val borderMap = mutableMapOf<Int, Int>()
                     var maxCol = -1
-                    val cellRe = Regex("""<c\b([^>]*)>(.*?)</c>""", RegexOption.DOT_MATCHES_ALL)
                     for (cellMatch in cellRe.findAll(rowMatch.groupValues[1])) {
                         val attrs = cellMatch.groupValues[1]
-                        val content = cellMatch.groupValues[2]
-                        val value = Regex("""<v>(.*?)</v>""").find(content)?.groupValues?.get(1) ?: ""
-                        val isShared = attrs.contains("""t="s"""")
-                        val isInline = attrs.contains("""t="inlineStr"""")
-                        val text = when {
-                            isShared -> {
-                                val idx = value.toIntOrNull() ?: 0
-                                sharedStrings.getOrNull(idx) ?: value
+                        val content = cellMatch.groupValues[2] // empty for self-closing
+
+                        val colRef = Regex("""r="([A-Z]+)\d+""").find(attrs)?.groupValues?.get(1)
+                        val colIdx = if (colRef != null) xlsxColIndex(colRef)
+                            else maxOf(cellMap.size, borderMap.size)
+
+                        // Border info from style
+                        val styleIdx = Regex("""s="(\d+)""").find(attrs)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        borderMap[colIdx] = cellBorderMask(styleIdx)
+
+                        // Content (only for non-self-closing cells with content)
+                        if (content.isNotEmpty()) {
+                            val value = Regex("""<v>(.*?)</v>""").find(content)?.groupValues?.get(1) ?: ""
+                            val isShared = attrs.contains("""t="s"""")
+                            val isInline = attrs.contains("""t="inlineStr"""")
+                            val text = when {
+                                isShared -> {
+                                    val idx = value.toIntOrNull() ?: 0
+                                    sharedStrings.getOrNull(idx) ?: value
+                                }
+                                isInline -> {
+                                    Regex("""<t[^>]*>(.*?)</t>""").find(content)?.groupValues?.get(1)
+                                        ?.let { decodeEntities(it) } ?: ""
+                                }
+                                else -> decodeEntities(value)
                             }
-                            isInline -> {
-                                Regex("""<t[^>]*>(.*?)</t>""").find(content)?.groupValues?.get(1)
-                                    ?.let { decodeEntities(it) } ?: ""
+                            val rawText = text.trim()
+                            if (rawText.isNotEmpty()) {
+                                cellMap[colIdx] = listOf(DocSpan(
+                                    if (rawText.endsWith(".0")) rawText.dropLast(2) else rawText
+                                ))
                             }
-                            else -> decodeEntities(value)
                         }
-                        val colRef = Regex("""r="([A-Z]+)\d+"""").find(attrs)?.groupValues?.get(1)
-                        val colIdx = if (colRef != null) xlsxColIndex(colRef) else cellMap.size
-                        val rawText = text.trim()
-                        cellMap[colIdx] = listOf(DocSpan(
-                            if (rawText.endsWith(".0")) rawText.dropLast(2) else rawText
-                        ))
                         maxCol = maxOf(maxCol, colIdx)
                     }
                     if (maxCol >= 0) {
-                        val cells = (0..maxCol).map { cellMap[it] ?: listOf(DocSpan("")) }
-                        if (cells.any { it.any { s -> s.text.isNotBlank() } }) {
+                        val minCol = minOf(
+                            cellMap.keys.minOrNull() ?: Int.MAX_VALUE,
+                            borderMap.keys.minOrNull() ?: Int.MAX_VALUE
+                        )
+                        if (minCol != Int.MAX_VALUE) globalMinCol = minOf(globalMinCol, minCol)
+                        globalMaxCol = maxOf(globalMaxCol, maxCol)
+                        parsedRows.add(ParsedRow(cellMap, borderMap, maxCol))
+                    }
+                }
+
+                // Second pass: detect title rows and build DocParagraphs
+                if (globalMinCol == Int.MAX_VALUE) globalMinCol = 0
+                for (row in parsedRows) {
+                    // Title row: all cells have non-full-grid borders (no cell has mask==15)
+                    val allNonGrid = (globalMinCol..globalMaxCol).all { col ->
+                        (row.borderMap[col] ?: 0) != 15
+                    }
+                    val hasContent = row.cellMap.values.any { spans -> spans.any { it.text.isNotBlank() } }
+
+                    if (allNonGrid && hasContent) {
+                        val text = row.cellMap.values
+                            .firstOrNull { spans -> spans.any { it.text.isNotBlank() } }
+                            ?.joinToString("") { it.text }?.trim() ?: ""
+                        if (text.isNotBlank()) {
                             result.add(DocParagraph(
-                                spans = emptyList(), isTable = true, tableCells = cells
+                                spans = listOf(DocSpan(text, bold = true)),
+                                alignment = ParaAlignment.CENTER
                             ))
                         }
+                        continue
+                    }
+
+                    val cells = (globalMinCol..globalMaxCol).map {
+                        row.cellMap[it] ?: listOf(DocSpan(""))
+                    }
+                    val cellBorders = (globalMinCol..globalMaxCol).map {
+                        row.borderMap[it] ?: 15
+                    }
+                    if (cells.any { it.any { s -> s.text.isNotBlank() } } || cellBorders.any { it != 0 }) {
+                        val colWidths = if (xlsxColWidths.isNotEmpty()) {
+                            (globalMinCol..globalMaxCol).map { xlsxColWidths[it] ?: 9f }
+                        } else null
+                        result.add(DocParagraph(
+                            spans = emptyList(), isTable = true,
+                            tableCells = cells,
+                            tableColWidths = colWidths,
+                            tableCellBorders = cellBorders
+                        ))
                     }
                 }
                 sheetIndex++

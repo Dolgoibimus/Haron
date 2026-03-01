@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -88,7 +90,8 @@ private sealed class DocItem {
         val cellVMerge: List<Boolean>? = null,
         val cellGridSpans: List<Int>? = null,
         val cellVAligns: List<String>? = null,
-        val hasBorders: Boolean = true
+        val hasBorders: Boolean = true,
+        val cellBorders: List<Int>? = null  // per cell border bitmask: 1=left 2=right 4=top 8=bottom
     ) : DocItem()
 }
 
@@ -144,7 +147,8 @@ private fun buildDocItems(paragraphs: List<DocParagraph>): List<DocItem> {
                 cellVMerge = p.tableCellVMerge,
                 cellGridSpans = p.tableCellGridSpans,
                 cellVAligns = p.tableCellVAligns,
-                hasBorders = hasBorders
+                hasBorders = hasBorders,
+                cellBorders = p.tableCellBorders
             ))
         }
         tableBuffer.clear()
@@ -346,6 +350,7 @@ fun DocumentViewerScreen(
                                             cellGridSpans = item.cellGridSpans,
                                             cellVAligns = item.cellVAligns,
                                             hasBorders = item.hasBorders,
+                                            cellBorders = item.cellBorders,
                                             textScale = textScale
                                         )
                                     }
@@ -523,6 +528,7 @@ private fun CompactTableRow(
     cellGridSpans: List<Int>? = null,
     cellVAligns: List<String>? = null,
     hasBorders: Boolean = true,
+    cellBorders: List<Int>? = null,
     textScale: Float
 ) {
     val context = LocalContext.current
@@ -598,7 +604,24 @@ private fun CompactTableRow(
                 contentAlignment = boxAlign,
                 modifier = Modifier
                     .weight(combinedWeight)
-                    .then(if (hasBorders) Modifier.border(0.5.dp, borderColor) else Modifier)
+                    .then(
+                        when {
+                            !hasBorders -> Modifier
+                            cellBorders != null -> {
+                                val mask = cellBorders.getOrNull(i) ?: 15
+                                if (mask == 15) Modifier.border(0.5.dp, borderColor)
+                                else if (mask == 0) Modifier
+                                else Modifier.drawBehind {
+                                    val sw = 0.5.dp.toPx()
+                                    if (mask and 1 != 0) drawLine(borderColor, Offset(0f, 0f), Offset(0f, size.height), sw)
+                                    if (mask and 2 != 0) drawLine(borderColor, Offset(size.width, 0f), Offset(size.width, size.height), sw)
+                                    if (mask and 4 != 0) drawLine(borderColor, Offset(0f, 0f), Offset(size.width, 0f), sw)
+                                    if (mask and 8 != 0) drawLine(borderColor, Offset(0f, size.height), Offset(size.width, size.height), sw)
+                                }
+                            }
+                            else -> Modifier.border(0.5.dp, borderColor)
+                        }
+                    )
                     .then(
                         if (cellBgColor != null) Modifier.background(Color(cellBgColor.toInt()))
                         else Modifier

@@ -888,7 +888,7 @@ class ExplorerViewModel @Inject constructor(
                         NavigationEvent.OpenPdfReader(entry.path, entry.name)
                     )
                 }
-                "document" -> {
+                "document", "spreadsheet" -> {
                     preferences.lastDocumentFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenDocumentViewer(entry.path, entry.name)
