@@ -85,6 +85,7 @@ import com.vamp.haron.R
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.PlaylistHolder
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.cast.components.CastButton
 import com.vamp.haron.presentation.cast.components.CastDeviceSheet
@@ -196,6 +197,14 @@ fun MediaPlayerScreen(
                 ReadingPositionManager.saveAsync(item.filePath, 0, currentPosition)
             }
         }
+    }
+
+    // Hide VoiceFab while video is playing, show on pause
+    LaunchedEffect(isPlaying, isVideo) {
+        TransferHolder.voiceFabVisible.value = if (isVideo) !isPlaying else true
+    }
+    DisposableEffect(Unit) {
+        onDispose { TransferHolder.voiceFabVisible.value = true }
     }
 
     // Immersive mode for video

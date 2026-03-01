@@ -70,9 +70,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Edit
 import com.vamp.haron.R
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.SearchNavigationHolder
+import com.vamp.haron.domain.model.TransferHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -93,6 +95,14 @@ fun TextEditorScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
+
+    var isEditMode by remember { mutableStateOf(false) }
+
+    // VoiceFab: visible in view mode, hidden in edit mode
+    LaunchedEffect(isEditMode) {
+        TransferHolder.voiceFabVisible.value = !isEditMode
+    }
+    DisposableEffect(Unit) { onDispose { TransferHolder.voiceFabVisible.value = true } }
 
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var savedText by remember { mutableStateOf("") }
@@ -245,8 +255,10 @@ fun TextEditorScreen(
     }
 
     BackHandler {
-        if (isModified) {
+        if (isEditMode && isModified) {
             showExitDialog = true
+        } else if (isEditMode) {
+            isEditMode = false
         } else {
             onBack()
         }
@@ -257,7 +269,9 @@ fun TextEditorScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (isModified) showExitDialog = true else onBack()
+                        if (isEditMode && isModified) showExitDialog = true
+                        else if (isEditMode) isEditMode = false
+                        else onBack()
                     }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -297,44 +311,56 @@ fun TextEditorScreen(
                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                     }
-                    IconButton(
-                        onClick = { undo() },
-                        enabled = undoStack.isNotEmpty()
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Undo,
-                            contentDescription = stringResource(R.string.undo),
-                            tint = if (undoStack.isNotEmpty())
-                                MaterialTheme.colorScheme.onSurface
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { redo() },
-                        enabled = redoStack.isNotEmpty()
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Redo,
-                            contentDescription = stringResource(R.string.redo),
-                            tint = if (redoStack.isNotEmpty())
-                                MaterialTheme.colorScheme.onSurface
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { saveFile() },
-                        enabled = isModified
-                    ) {
-                        Icon(
-                            Icons.Filled.Save,
-                            contentDescription = stringResource(R.string.save),
-                            tint = if (isModified)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
+                    if (isEditMode) {
+                        IconButton(
+                            onClick = { undo() },
+                            enabled = undoStack.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Undo,
+                                contentDescription = stringResource(R.string.undo),
+                                tint = if (undoStack.isNotEmpty())
+                                    MaterialTheme.colorScheme.onSurface
+                                else
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                        }
+                        IconButton(
+                            onClick = { redo() },
+                            enabled = redoStack.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Redo,
+                                contentDescription = stringResource(R.string.redo),
+                                tint = if (redoStack.isNotEmpty())
+                                    MaterialTheme.colorScheme.onSurface
+                                else
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                saveFile()
+                                isEditMode = false
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Save,
+                                contentDescription = stringResource(R.string.save),
+                                tint = if (isModified)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { isEditMode = true }) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = stringResource(R.string.edit),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -471,6 +497,7 @@ fun TextEditorScreen(
                                 }
                                 textFieldValue = newValue
                             },
+                            readOnly = !isEditMode,
                             textStyle = monoStyle,
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             visualTransformation = highlightTransformation,
@@ -524,7 +551,7 @@ fun TextEditorScreen(
                 TextButton(onClick = {
                     saveFile()
                     showExitDialog = false
-                    onBack()
+                    isEditMode = false
                 }) {
                     Text(stringResource(R.string.save))
                 }
@@ -538,7 +565,9 @@ fun TextEditorScreen(
                     }
                     TextButton(onClick = {
                         showExitDialog = false
-                        onBack()
+                        isEditMode = false
+                        isModified = false
+                        textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
                     }) {
                         Text(stringResource(R.string.dont_save))
                     }

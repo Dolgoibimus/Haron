@@ -57,8 +57,18 @@ fun VoiceFab(
 ) {
     val voiceState by viewModel.voiceState.collectAsState()
     val context = LocalContext.current
+    val fabVisible by TransferHolder.voiceFabVisible.collectAsState()
 
     if (!viewModel.isAvailable) return
+
+    // Stop listening when mic becomes hidden (e.g. exiting reader while mic active)
+    LaunchedEffect(fabVisible) {
+        if (!fabVisible && voiceState == VoiceState.LISTENING) {
+            viewModel.stopListening()
+        }
+    }
+
+    if (!fabVisible) return
 
     val audioPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -177,6 +187,7 @@ fun VoiceFab(
                             } catch (_: Exception) { }
                         } else if (!dragged && longPressed == false) {
                             // Tap
+                            TransferHolder.voiceFabPinned.value = true
                             if (showHint) {
                                 showHint = false
                                 viewModel.markHintShown()

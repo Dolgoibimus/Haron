@@ -64,6 +64,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.GalleryHolder
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.cast.components.CastButton
 import com.vamp.haron.presentation.cast.components.CastDeviceSheet
@@ -113,6 +114,18 @@ fun GalleryScreen(
     var isZoomed by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
+    // Hide VoiceFab in gallery, sync with controls visibility
+    LaunchedEffect(Unit) { TransferHolder.voiceFabVisible.value = false }
+    DisposableEffect(Unit) {
+        onDispose {
+            TransferHolder.voiceFabVisible.value = true
+            TransferHolder.voiceFabPinned.value = false
+        }
+    }
+    LaunchedEffect(controlsVisible) {
+        TransferHolder.voiceFabVisible.value = controlsVisible
+    }
+
     // Track page changes
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
@@ -128,7 +141,7 @@ fun GalleryScreen(
         if (controlsVisible) {
             controller.show(WindowInsetsCompat.Type.systemBars())
             delay(3000)
-            controlsVisible = false
+            if (!TransferHolder.voiceFabPinned.value) controlsVisible = false
         } else {
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior =

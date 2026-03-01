@@ -62,11 +62,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
 import com.vamp.haron.data.reading.ReadingPositionManager
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.common.util.DocParagraph
 import com.vamp.haron.common.util.DocSpan
 import com.vamp.haron.common.util.DocumentParser
 import com.vamp.haron.common.util.ParaAlignment
 import com.vamp.haron.common.util.VerticalAlign
+import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -85,7 +87,8 @@ private sealed class DocItem {
         val cellBgs: List<Long>? = null,
         val cellVMerge: List<Boolean>? = null,
         val cellGridSpans: List<Int>? = null,
-        val cellVAligns: List<String>? = null
+        val cellVAligns: List<String>? = null,
+        val hasBorders: Boolean = true
     ) : DocItem()
 }
 
@@ -130,6 +133,8 @@ private fun buildDocItems(paragraphs: List<DocParagraph>): List<DocItem> {
             colMaxLen
         }
 
+        val hasBorders = tableBuffer.firstOrNull()?.tableHasBorders ?: true
+
         for (p in tableBuffer) {
             items.add(DocItem.TblRow(
                 cells = p.tableCells ?: emptyList(),
@@ -138,7 +143,8 @@ private fun buildDocItems(paragraphs: List<DocParagraph>): List<DocItem> {
                 cellBgs = p.tableCellBgs,
                 cellVMerge = p.tableCellVMerge,
                 cellGridSpans = p.tableCellGridSpans,
-                cellVAligns = p.tableCellVAligns
+                cellVAligns = p.tableCellVAligns,
+                hasBorders = hasBorders
             ))
         }
         tableBuffer.clear()
@@ -150,7 +156,14 @@ private fun buildDocItems(paragraphs: List<DocParagraph>): List<DocItem> {
                 flushTable()
                 items.add(DocItem.Img(para.imageData))
             }
-            para.isTable && para.tableCells != null -> tableBuffer.add(para)
+            para.isTable && para.tableCells != null -> {
+                // Flush when grid structure changes (different <w:tbl> elements)
+                if (tableBuffer.isNotEmpty() &&
+                    tableBuffer.last().tableColWidths != para.tableColWidths) {
+                    flushTable()
+                }
+                tableBuffer.add(para)
+            }
             else -> {
                 flushTable()
                 items.add(DocItem.Para(para))
@@ -174,6 +187,23 @@ fun DocumentViewerScreen(
     var docItems by remember { mutableStateOf<List<DocItem>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+
+    // Hide VoiceFab in reader, show on tap
+    var micVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { TransferHolder.voiceFabVisible.value = false }
+    DisposableEffect(Unit) {
+        onDispose {
+            TransferHolder.voiceFabVisible.value = true
+            TransferHolder.voiceFabPinned.value = false
+        }
+    }
+    LaunchedEffect(micVisible) {
+        TransferHolder.voiceFabVisible.value = micVisible
+        if (micVisible) {
+            delay(3000)
+            if (!TransferHolder.voiceFabPinned.value) micVisible = false
+        }
+    }
 
     // Pre-load saved position (fast DB read finishes before slow document parsing)
     var savedItemIndex by remember { mutableStateOf(0) }
@@ -279,15 +309,20 @@ fun DocumentViewerScreen(
                             .background(Color.White)
                             .pointerInput(Unit) {
                                 awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    var wasPinch = false
                                     do {
                                         val event = awaitPointerEvent()
                                         if (event.changes.size >= 2) {
+                                            wasPinch = true
                                             val zoom = event.calculateZoom()
                                             textScale = (textScale * zoom).coerceIn(0.5f, 3f)
                                             event.changes.forEach { c -> c.consume() }
                                         }
                                     } while (event.changes.any { c -> c.pressed })
+                                    if (!wasPinch) {
+                                        micVisible = !micVisible
+                                    }
                                 }
                             }
                     ) {
@@ -310,6 +345,7 @@ fun DocumentViewerScreen(
                                             cellVMerge = item.cellVMerge,
                                             cellGridSpans = item.cellGridSpans,
                                             cellVAligns = item.cellVAligns,
+                                            hasBorders = item.hasBorders,
                                             textScale = textScale
                                         )
                                     }
@@ -486,6 +522,7 @@ private fun CompactTableRow(
     cellVMerge: List<Boolean>? = null,
     cellGridSpans: List<Int>? = null,
     cellVAligns: List<String>? = null,
+    hasBorders: Boolean = true,
     textScale: Float
 ) {
     val context = LocalContext.current
@@ -561,7 +598,7 @@ private fun CompactTableRow(
                 contentAlignment = boxAlign,
                 modifier = Modifier
                     .weight(combinedWeight)
-                    .border(0.5.dp, borderColor)
+                    .then(if (hasBorders) Modifier.border(0.5.dp, borderColor) else Modifier)
                     .then(
                         if (cellBgColor != null) Modifier.background(Color(cellBgColor.toInt()))
                         else Modifier
@@ -588,7 +625,7 @@ private fun CompactTableRow(
         }
         // Fill remaining logical columns if row has fewer cells
         while (logicalCol < colWeights.size) {
-            Box(modifier = Modifier.weight(colWeights.getOrElse(logicalCol) { 1f }).border(0.5.dp, borderColor).padding(3.dp)) {}
+            Box(modifier = Modifier.weight(colWeights.getOrElse(logicalCol) { 1f }).then(if (hasBorders) Modifier.border(0.5.dp, borderColor) else Modifier).padding(3.dp)) {}
             logicalCol++
         }
     }

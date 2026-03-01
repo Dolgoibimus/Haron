@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
 import com.vamp.haron.common.util.PdfMatch
 import com.vamp.haron.data.reading.ReadingPositionManager
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.common.util.PdfTextPositionExtractor
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import kotlinx.coroutines.Dispatchers
@@ -105,15 +106,32 @@ fun PdfReaderScreen(
     fileName: String,
     onBack: () -> Unit
 ) {
+    // Hide VoiceFab in reader, show on tap
+    var micVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { TransferHolder.voiceFabVisible.value = false }
+    DisposableEffect(Unit) {
+        onDispose {
+            TransferHolder.voiceFabVisible.value = true
+            TransferHolder.voiceFabPinned.value = false
+        }
+    }
+    LaunchedEffect(micVisible) {
+        TransferHolder.voiceFabVisible.value = micVisible
+        if (micVisible) {
+            delay(3000)
+            if (!TransferHolder.voiceFabPinned.value) micVisible = false
+        }
+    }
+
     val extension = fileName.substringAfterLast('.', "").lowercase()
     val isFb2Zip = fileName.lowercase().endsWith(".fb2.zip")
     val isDocumentMode = extension in DOCUMENT_EXTENSIONS || isFb2Zip
 
     if (isDocumentMode) {
         val ext = if (isFb2Zip) "fb2.zip" else extension
-        DocumentReaderContent(filePath, fileName, ext, onBack)
+        DocumentReaderContent(filePath, fileName, ext, onBack, onTap = { micVisible = !micVisible })
     } else {
-        PdfReaderContent(filePath, fileName, onBack)
+        PdfReaderContent(filePath, fileName, onBack, onTap = { micVisible = !micVisible })
     }
 }
 
@@ -125,7 +143,8 @@ private fun DocumentReaderContent(
     filePath: String,
     fileName: String,
     extension: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onTap: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
@@ -332,6 +351,7 @@ private fun DocumentReaderContent(
                 .padding(padding)
                 .pointerInput(Unit) {
                     detectTapGestures(
+                        onTap = { onTap() },
                         onDoubleTap = {
                             if (scale > 1.1f) {
                                 scale = 1f; offsetX = 0f; offsetY = 0f
@@ -675,7 +695,8 @@ private fun resolveFile(context: Context, filePath: String, extension: String): 
 private fun PdfReaderContent(
     filePath: String,
     fileName: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onTap: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
@@ -1000,6 +1021,7 @@ private fun PdfReaderContent(
                 .padding(padding)
                 .pointerInput(Unit) {
                     detectTapGestures(
+                        onTap = { onTap() },
                         onDoubleTap = {
                             if (scale > 1.1f) {
                                 scale = 1f; offsetX = 0f; offsetY = 0f

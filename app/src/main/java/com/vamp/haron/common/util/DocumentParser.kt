@@ -34,6 +34,7 @@ data class DocParagraph(
     val tableCellVMerge: List<Boolean>? = null,
     val tableCellGridSpans: List<Int>? = null, // horizontal merge: how many cols each cell spans
     val tableCellVAligns: List<String>? = null, // "top","center","bottom"
+    val tableHasBorders: Boolean = true,
     val imageData: ByteArray? = null
 )
 
@@ -162,6 +163,13 @@ object DocumentParser {
                     val gridWidths = Regex("""<w:gridCol w:w="(\d+)"""")
                         .findAll(eXml).map { it.groupValues[1].toFloatOrNull() ?: 1f }.toList()
 
+                    // Check if table has visible borders
+                    val tblPr = extractTagContent(eXml, "w:tblPr")
+                    val tblBordersXml = extractTagContent(tblPr, "w:tblBorders")
+                    val tableHasBorders = tblBordersXml.isNotEmpty() &&
+                        Regex("""w:val="([^"]+)"""").findAll(tblBordersXml)
+                            .any { it.groupValues[1] != "none" }
+
                     for (rm in rowPattern.findAll(eXml)) {
                         val cells = mutableListOf<List<DocSpan>>()
                         val cellWidths = mutableListOf<Float>()
@@ -176,7 +184,9 @@ object DocumentParser {
                             var cellAlign = ParaAlignment.LEFT
                             for (cp in cellParas.findAll(cm.value)) {
                                 if (cellSpans.isNotEmpty()) cellSpans += DocSpan(" ")
-                                cellSpans.addAll(docxRunSpans(cp.value, hyperlinks))
+                                cellSpans.addAll(docxRunSpans(cp.value, hyperlinks,
+                    defFontFamily = docRunDef?.fontFamily,
+                    defFontSize = docRunDef?.fontSize ?: 0f))
                                 if (cellAlign == ParaAlignment.LEFT) {
                                     val cpPr = extractTagContent(cp.value, "w:pPr")
                                     val jc = Regex("""<w:jc w:val="([^"]+)"""").find(cpPr)?.groupValues?.get(1)
@@ -209,8 +219,9 @@ object DocumentParser {
                             cellVAligns.add(vAlign)
                         }
                         if (cells.isNotEmpty()) {
-                            val widths = if (cellWidths.any { it > 0f }) cellWidths
-                                else if (gridWidths.isNotEmpty()) gridWidths
+                            val hasGridSpan = cellGridSpans.any { it > 1 }
+                            val widths = if (gridWidths.isNotEmpty()) gridWidths
+                                else if (!hasGridSpan && cellWidths.any { it > 0f }) cellWidths
                                 else null
                             result.add(DocParagraph(
                                 spans = emptyList(), isTable = true,
@@ -220,7 +231,8 @@ object DocumentParser {
                                 tableCellBgs = cellBgs.takeIf { it.any { c -> c != 0L } },
                                 tableCellVMerge = cellVMerge.takeIf { it.any { v -> v } },
                                 tableCellGridSpans = cellGridSpans.takeIf { it.any { g -> g > 1 } },
-                                tableCellVAligns = cellVAligns.takeIf { it.any { v -> v != "top" } }
+                                tableCellVAligns = cellVAligns.takeIf { it.any { v -> v != "top" } },
+                                tableHasBorders = tableHasBorders
                             ))
                         }
                     }
@@ -1336,6 +1348,32 @@ object DocumentParser {
                 if (w > 0f) colStyleWidths[name] = w
             }
 
+            // Parse table-cell styles for border info (count bordered sides per style)
+            val cellStyleBorderSides = mutableMapOf<String, Int>()
+            val cellStyleRe = Regex(
+                """<style:style\s[^>]*style:name="([^"]+)"[^>]*style:family="table-cell"[^>]*>(.*?)</style:style>""",
+                RegexOption.DOT_MATCHES_ALL
+            )
+            val cellStyleRe2 = Regex(
+                """<style:style\s[^>]*style:family="table-cell"[^>]*style:name="([^"]+)"[^>]*>(.*?)</style:style>""",
+                RegexOption.DOT_MATCHES_ALL
+            )
+            for (csm in (cellStyleRe.findAll(xml) + cellStyleRe2.findAll(xml))) {
+                val name = csm.groupValues[1]
+                if (name in cellStyleBorderSides) continue
+                val props = csm.groupValues[2]
+                // Shorthand fo:border applies to all 4 sides
+                val shorthand = Regex("""fo:border="([^"]+)"""").find(props)?.groupValues?.get(1)
+                val sides = if (shorthand != null && shorthand != "none") {
+                    4
+                } else {
+                    // Count individual non-none borders
+                    Regex("""fo:border-(top|left|bottom|right)="(?!none)[^"]+"""")
+                        .findAll(props).count()
+                }
+                cellStyleBorderSides[name] = sides
+            }
+
             for (tm in tableMatches) {
                 val tableXml = tm.value
                 // Extract column widths from <table:table-column> elements
@@ -1350,9 +1388,22 @@ object DocumentParser {
                 }
                 val tableWidths = if (odtColWidths.isNotEmpty() && odtColWidths.any { it > 1f }) odtColWidths else null
 
+                // Table has grid borders if any cell has >= 2 bordered sides
+                // (layout tables use 0-1 sides for underline effects)
+                val tableCellStyles = Regex("""<table:table-cell\b[^>]*table:style-name="([^"]+)"""")
+                    .findAll(tableXml).map { it.groupValues[1] }.toList()
+                val tableHasBorders = tableCellStyles.isEmpty() ||
+                    tableCellStyles.any { (cellStyleBorderSides[it] ?: 0) >= 2 }
+
                 for (rm in rowRe.findAll(tableXml)) {
                     val cells = mutableListOf<List<DocSpan>>()
+                    val cellGridSpans = mutableListOf<Int>()
                     for (cm in cellRe.findAll(rm.value)) {
+                        // Parse horizontal column span
+                        val colSpan = Regex("""table:number-columns-spanned="(\d+)"""")
+                            .find(cm.value)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                        cellGridSpans.add(colSpan)
+
                         val cellSpans = mutableListOf<DocSpan>()
                         val pElems = Regex(
                             """<text:(?:h|p)\b[^>]*>(.*?)</text:(?:h|p)>""",
@@ -1370,7 +1421,9 @@ object DocumentParser {
                             DocParagraph(
                                 spans = emptyList(), isTable = true,
                                 tableCells = cells,
-                                tableColWidths = tableWidths
+                                tableColWidths = tableWidths,
+                                tableHasBorders = tableHasBorders,
+                                tableCellGridSpans = cellGridSpans.takeIf { it.any { g -> g > 1 } }
                             )
                         ))
                     }

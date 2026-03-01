@@ -10,4 +10,8 @@ object TransferHolder {
     val pendingVoiceAction = MutableStateFlow<GestureAction?>(null)
     /** Request to open voice commands list from mic FAB long press */
     val pendingOpenVoiceList = MutableStateFlow(false)
+    /** Controls VoiceFab visibility from viewer screens (video player, readers, gallery) */
+    val voiceFabVisible = MutableStateFlow(true)
+    /** When true, VoiceFab stays visible (user tapped the mic, don't auto-hide) */
+    val voiceFabPinned = MutableStateFlow(false)
 }
