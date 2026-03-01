@@ -52,7 +52,8 @@ data class ExplorerUiState(
     val networkDevices: List<com.vamp.haron.data.network.NetworkDevice> = emptyList(),
     val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction },
     val quickSendState: QuickSendState = QuickSendState.Idle,
-    val isListeningForTransfer: Boolean = false
+    val isListeningForTransfer: Boolean = false,
+    val marqueeEnabled: Boolean = true
 )
 
 sealed interface DialogState {

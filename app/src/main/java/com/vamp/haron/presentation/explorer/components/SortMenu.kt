@@ -87,7 +87,7 @@ fun SortMenu(
                 }
                 val isSelected = currentOrder.field == field
                 DropdownMenuItem(
-                    modifier = Modifier.defaultMinSize(minHeight = 36.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 32.dp),
                     text = {
                         Text(
                             text = label,
@@ -147,7 +147,7 @@ fun SortMenu(
                 )
                 // "All files" option
                 DropdownMenuItem(
-                    modifier = Modifier.defaultMinSize(minHeight = 36.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 32.dp),
                     text = {
                         Text(
                             stringResource(R.string.tags_filter_all),
@@ -165,7 +165,7 @@ fun SortMenu(
                     val color = TagColors.palette.getOrElse(tag.colorIndex) { TagColors.palette[0] }
                     val isActive = activeTagFilter == tag.name
                     DropdownMenuItem(
-                        modifier = Modifier.defaultMinSize(minHeight = 36.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 32.dp),
                         text = {
                             Box {
                                 androidx.compose.foundation.layout.Row(

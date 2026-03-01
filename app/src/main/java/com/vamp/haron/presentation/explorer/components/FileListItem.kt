@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.explorer.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -64,8 +65,10 @@ import com.vamp.haron.R
 import androidx.compose.material.icons.filled.Lock
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
-import com.vamp.haron.common.util.toRelativeDate
 import com.vamp.haron.domain.model.FileEntry
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -84,6 +87,8 @@ fun FileListItem(
     contentSnippet: String? = null,
     searchQuery: String = "",
     isDragHovered: Boolean = false,
+    marqueeEnabled: Boolean = true,
+    folderSize: Long? = null,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -257,7 +262,7 @@ fun FileListItem(
                 .fillMaxWidth()
                 .background(bgColor)
                 .then(clickModifier)
-                .padding(horizontal = 8.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (isSelectionMode && !isRenaming) {
@@ -280,7 +285,7 @@ fun FileListItem(
 
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .clickable(onClick = onIconClick),
                 contentAlignment = Alignment.Center
             ) {
@@ -293,9 +298,9 @@ fun FileListItem(
                     imageVector = fileIcon,
                     contentDescription = null,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(26.dp)
                         .then(emptyFolderBorderList)
-                        .padding(if (isEmptyFolder) 3.dp else 0.dp),
+                        .padding(if (isEmptyFolder) 2.dp else 0.dp),
                     tint = iconTint
                 )
                 // Extension badge (bottom-center)
@@ -345,14 +350,19 @@ fun FileListItem(
                         text = entry.name,
                         style = MaterialTheme.typography.bodyLarge,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = if (marqueeEnabled) TextOverflow.Clip else TextOverflow.Ellipsis,
+                        modifier = if (marqueeEnabled) Modifier.basicMarquee() else Modifier
                     )
+                    val dateFormat = remember { SimpleDateFormat("dd.MM.yy HH:mm:ss", Locale.getDefault()) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = if (entry.isDirectory) {
-                                stringResource(R.string.items_count, entry.childCount)
+                                val sizeStr = if (folderSize != null && folderSize > 0) " \u00B7 ${folderSize.toFileSize()}" else ""
+                                stringResource(R.string.items_count, entry.childCount) +
+                                    sizeStr +
+                                    " \u00B7 " + dateFormat.format(Date(entry.lastModified))
                             } else {
-                                "${entry.size.toFileSize()} \u00B7 ${entry.lastModified.toRelativeDate()}"
+                                "${entry.size.toFileSize()} \u00B7 ${dateFormat.format(Date(entry.lastModified))}"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

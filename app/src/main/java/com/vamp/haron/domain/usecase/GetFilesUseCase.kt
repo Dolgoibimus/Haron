@@ -20,11 +20,23 @@ class GetFilesUseCase @Inject constructor(
         showHidden: Boolean,
         showProtected: Boolean = false
     ): Result<List<FileEntry>> {
-        // Virtual secure path — show all protected entries
+        // Virtual secure path — show only top-level protected entries
         if (path == HaronConstants.VIRTUAL_SECURE_PATH) {
             return try {
                 val allEntries = secureFolderRepository.getAllProtectedEntries()
-                val virtualEntries = allEntries.map { it.toFileEntry(allEntries) }
+                // Collect paths of all protected directories
+                val protectedDirPaths = allEntries
+                    .filter { it.isDirectory }
+                    .map { it.originalPath }
+                    .toSet()
+                // Show entry only if it's NOT a descendant of any protected directory
+                val rootEntries = allEntries.filter { entry ->
+                    protectedDirPaths.none { dirPath ->
+                        entry.originalPath != dirPath &&
+                            entry.originalPath.startsWith("$dirPath/")
+                    }
+                }
+                val virtualEntries = rootEntries.map { it.toFileEntry(allEntries) }
                 Result.success(sortFiles(virtualEntries, sortOrder))
             } catch (e: Exception) {
                 Result.failure(e)

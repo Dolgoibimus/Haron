@@ -126,6 +126,13 @@
     <!-- Create archive -->
     <string name="create_zip_archive">Создать ZIP-архив</string>
     <string name="archive_name_label">Имя архива:</string>
+    <string name="archive_password_label">Пароль (необязательно)</string>
+    <string name="archive_password_show">Показать пароль</string>
+    <string name="archive_password_hide">Скрыть пароль</string>
+    <string name="archive_split_toggle">Разбить на части</string>
+    <string name="archive_split_size_label">Размер части</string>
+    <string name="archive_split_size_mb">МБ</string>
+    <string name="archive_split_preset_custom">Свой</string>
 
     <!-- Quick preview -->
     <string name="play_fullscreen">Во весь экран</string>
@@ -207,6 +214,8 @@
     <string name="icon_preview">Превью иконки</string>
     <string name="haptic_section">Тактильный отклик</string>
     <string name="haptic_vibration">Вибрация при операциях</string>
+    <string name="marquee_section">Имена файлов</string>
+    <string name="marquee_scroll_names">Прокрутка длинных имён</string>
     <string name="trash_section">Корзина</string>
     <string name="trash_max_size_label">Максимальный размер: %s</string>
     <string name="trash_no_limit">Без лимита</string>
@@ -347,6 +356,7 @@
     <string name="operation_type_copy">Копирование</string>
     <string name="operation_type_move">Перемещение</string>
     <string name="operation_type_delete">Удаление</string>
+    <string name="operation_type_archive">Архивирование</string>
 
     <!-- ViewModel toasts -->
     <string name="bookmark_saved">Закладка %d сохранена</string>

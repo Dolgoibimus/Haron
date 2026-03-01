@@ -374,6 +374,7 @@ fun ExplorerScreen(
                 onSortChanged = { viewModel.setSortOrder(PanelId.TOP, it) },
                 onToggleHidden = { viewModel.toggleShowHidden(PanelId.TOP) },
                 onSelectAll = { viewModel.selectAll(PanelId.TOP) },
+                onSelectByExtension = { ext -> viewModel.selectByExtension(PanelId.TOP, ext) },
                 onClearSelection = { viewModel.clearSelection(PanelId.TOP) },
                 onPanelTap = { viewModel.setActivePanel(PanelId.TOP) },
                 onSearchChanged = { viewModel.setSearchQuery(PanelId.TOP, it) },
@@ -473,7 +474,11 @@ fun ExplorerScreen(
                 },
                 selectionHasProtected = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.any { it.isProtected },
                 selectionTotalCount = state.topPanel.selectedPaths.size,
+                otherPanelSelectionCount = state.bottomPanel.selectedPaths.size,
                 selectionDirCount = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.count { it.isDirectory },
+                currentFolderSize = state.folderSizeCache[state.topPanel.currentPath],
+                marqueeEnabled = state.marqueeEnabled,
+                folderSizeCache = state.folderSizeCache,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(state.panelRatio)
@@ -511,6 +516,7 @@ fun ExplorerScreen(
                 onSortChanged = { viewModel.setSortOrder(PanelId.BOTTOM, it) },
                 onToggleHidden = { viewModel.toggleShowHidden(PanelId.BOTTOM) },
                 onSelectAll = { viewModel.selectAll(PanelId.BOTTOM) },
+                onSelectByExtension = { ext -> viewModel.selectByExtension(PanelId.BOTTOM, ext) },
                 onClearSelection = { viewModel.clearSelection(PanelId.BOTTOM) },
                 onPanelTap = { viewModel.setActivePanel(PanelId.BOTTOM) },
                 onSearchChanged = { viewModel.setSearchQuery(PanelId.BOTTOM, it) },
@@ -610,7 +616,11 @@ fun ExplorerScreen(
                 },
                 selectionHasProtected = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.any { it.isProtected },
                 selectionTotalCount = state.bottomPanel.selectedPaths.size,
+                otherPanelSelectionCount = state.topPanel.selectedPaths.size,
                 selectionDirCount = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.count { it.isDirectory },
+                currentFolderSize = state.folderSizeCache[state.bottomPanel.currentPath],
+                marqueeEnabled = state.marqueeEnabled,
+                folderSizeCache = state.folderSizeCache,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f - state.panelRatio)
@@ -912,8 +922,8 @@ fun ExplorerScreen(
         }
         is DialogState.CreateArchive -> {
             CreateArchiveDialog(
-                onConfirm = { archiveName ->
-                    viewModel.confirmCreateArchive(dialog.selectedPaths, archiveName)
+                onConfirm = { archiveName, password, splitSizeMb ->
+                    viewModel.confirmCreateArchive(dialog.selectedPaths, archiveName, password, splitSizeMb)
                 },
                 onDismiss = viewModel::dismissDialog
             )

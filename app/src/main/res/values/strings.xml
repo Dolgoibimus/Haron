@@ -128,6 +128,13 @@
     <!-- Create archive -->
     <string name="create_zip_archive">Create ZIP archive</string>
     <string name="archive_name_label">Archive name:</string>
+    <string name="archive_password_label">Password (optional)</string>
+    <string name="archive_password_show">Show password</string>
+    <string name="archive_password_hide">Hide password</string>
+    <string name="archive_split_toggle">Split into parts</string>
+    <string name="archive_split_size_label">Part size</string>
+    <string name="archive_split_size_mb">MB</string>
+    <string name="archive_split_preset_custom">Custom</string>
 
     <!-- Quick preview -->
     <string name="play_fullscreen">Fullscreen</string>
@@ -209,6 +216,8 @@
     <string name="icon_preview">Icon preview</string>
     <string name="haptic_section">Haptic Feedback</string>
     <string name="haptic_vibration">Vibration for operations</string>
+    <string name="marquee_section">File Names</string>
+    <string name="marquee_scroll_names">Scroll long names</string>
     <string name="trash_section">Trash</string>
     <string name="trash_max_size_label">Maximum size: %s</string>
     <string name="trash_no_limit">No limit</string>
@@ -349,6 +358,7 @@
     <string name="operation_type_copy">Copying</string>
     <string name="operation_type_move">Moving</string>
     <string name="operation_type_delete">Deleting</string>
+    <string name="operation_type_archive">Archiving</string>
 
     <!-- ViewModel toasts -->
     <string name="bookmark_saved">Bookmark %d saved</string>

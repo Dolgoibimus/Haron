@@ -222,6 +222,12 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getBoolean(KEY_HAPTIC_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_HAPTIC_ENABLED, value).apply()
 
+    // --- Marquee (scrolling long file names) ---
+
+    var marqueeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MARQUEE_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_MARQUEE_ENABLED, value).apply()
+
     // --- Night mode ---
 
     var nightModeEnabled: Boolean
@@ -564,6 +570,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_ORIGINAL_OVERRIDES = "original_overrides"
         const val KEY_ORIGINAL_FOLDERS = "original_folders"
         const val KEY_HAPTIC_ENABLED = "haptic_enabled"
+        const val KEY_MARQUEE_ENABLED = "marquee_enabled"
         const val KEY_NIGHT_MODE_ENABLED = "night_mode_enabled"
         const val KEY_NIGHT_MODE_START_HOUR = "night_mode_start_hour"
         const val KEY_NIGHT_MODE_START_MINUTE = "night_mode_start_minute"

@@ -24,6 +24,7 @@ data class SettingsUiState(
     val fontScale: Float = 1.0f,
     val iconScale: Float = 1.0f,
     val hapticEnabled: Boolean = true,
+    val marqueeEnabled: Boolean = true,
     val trashMaxSizeMb: Int = 500,
     // Security
     val appLockMethod: AppLockMethod = AppLockMethod.NONE,
@@ -52,6 +53,7 @@ class SettingsViewModel @Inject constructor(
             fontScale = preferences.fontScale,
             iconScale = preferences.iconScale,
             hapticEnabled = preferences.hapticEnabled,
+            marqueeEnabled = preferences.marqueeEnabled,
             trashMaxSizeMb = preferences.trashMaxSizeMb,
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
@@ -93,6 +95,11 @@ class SettingsViewModel @Inject constructor(
     fun setHapticEnabled(enabled: Boolean) {
         preferences.hapticEnabled = enabled
         _state.update { it.copy(hapticEnabled = enabled) }
+    }
+
+    fun setMarqueeEnabled(enabled: Boolean) {
+        preferences.marqueeEnabled = enabled
+        _state.update { it.copy(marqueeEnabled = enabled) }
     }
 
     fun setTrashMaxSizeMb(sizeMb: Int) {

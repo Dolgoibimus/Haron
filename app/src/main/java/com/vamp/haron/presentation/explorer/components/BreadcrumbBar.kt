@@ -137,15 +137,13 @@ fun BreadcrumbBar(
                 }
             }
         }
-        if (folderSize > 0L) {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = folderSize.toFileSize(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1
-            )
-        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = folderSize.toFileSize(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            maxLines = 1
+        )
     }
 }
 

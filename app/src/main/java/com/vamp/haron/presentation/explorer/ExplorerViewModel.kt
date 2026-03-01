@@ -165,6 +165,9 @@ class ExplorerViewModel @Inject constructor(
     private val contentSearchJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
     private val folderIndexJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
 
+    /** Navigation jobs per panel — cancel previous before starting new */
+    private val navigationJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
+
     fun onScrollPositionChanged(panelId: PanelId, index: Int) {
         panelScrollIndex[panelId] = index
     }
@@ -198,7 +201,8 @@ class ExplorerViewModel @Inject constructor(
                 bookmarks = preferences.getBookmarks(),
                 tagDefinitions = preferences.getTagDefinitions(),
                 fileTags = preferences.getFileTagMappings(),
-                gestureMappings = preferences.getGestureMappings()
+                gestureMappings = preferences.getGestureMappings(),
+                marqueeEnabled = preferences.marqueeEnabled
             )
         }
         val topPath = preferences.topPanelPath.let { p ->
@@ -602,7 +606,8 @@ class ExplorerViewModel @Inject constructor(
     // --- Navigation ---
 
     fun navigateTo(panelId: PanelId, path: String, pushHistory: Boolean = true) {
-        viewModelScope.launch {
+        navigationJobs[panelId]?.cancel()
+        navigationJobs[panelId] = viewModelScope.launch {
             // Save current scroll position before navigating away (only when actually changing folder)
             val currentPath = getPanel(panelId).currentPath
             val isNewFolder = currentPath.isNotEmpty() && currentPath != path
@@ -687,6 +692,19 @@ class ExplorerViewModel @Inject constructor(
                     }
                 }
                 EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Открыта папка: $path (${files.size} файлов)")
+                // Calculate current folder size for breadcrumb
+                if (!path.startsWith("content://") && path != HaronConstants.VIRTUAL_SECURE_PATH &&
+                    _uiState.value.folderSizeCache[path] == null && !folderSizeJobs.containsKey(path)) {
+                    calculateFolderSize(path)
+                }
+                // Calculate sizes for subdirectories (for display in file list)
+                if (!path.startsWith("content://") && path != HaronConstants.VIRTUAL_SECURE_PATH) {
+                    files.filter { it.isDirectory }.forEach { dir ->
+                        if (_uiState.value.folderSizeCache[dir.path] == null && !folderSizeJobs.containsKey(dir.path)) {
+                            calculateFolderSize(dir.path)
+                        }
+                    }
+                }
             }.onFailure { error ->
                 updatePanel(panelId) {
                     it.copy(
@@ -704,7 +722,8 @@ class ExplorerViewModel @Inject constructor(
      * Used when returning from global search to show the file in context.
      */
     fun navigateToFileLocation(panelId: PanelId, folderPath: String, filePath: String) {
-        viewModelScope.launch {
+        navigationJobs[panelId]?.cancel()
+        navigationJobs[panelId] = viewModelScope.launch {
             val currentPath = getPanel(panelId).currentPath
             val isNewFolder = currentPath.isNotEmpty() && currentPath != folderPath
             if (isNewFolder) {
@@ -1216,8 +1235,15 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(panelId)
         val newValue = !panel.showHidden
         preferences.showHidden = newValue
-        updatePanel(panelId) { it.copy(showHidden = newValue) }
-        refreshPanel(panelId)
+        // Update both panels (global setting) and refresh both
+        _uiState.update {
+            it.copy(
+                topPanel = it.topPanel.copy(showHidden = newValue),
+                bottomPanel = it.bottomPanel.copy(showHidden = newValue)
+            )
+        }
+        refreshPanel(PanelId.TOP)
+        refreshPanel(PanelId.BOTTOM)
         _toastMessage.tryEmit(
             appContext.getString(if (newValue) R.string.hidden_files_shown else R.string.hidden_files_hidden)
         )
@@ -1322,6 +1348,16 @@ class ExplorerViewModel @Inject constructor(
             } else {
                 panel.copy(selectedPaths = allPaths, isSelectionMode = true)
             }
+        }
+    }
+
+    fun selectByExtension(panelId: PanelId, extension: String) {
+        updatePanel(panelId) { panel ->
+            val matching = panel.files
+                .filter { !it.isDirectory && it.name.substringAfterLast('.').lowercase() == extension }
+                .map { it.path }
+                .toSet()
+            panel.copy(selectedPaths = matching, isSelectionMode = true)
         }
     }
 
@@ -2056,7 +2092,12 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(dialogState = DialogState.CreateArchive(paths)) }
     }
 
-    fun confirmCreateArchive(selectedPaths: List<String>, archiveName: String) {
+    fun confirmCreateArchive(
+        selectedPaths: List<String>,
+        archiveName: String,
+        password: String? = null,
+        splitSizeMb: Int = 0
+    ) {
         dismissDialog()
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
@@ -2069,17 +2110,18 @@ class ExplorerViewModel @Inject constructor(
 
         viewModelScope.launch {
             clearSelection(activeId)
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    type = OperationType.COPY,
-                    current = 0,
-                    total = selectedPaths.size,
-                    currentFileName = appContext.getString(R.string.creating_zip),
-                    isComplete = false
-                ))
-            }
             try {
-                createZipUseCase(selectedPaths, outputPath)
+                createZipUseCase(selectedPaths, outputPath, password, splitSizeMb)
+                    .collect { progress ->
+                        _uiState.update {
+                            it.copy(operationProgress = OperationProgress(
+                                current = progress.current,
+                                total = progress.total,
+                                currentFileName = progress.fileName,
+                                type = OperationType.ARCHIVE
+                            ))
+                        }
+                    }
                 hapticManager.success()
                 _toastMessage.tryEmit(appContext.getString(R.string.archive_created, name))
                 refreshBothIfSamePath(activeId)
@@ -2713,13 +2755,21 @@ class ExplorerViewModel @Inject constructor(
 
     fun refreshPanel(panelId: PanelId) {
         val panel = getPanel(panelId)
+        // Invalidate cached folder size so BreadcrumbBar shows fresh value
+        val cachedPath = panel.currentPath
+        if (cachedPath.isNotEmpty()) {
+            folderSizeJobs[cachedPath]?.cancel()
+            folderSizeJobs.remove(cachedPath)
+            _uiState.update { state ->
+                state.copy(folderSizeCache = state.folderSizeCache - cachedPath)
+            }
+        }
         if (panel.isArchiveMode) {
             navigateIntoArchive(panelId, panel.archivePath!!, panel.archiveVirtualPath, panel.archivePassword, pushHistory = false)
             return
         }
-        val path = panel.currentPath
-        if (path.isNotEmpty()) {
-            navigateTo(panelId, path, pushHistory = false)
+        if (cachedPath.isNotEmpty()) {
+            navigateTo(panelId, cachedPath, pushHistory = false)
         }
     }
 
@@ -2739,7 +2789,8 @@ class ExplorerViewModel @Inject constructor(
         if (!panel.isArchiveMode && panel.currentPath.isNotEmpty()) {
             scrollCache[panel.currentPath] = panelScrollIndex[panelId] ?: 0
         }
-        viewModelScope.launch {
+        navigationJobs[panelId]?.cancel()
+        navigationJobs[panelId] = viewModelScope.launch {
             updatePanel(panelId) { it.copy(isLoading = true, error = null) }
             browseArchiveUseCase(archivePath, virtualPath, password).onSuccess { entries ->
                 val archiveName = File(archivePath).name
@@ -3201,11 +3252,25 @@ class ExplorerViewModel @Inject constructor(
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
         val selected = panel.files.filter { it.path in panel.selectedPaths }
+
         if (selected.size == 2) {
+            // Two items in the same panel
             com.vamp.haron.domain.model.ComparisonHolder.leftPath = selected[0].path
             com.vamp.haron.domain.model.ComparisonHolder.rightPath = selected[1].path
             clearSelection(activeId)
             _navigationEvent.tryEmit(NavigationEvent.OpenComparison)
+        } else if (selected.size == 1) {
+            // One item in active panel — check other panel for one selected item
+            val otherId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+            val otherPanel = getPanel(otherId)
+            val otherSelected = otherPanel.files.filter { it.path in otherPanel.selectedPaths }
+            if (otherSelected.size == 1) {
+                com.vamp.haron.domain.model.ComparisonHolder.leftPath = selected[0].path
+                com.vamp.haron.domain.model.ComparisonHolder.rightPath = otherSelected[0].path
+                clearSelection(activeId)
+                clearSelection(otherId)
+                _navigationEvent.tryEmit(NavigationEvent.OpenComparison)
+            }
         }
     }
 
@@ -3303,7 +3368,12 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun reloadGestureMappings() {
-        _uiState.update { it.copy(gestureMappings = preferences.getGestureMappings()) }
+        _uiState.update {
+            it.copy(
+                gestureMappings = preferences.getGestureMappings(),
+                marqueeEnabled = preferences.marqueeEnabled
+            )
+        }
     }
 
     // --- Force Delete ---

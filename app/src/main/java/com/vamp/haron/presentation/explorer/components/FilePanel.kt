@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -115,6 +116,7 @@ fun FilePanel(
     onSortChanged: (SortOrder) -> Unit,
     onToggleHidden: () -> Unit,
     onSelectAll: () -> Unit,
+    onSelectByExtension: (String) -> Unit = {},
     onClearSelection: () -> Unit,
     onPanelTap: () -> Unit,
     onSearchChanged: (String) -> Unit,
@@ -178,6 +180,10 @@ fun FilePanel(
     selectionHasProtected: Boolean = false,
     selectionTotalCount: Int = 0,
     selectionDirCount: Int = 0,
+    otherPanelSelectionCount: Int = 0,
+    currentFolderSize: Long? = null,
+    marqueeEnabled: Boolean = true,
+    folderSizeCache: Map<String, Long> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -504,20 +510,52 @@ fun FilePanel(
                         }
                     }
                     state.isSelectionMode -> {
-                        // SelectAll + extra selection actions + collapsed chevron menu
-                        IconButton(
-                            onClick = onSelectAll,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.SelectAll,
-                                contentDescription = stringResource(R.string.select_deselect_all),
-                                modifier = Modifier.size(18.dp)
-                            )
+                        // SelectAll (tap) + select by extension (long press)
+                        Box {
+                            var showExtMenu by remember { mutableStateOf(false) }
+                            @OptIn(ExperimentalFoundationApi::class)
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .combinedClickable(
+                                        onClick = onSelectAll,
+                                        onLongClick = { showExtMenu = true }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.SelectAll,
+                                    contentDescription = stringResource(R.string.select_deselect_all),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showExtMenu,
+                                onDismissRequest = { showExtMenu = false }
+                            ) {
+                                val extensions = remember(state.files) {
+                                    state.files
+                                        .filter { !it.isDirectory && it.name.contains('.') }
+                                        .map { it.name.substringAfterLast('.').lowercase() }
+                                        .distinct()
+                                        .sorted()
+                                }
+                                extensions.forEach { ext ->
+                                    DropdownMenuItem(
+                                        text = { Text(".$ext") },
+                                        onClick = {
+                                            showExtMenu = false
+                                            onSelectByExtension(ext)
+                                        },
+                                        modifier = Modifier.height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                    )
+                                }
+                            }
                         }
                         IconButton(
                             onClick = onCompareSelection,
-                            enabled = selectionTotalCount == 2,
+                            enabled = selectionTotalCount == 2 || (selectionTotalCount == 1 && otherPanelSelectionCount == 1),
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(18.dp))
@@ -860,7 +898,7 @@ fun FilePanel(
                     displayPath = state.displayPath,
                     currentPath = state.currentPath,
                     safVolumeLabel = safVolumeLabel,
-                    folderSize = state.files.sumOf { it.size },
+                    folderSize = currentFolderSize ?: state.files.filter { !it.isDirectory }.sumOf { it.size },
                     onSegmentClick = onBreadcrumbClick
                 )
             }
@@ -1164,7 +1202,9 @@ fun FilePanel(
                             tagColors = entryTagColors,
                             contentSnippet = if (state.searchInContent) state.contentSearchSnippets?.get(entry.path) else null,
                             searchQuery = if (state.searchInContent) state.searchQuery else "",
-                            isDragHovered = hoveredFolderPath == entry.path && entry.isDirectory
+                            isDragHovered = hoveredFolderPath == entry.path && entry.isDirectory,
+                            marqueeEnabled = marqueeEnabled,
+                            folderSize = if (entry.isDirectory) folderSizeCache[entry.path] else null
                         )
                     }
                 }

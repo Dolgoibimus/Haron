@@ -14,5 +14,6 @@ data class OperationProgress(
 enum class OperationType(val labelRes: Int) {
     COPY(R.string.operation_type_copy),
     MOVE(R.string.operation_type_move),
-    DELETE(R.string.operation_type_delete)
+    DELETE(R.string.operation_type_delete),
+    ARCHIVE(R.string.operation_type_archive)
 }

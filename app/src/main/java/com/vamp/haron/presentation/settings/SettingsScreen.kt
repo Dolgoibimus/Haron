@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -216,6 +217,28 @@ fun SettingsScreen(
                 Switch(
                     checked = state.hapticEnabled,
                     onCheckedChange = { viewModel.setHapticEnabled(it) }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Marquee ---
+            SectionHeader(
+                icon = Icons.Filled.TextFields,
+                title = stringResource(R.string.marquee_section)
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.marquee_scroll_names), modifier = Modifier.weight(1f))
+                Switch(
+                    checked = state.marqueeEnabled,
+                    onCheckedChange = { viewModel.setMarqueeEnabled(it) }
                 )
             }
 

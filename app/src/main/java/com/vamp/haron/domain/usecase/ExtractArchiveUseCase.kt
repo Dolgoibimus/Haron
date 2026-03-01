@@ -22,7 +22,6 @@ import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
-import java.util.zip.ZipFile
 import javax.inject.Inject
 
 data class ExtractProgress(
@@ -67,63 +66,32 @@ class ExtractArchiveUseCase @Inject constructor(
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            if (password != null) {
-                extractZipWithPassword(file, destinationDir, selectedEntries, password, basePrefix)
-                return
+            // Always use zip4j — it supports split ZIP (.z01, .z02...) and passwords
+            val zip4j = Zip4jFile(file)
+            if (!password.isNullOrEmpty()) {
+                zip4j.setPassword(password.toCharArray())
             }
-            val zipFile = ZipFile(file)
-            zipFile.use { zip ->
-                val entries = zip.entries().toList().filter { ze ->
-                    !ze.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
-                        ze.name.trimEnd('/').startsWith(sel)
-                    })
-                }
-                val total = entries.size
-                entries.forEachIndexed { index, ze ->
-                    emit(ExtractProgress(index, total, ze.name.substringAfterLast('/')))
-                    val outputName = stripPrefix(ze.name, basePrefix)
-                    val outFile = File(destinationDir, outputName)
-                    outFile.parentFile?.mkdirs()
-                    zip.getInputStream(ze).use { input ->
-                        FileOutputStream(outFile).use { output ->
-                            input.copyTo(output)
-                        }
+            val headers = zip4j.fileHeaders.filter { h ->
+                !h.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
+                    h.fileName.trimEnd('/').startsWith(sel)
+                })
+            }
+            val total = headers.size
+            headers.forEachIndexed { index, header ->
+                emit(ExtractProgress(index, total, header.fileName.substringAfterLast('/')))
+                val outputName = stripPrefix(header.fileName, basePrefix)
+                val outFile = File(destinationDir, outputName)
+                outFile.parentFile?.mkdirs()
+                zip4j.getInputStream(header).use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        input.copyTo(output)
                     }
                 }
-                emit(ExtractProgress(total, total, "", isComplete = true))
             }
+            emit(ExtractProgress(total, total, "", isComplete = true))
         } finally {
             if (isContentUri) file.delete()
         }
-    }
-
-    private suspend fun FlowCollector<ExtractProgress>.extractZipWithPassword(
-        file: File,
-        destinationDir: String,
-        selectedEntries: Set<String>?,
-        password: String,
-        basePrefix: String
-    ) {
-        val zip4j = Zip4jFile(file)
-        zip4j.setPassword(password.toCharArray())
-        val headers = zip4j.fileHeaders.filter { h ->
-            !h.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
-                h.fileName.trimEnd('/').startsWith(sel)
-            })
-        }
-        val total = headers.size
-        headers.forEachIndexed { index, header ->
-            emit(ExtractProgress(index, total, header.fileName.substringAfterLast('/')))
-            val outputName = stripPrefix(header.fileName, basePrefix)
-            val outFile = File(destinationDir, outputName)
-            outFile.parentFile?.mkdirs()
-            zip4j.getInputStream(header).use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-        }
-        emit(ExtractProgress(total, total, "", isComplete = true))
     }
 
     private suspend fun FlowCollector<ExtractProgress>.extract7z(
