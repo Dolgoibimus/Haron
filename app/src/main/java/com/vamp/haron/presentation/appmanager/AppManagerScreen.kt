@@ -1,6 +1,14 @@
 package com.vamp.haron.presentation.appmanager
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,11 +53,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,6 +82,13 @@ fun AppManagerScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    @Suppress("DEPRECATION")
+    val uninstallLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.onUninstallResult(result.resultCode == android.app.Activity.RESULT_OK)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collect { message ->
@@ -177,7 +196,10 @@ fun AppManagerScreen(
                     items(state.apps, key = { it.packageName }) { app ->
                         AppItem(
                             app = app,
-                            onClick = { viewModel.selectApp(app) }
+                            onClick = { viewModel.selectApp(app) },
+                            isRemoving = state.removingPackage == app.packageName,
+                            onRemovalDone = { viewModel.onRemovalAnimationDone(app.packageName) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
@@ -195,7 +217,20 @@ fun AppManagerScreen(
             AppActionsSheet(
                 app = selectedApp,
                 onExtract = { viewModel.extractApk(selectedApp) },
-                onUninstall = { viewModel.uninstallApp(selectedApp) },
+                onUninstall = {
+                    val pkg = selectedApp.packageName
+                    try {
+                        @Suppress("DEPRECATION")
+                        uninstallLauncher.launch(
+                            Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.parse("package:$pkg")).apply {
+                                putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                            }
+                        )
+                        viewModel.markUninstalling(selectedApp)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onSettings = { viewModel.openAppSettings(selectedApp) }
             )
         }
@@ -205,38 +240,68 @@ fun AppManagerScreen(
 @Composable
 private fun AppItem(
     app: InstalledAppInfo,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isRemoving: Boolean = false,
+    onRemovalDone: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
+    val sweepFraction = remember { Animatable(1f) }
+    val rowAlpha = remember { Animatable(1f) }
+    val errorColor = MaterialTheme.colorScheme.error
+
+    LaunchedEffect(isRemoving) {
+        if (isRemoving) {
+            sweepFraction.animateTo(0f, tween(800, easing = LinearEasing))
+            rowAlpha.animateTo(0f, tween(400))
+            onRemovalDone()
+        }
+    }
+
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .graphicsLayer { alpha = rowAlpha.value }
+            .clickable(enabled = !isRemoving, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (app.icon != null) {
-            Image(
-                bitmap = app.icon.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                        RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.Android, null,
-                    Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+        Box(modifier = Modifier.size(40.dp)) {
+            if (app.icon != null) {
+                Image(
+                    bitmap = app.icon.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceContainerLow,
+                            RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Android, null,
+                        Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (isRemoving) {
+                Canvas(modifier = Modifier.fillMaxSize().padding(1.dp)) {
+                    drawArc(
+                        color = errorColor,
+                        startAngle = -90f,
+                        sweepAngle = sweepFraction.value * 360f,
+                        useCenter = false,
+                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
             }
         }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.haron.domain.model.InstalledAppInfo
@@ -32,7 +33,9 @@ data class AppManagerUiState(
     val searchQuery: String = "",
     val sortMode: AppSortMode = AppSortMode.NAME,
     val showSystemApps: Boolean = false,
-    val selectedApp: InstalledAppInfo? = null
+    val selectedApp: InstalledAppInfo? = null,
+    val uninstallingPackage: String? = null,
+    val removingPackage: String? = null
 )
 
 @HiltViewModel
@@ -98,17 +101,31 @@ class AppManagerViewModel @Inject constructor(
         _uiState.update { it.copy(selectedApp = null) }
     }
 
-    fun uninstallApp(app: InstalledAppInfo) {
-        try {
-            val intent = Intent(Intent.ACTION_DELETE).apply {
-                data = Uri.parse("package:${app.packageName}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    fun markUninstalling(app: InstalledAppInfo) {
+        _uiState.update { it.copy(selectedApp = null, uninstallingPackage = app.packageName) }
+    }
+
+    fun onUninstallResult(resultOk: Boolean) {
+        val pkg = _uiState.value.uninstallingPackage ?: return
+        if (resultOk) {
+            _uiState.update { it.copy(removingPackage = pkg, uninstallingPackage = null) }
+        } else {
+            // User cancelled or result unknown — double-check via PackageManager
+            @Suppress("DEPRECATION")
+            val gone = try { appContext.packageManager.getPackageInfo(pkg, 0); false }
+                       catch (_: Exception) { true }
+            if (gone) {
+                _uiState.update { it.copy(removingPackage = pkg, uninstallingPackage = null) }
+            } else {
+                _uiState.update { it.copy(uninstallingPackage = null) }
             }
-            appContext.startActivity(intent)
-        } catch (_: Exception) {
-            _toastMessage.tryEmit(appContext.getString(R.string.uninstall_dialog_failed))
         }
-        _uiState.update { it.copy(selectedApp = null) }
+    }
+
+    fun onRemovalAnimationDone(packageName: String) {
+        allApps = allApps.filter { it.packageName != packageName }
+        _uiState.update { it.copy(removingPackage = null) }
+        applyFilters()
     }
 
     fun openAppSettings(app: InstalledAppInfo) {

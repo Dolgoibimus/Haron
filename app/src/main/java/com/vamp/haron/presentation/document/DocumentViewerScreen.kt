@@ -1,8 +1,11 @@
 package com.vamp.haron.presentation.document
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,7 +38,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -209,6 +214,16 @@ fun DocumentViewerScreen(
         }
     }
 
+    // Selection key: reset to destroy SelectionContainer (clears selection + ActionMode)
+    var selectionKey by remember { mutableIntStateOf(0) }
+    DisposableEffect(Unit) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val listener = ClipboardManager.OnPrimaryClipChangedListener { selectionKey++ }
+        clipboard.addPrimaryClipChangedListener(listener)
+        onDispose { clipboard.removePrimaryClipChangedListener(listener) }
+    }
+    BackHandler { selectionKey++; onBack() }
+
     // Pre-load saved position (fast DB read finishes before slow document parsing)
     var savedItemIndex by remember { mutableStateOf(0) }
     var savedItemOffset by remember { mutableStateOf(0) }
@@ -314,6 +329,7 @@ fun DocumentViewerScreen(
                             .pointerInput(Unit) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = false)
+                                    val wasConsumed = down.isConsumed
                                     var wasPinch = false
                                     do {
                                         val event = awaitPointerEvent()
@@ -324,13 +340,13 @@ fun DocumentViewerScreen(
                                             event.changes.forEach { c -> c.consume() }
                                         }
                                     } while (event.changes.any { c -> c.pressed })
-                                    if (!wasPinch) {
+                                    if (!wasPinch && !wasConsumed) {
                                         micVisible = !micVisible
                                     }
                                 }
                             }
                     ) {
-                        SelectionContainer {
+                        key(selectionKey) { SelectionContainer {
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier
@@ -357,7 +373,7 @@ fun DocumentViewerScreen(
                                 }
                                 item { Spacer(Modifier.height(32.dp)) }
                             }
-                        }
+                        } }
 
                     }
                 }

@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.48 (Phase 4, Batch 48)
+**Текущая версия:** 0.49 (Phase 4, Batch 49)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -223,7 +223,7 @@ _(нет)_
 - Терминал: клавиатура не сворачивается после выполнения команды (FocusRequester)
 - Терминал: строка ввода привязана к верху клавиатуры (contentWindowInsets = WindowInsets.ime)
 
-### Batch 41 — Доверенные устройства + ренейм + условный Quick Send ⚠️ не проверено
+### Batch 41 — Доверенные устройства + ренейм + условный Quick Send ✅ проверено
 
 **Доверенные устройства (звёздочка):**
 - **HaronPreferences** (`data/datastore/`): `getDeviceAlias(nsdName)` / `setDeviceAlias(nsdName, alias)` — алиасы устройств (JSON Map в SharedPreferences, ключ `device_aliases`). `getTrustedDevices()` / `setDeviceTrusted(nsdName, trusted)` / `isDeviceTrusted(nsdName)` — доверенные устройства (StringSet, ключ `trusted_devices`).
@@ -270,7 +270,7 @@ _(нет)_
 
 **Файлы:** `MainActivity.kt` (ReceiveCompleteOverlay), `TransferHolder.kt`, `ExplorerScreen.kt`.
 
-### Batch 40 — Quick Send DnD ⚠️ не проверено
+### Batch 40 — Quick Send DnD ✅ проверено
 - **TransferProtocolNegotiator**: новый тип `TYPE_DROP_REQUEST` + `buildDropRequest(senderName, senderPort)` + `parseDropRequest()` → `DropRequestData`.
 - **ReceiveFileManager**: обработка DROP_REQUEST в listen loop, `DropRequestInfo` data class, `dropRequests: SharedFlow<DropRequestInfo>`.
 - **QuickSendState** (`state/QuickSendState.kt`): sealed interface — Idle, DraggingToDevice(filePath, fileName, dragOffset, haronDevices), DropTarget(deviceName, deviceAddress, devicePort), Sending(deviceName).
@@ -364,7 +364,15 @@ _(нет)_
 - **TextEditorScreen**: курсор + скролл + fontSizeSp. Debounce 1с + при выходе. Не переопределяет если открыт из поиска.
 - **MediaPlayerScreen**: позиция воспроизведения (seekTo), сохранение каждые 5 сек + при выходе.
 
-### Batch 48 — XLSX: открытие, пропорции колонок, per-cell borders, заголовки ⚠️ не проверено
+### Batch 49 — Менеджер приложений: удаление APK, анимация, защищённая папка ⚠️ не проверено
+- **AndroidManifest.xml**: добавлен `REQUEST_DELETE_PACKAGES` — обязателен с Android 9+ для работы интентов удаления приложений.
+- **AppManagerViewModel.kt**: удаление через `ActivityResultLauncher` вместо `startActivity`. Новые методы: `markUninstalling()`, `onUninstallResult()`, `onRemovalAnimationDone()`. Состояние: `uninstallingPackage`, `removingPackage` в UiState. Проверка через `PackageManager.getPackageInfo()` как fallback.
+- **AppManagerScreen.kt**: `rememberLauncherForActivityResult(StartActivityForResult)` — запуск `ACTION_UNINSTALL_PACKAGE` через Activity lifecycle. Анимация удаления: `Animatable` sweep fraction (800мс обратный круговой прогресс красным на иконке) → fade-out строки (400мс) → `animateItem()` для smooth removal из LazyColumn.
+- **ExplorerViewModel.kt**: `canNavigateUp()` возвращает `false` для `VIRTUAL_SECURE_PATH` — кнопка Назад не выходит из защищённого режима, только навигация внутри. Выход — только через кнопку Shield.
+- **DocumentViewerScreen.kt**: фикс копирования текста — `ClipboardManager.OnPrimaryClipChangedListener` + `key(selectionKey)` для сброса SelectionContainer после копирования. `BackHandler` для мгновенного закрытия ActionMode при выходе.
+- **DrawerMenu.kt**: `distinctBy { it.path }` для USB-томов — предотвращение краша от дублирующих ключей в LazyColumn.
+
+### Batch 48 — XLSX: открытие, пропорции колонок, per-cell borders, заголовки ✅ проверено
 - **ExplorerViewModel.kt**: добавлен тип `"spreadsheet"` в роутинг открытия файлов → таблицы (xlsx/xls/csv/ods) теперь открываются во встроенном просмотрщике документов, а не в системном диалоге.
 - **DocumentParser.kt (XLSX column widths)**: парсинг секции `<cols>` из sheet XML → извлечение ширин колонок по индексу. Передача `tableColWidths` → пропорциональные ширины колонок вместо контентного fallback.
 - **DocumentParser.kt (XLSX self-closing cells)**: новая regex `<c\b([^>]*?)(?:>(.*?)</c>|/>)` корректно обрабатывает оба варианта — самозакрывающиеся `<c ... />` (пустые ячейки merged-регионов) и обычные `<c ...>...</c>`. Предыдущая regex «проглатывала» контент следующей ячейки.
@@ -419,7 +427,7 @@ _(нет)_
 - **ExplorerScreen**: переписан `pointerInput` — теперь 4 зоны (лево-верх, лево-низ, право-верх, право-низ). Свайп вправо от левого края или влево от правого. Действие берётся из `state.gestureMappings`. LifecycleEventObserver для reload при ON_RESUME.
 - **SettingsScreen + SettingsViewModel**: секция "Жесты" с 4 строками (GestureRow), каждая с ExposedDropdownMenuBox для выбора действия. Кнопка "Сбросить по умолчанию".
 
-### Batch 32 — Встроенный терминал (простой) ⚠️ не проверено
+### Batch 32 — Встроенный терминал (простой) ✅ проверено
 - **TerminalViewModel**: `ProcessBuilder("sh", "-c", command)` с `currentDir` как рабочей директорией. Timeout 30 сек, max 500 строк вывода. Встроенные команды: `cd`, `pwd`, `clear`, `help`, `exit`. Остальные — через `sh -c`. История команд (до 100, навигация up/down). Парсинг командной строки с поддержкой кавычек.
 - **TerminalScreen**: тёмный фон (#1E1E1E), моноширинный шрифт, LazyColumn для вывода. Цветовое кодирование: зелёный для команд, красный для ошибок, серый для вывода. Поле ввода с prompt (текущая папка + $). Кнопки: отправить, история вверх/вниз. Авто-скролл к последней строке.
 - **Навигация**: `NavigationEvent.OpenTerminal`, `HaronRoutes.TERMINAL`, пункт "Терминал" в боковом меню (секция Инструменты, иконка Code).
@@ -433,12 +441,12 @@ _(нет)_
 - **OCR-поиск по фото**: `ImageLabeler.recognizeText()` — ML Kit Text Recognition (`com.google.mlkit:text-recognition:16.0.1`). Downscale до 1024px (больше чем для labeling — нужна читаемость). Timeout 10 сек/файл, только файлы <10MB. Результат объединяется с labels при VISUAL индексации.
 - **USB OTG**: `UsbStorageManager` — обнаружение removable volumes через `StorageVolumeHelper`, `BroadcastReceiver` на `ACTION_MEDIA_MOUNTED/UNMOUNTED/EJECT/BAD_REMOVAL`, `StateFlow<List<UsbVolume>>`. Безопасное извлечение: `sync` + reflection unmount через `StorageManager` hidden API, fallback. DrawerMenu — секция USB с иконкой, free/total space, кнопка Eject. ExplorerViewModel — toast при подключении, auto-navigate root при отключении.
 
-### Batch 29 bugfix — Исправление передачи файлов ⚠️ не проверено
+### Batch 29 bugfix — Исправление передачи файлов ✅ проверено
 - **HTTP сервер недоступен**: `getLocalIpAddress()` возвращал IP мобильных данных (rmnet) вместо WiFi. Fix: сначала `ConnectivityManager.getLinkProperties()` (возвращает active network = WiFi), затем fallback на `NetworkInterface` с приоритетом `wlan*`. Добавлен `host = "0.0.0.0"` в Ktor `embeddedServer()`. Логирование выбранного IP.
 - **Устройства не находятся**: `combine()` трёх Flow (WiFi Direct + NSD + Bluetooth) блокировался навсегда — WiFi Direct не эмитил начальное значение. Fix: добавлен `trySend(emptyList())` в `WifiDirectManager.discoverPeers()` до начала discovery. Теперь `combine()` сразу работает и показывает хотя бы BT-спаренные устройства.
 - **Bluetooth не отправляет (RFCOMM)**: `createRfcommSocketToServiceRecord()` выбрасывал `IOException: read failed, socket might closed or timeout, read ret: -1` на Samsung/LG/Huawei. Fix: reflection fallback `device.createRfcommSocket(1)` при неудаче стандартного метода. Информативное сообщение об ошибке при неудаче обоих методов.
 
-### Batch 29 — Доделка передачи файлов ⚠️ не проверено
+### Batch 29 — Доделка передачи файлов ✅ проверено
 - **ZXing QR-код**: заменён фейковый генератор на `QRCodeWriter` из `com.google.zxing:core:3.5.3`. Размер 512×512 для чёткости при масштабировании. Камера теперь реально считывает QR.
 - **ReceiveFileManager**: `@Singleton`, TCP `ServerSocket` на порту из диапазона 8080-8090. `startListening()` → `Flow<IncomingTransferRequest>` через `callbackFlow`. Парсит REQUEST через `TransferProtocolNegotiator`. `acceptTransfer()` → `Flow<TransferProgressInfo>` с побайтовым приёмом файлов. Файлы сохраняются в `Downloads/Haron/` с auto-rename при конфликте. Поддержка resume через offset в FILE_HEADER (`RandomAccessFile.seek()`).
 - **NSD регистрация**: при старте receive mode вызывается `nsdDiscoveryManager.registerService(port)`. При остановке — `unregisterService()`. Добавлен `NsdManager.RegistrationListener` с корректным `unregisterService()`. Другие Haron-устройства видят этот девайс через NSD discovery.

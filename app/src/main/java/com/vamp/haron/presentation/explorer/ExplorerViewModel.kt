@@ -1014,7 +1014,7 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(panelId)
         if (panel.isArchiveMode) return true
         val path = panel.currentPath
-        if (path == HaronConstants.VIRTUAL_SECURE_PATH) return true
+        if (path == HaronConstants.VIRTUAL_SECURE_PATH) return false
         if (secureFolderRepository.isFileProtected(path) ||
             (!java.io.File(path).exists() && secureFolderRepository.hasProtectedDescendants(path))) return canNavigateBack(panelId)
         return fileRepository.getParentPath(path) != null

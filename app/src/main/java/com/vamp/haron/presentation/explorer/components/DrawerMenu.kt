@@ -162,7 +162,7 @@ fun DrawerMenu(
 
             // --- USB OTG ---
             if (usbVolumes.isNotEmpty()) {
-                items(usbVolumes, key = { "usb_${it.path}" }) { volume ->
+                items(usbVolumes.distinctBy { it.path }, key = { "usb_${it.path}" }) { volume ->
                     val context = LocalContext.current
                     Row(
                         modifier = Modifier
