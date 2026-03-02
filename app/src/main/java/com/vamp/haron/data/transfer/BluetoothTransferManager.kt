@@ -10,6 +10,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Environment
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.DiscoveredDevice
@@ -23,9 +25,11 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import java.io.BufferedReader
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.io.RandomAccessFile
 import java.util.UUID
@@ -166,6 +170,29 @@ class BluetoothTransferManager @Inject constructor(
             output.writeUTF(request)
             output.flush()
 
+            // Wait for ACCEPT/DECLINE with timeout (handshake — same as TCP path)
+            val reader = BufferedReader(InputStreamReader(socket.inputStream))
+            val waitStart = System.currentTimeMillis()
+            while (socket.inputStream.available() == 0) {
+                if (System.currentTimeMillis() - waitStart > 10_000) {
+                    throw java.io.IOException(
+                        "No response from receiver (timeout). Make sure the target device has Haron open in receive mode."
+                    )
+                }
+                Thread.sleep(200)
+            }
+            val response = reader.readLine()
+                ?: throw java.io.IOException(
+                    "No response from receiver. Make sure the target device has Haron open in receive mode."
+                )
+            val responseType = TransferProtocolNegotiator.parseType(response)
+            if (responseType == TransferProtocolNegotiator.TYPE_DECLINE) {
+                val reason = TransferProtocolNegotiator.parseDecline(response)
+                throw java.io.IOException("Transfer declined: $reason")
+            }
+
+            EcosystemLogger.d(HaronConstants.TAG, "BT handshake OK, sending ${files.size} files")
+
             // Send files sequentially
             files.forEachIndexed { index, file ->
                 val header = TransferProtocolNegotiator.buildFileHeader(file.name, file.length(), index)
@@ -256,7 +283,8 @@ class BluetoothTransferManager @Inject constructor(
                         deviceName = deviceName,
                         files = requestData.files,
                         protocol = requestData.protocol,
-                        socket = java.net.Socket() // Placeholder — BT uses its own socket
+                        socket = java.net.Socket(), // Placeholder — BT uses its own socket
+                        isBluetooth = true
                     )
                     trySend(request)
 
@@ -428,6 +456,53 @@ class BluetoothTransferManager @Inject constructor(
             speedBytesPerSec = speed,
             etaSeconds = eta
         )
+    }
+
+    /**
+     * Send files via standard Android Bluetooth OPP (Object Push Profile).
+     * Works with ANY Bluetooth device — not limited to Haron.
+     * Launches system Bluetooth share UI.
+     */
+    @SuppressLint("MissingPermission")
+    fun sendViaSystemBluetooth(files: List<File>) {
+        bluetoothAdapter?.cancelDiscovery()
+
+        val uris = ArrayList(files.map { file ->
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        })
+
+        val intent = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).apply {
+                type = getMimeType(files[0].name)
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+            }
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            }
+        }
+
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            // Direct to system Bluetooth app
+            intent.setPackage("com.android.bluetooth")
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            EcosystemLogger.w(HaronConstants.TAG, "System BT app not found, using chooser: ${e.message}")
+            // Fallback: share chooser
+            intent.setPackage(null)
+            intent.component = null
+            context.startActivity(Intent.createChooser(intent, "Bluetooth").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        }
+    }
+
+    private fun getMimeType(fileName: String): String {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
     }
 
     companion object {

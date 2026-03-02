@@ -957,6 +957,7 @@
     <string name="cast_connecting">Подключение к %s\u2026</string>
     <string name="cast_connected">Подключено к %s</string>
     <string name="cast_disconnected">Отключено</string>
+    <string name="cast_disconnect">Отключить</string>
     <string name="cast_chromecast">Chromecast</string>
     <string name="cast_miracast">Miracast</string>
     <string name="cast_dlna">DLNA</string>

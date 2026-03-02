@@ -57,7 +57,8 @@ fun CastOverlay(
                         isPlaying = false,
                         currentPositionMs = 0,
                         durationMs = 0,
-                        onRemoteInput = { event -> castViewModel.sendRemoteInput(event) }
+                        onRemoteInput = { event -> castViewModel.sendRemoteInput(event) },
+                        onDisconnect = { castViewModel.disconnect() }
                     )
                 }
                 CastMode.SINGLE_MEDIA -> {
@@ -66,7 +67,8 @@ fun CastOverlay(
                         isPlaying = isPlaying,
                         currentPositionMs = positionMs,
                         durationMs = durationMs,
-                        onRemoteInput = { event -> castViewModel.sendRemoteInput(event) }
+                        onRemoteInput = { event -> castViewModel.sendRemoteInput(event) },
+                        onDisconnect = { castViewModel.disconnect() }
                     )
                 }
             }

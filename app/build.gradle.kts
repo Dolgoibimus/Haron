@@ -106,6 +106,8 @@ dependencies {
     // HTTP server (Ktor CIO — file transfer)
     implementation("io.ktor:ktor-server-core:2.3.12")
     implementation("io.ktor:ktor-server-cio:2.3.12")
+    implementation("io.ktor:ktor-server-partial-content:2.3.12")
+    implementation("io.ktor:ktor-server-auto-head-response:2.3.12")
 
     // Diff utils (file comparison)
     implementation("io.github.java-diff-utils:java-diff-utils:4.12")

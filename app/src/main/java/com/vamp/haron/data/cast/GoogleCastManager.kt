@@ -134,6 +134,7 @@ class GoogleCastManager @Inject constructor(
 
         val mediaInfo = MediaInfo.Builder(url)
             .setContentType(mimeType)
+            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setMetadata(metadata)
             .build()
 
@@ -235,6 +236,12 @@ class GoogleCastManager @Inject constructor(
         currentSession = null
         _isConnected.value = false
         _connectedDeviceName.value = null
+    }
+
+    fun getCurrentVolume(): Double = currentSession?.volume ?: 0.5
+
+    fun setVolume(volume: Double) {
+        currentSession?.setVolume(volume.coerceIn(0.0, 1.0))
     }
 
     fun getCastContext(): CastContext? = castContext

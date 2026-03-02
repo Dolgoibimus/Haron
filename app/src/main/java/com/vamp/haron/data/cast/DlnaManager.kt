@@ -71,35 +71,59 @@ class DlnaManager @Inject constructor(
         renderers.clear()
         val discovered = mutableMapOf<String, CastDevice>()
 
+        EcosystemLogger.d(HaronConstants.TAG, "DLNA: starting SSDP discovery (M-SEARCH MediaRenderer:1)")
+
         try {
             val ssdpAddress = InetAddress.getByName(SSDP_ADDRESS)
             val socket = MulticastSocket(0)
             socket.soTimeout = SSDP_TIMEOUT_MS
 
-            val searchMessage = buildString {
-                append("M-SEARCH * HTTP/1.1\r\n")
-                append("HOST: $SSDP_ADDRESS:$SSDP_PORT\r\n")
-                append("MAN: \"ssdp:discover\"\r\n")
-                append("MX: $SSDP_MX\r\n")
-                append("ST: $MEDIA_RENDERER_ST\r\n")
-                append("\r\n")
+            // Also send to ssdp:all for broader discovery
+            val targets = listOf(MEDIA_RENDERER_ST, "ssdp:all")
+            for (st in targets) {
+                val searchMessage = buildString {
+                    append("M-SEARCH * HTTP/1.1\r\n")
+                    append("HOST: $SSDP_ADDRESS:$SSDP_PORT\r\n")
+                    append("MAN: \"ssdp:discover\"\r\n")
+                    append("MX: $SSDP_MX\r\n")
+                    append("ST: $st\r\n")
+                    append("\r\n")
+                }
+                val data = searchMessage.toByteArray()
+                val packet = DatagramPacket(data, data.size, ssdpAddress, SSDP_PORT)
+                socket.send(packet)
+                EcosystemLogger.d(HaronConstants.TAG, "DLNA: sent M-SEARCH ST=$st")
             }
-
-            val data = searchMessage.toByteArray()
-            val packet = DatagramPacket(data, data.size, ssdpAddress, SSDP_PORT)
-            socket.send(packet)
 
             val buf = ByteArray(4096)
             val deadline = System.currentTimeMillis() + SSDP_TIMEOUT_MS
+            var responseCount = 0
 
             while (System.currentTimeMillis() < deadline) {
                 try {
                     val recv = DatagramPacket(buf, buf.size)
                     socket.receive(recv)
                     val response = String(recv.data, 0, recv.length)
-                    val location = parseLocationHeader(response) ?: continue
+                    responseCount++
+                    val from = recv.address?.hostAddress ?: "?"
+                    EcosystemLogger.d(HaronConstants.TAG, "DLNA: SSDP response #$responseCount from $from")
 
-                    val renderer = fetchDeviceDescription(location) ?: continue
+                    val location = parseLocationHeader(response)
+                    if (location == null) {
+                        // Log the ST header to see what device type responded
+                        val stLine = response.lines().find { it.startsWith("ST:", ignoreCase = true) }
+                        EcosystemLogger.d(HaronConstants.TAG, "DLNA: no LOCATION in response, ${stLine ?: "no ST"}")
+                        continue
+                    }
+
+                    EcosystemLogger.d(HaronConstants.TAG, "DLNA: LOCATION=$location")
+
+                    val renderer = fetchDeviceDescription(location)
+                    if (renderer == null) {
+                        EcosystemLogger.d(HaronConstants.TAG, "DLNA: not a MediaRenderer or parse failed: $location")
+                        continue
+                    }
+
                     if (renderer.udn !in renderers) {
                         renderers[renderer.udn] = renderer
                         discovered[renderer.udn] = CastDevice(
@@ -107,6 +131,7 @@ class DlnaManager @Inject constructor(
                             name = renderer.friendlyName,
                             type = CastType.DLNA
                         )
+                        EcosystemLogger.d(HaronConstants.TAG, "DLNA: found renderer '${renderer.friendlyName}' (${renderer.udn}), controlURL=${renderer.controlUrl}")
                         emit(discovered.values.toList())
                     }
                 } catch (_: java.net.SocketTimeoutException) {
@@ -115,6 +140,7 @@ class DlnaManager @Inject constructor(
             }
 
             socket.close()
+            EcosystemLogger.d(HaronConstants.TAG, "DLNA: discovery done. $responseCount responses, ${discovered.size} renderers found")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -122,6 +148,7 @@ class DlnaManager @Inject constructor(
         }
 
         if (discovered.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "DLNA: no renderers found")
             emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
@@ -395,7 +422,14 @@ $paramsXml
             conn.disconnect()
 
             val baseUrl = "${url.protocol}://${url.host}:${url.port}"
-            parseDeviceXml(xml, baseUrl)
+            val renderer = parseDeviceXml(xml, baseUrl)
+            if (renderer == null) {
+                // Log device type for debugging
+                val nameMatch = Regex("<friendlyName>([^<]+)</friendlyName>").find(xml)
+                val typeMatch = Regex("<deviceType>([^<]+)</deviceType>").find(xml)
+                EcosystemLogger.d(HaronConstants.TAG, "DLNA: device '${nameMatch?.groupValues?.get(1) ?: "?"}' type=${typeMatch?.groupValues?.get(1) ?: "?"} — not a renderer")
+            }
+            renderer
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "DLNA fetch description error: ${e.message}")
             null

@@ -182,9 +182,20 @@ class TransferRepositoryImpl @Inject constructor(
     private fun sendViaBluetooth(
         files: List<File>,
         device: DiscoveredDevice
-    ): Flow<TransferProgressInfo> {
-        return bluetoothTransferManager.sendFiles(device.address, files)
-    }
+    ): Flow<TransferProgressInfo> = flow {
+        // Standard Android Bluetooth OPP — works with any device
+        bluetoothTransferManager.sendViaSystemBluetooth(files)
+        val totalBytes = files.sumOf { it.length() }
+        emit(
+            TransferProgressInfo(
+                bytesTransferred = totalBytes,
+                totalBytes = totalBytes,
+                totalFiles = files.size,
+                currentFileIndex = files.size,
+                currentFileName = ""
+            )
+        )
+    }.flowOn(Dispatchers.IO)
 
     /**
      * Send files directly to another Haron device via TCP socket.

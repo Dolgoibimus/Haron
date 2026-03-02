@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -42,6 +43,7 @@ fun MediaRemotePanel(
     currentPositionMs: Long,
     durationMs: Long,
     onRemoteInput: (RemoteInputEvent) -> Unit,
+    onDisconnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -56,11 +58,26 @@ fun MediaRemotePanel(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                stringResource(R.string.cast_now_playing, deviceName),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(Modifier.width(32.dp))
+                Text(
+                    stringResource(R.string.cast_now_playing, deviceName),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                IconButton(onClick = onDisconnect, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.cast_disconnect),
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Spacer(Modifier.height(12.dp))
 
@@ -102,7 +119,7 @@ fun MediaRemotePanel(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { onRemoteInput(RemoteInputEvent.VolumeChange(-0.1f)) }) {
+                IconButton(onClick = { onRemoteInput(RemoteInputEvent.VolumeChange(-0.01f)) }) {
                     Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = null, modifier = Modifier.size(24.dp))
                 }
                 Spacer(Modifier.width(8.dp))
@@ -126,7 +143,7 @@ fun MediaRemotePanel(
                     Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.next), modifier = Modifier.size(32.dp))
                 }
                 Spacer(Modifier.width(8.dp))
-                IconButton(onClick = { onRemoteInput(RemoteInputEvent.VolumeChange(0.1f)) }) {
+                IconButton(onClick = { onRemoteInput(RemoteInputEvent.VolumeChange(0.01f)) }) {
                     Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(24.dp))
                 }
             }

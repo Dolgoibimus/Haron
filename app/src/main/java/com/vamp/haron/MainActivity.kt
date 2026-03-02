@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -99,6 +100,12 @@ class MainActivity : FragmentActivity() {
 
     @javax.inject.Inject
     lateinit var receiveFileManager: com.vamp.haron.data.transfer.ReceiveFileManager
+
+    @javax.inject.Inject
+    lateinit var googleCastManager: com.vamp.haron.data.cast.GoogleCastManager
+
+    @javax.inject.Inject
+    lateinit var dlnaManager: com.vamp.haron.data.cast.DlnaManager
 
     private val appLockViewModel: AppLockViewModel by viewModels()
 
@@ -311,6 +318,33 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        val castConnected = googleCastManager.isConnected.value || dlnaManager.isConnected.value
+        if (castConnected) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    if (dlnaManager.isConnected.value) {
+                        dlnaManager.sendRemoteInput(com.vamp.haron.domain.model.RemoteInputEvent.VolumeChange(0.01f))
+                    } else {
+                        val current = googleCastManager.getCurrentVolume()
+                        googleCastManager.setVolume((current + 0.01).coerceIn(0.0, 1.0))
+                    }
+                    return true
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    if (dlnaManager.isConnected.value) {
+                        dlnaManager.sendRemoteInput(com.vamp.haron.domain.model.RemoteInputEvent.VolumeChange(-0.01f))
+                    } else {
+                        val current = googleCastManager.getCurrentVolume()
+                        googleCastManager.setVolume((current - 0.01).coerceIn(0.0, 1.0))
+                    }
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onNewIntent(intent: Intent) {

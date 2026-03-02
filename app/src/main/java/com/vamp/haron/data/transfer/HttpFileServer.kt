@@ -8,6 +8,8 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
 import io.ktor.server.engine.*
+import io.ktor.server.plugins.autohead.*
+import io.ktor.server.plugins.partialcontent.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import android.graphics.Bitmap
@@ -46,6 +48,8 @@ class HttpFileServer @Inject constructor(
         actualPort = port
 
         engine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
+            install(PartialContent)
+            install(AutoHeadResponse)
             routing {
                 get("/") {
                     call.respondText(buildHtmlPage(sharedFiles), ContentType.Text.Html)
@@ -89,23 +93,8 @@ class HttpFileServer @Inject constructor(
                         call.respondText("File not found", status = HttpStatusCode.NotFound)
                         return@get
                     }
-                    val mimeType = guessMimeType(file.extension)
-                    val encodedName = URLEncoder.encode(file.name, "UTF-8").replace("+", "%20")
-                    call.response.header(
-                        HttpHeaders.ContentDisposition,
-                        "inline; filename*=UTF-8''$encodedName"
-                    )
-                    call.response.header(HttpHeaders.ContentLength, file.length().toString())
-                    call.respondOutputStream(
-                        contentType = ContentType.parse(mimeType),
-                        status = HttpStatusCode.OK
-                    ) {
-                        withContext(Dispatchers.IO) {
-                            file.inputStream().use { input ->
-                                input.copyTo(this@respondOutputStream, bufferSize = 8192)
-                            }
-                        }
-                    }
+                    call.response.header(HttpHeaders.AcceptRanges, "bytes")
+                    call.respondFile(file)
                 }
 
                 // JSON API for Haron-to-Haron QR download

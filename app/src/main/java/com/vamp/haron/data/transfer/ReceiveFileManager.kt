@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
@@ -45,7 +46,8 @@ data class IncomingTransferRequest(
     val deviceName: String,
     val files: List<TransferProtocolNegotiator.FileInfo>,
     val protocol: String,
-    internal val socket: Socket
+    internal val socket: Socket,
+    val isBluetooth: Boolean = false
 )
 
 /**
@@ -61,7 +63,8 @@ data class QuickSendPending(
 class ReceiveFileManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val nsdDiscoveryManager: NsdDiscoveryManager,
-    private val preferences: HaronPreferences
+    private val preferences: HaronPreferences,
+    private val bluetoothTransferManager: BluetoothTransferManager
 ) {
     /** Own CoroutineScope — server lives independently of any Activity/ViewModel */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -70,6 +73,7 @@ class ReceiveFileManager @Inject constructor(
     @Volatile
     private var listening = false
     private var serverJob: Job? = null
+    private var btJob: Job? = null
 
     private var pendingRequest: IncomingTransferRequest? = null
 
@@ -198,6 +202,20 @@ class ReceiveFileManager @Inject constructor(
             }
             EcosystemLogger.d(HaronConstants.TAG, "ReceiveFileManager server loop ended")
         }
+
+        // Start Bluetooth RFCOMM listener alongside TCP
+        btJob = scope.launch {
+            try {
+                bluetoothTransferManager.startListening().collect { btRequest ->
+                    pendingRequest = btRequest
+                    _incomingRequests.tryEmit(btRequest)
+                }
+            } catch (e: Exception) {
+                if (listening) {
+                    EcosystemLogger.e(HaronConstants.TAG, "BT listener error: ${e.message}")
+                }
+            }
+        }
     }
 
     /**
@@ -205,9 +223,17 @@ class ReceiveFileManager @Inject constructor(
      */
     fun acceptTransfer(): Flow<TransferProgressInfo> = flow {
         val request = pendingRequest ?: throw IllegalStateException("No pending request")
-        val socket = request.socket
         pendingRequest = null
 
+        // Bluetooth path — delegate to BluetoothTransferManager
+        if (request.isBluetooth) {
+            emitAll(bluetoothTransferManager.acceptBtTransfer(request.files))
+            _receiveCompleted.tryEmit(request.files.size)
+            return@flow
+        }
+
+        // TCP path
+        val socket = request.socket
         try {
             val output = PrintWriter(socket.getOutputStream(), true)
             val input = DataInputStream(socket.getInputStream())
@@ -302,6 +328,10 @@ class ReceiveFileManager @Inject constructor(
     fun declineTransfer(reason: String = "User declined") {
         val request = pendingRequest ?: return
         pendingRequest = null
+        if (request.isBluetooth) {
+            bluetoothTransferManager.declineBtTransfer(reason)
+            return
+        }
         try {
             val output = PrintWriter(request.socket.getOutputStream(), true)
             output.println(TransferProtocolNegotiator.buildDecline(reason))
@@ -315,6 +345,9 @@ class ReceiveFileManager @Inject constructor(
         listening = false
         serverJob?.cancel()
         serverJob = null
+        btJob?.cancel()
+        btJob = null
+        bluetoothTransferManager.stopListening()
         nsdDiscoveryManager.unregisterService()
         try {
             serverSocket?.close()
