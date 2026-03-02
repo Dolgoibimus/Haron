@@ -27,4 +27,11 @@ object HaronConstants {
 
     // Cast
     const val CAST_APP_ID = "CC1AD845" // Default Media Receiver
+
+    // SMB
+    const val SMB_PREFIX = "smb://"
+    const val SMB_CREDENTIAL_KEYSTORE_ALIAS = "haron_smb_cred_key"
+    const val SMB_CREDENTIAL_FILE = "smb_credentials.enc"
+    const val SMB_CONNECTION_TIMEOUT_SEC = 10L
+    const val SMB_IDLE_TIMEOUT_MS = 300_000L
 }

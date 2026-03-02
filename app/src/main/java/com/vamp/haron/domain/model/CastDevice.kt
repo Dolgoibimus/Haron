@@ -8,5 +8,6 @@ data class CastDevice(
 
 enum class CastType {
     CHROMECAST,
-    MIRACAST
+    MIRACAST,
+    DLNA
 }

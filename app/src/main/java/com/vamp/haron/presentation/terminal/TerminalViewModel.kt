@@ -218,12 +218,28 @@ class TerminalViewModel @Inject constructor(
             else -> File(_state.value.currentDir, args[0]).canonicalPath
         }
         val dir = File(target)
-        return if (dir.isDirectory) {
-            _state.update { it.copy(currentDir = dir.canonicalPath) }
-            emptyList()
-        } else {
-            listOf(TerminalLine("cd: $target: No such directory", isError = true))
+        if (!dir.isDirectory) {
+            return listOf(TerminalLine("cd: $target: No such directory", isError = true))
         }
+        // Case-sensitive check: sdcardfs/FUSE is case-insensitive,
+        // verify each path segment matches actual directory name
+        if (!matchesCaseSensitive(dir)) {
+            return listOf(TerminalLine("cd: $target: No such directory (case mismatch)", isError = true))
+        }
+        _state.update { it.copy(currentDir = dir.canonicalPath) }
+        return emptyList()
+    }
+
+    private fun matchesCaseSensitive(target: File): Boolean {
+        // Walk from target up to root, checking each segment
+        var current = target.canonicalFile
+        while (current.parent != null) {
+            val parent = current.parentFile ?: return true
+            val actualNames = parent.list() ?: return true
+            if (current.name !in actualNames) return false
+            current = parent
+        }
+        return true
     }
 
     private suspend fun executeExternal(command: String): List<TerminalLine> {

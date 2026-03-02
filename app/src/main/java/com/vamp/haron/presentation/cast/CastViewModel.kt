@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.cast
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.haron.data.cast.DlnaManager
 import com.vamp.haron.data.cast.GoogleCastManager
 import com.vamp.haron.data.cast.MiracastManager
 import com.vamp.haron.data.transfer.HttpFileServer
@@ -15,9 +16,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -27,17 +30,41 @@ import javax.inject.Inject
 class CastViewModel @Inject constructor(
     val castManager: GoogleCastManager,
     private val miracastManager: MiracastManager,
+    private val dlnaManager: DlnaManager,
     private val httpFileServer: HttpFileServer
 ) : ViewModel() {
 
     val isAvailable = castManager.isAvailable
-    val isConnected = castManager.isConnected
-    val connectedDeviceName = castManager.connectedDeviceName
 
-    // Media playback state from Cast session
-    val mediaIsPlaying = castManager.mediaIsPlaying
-    val mediaPositionMs = castManager.mediaPositionMs
-    val mediaDurationMs = castManager.mediaDurationMs
+    val isConnected = combine(
+        castManager.isConnected,
+        dlnaManager.isConnected
+    ) { cast, dlna -> cast || dlna }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val connectedDeviceName = combine(
+        castManager.connectedDeviceName,
+        dlnaManager.connectedDeviceName
+    ) { cast, dlna -> cast ?: dlna }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val mediaIsPlaying = combine(
+        castManager.mediaIsPlaying,
+        dlnaManager.mediaIsPlaying
+    ) { cast, dlna -> cast || dlna }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val mediaPositionMs = combine(
+        castManager.mediaPositionMs,
+        dlnaManager.mediaPositionMs
+    ) { cast, dlna -> if (cast > 0) cast else dlna }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
+
+    val mediaDurationMs = combine(
+        castManager.mediaDurationMs,
+        dlnaManager.mediaDurationMs
+    ) { cast, dlna -> if (cast > 0) cast else dlna }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
 
     private val _showDeviceSheet = MutableStateFlow(false)
     val showDeviceSheet: StateFlow<Boolean> = _showDeviceSheet.asStateFlow()
@@ -60,7 +87,7 @@ class CastViewModel @Inject constructor(
     private var pdfPageCount: Int = 0
 
     init {
-        // Auto-cast when session connects if there's a pending request
+        // Auto-cast when Chromecast session connects if there's a pending request
         viewModelScope.launch {
             castManager.isConnected.collect { connected ->
                 if (connected) {
@@ -74,7 +101,7 @@ class CastViewModel @Inject constructor(
             }
         }
 
-        // Poll media position every second when connected
+        // Poll media position every second when Chromecast connected
         viewModelScope.launch {
             while (isActive) {
                 if (castManager.isConnected.value) {
@@ -101,8 +128,9 @@ class CastViewModel @Inject constructor(
         discoveryJob = viewModelScope.launch {
             combine(
                 castManager.discoverCastDevices(),
-                miracastManager.discoverDisplays()
-            ) { cast, miracast -> cast + miracast }
+                miracastManager.discoverDisplays(),
+                dlnaManager.discoverDevices()
+            ) { cast, miracast, dlna -> cast + miracast + dlna }
                 .collect { allDevices ->
                     _devices.value = allDevices
                     _isSearching.value = false
@@ -120,16 +148,38 @@ class CastViewModel @Inject constructor(
         when (device.type) {
             CastType.CHROMECAST -> castManager.selectCastDevice(device.id)
             CastType.MIRACAST -> miracastManager.selectRoute(device.id)
+            CastType.DLNA -> { /* DLNA connects on castMedia, no separate select */ }
         }
         hideSheet()
     }
 
     fun selectDeviceAndCast(device: CastDevice, filePath: String, title: String = "") {
-        if (device.type == CastType.CHROMECAST) {
-            pendingCastPath = filePath
-            pendingCastTitle = title
+        when (device.type) {
+            CastType.CHROMECAST -> {
+                pendingCastPath = filePath
+                pendingCastTitle = title
+                selectDevice(device)
+            }
+            CastType.DLNA -> {
+                hideSheet()
+                castMediaToDlna(device, filePath, title)
+            }
+            CastType.MIRACAST -> {
+                selectDevice(device)
+            }
         }
-        selectDevice(device)
+    }
+
+    private fun castMediaToDlna(device: CastDevice, filePath: String, title: String) {
+        viewModelScope.launch {
+            val file = File(filePath)
+            if (!file.exists()) return@launch
+
+            httpFileServer.start(listOf(file))
+            val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
+            val mimeType = guessMimeType(file.extension)
+            dlnaManager.castMedia(device.id, streamUrl, mimeType, title.ifEmpty { file.name })
+        }
     }
 
     fun castMedia(filePath: String, title: String = "") {
@@ -140,12 +190,22 @@ class CastViewModel @Inject constructor(
             httpFileServer.start(listOf(file))
             val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
             val mimeType = guessMimeType(file.extension)
-            castManager.castMedia(streamUrl, mimeType, title)
+
+            val dlnaDeviceId = dlnaManager.connectedDeviceId
+            if (dlnaDeviceId != null) {
+                dlnaManager.castMedia(dlnaDeviceId, streamUrl, mimeType, title.ifEmpty { file.name })
+            } else {
+                castManager.castMedia(streamUrl, mimeType, title)
+            }
         }
     }
 
     fun sendRemoteInput(event: RemoteInputEvent) {
-        castManager.sendRemoteInput(event)
+        if (dlnaManager.isConnected.value) {
+            dlnaManager.sendRemoteInput(event)
+        } else {
+            castManager.sendRemoteInput(event)
+        }
     }
 
     // --- Extended Cast modes ---
@@ -157,7 +217,11 @@ class CastViewModel @Inject constructor(
             httpFileServer.start(emptyList())
             httpFileServer.setupSlideshow(imageFiles, config.intervalSec)
             val url = httpFileServer.getSlideshowUrl() ?: return@launch
-            castManager.castMedia(url, "text/html", "Slideshow")
+            if (dlnaManager.isConnected.value) {
+                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "text/html", "Slideshow")
+            } else {
+                castManager.castMedia(url, "text/html", "Slideshow")
+            }
         }
     }
 
@@ -167,7 +231,6 @@ class CastViewModel @Inject constructor(
             val file = File(pdfPath)
             if (!file.exists()) return@launch
 
-            // Count pages
             val pageCount = try {
                 val fd = android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
                 val renderer = android.graphics.pdf.PdfRenderer(fd)
@@ -183,9 +246,12 @@ class CastViewModel @Inject constructor(
             httpFileServer.start(emptyList())
             httpFileServer.setupPdf(file)
 
-            // Cast first page
             val url = httpFileServer.getPresentationUrl(0) ?: return@launch
-            castManager.castMedia(url, "image/png", file.nameWithoutExtension)
+            if (dlnaManager.isConnected.value) {
+                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "image/png", file.nameWithoutExtension)
+            } else {
+                castManager.castMedia(url, "image/png", file.nameWithoutExtension)
+            }
         }
     }
 
@@ -210,7 +276,11 @@ class CastViewModel @Inject constructor(
     private fun castPresentationPage(page: Int) {
         viewModelScope.launch {
             val url = httpFileServer.getPresentationUrl(page) ?: return@launch
-            castManager.castMedia(url, "image/png", "Page ${page + 1}")
+            if (dlnaManager.isConnected.value) {
+                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "image/png", "Page ${page + 1}")
+            } else {
+                castManager.castMedia(url, "image/png", "Page ${page + 1}")
+            }
         }
     }
 
@@ -220,7 +290,11 @@ class CastViewModel @Inject constructor(
             httpFileServer.start(emptyList())
             httpFileServer.setupFileInfo(name, path, size, modified, mimeType)
             val url = httpFileServer.getFileInfoUrl() ?: return@launch
-            castManager.castMedia(url, "text/html", name)
+            if (dlnaManager.isConnected.value) {
+                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "text/html", name)
+            } else {
+                castManager.castMedia(url, "text/html", name)
+            }
         }
     }
 
@@ -232,6 +306,7 @@ class CastViewModel @Inject constructor(
         _castMode.value = CastMode.SINGLE_MEDIA
         _presentationState.value = PresentationState()
         castManager.disconnect()
+        dlnaManager.disconnect()
         httpFileServer.stop()
     }
 

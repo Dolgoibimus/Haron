@@ -12,24 +12,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.vamp.haron.R
-import com.vamp.haron.data.cast.GoogleCastManager
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun CastButton(
-    castManager: GoogleCastManager,
+    isConnected: StateFlow<Boolean>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isAvailable by castManager.isAvailable.collectAsState()
-    val isConnected by castManager.isConnected.collectAsState()
-
-    if (!isAvailable) return
+    val connected by isConnected.collectAsState()
 
     IconButton(onClick = onClick, modifier = modifier) {
         Icon(
-            imageVector = if (isConnected) Icons.Filled.CastConnected else Icons.Filled.Cast,
+            imageVector = if (connected) Icons.Filled.CastConnected else Icons.Filled.Cast,
             contentDescription = stringResource(R.string.cast_title),
-            tint = if (isConnected) MaterialTheme.colorScheme.primary
+            tint = if (connected) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

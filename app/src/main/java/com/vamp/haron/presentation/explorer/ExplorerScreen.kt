@@ -814,7 +814,39 @@ fun ExplorerScreen(
         }
     }
 
-    // Dialogs
+    ExplorerDialogs(
+        state = state,
+        viewModel = viewModel,
+        context = context,
+        onOpenMediaPlayer = onOpenMediaPlayer,
+        onOpenTextEditor = onOpenTextEditor,
+        onOpenGallery = onOpenGallery,
+        onOpenPdfReader = onOpenPdfReader,
+        onOpenDocumentViewer = onOpenDocumentViewer,
+        onCastModeSelected = onCastModeSelected
+    )
+
+    ExplorerOverlays(
+        state = state,
+        viewModel = viewModel,
+        context = context,
+        showDrawerOrShelf = showDrawerOrShelf,
+        safLauncher = safLauncher
+    )
+}
+
+@Composable
+private fun ExplorerDialogs(
+    state: com.vamp.haron.presentation.explorer.state.ExplorerUiState,
+    viewModel: ExplorerViewModel,
+    context: Context,
+    onOpenMediaPlayer: (Int) -> Unit,
+    onOpenTextEditor: (String, String) -> Unit,
+    onOpenGallery: (Int) -> Unit,
+    onOpenPdfReader: (String, String) -> Unit,
+    onOpenDocumentViewer: (String, String) -> Unit,
+    onCastModeSelected: (com.vamp.haron.domain.model.CastMode, List<String>) -> Unit
+) {
     when (val dialog = state.dialogState) {
         is DialogState.ConfirmDelete -> {
             DeleteConfirmDialog(
@@ -1047,7 +1079,16 @@ fun ExplorerScreen(
         }
         DialogState.None -> { /* no dialog */ }
     }
+}
 
+@Composable
+private fun ExplorerOverlays(
+    state: com.vamp.haron.presentation.explorer.state.ExplorerUiState,
+    viewModel: ExplorerViewModel,
+    context: Context,
+    showDrawerOrShelf: Boolean,
+    safLauncher: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>
+) {
     // Shield auth overlay
     if (state.showShieldAuth) {
         Box(

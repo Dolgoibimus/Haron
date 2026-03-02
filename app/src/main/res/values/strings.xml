@@ -961,6 +961,7 @@
     <string name="cast_disconnected">Disconnected</string>
     <string name="cast_chromecast">Chromecast</string>
     <string name="cast_miracast">Miracast</string>
+    <string name="cast_dlna">DLNA</string>
     <string name="cast_not_available">Cast is not available on this device</string>
     <string name="cast_now_playing">Now playing on %s</string>
 
@@ -1002,4 +1003,35 @@
     <string name="device_trusted">Trusted device</string>
     <string name="device_untrusted">Untrusted device</string>
     <string name="device_rename_title">Rename device</string>
+
+    <!-- SMB Browser (Batch 51) -->
+    <string name="smb_tab_title">SMB</string>
+    <string name="transfer_tab_title">Transfer</string>
+    <string name="smb_connect">Connect</string>
+    <string name="smb_disconnect">Disconnect</string>
+    <string name="smb_username">Username</string>
+    <string name="smb_password">Password</string>
+    <string name="smb_domain">Domain (optional)</string>
+    <string name="smb_save_credentials">Save credentials</string>
+    <string name="smb_connecting">Connecting\u2026</string>
+    <string name="smb_connection_failed">Connection failed: %s</string>
+    <string name="smb_auth_title">Connect to %s</string>
+    <string name="smb_guest">Guest</string>
+    <string name="smb_shares">Shared folders</string>
+    <string name="smb_discovered">Discovered</string>
+    <string name="smb_saved_servers">Saved</string>
+    <string name="smb_no_servers">No servers found</string>
+    <string name="smb_download">Download</string>
+    <string name="smb_upload">Upload</string>
+    <string name="smb_create_folder">New folder</string>
+    <string name="smb_delete_confirm">Delete %d items?</string>
+    <string name="smb_downloading">Downloading\u2026</string>
+    <string name="smb_uploading">Uploading\u2026</string>
+    <string name="smb_manual_connect">Enter IP address</string>
+    <string name="smb_rename">Rename</string>
+    <string name="smb_error_not_connected">Not connected</string>
+    <string name="smb_error_access_denied">Access denied</string>
+    <string name="smb_download_to_local">Download here</string>
+    <string name="smb_upload_to_smb">Upload here</string>
+    <string name="smb_local_panel">Device</string>
 </resources>

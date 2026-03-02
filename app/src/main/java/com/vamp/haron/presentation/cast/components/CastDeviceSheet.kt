@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -118,8 +119,11 @@ fun CastDeviceSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    if (device.type == CastType.CHROMECAST) Icons.Filled.Cast
-                                    else Icons.Filled.Tv,
+                                    when (device.type) {
+                                        CastType.CHROMECAST -> Icons.Filled.Cast
+                                        CastType.MIRACAST -> Icons.Filled.Tv
+                                        CastType.DLNA -> Icons.Filled.SettingsRemote
+                                    },
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -130,6 +134,7 @@ fun CastDeviceSheet(
                                         when (device.type) {
                                             CastType.CHROMECAST -> stringResource(R.string.cast_chromecast)
                                             CastType.MIRACAST -> stringResource(R.string.cast_miracast)
+                                            CastType.DLNA -> stringResource(R.string.cast_dlna)
                                         },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant

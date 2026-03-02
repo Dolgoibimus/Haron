@@ -192,7 +192,7 @@ fun GalleryScreen(
                 },
                 actions = {
                     CastButton(
-                        castManager = castViewModel.castManager,
+                        isConnected = castViewModel.isConnected,
                         onClick = { castViewModel.showSheet() }
                     )
                     IconButton(onClick = {

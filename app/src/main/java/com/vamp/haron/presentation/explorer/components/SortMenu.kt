@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -87,7 +87,7 @@ fun SortMenu(
                 }
                 val isSelected = currentOrder.field == field
                 DropdownMenuItem(
-                    modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                    modifier = Modifier.height(36.dp),
                     text = {
                         Text(
                             text = label,
@@ -133,7 +133,7 @@ fun SortMenu(
             if (tagDefinitions.isNotEmpty() && onTagFilterChanged != null) {
                 HorizontalDivider()
                 DropdownMenuItem(
-                    modifier = Modifier.defaultMinSize(minHeight = 28.dp),
+                    modifier = Modifier.height(28.dp),
                     text = {
                         Text(
                             stringResource(R.string.tags_filter_by),
@@ -147,7 +147,7 @@ fun SortMenu(
                 )
                 // "All files" option
                 DropdownMenuItem(
-                    modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                    modifier = Modifier.height(36.dp),
                     text = {
                         Text(
                             stringResource(R.string.tags_filter_all),
@@ -165,7 +165,7 @@ fun SortMenu(
                     val color = TagColors.palette.getOrElse(tag.colorIndex) { TagColors.palette[0] }
                     val isActive = activeTagFilter == tag.name
                     DropdownMenuItem(
-                        modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                        modifier = Modifier.height(36.dp),
                         text = {
                             Box {
                                 androidx.compose.foundation.layout.Row(

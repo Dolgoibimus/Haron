@@ -496,7 +496,7 @@ fun MediaPlayerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     CastButton(
-                        castManager = castViewModel.castManager,
+                        isConnected = castViewModel.isConnected,
                         onClick = { castViewModel.showSheet() }
                     )
                 }

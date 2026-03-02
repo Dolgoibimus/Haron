@@ -3,8 +3,10 @@ package com.vamp.haron.presentation.transfer
 import android.Manifest
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.vamp.haron.domain.model.PanelId
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +19,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,15 +37,18 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,6 +66,7 @@ import com.vamp.haron.presentation.transfer.components.DeviceList
 import com.vamp.haron.presentation.transfer.components.QrCodeDialog
 import com.vamp.haron.presentation.transfer.components.QrScannerDialog
 import com.vamp.haron.presentation.transfer.components.ReceiveDialog
+import com.vamp.haron.presentation.transfer.components.SmbBrowserTab
 import com.vamp.haron.presentation.transfer.components.TransferProgressCard
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -63,11 +74,14 @@ import com.vamp.haron.presentation.transfer.components.TransferProgressCard
 fun TransferScreen(
     onBack: () -> Unit,
     onOpenFolder: (String) -> Unit = {},
-    viewModel: TransferViewModel = hiltViewModel()
+    viewModel: TransferViewModel = hiltViewModel(),
+    smbViewModel: SmbViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val smbState by smbViewModel.state.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     // Runtime permissions for Bluetooth and Wi-Fi Direct
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -79,6 +93,12 @@ fun TransferScreen(
 
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        smbViewModel.toastMessage.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -108,84 +128,96 @@ fun TransferScreen(
         }
     }
 
+    // Back button: clear selection → navigate up active panel → switch panel → disconnect
+    BackHandler(enabled = selectedTab == 1 && !smbState.serverListMode) {
+        // First clear any selection in active panel
+        if (smbState.activePanel == PanelId.BOTTOM && smbState.localPanel.selectedPaths.isNotEmpty()) {
+            smbViewModel.clearLocalSelection()
+        } else if (smbState.activePanel == PanelId.TOP && smbState.selectedFiles.isNotEmpty()) {
+            smbViewModel.clearSelection()
+        } else if (!smbViewModel.onNavigateUpActivePanel()) {
+            // Can't go up in active panel — switch to other panel or disconnect
+            if (smbState.activePanel == PanelId.BOTTOM) {
+                smbViewModel.setActivePanel(PanelId.TOP)
+            } else {
+                smbViewModel.onNavigateUp()
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.transfer_title)) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        viewModel.cancelTransfer()
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp, horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (selectedTab == 1 && !smbState.serverListMode) {
+                                smbViewModel.onNavigateUpActivePanel()
+                            } else {
+                                viewModel.cancelTransfer()
+                                onBack()
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
                     }
-                },
-                actions = {
-                    // Receive button: tap = toggle receiving, long press = open receive folder
+                    Text(
+                        stringResource(R.string.transfer_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 4.dp).weight(1f)
+                    )
+                    // Receive button
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(28.dp)
                             .combinedClickable(
                                 role = Role.Button,
                                 onClick = {
-                                    if (state.isReceiving) {
-                                        viewModel.stopReceiving()
-                                    } else {
-                                        viewModel.startReceiving()
-                                    }
+                                    if (state.isReceiving) viewModel.stopReceiving()
+                                    else viewModel.startReceiving()
                                 },
-                                onLongClick = {
-                                    onOpenFolder(viewModel.getReceiveFolder())
-                                }
+                                onLongClick = { onOpenFolder(viewModel.getReceiveFolder()) }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Filled.Download,
                             contentDescription = stringResource(R.string.transfer_receive),
-                            tint = if (state.isReceiving)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                            modifier = Modifier.size(20.dp),
+                            tint = if (state.isReceiving) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    // QR button: tap = show QR, long press = scanner
+                    // QR button
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(28.dp)
                             .combinedClickable(
                                 role = Role.Button,
                                 onClick = {
-                                    if (state.files.isNotEmpty()) {
-                                        viewModel.startHttpServer()
-                                    } else {
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.transfer_select_files),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+                                    if (state.files.isNotEmpty()) viewModel.startHttpServer()
+                                    else Toast.makeText(context, context.getString(R.string.transfer_select_files), Toast.LENGTH_SHORT).show()
                                 },
-                                onLongClick = {
-                                    showScanner = true
-                                }
+                                onLongClick = { showScanner = true }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            Icons.Filled.QrCode,
-                            contentDescription = stringResource(R.string.transfer_qr_title)
-                        )
+                        Icon(Icons.Filled.QrCode, contentDescription = stringResource(R.string.transfer_qr_title), modifier = Modifier.size(20.dp))
                     }
-                    // Refresh button
-                    IconButton(onClick = { viewModel.startDiscovery() }) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = stringResource(R.string.reindex)
-                        )
+                    IconButton(
+                        onClick = { viewModel.startDiscovery() },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.reindex), modifier = Modifier.size(20.dp))
                     }
                 }
-            )
+            }
         }
     ) { padding ->
         Column(
@@ -193,6 +225,78 @@ fun TransferScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Tab row
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text(stringResource(R.string.transfer_tab_title)) },
+                    icon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text(stringResource(R.string.smb_tab_title)) },
+                    icon = { Icon(Icons.Filled.Computer, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+            }
+
+            when (selectedTab) {
+                0 -> TransferTabContent(
+                    state = state,
+                    viewModel = viewModel,
+                    onOpenFolder = onOpenFolder
+                )
+                1 -> SmbBrowserTab(
+                    viewModel = smbViewModel
+                )
+            }
+        }
+    }
+
+    // QR Dialog
+    if (state.showQrDialog && state.serverUrl != null) {
+        QrCodeDialog(
+            url = state.serverUrl!!,
+            onDismiss = { viewModel.dismissQrDialog() },
+            onStopServer = { viewModel.stopHttpServer() }
+        )
+    }
+
+    // Receive Dialog
+    if (state.showReceiveDialog) {
+        ReceiveDialog(
+            deviceName = state.incomingDeviceName,
+            fileCount = state.incomingFileCount,
+            onAccept = { viewModel.acceptIncoming() },
+            onDecline = { viewModel.declineIncoming() }
+        )
+    }
+
+    // QR Scanner Dialog
+    if (showScanner) {
+        QrScannerDialog(
+            onResult = { url ->
+                showScanner = false
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    viewModel.downloadFromQr(url)
+                } else {
+                    Toast.makeText(context, url, Toast.LENGTH_LONG).show()
+                }
+            },
+            onDismiss = { showScanner = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TransferTabContent(
+    state: TransferUiState,
+    viewModel: TransferViewModel,
+    onOpenFolder: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
             // Battery saver warning
             if (state.batteryWarning) {
                 Card(
@@ -401,40 +505,5 @@ fun TransferScreen(
             } else {
                 Spacer(Modifier.weight(1f))
             }
-        }
-    }
-
-    // QR Dialog
-    if (state.showQrDialog && state.serverUrl != null) {
-        QrCodeDialog(
-            url = state.serverUrl!!,
-            onDismiss = { viewModel.dismissQrDialog() },
-            onStopServer = { viewModel.stopHttpServer() }
-        )
-    }
-
-    // Receive Dialog
-    if (state.showReceiveDialog) {
-        ReceiveDialog(
-            deviceName = state.incomingDeviceName,
-            fileCount = state.incomingFileCount,
-            onAccept = { viewModel.acceptIncoming() },
-            onDecline = { viewModel.declineIncoming() }
-        )
-    }
-
-    // QR Scanner Dialog
-    if (showScanner) {
-        QrScannerDialog(
-            onResult = { url ->
-                showScanner = false
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    viewModel.downloadFromQr(url)
-                } else {
-                    Toast.makeText(context, url, Toast.LENGTH_LONG).show()
-                }
-            },
-            onDismiss = { showScanner = false }
-        )
     }
 }

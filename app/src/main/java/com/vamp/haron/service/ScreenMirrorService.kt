@@ -61,6 +61,9 @@ class ScreenMirrorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Always call startForeground immediately to avoid ForegroundServiceDidNotStartInTimeException
+        startForeground(NOTIFICATION_ID, buildNotification())
+
         when (intent?.action) {
             ACTION_START -> {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
@@ -72,12 +75,18 @@ class ScreenMirrorService : Service() {
                 }
 
                 if (resultCode != -1 && resultData != null) {
-                    startForeground(NOTIFICATION_ID, buildNotification())
                     startMirroring(resultCode, resultData)
+                } else {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
                 }
             }
             ACTION_STOP -> {
                 stopMirroring()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+            else -> {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }

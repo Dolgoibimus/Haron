@@ -45,6 +45,11 @@ android {
     }
 }
 
+configurations.all {
+    // smbj brings bcprov-jdk15to18, which conflicts with bcprov-jdk18on from dcerpc
+    exclude(group = "org.bouncycastle", module = "bcprov-jdk18on")
+}
+
 dependencies {
     // Ecosystem Core
     implementation("com.vamp:core:1.0.0")
@@ -113,6 +118,10 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+    // SMB client (smbj + RPC for share enumeration)
+    implementation("com.hierynomus:smbj:0.13.0")
+    implementation("com.rapid7.client:dcerpc:0.12.13")
 
     // Google Cast SDK (Chromecast)
     implementation("com.google.android.gms:play-services-cast-framework:22.0.0")

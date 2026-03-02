@@ -540,16 +540,49 @@ fun FilePanel(
                                         .distinct()
                                         .sorted()
                                 }
-                                extensions.forEach { ext ->
-                                    DropdownMenuItem(
-                                        text = { Text(".$ext") },
-                                        onClick = {
-                                            showExtMenu = false
-                                            onSelectByExtension(ext)
-                                        },
-                                        modifier = Modifier.height(32.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                                    )
+                                if (extensions.size > 10) {
+                                    // Two narrow columns
+                                    val half = (extensions.size + 1) / 2
+                                    Row {
+                                        Column(modifier = Modifier.width(60.dp)) {
+                                            extensions.take(half).forEach { ext ->
+                                                DropdownMenuItem(
+                                                    text = { Text(".$ext", style = MaterialTheme.typography.bodySmall) },
+                                                    onClick = {
+                                                        showExtMenu = false
+                                                        onSelectByExtension(ext)
+                                                    },
+                                                    modifier = Modifier.height(32.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                )
+                                            }
+                                        }
+                                        Column(modifier = Modifier.width(60.dp)) {
+                                            extensions.drop(half).forEach { ext ->
+                                                DropdownMenuItem(
+                                                    text = { Text(".$ext", style = MaterialTheme.typography.bodySmall) },
+                                                    onClick = {
+                                                        showExtMenu = false
+                                                        onSelectByExtension(ext)
+                                                    },
+                                                    modifier = Modifier.height(32.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    extensions.forEach { ext ->
+                                        DropdownMenuItem(
+                                            text = { Text(".$ext") },
+                                            onClick = {
+                                                showExtMenu = false
+                                                onSelectByExtension(ext)
+                                            },
+                                            modifier = Modifier.height(32.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

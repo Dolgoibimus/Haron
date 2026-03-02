@@ -35,7 +35,7 @@ class TabCompletionEngine {
 
         return try {
             base.listFiles()
-                ?.filter { it.name.startsWith(namePrefix, ignoreCase = true) }
+                ?.filter { it.name.startsWith(namePrefix) }
                 ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
                 ?.take(20)
                 ?.map { file ->
