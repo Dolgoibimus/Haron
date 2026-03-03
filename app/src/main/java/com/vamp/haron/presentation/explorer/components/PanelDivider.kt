@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,10 +22,11 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun PanelDivider(
-    totalHeight: Float,
+    totalSize: Float,
     topFileCount: Int,
     bottomFileCount: Int,
     isTopActive: Boolean,
+    isLandscape: Boolean = false,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDoubleTap: () -> Unit,
@@ -34,90 +37,157 @@ fun PanelDivider(
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
+    val sizeModifier = if (isLandscape) {
+        Modifier.fillMaxHeight().width(24.dp)
+    } else {
+        Modifier.fillMaxWidth().height(24.dp)
+    }
+
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .pointerInput(totalHeight) {
+            .then(sizeModifier)
+            .pointerInput(totalSize, isLandscape) {
                 detectDragGestures(
                     onDragEnd = { onDragEnd() },
                     onDragCancel = { onDragEnd() }
                 ) { change, dragAmount ->
                     change.consume()
-                    if (totalHeight > 0f) {
-                        onDrag(dragAmount.y / totalHeight)
+                    if (totalSize > 0f) {
+                        val delta = if (isLandscape) dragAmount.x else dragAmount.y
+                        onDrag(delta / totalSize)
                     }
                 }
             },
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().height(24.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left zone: top panel file count + tap → bookmarks
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(24.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onBookmarkTap() }
-                        )
-                    },
-                contentAlignment = Alignment.CenterStart
+        if (isLandscape) {
+            // Landscape: vertical layout — top count, center reset, bottom count
+            Column(
+                modifier = Modifier.fillMaxHeight().width(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = topFileCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isTopActive) activeColor else inactiveColor,
-                    modifier = Modifier.padding(start = 12.dp)
-                )
+                // Top zone: first panel file count + tap → bookmarks
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onBookmarkTap() })
+                        },
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Text(
+                        text = topFileCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isTopActive) activeColor else inactiveColor,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+
+                // Center zone: tap → reset 50/50
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onDoubleTap() })
+                        },
+                    contentAlignment = Alignment.Center
+                ) { }
+
+                // Bottom zone: second panel file count + tap → tools
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onRightZoneTap() })
+                        },
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Text(
+                        text = bottomFileCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (!isTopActive) activeColor else inactiveColor,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
             }
 
-            // Center zone: tap → reset 50/50
+            // Vertical drag handle indicator
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(24.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onDoubleTap() }
-                        )
-                    },
-                contentAlignment = Alignment.Center
-            ) { }
-
-            // Right zone: bottom panel file count + tap → tools
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(24.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onRightZoneTap() }
-                        )
-                    },
-                contentAlignment = Alignment.CenterEnd
+                    .width(4.dp)
+                    .height(40.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        } else {
+            // Portrait: horizontal layout (original)
+            Row(
+                modifier = Modifier.fillMaxWidth().height(24.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = bottomFileCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (!isTopActive) activeColor else inactiveColor,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
+                // Left zone: top panel file count + tap → bookmarks
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onBookmarkTap() })
+                        },
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = topFileCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isTopActive) activeColor else inactiveColor,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
+
+                // Center zone: tap → reset 50/50
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onDoubleTap() })
+                        },
+                    contentAlignment = Alignment.Center
+                ) { }
+
+                // Right zone: bottom panel file count + tap → tools
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onRightZoneTap() })
+                        },
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        text = bottomFileCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (!isTopActive) activeColor else inactiveColor,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
             }
+
+            // Horizontal drag handle indicator
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
         }
-
-        // Drag handle indicator (centered, on top)
-        Box(
-            modifier = Modifier
-                .width(40.dp)
-                .height(4.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(2.dp)
-                )
-        )
     }
 }

@@ -57,6 +57,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.domain.model.PanelId
@@ -281,23 +284,26 @@ fun ExplorerScreen(
         }
     }
 
-    var totalHeightPx by remember { mutableFloatStateOf(0f) }
+    var totalSizePx by remember { mutableFloatStateOf(0f) }
 
-    // Panel Y positions for drag target detection
-    var topPanelTopY by remember { mutableFloatStateOf(0f) }
-    var topPanelBottomY by remember { mutableFloatStateOf(0f) }
-    var bottomPanelTopY by remember { mutableFloatStateOf(0f) }
-    var bottomPanelBottomY by remember { mutableFloatStateOf(0f) }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // Panel positions for drag target detection (Y in portrait, X in landscape)
+    var topPanelStart by remember { mutableFloatStateOf(0f) }
+    var topPanelEnd by remember { mutableFloatStateOf(0f) }
+    var bottomPanelStart by remember { mutableFloatStateOf(0f) }
+    var bottomPanelEnd by remember { mutableFloatStateOf(0f) }
 
     val dragState = state.dragState
     val isDragging = dragState is DragState.Dragging
 
     // Determine which panel is drag target
     val dragTargetPanel: PanelId? = if (dragState is DragState.Dragging) {
-        val y = dragState.dragOffset.y
+        val coord = if (isLandscape) dragState.dragOffset.x else dragState.dragOffset.y
         when {
-            y in topPanelTopY..topPanelBottomY && dragState.sourcePanelId != PanelId.TOP -> PanelId.TOP
-            y in bottomPanelTopY..bottomPanelBottomY && dragState.sourcePanelId != PanelId.BOTTOM -> PanelId.BOTTOM
+            coord in topPanelStart..topPanelEnd && dragState.sourcePanelId != PanelId.TOP -> PanelId.TOP
+            coord in bottomPanelStart..bottomPanelEnd && dragState.sourcePanelId != PanelId.BOTTOM -> PanelId.BOTTOM
             else -> null
         }
     } else null
@@ -321,7 +327,7 @@ fun ExplorerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .onSizeChanged { totalHeightPx = it.height.toFloat() }
+            .onSizeChanged { totalSizePx = if (isLandscape) it.width.toFloat() else it.height.toFloat() }
             .pointerInput(showDrawerOrShelf, isDragging, state.gestureMappings) {
                 if (showDrawerOrShelf || isDragging) return@pointerInput
                 val edgePx = 24.dp.toPx()
@@ -361,8 +367,9 @@ fun ExplorerScreen(
                 }
             }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Top panel
+        // Shared panel parameters — modifiers are applied per-orientation inside Row/Column scope
+        @Composable
+        fun TopPanel(modifier: Modifier) {
             FilePanel(
                 state = state.topPanel,
                 isActive = activePanel == PanelId.TOP,
@@ -479,22 +486,18 @@ fun ExplorerScreen(
                 currentFolderSize = state.folderSizeCache[state.topPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(state.panelRatio)
-                    .onGloballyPositioned { coords ->
-                        val pos = coords.positionInRoot()
-                        topPanelTopY = pos.y
-                        topPanelBottomY = pos.y + coords.size.height
-                    }
+                modifier = modifier
             )
+        }
 
-            // Divider
+        @Composable
+        fun Divider() {
             PanelDivider(
-                totalHeight = totalHeightPx,
+                totalSize = totalSizePx,
                 topFileCount = state.topPanel.files.size,
                 bottomFileCount = state.bottomPanel.files.size,
                 isTopActive = activePanel == PanelId.TOP,
+                isLandscape = isLandscape,
                 onDrag = { delta ->
                     viewModel.updatePanelRatio(state.panelRatio + delta)
                 },
@@ -503,8 +506,10 @@ fun ExplorerScreen(
                 onBookmarkTap = { viewModel.showBookmarkPopup() },
                 onRightZoneTap = { viewModel.showToolsPopup() }
             )
+        }
 
-            // Bottom panel
+        @Composable
+        fun BottomPanel(modifier: Modifier) {
             FilePanel(
                 state = state.bottomPanel,
                 isActive = activePanel == PanelId.BOTTOM,
@@ -621,15 +626,58 @@ fun ExplorerScreen(
                 currentFolderSize = state.folderSizeCache[state.bottomPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f - state.panelRatio)
-                    .onGloballyPositioned { coords ->
-                        val pos = coords.positionInRoot()
-                        bottomPanelTopY = pos.y
-                        bottomPanelBottomY = pos.y + coords.size.height
-                    }
+                modifier = modifier
             )
+        }
+
+        if (isLandscape) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                TopPanel(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .weight(state.panelRatio)
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            topPanelStart = pos.x
+                            topPanelEnd = pos.x + coords.size.width
+                        }
+                )
+                Divider()
+                BottomPanel(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .weight(1f - state.panelRatio)
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            bottomPanelStart = pos.x
+                            bottomPanelEnd = pos.x + coords.size.width
+                        }
+                )
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopPanel(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(state.panelRatio)
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            topPanelStart = pos.y
+                            topPanelEnd = pos.y + coords.size.height
+                        }
+                )
+                Divider()
+                BottomPanel(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f - state.panelRatio)
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            bottomPanelStart = pos.y
+                            bottomPanelEnd = pos.y + coords.size.height
+                        }
+                )
+            }
         }
 
         // Selection action bar — overlay, no layout shift

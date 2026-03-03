@@ -124,7 +124,7 @@ private fun DualPanelLayout(
 
             // --- Divider ---
             PanelDivider(
-                totalHeight = totalHeightPx,
+                totalSize = totalHeightPx,
                 topFileCount = if (state.currentShare == null) state.shares.size else state.files.size,
                 bottomFileCount = state.localPanel.files.size,
                 isTopActive = state.activePanel == PanelId.TOP,
