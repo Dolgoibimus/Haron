@@ -280,7 +280,9 @@
     <string name="category_apk">APK</string>
     <string name="category_other">Прочее</string>
     <string name="no_large_files">Нет крупных файлов (>10 МБ) в этой категории</string>
+    <string name="no_files_in_category">Нет файлов в этой категории</string>
     <string name="large_files_title">Крупные файлы (>10 МБ)</string>
+    <string name="show_all_count">Показать все (%d)</string>
     <string name="files_count">%d файлов</string>
 
     <!-- Duplicate detector -->

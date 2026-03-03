@@ -47,6 +47,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,7 +65,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
-import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.usecase.StorageCategory
 
@@ -209,22 +211,21 @@ fun StorageAnalysisScreen(
                     onClick = { viewModel.toggleCategory(category.name) }
                 )
 
-                // Expanded: show files in this category from largeFiles
+                // Expanded: show files in this category
                 AnimatedVisibility(visible = isExpanded) {
-                    val categoryFiles = analysis.largeFiles.filter { lf ->
-                        val catName = mapIconToCategory(lf.entry.iconRes())
-                        catName == category.name
-                    }
+                    val allCategoryFiles = analysis.categoryFiles[category.name] ?: emptyList()
+                    val collapsed = allCategoryFiles.size > 10 && !state.categoryFilesExpanded
+                    val visibleFiles = if (collapsed) allCategoryFiles.take(10) else allCategoryFiles
                     Column {
-                        if (categoryFiles.isEmpty()) {
+                        if (allCategoryFiles.isEmpty()) {
                             Text(
-                                text = stringResource(R.string.no_large_files),
+                                text = stringResource(R.string.no_files_in_category),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp)
                             )
                         } else {
-                            categoryFiles.forEach { lf ->
+                            visibleFiles.forEach { lf ->
                                 val isSelected = lf.entry.path in state.selectedFiles
                                 LargeFileRow(
                                     name = lf.entry.name,
@@ -234,25 +235,51 @@ fun StorageAnalysisScreen(
                                     onClick = { viewModel.toggleFileSelection(lf.entry.path) }
                                 )
                             }
+                            if (collapsed) {
+                                Text(
+                                    text = stringResource(R.string.show_all_count, allCategoryFiles.size),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.toggleCategoryFilesExpanded() }
+                                        .padding(horizontal = 32.dp, vertical = 12.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Large files section
+            // Large files section (collapsed by default, show first 10)
             if (analysis.largeFiles.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
-                    Text(
-                        text = stringResource(R.string.large_files_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.large_files_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${analysis.largeFiles.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
-                items(analysis.largeFiles, key = { it.entry.path }) { lf ->
+                val collapsed = analysis.largeFiles.size > 10 && !state.largeFilesExpanded
+                val visibleFiles = if (collapsed) analysis.largeFiles.take(10) else analysis.largeFiles
+
+                items(visibleFiles, key = { it.entry.path }) { lf ->
                     val isSelected = lf.entry.path in state.selectedFiles
                     LargeFileRow(
                         name = lf.entry.name,
@@ -261,6 +288,20 @@ fun StorageAnalysisScreen(
                         isSelected = isSelected,
                         onClick = { viewModel.toggleFileSelection(lf.entry.path) }
                     )
+                }
+
+                if (collapsed) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.show_all_count, analysis.largeFiles.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.toggleLargeFilesExpanded() }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        )
+                    }
                 }
             }
 
@@ -443,16 +484,4 @@ private fun categoryIcon(icon: String): ImageVector {
     }
 }
 
-@Composable
-private fun mapIconToCategory(iconType: String): String {
-    return when (iconType) {
-        "image" -> stringResource(R.string.storage_cat_photos)
-        "video" -> stringResource(R.string.storage_cat_videos)
-        "audio" -> stringResource(R.string.storage_cat_music)
-        "pdf", "document", "spreadsheet", "presentation", "text", "code" -> stringResource(R.string.storage_cat_documents)
-        "archive" -> stringResource(R.string.storage_cat_archives)
-        "apk" -> stringResource(R.string.storage_cat_apk)
-        else -> stringResource(R.string.storage_cat_other)
-    }
-}
 

@@ -282,7 +282,9 @@
     <string name="category_apk">APK</string>
     <string name="category_other">Other</string>
     <string name="no_large_files">No large files (>10 MB) in this category</string>
+    <string name="no_files_in_category">No files in this category</string>
     <string name="large_files_title">Large files (>10 MB)</string>
+    <string name="show_all_count">Show all (%d)</string>
     <string name="files_count">%d files</string>
 
     <!-- Duplicate detector -->

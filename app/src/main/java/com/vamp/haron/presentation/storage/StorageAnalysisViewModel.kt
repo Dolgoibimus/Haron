@@ -21,7 +21,9 @@ data class StorageAnalysisState(
     val analysis: StorageAnalysis = StorageAnalysis(),
     val isLoading: Boolean = false,
     val expandedCategory: String? = null,
-    val selectedFiles: Set<String> = emptySet()
+    val selectedFiles: Set<String> = emptySet(),
+    val largeFilesExpanded: Boolean = false,
+    val categoryFilesExpanded: Boolean = false
 )
 
 @HiltViewModel
@@ -37,7 +39,7 @@ class StorageAnalysisViewModel @Inject constructor(
     val toastMessage = _toastMessage.asSharedFlow()
 
     fun startScan() {
-        _state.update { it.copy(isLoading = true, selectedFiles = emptySet(), expandedCategory = null) }
+        _state.update { it.copy(isLoading = true, selectedFiles = emptySet(), expandedCategory = null, categoryFilesExpanded = false, largeFilesExpanded = false) }
         viewModelScope.launch {
             analyzeStorageUseCase().collect { analysis ->
                 _state.update { it.copy(analysis = analysis, isLoading = analysis.isScanning) }
@@ -47,8 +49,15 @@ class StorageAnalysisViewModel @Inject constructor(
 
     fun toggleCategory(name: String) {
         _state.update {
-            it.copy(expandedCategory = if (it.expandedCategory == name) null else name)
+            it.copy(
+                expandedCategory = if (it.expandedCategory == name) null else name,
+                categoryFilesExpanded = false
+            )
         }
+    }
+
+    fun toggleCategoryFilesExpanded() {
+        _state.update { it.copy(categoryFilesExpanded = !it.categoryFilesExpanded) }
     }
 
     fun toggleFileSelection(path: String) {
@@ -57,6 +66,10 @@ class StorageAnalysisViewModel @Inject constructor(
             if (path in newSet) newSet.remove(path) else newSet.add(path)
             it.copy(selectedFiles = newSet)
         }
+    }
+
+    fun toggleLargeFilesExpanded() {
+        _state.update { it.copy(largeFilesExpanded = !it.largeFilesExpanded) }
     }
 
     fun clearSelection() {

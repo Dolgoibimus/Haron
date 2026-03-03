@@ -7,6 +7,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -1037,6 +1038,8 @@ fun FilePanel(
                 val currentSelectedPaths by rememberUpdatedState(state.selectedPaths)
                 val currentGridColumns by rememberUpdatedState(state.gridColumns)
                 val currentOnGridColumnsChanged by rememberUpdatedState(onGridColumnsChanged)
+                val currentOnFileClick by rememberUpdatedState(onFileClick)
+                val currentOnIconClick by rememberUpdatedState(onIconClick)
 
                 // Track list position in root for global offset calc
                 var listRootOffset by remember { mutableStateOf(Offset.Zero) }
@@ -1129,6 +1132,32 @@ fun FilePanel(
                             }
                         }
                         .pointerInput(Unit) {
+                            // Tap handler for grid mode: icon tap = preview, name tap = open
+                            detectTapGestures { offset ->
+                                val index = findItemIndexAtPosition(
+                                    gridState.layoutInfo, offset, currentGridColumns
+                                )
+                                if (index >= 0 && index < currentFilteredFiles.size) {
+                                    val entry = currentFilteredFiles[index]
+                                    currentOnPanelTap()
+                                    if (currentGridColumns >= 2) {
+                                        val itemInfo = gridState.layoutInfo.visibleItemsInfo
+                                            .firstOrNull { it.index == index }
+                                        val isOnIcon = if (itemInfo != null) {
+                                            (offset.y - itemInfo.offset.y) <= itemInfo.size.width
+                                        } else false
+                                        if (isOnIcon) {
+                                            currentOnIconClick(entry)
+                                        } else {
+                                            currentOnFileClick(entry)
+                                        }
+                                    } else {
+                                        currentOnFileClick(entry)
+                                    }
+                                }
+                            }
+                        }
+                        .pointerInput(Unit) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { offset ->
                                     currentOnPanelTap()
@@ -1137,37 +1166,81 @@ fun FilePanel(
                                     )
                                     if (index >= 0 && index < currentFilteredFiles.size) {
                                         val entry = currentFilteredFiles[index]
-                                        val isRightHalf = offset.x > size.width / 2f
-                                        // Quick Send: right half + file (not folder) + not selected + handler available
-                                        if (isRightHalf && !entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
-                                            isQuickSendDrag = true
-                                            isCrossPanelDrag = false
-                                            dragStartIndex = -1
-                                            val globalOffset = Offset(
-                                                listRootOffset.x + offset.x,
-                                                listRootOffset.y + offset.y
-                                            )
-                                            currentOnQuickSendStart?.invoke(entry.path, entry.name, globalOffset)
-                                        }
-                                        // If tapped on an already-selected file → cross-panel DnD
-                                        else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
-                                            isQuickSendDrag = false
-                                            isCrossPanelDrag = true
-                                            dragStartIndex = -1
-                                            val globalOffset = Offset(
-                                                listRootOffset.x + offset.x,
-                                                listRootOffset.y + offset.y
-                                            )
-                                            currentOnDragStarted?.invoke(
-                                                currentSelectedPaths.toList(),
-                                                globalOffset
-                                            )
-                                        } else {
-                                            // Range selection
+
+                                        // In grid mode (2+ columns): check if long press is on icon area (top square) vs name area
+                                        val isOnIconArea = if (currentGridColumns >= 2) {
+                                            val itemInfo = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                                            if (itemInfo != null) {
+                                                val yInCell = offset.y - itemInfo.offset.y
+                                                yInCell <= itemInfo.size.width // icon is 1:1 square = width
+                                            } else false
+                                        } else false
+
+                                        if (isOnIconArea) {
+                                            // Icon area in grid → selection only
                                             isQuickSendDrag = false
                                             isCrossPanelDrag = false
                                             dragStartIndex = index
                                             currentOnLongPressItem(entry)
+                                        } else if (currentGridColumns >= 2) {
+                                            // Name area in grid → QuickSend / cross-panel DnD
+                                            if (!entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
+                                                isQuickSendDrag = true
+                                                isCrossPanelDrag = false
+                                                dragStartIndex = -1
+                                                val globalOffset = Offset(
+                                                    listRootOffset.x + offset.x,
+                                                    listRootOffset.y + offset.y
+                                                )
+                                                currentOnQuickSendStart?.invoke(entry.path, entry.name, globalOffset)
+                                            } else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
+                                                isQuickSendDrag = false
+                                                isCrossPanelDrag = true
+                                                dragStartIndex = -1
+                                                val globalOffset = Offset(
+                                                    listRootOffset.x + offset.x,
+                                                    listRootOffset.y + offset.y
+                                                )
+                                                currentOnDragStarted?.invoke(
+                                                    currentSelectedPaths.toList(),
+                                                    globalOffset
+                                                )
+                                            } else {
+                                                isQuickSendDrag = false
+                                                isCrossPanelDrag = false
+                                                dragStartIndex = index
+                                                currentOnLongPressItem(entry)
+                                            }
+                                        } else {
+                                            // List mode (1 column) — original logic
+                                            val isRightHalf = offset.x > size.width / 2f
+                                            if (isRightHalf && !entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
+                                                isQuickSendDrag = true
+                                                isCrossPanelDrag = false
+                                                dragStartIndex = -1
+                                                val globalOffset = Offset(
+                                                    listRootOffset.x + offset.x,
+                                                    listRootOffset.y + offset.y
+                                                )
+                                                currentOnQuickSendStart?.invoke(entry.path, entry.name, globalOffset)
+                                            } else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
+                                                isQuickSendDrag = false
+                                                isCrossPanelDrag = true
+                                                dragStartIndex = -1
+                                                val globalOffset = Offset(
+                                                    listRootOffset.x + offset.x,
+                                                    listRootOffset.y + offset.y
+                                                )
+                                                currentOnDragStarted?.invoke(
+                                                    currentSelectedPaths.toList(),
+                                                    globalOffset
+                                                )
+                                            } else {
+                                                isQuickSendDrag = false
+                                                isCrossPanelDrag = false
+                                                dragStartIndex = index
+                                                currentOnLongPressItem(entry)
+                                            }
                                         }
                                     }
                                 },

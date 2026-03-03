@@ -30,7 +30,8 @@ data class ComparisonUiState(
     val error: String? = null,
     val filterStatus: String? = null, // null = all
     val progressCurrent: Int = 0,
-    val progressTotal: Int = 0
+    val progressTotal: Int = 0,
+    val isViewingFileDiff: Boolean = false
 )
 
 @HiltViewModel
@@ -41,6 +42,10 @@ class ComparisonViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(ComparisonUiState())
     val state = _state.asStateFlow()
+
+    // Saved folder-level names to restore when returning from file diff
+    private var folderLeftName = ""
+    private var folderRightName = ""
 
     init {
         startComparison()
@@ -68,6 +73,8 @@ class ComparisonViewModel @Inject constructor(
                                 progressTotal = total
                             )
                         }
+                        folderLeftName = leftFile.name
+                        folderRightName = rightFile.name
                         _state.value = _state.value.copy(
                             mode = ComparisonMode.FOLDER,
                             folderEntries = entries
@@ -127,10 +134,21 @@ class ComparisonViewModel @Inject constructor(
                     mode = ComparisonMode.TEXT,
                     textDiff = diff,
                     leftName = leftFile.name,
-                    rightName = rightFile.name
+                    rightName = rightFile.name,
+                    isViewingFileDiff = true
                 )
             } catch (_: Exception) { }
         }
+    }
+
+    fun goBackToFolderList() {
+        _state.value = _state.value.copy(
+            mode = ComparisonMode.FOLDER,
+            textDiff = null,
+            leftName = folderLeftName,
+            rightName = folderRightName,
+            isViewingFileDiff = false
+        )
     }
 
     private fun isTextFile(file: File): Boolean {

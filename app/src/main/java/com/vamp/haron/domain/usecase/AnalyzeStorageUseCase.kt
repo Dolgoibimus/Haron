@@ -34,6 +34,7 @@ data class StorageAnalysis(
     val freeSize: Long = 0L,
     val categories: List<StorageCategory> = emptyList(),
     val largeFiles: List<LargeFile> = emptyList(),
+    val categoryFiles: Map<String, List<LargeFile>> = emptyMap(),
     val isScanning: Boolean = true,
     val scannedFiles: Int = 0,
     val currentPath: String = ""
@@ -90,9 +91,13 @@ class AnalyzeStorageUseCase @Inject constructor(
             catOther to "file"
         )
 
-        // Min-heap for top-50 large files (>10MB)
-        val minHeap = PriorityQueue<LargeFile>(51, compareBy { it.entry.size })
+        // Min-heap for top-200 large files (>10MB)
+        val largeFileLimit = 200
+        val minHeap = PriorityQueue<LargeFile>(largeFileLimit + 1, compareBy { it.entry.size })
         val largeFileThreshold = 10L * 1024 * 1024 // 10 MB
+
+        // Per-category min-heaps: top-200 largest files per category (no size threshold)
+        val categoryHeaps = mutableMapOf<String, PriorityQueue<LargeFile>>()
 
         var scannedFiles = 0
         var lastEmitTime = System.currentTimeMillis()
@@ -112,13 +117,21 @@ class AnalyzeStorageUseCase @Inject constructor(
                     sizeMap[category] = (sizeMap[category] ?: 0L) + file.length()
                     countMap[category] = (countMap[category] ?: 0) + 1
 
-                    // Track large files
+                    val relativePath = file.absolutePath.removePrefix(root.absolutePath + "/")
+                    val largeFile = LargeFile(entry = entry, relativePath = relativePath)
+
+                    // Track large files (>10MB global list)
                     if (file.length() >= largeFileThreshold) {
-                        val relativePath = file.absolutePath.removePrefix(root.absolutePath + "/")
-                        val largeFile = LargeFile(entry = entry, relativePath = relativePath)
                         minHeap.add(largeFile)
-                        if (minHeap.size > 50) minHeap.poll()
+                        if (minHeap.size > largeFileLimit) minHeap.poll()
                     }
+
+                    // Track per-category top-200 (no size threshold)
+                    val heap = categoryHeaps.getOrPut(category) {
+                        PriorityQueue(largeFileLimit + 1, compareBy { it.entry.size })
+                    }
+                    heap.add(largeFile)
+                    if (heap.size > largeFileLimit) heap.poll()
 
                     // Emit progress every 500ms
                     val now = System.currentTimeMillis()
@@ -131,6 +144,7 @@ class AnalyzeStorageUseCase @Inject constructor(
                             freeSize = freeSize,
                             categories = categories,
                             largeFiles = minHeap.sortedByDescending { it.entry.size },
+                            categoryFiles = buildCategoryFiles(categoryHeaps),
                             isScanning = true,
                             scannedFiles = scannedFiles,
                             currentPath = file.parentFile?.name ?: ""
@@ -147,11 +161,20 @@ class AnalyzeStorageUseCase @Inject constructor(
             freeSize = freeSize,
             categories = categories,
             largeFiles = minHeap.sortedByDescending { it.entry.size },
+            categoryFiles = buildCategoryFiles(categoryHeaps),
             isScanning = false,
             scannedFiles = scannedFiles,
             currentPath = ""
         ))
     }.flowOn(Dispatchers.IO)
+
+    private fun buildCategoryFiles(
+        categoryHeaps: Map<String, PriorityQueue<LargeFile>>
+    ): Map<String, List<LargeFile>> {
+        return categoryHeaps.mapValues { (_, heap) ->
+            heap.sortedByDescending { it.entry.size }
+        }
+    }
 
     private fun buildCategories(
         sizeMap: Map<String, Long>,

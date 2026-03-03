@@ -155,7 +155,6 @@ fun FileListItem(
         Box(
             modifier = modifier
                 .background(bgColor)
-                .then(clickModifier)
                 .padding(2.dp),
             contentAlignment = Alignment.TopCenter
         ) {
@@ -163,13 +162,12 @@ fun FileListItem(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(vertical = 2.dp, horizontal = 2.dp)
             ) {
-                // Square icon area — always 1:1, thumbnails fitted inside
+                // Square icon area — all gestures handled by grid-level pointerInput
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onIconClick),
+                        .clip(RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     if (thumbnail != null) {

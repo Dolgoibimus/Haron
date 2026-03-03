@@ -136,7 +136,7 @@ fun VoiceFab(
                 .padding(end = 16.dp, bottom = 56.dp)
                 .onGloballyPositioned { fabW = it.size.width; fabH = it.size.height }
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                 .pointerInput(Unit) {
                     val touchSlop = 10f
                     val longPressMs = 400L
@@ -161,7 +161,7 @@ fun VoiceFab(
                                     val newX = (offsetX + moved.x)
                                         .coerceIn(-(boxW - fabW).toFloat(), fabW.toFloat())
                                     val newY = (offsetY + moved.y)
-                                        .coerceIn(-fabH.toFloat(), (boxH - fabH).toFloat())
+                                        .coerceIn(-fabH.toFloat() * 4, (boxH - fabH).toFloat())
                                     offsetX = newX
                                     offsetY = newY
                                     change.consume()
@@ -213,7 +213,7 @@ fun VoiceFab(
                                     val newX = (offsetX + moved.x)
                                         .coerceIn(-(boxW - fabW).toFloat(), fabW.toFloat())
                                     val newY = (offsetY + moved.y)
-                                        .coerceIn(-fabH.toFloat(), (boxH - fabH).toFloat())
+                                        .coerceIn(-fabH.toFloat() * 4, (boxH - fabH).toFloat())
                                     offsetX = newX
                                     offsetY = newY
                                     change.consume()

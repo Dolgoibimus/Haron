@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
@@ -47,6 +48,16 @@ fun ComparisonScreen(
     viewModel: ComparisonViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+
+    val handleBack: () -> Unit = {
+        if (state.isViewingFileDiff) {
+            viewModel.goBackToFolderList()
+        } else {
+            onBack()
+        }
+    }
+
+    BackHandler { handleBack() }
 
     Scaffold(
         topBar = {
@@ -69,7 +80,7 @@ fun ComparisonScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = handleBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 }
