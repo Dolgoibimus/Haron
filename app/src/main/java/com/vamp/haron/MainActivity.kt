@@ -279,7 +279,11 @@ class MainActivity : FragmentActivity() {
                                         launchBiometric()
                                     },
                                     hasBiometric = lockState.hasBiometric,
-                                    pinLength = appLockViewModel.getPinLength()
+                                    pinLength = appLockViewModel.getPinLength(),
+                                    securityQuestion = appLockViewModel.getSecurityQuestion(),
+                                    onResetPin = { answer ->
+                                        appLockViewModel.resetPinViaAnswer(answer)
+                                    }
                                 )
                             }
 

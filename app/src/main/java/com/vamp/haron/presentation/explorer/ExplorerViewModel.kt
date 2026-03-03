@@ -3985,8 +3985,8 @@ class ExplorerViewModel @Inject constructor(
             if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
                 _uiState.update { it.copy(showShieldAuth = true) }
             } else {
-                // No auth configured — just enable
-                onShieldAuthenticated()
+                // No PIN — require user to set one
+                _toastMessage.tryEmit(appContext.getString(R.string.shield_requires_pin))
             }
         }
     }
@@ -4022,9 +4022,8 @@ class ExplorerViewModel @Inject constructor(
             if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
                 _uiState.update { it.copy(showShieldAuth = true, showAllProtectedAfterAuth = true) }
             } else {
-                // No auth — unlock and show
-                _uiState.update { it.copy(isShieldUnlocked = true, showAllProtectedAfterAuth = false) }
-                showAllProtectedFiles()
+                // No PIN — require user to set one
+                _toastMessage.tryEmit(appContext.getString(R.string.shield_requires_pin))
             }
             return
         }

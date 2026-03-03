@@ -1,6 +1,7 @@
 package com.vamp.haron.presentation.applock
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -15,15 +16,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +57,8 @@ fun LockScreen(
     hasBiometric: Boolean,
     pinLength: Int = 4,
     onDismiss: (() -> Unit)? = null,
+    securityQuestion: String? = null,
+    onResetPin: ((answer: String) -> Boolean)? = null,
     modifier: Modifier = Modifier
 ) {
     // Block back button (or allow dismiss if callback provided)
@@ -64,6 +71,11 @@ fun LockScreen(
     val shakeOffset = remember { Animatable(0f) }
     var shakeKey by remember { mutableIntStateOf(0) }
     val haptic = LocalHapticFeedback.current
+
+    // Forgot PIN state
+    var showForgotPin by remember { mutableStateOf(false) }
+    var resetAnswer by remember { mutableStateOf("") }
+    var resetError by remember { mutableStateOf(false) }
 
     // Shake animation triggered by shakeKey
     LaunchedEffect(shakeKey) {
@@ -111,6 +123,7 @@ fun LockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp)
         ) {
             Text(
@@ -221,6 +234,63 @@ fun LockScreen(
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+
+                // "Forgot PIN?" button
+                if (securityQuestion != null && onResetPin != null) {
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = { showForgotPin = !showForgotPin }) {
+                        Text(stringResource(R.string.forgot_pin))
+                    }
+
+                    AnimatedVisibility(visible = showForgotPin) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = securityQuestion,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = resetAnswer,
+                                onValueChange = {
+                                    resetAnswer = it
+                                    resetError = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text(stringResource(R.string.security_answer_hint)) },
+                                singleLine = true,
+                                isError = resetError
+                            )
+                            if (resetError) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = stringResource(R.string.security_answer_wrong),
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(
+                                onClick = {
+                                    if (resetAnswer.isNotBlank()) {
+                                        val ok = onResetPin(resetAnswer)
+                                        if (!ok) {
+                                            resetError = true
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(stringResource(R.string.check_answer))
+                            }
+                        }
                     }
                 }
             }

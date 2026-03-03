@@ -22,12 +22,14 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -38,6 +40,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -63,10 +69,20 @@ fun SettingsScreen(
     if (state.showPinSetupDialog) {
         PinSetupDialog(
             isChange = state.isPinChange,
-            onConfirm = { currentPin, newPin ->
-                viewModel.onPinSetupConfirm(currentPin, newPin)
+            onConfirm = { currentPin, newPin, question, answer ->
+                viewModel.onPinSetupConfirm(currentPin, newPin, question, answer)
             },
             onDismiss = { viewModel.dismissPinSetup() }
+        )
+    }
+
+    // Security question dialog (standalone, when PIN is already set)
+    if (state.showSecurityQuestionDialog) {
+        SecurityQuestionDialog(
+            onConfirm = { question, answer ->
+                viewModel.saveSecurityQuestion(question, answer)
+            },
+            onDismiss = { viewModel.dismissSecurityQuestionDialog() }
         )
     }
 
@@ -311,6 +327,42 @@ fun SettingsScreen(
                 }
             }
 
+            // Require PIN on launch switch (only if PIN is set)
+            if (state.isPinSet) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.require_pin_on_launch),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            stringResource(R.string.require_pin_on_launch_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.requirePinOnLaunch,
+                        onCheckedChange = { viewModel.setRequirePinOnLaunch(it) }
+                    )
+                }
+            }
+
+            // Security question button
+            if (state.isPinSet) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { viewModel.showSecurityQuestionDialog() }) {
+                    Text(
+                        if (state.hasSecurityQuestion) stringResource(R.string.change_security_question)
+                        else stringResource(R.string.set_security_question)
+                    )
+                }
+            }
+
             Text(
                 stringResource(R.string.app_lock_protects_secure),
                 style = MaterialTheme.typography.bodySmall,
@@ -387,4 +439,88 @@ private fun SectionHeader(
 
 private fun formatTime(hour: Int, minute: Int): String {
     return String.format("%02d:%02d", hour, minute)
+}
+
+@Composable
+private fun SecurityQuestionDialog(
+    onConfirm: (question: String, answer: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var question by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
+    var step by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.security_question_title)) },
+        text = {
+            Column {
+                when (step) {
+                    0 -> {
+                        OutlinedTextField(
+                            value = question,
+                            onValueChange = { question = it; error = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(R.string.security_question_hint)) },
+                            singleLine = true
+                        )
+                    }
+                    1 -> {
+                        Text(
+                            question,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = answer,
+                            onValueChange = { answer = it; error = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(R.string.security_answer_hint)) },
+                            singleLine = true
+                        )
+                    }
+                }
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                error = null
+                when (step) {
+                    0 -> {
+                        if (question.isBlank()) {
+                            error = "…"
+                        } else {
+                            step = 1
+                        }
+                    }
+                    1 -> {
+                        if (answer.isBlank()) {
+                            error = "…"
+                        } else {
+                            onConfirm(question.trim(), answer.trim())
+                        }
+                    }
+                }
+            }) {
+                Text(
+                    if (step == 1) stringResource(android.R.string.ok)
+                    else stringResource(R.string.next)
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }

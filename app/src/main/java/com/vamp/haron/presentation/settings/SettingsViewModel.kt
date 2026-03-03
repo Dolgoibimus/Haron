@@ -32,6 +32,9 @@ data class SettingsUiState(
     val hasBiometric: Boolean = false,
     val showPinSetupDialog: Boolean = false,
     val isPinChange: Boolean = false,
+    val requirePinOnLaunch: Boolean = true,
+    val hasSecurityQuestion: Boolean = false,
+    val showSecurityQuestionDialog: Boolean = false,
     // Gestures
     val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction }
 )
@@ -58,6 +61,8 @@ class SettingsViewModel @Inject constructor(
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
             hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled(),
+            requirePinOnLaunch = preferences.requirePinOnLaunch,
+            hasSecurityQuestion = authManager.hasSecurityQuestion(),
             gestureMappings = preferences.getGestureMappings()
         )
     )
@@ -131,11 +136,15 @@ class SettingsViewModel @Inject constructor(
     /**
      * @return true if PIN was successfully set/changed
      */
-    fun onPinSetupConfirm(currentPin: String?, newPin: String): Boolean {
+    fun onPinSetupConfirm(currentPin: String?, newPin: String, question: String?, answer: String?): Boolean {
         if (currentPin != null && !authManager.verifyPin(currentPin)) {
             return false
         }
         authManager.setPin(newPin)
+        // Save security question if provided
+        if (question != null && answer != null) {
+            authManager.setSecurityQuestion(question, answer)
+        }
         // If lock method was NONE and user just set PIN, auto-enable PIN_ONLY
         val method = authManager.getAppLockMethod()
         if (method == AppLockMethod.NONE) {
@@ -145,10 +154,29 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 isPinSet = true,
                 showPinSetupDialog = false,
-                appLockMethod = authManager.getAppLockMethod()
+                appLockMethod = authManager.getAppLockMethod(),
+                hasSecurityQuestion = authManager.hasSecurityQuestion()
             )
         }
         return true
+    }
+
+    fun showSecurityQuestionDialog() {
+        _state.update { it.copy(showSecurityQuestionDialog = true) }
+    }
+
+    fun dismissSecurityQuestionDialog() {
+        _state.update { it.copy(showSecurityQuestionDialog = false) }
+    }
+
+    fun saveSecurityQuestion(question: String, answer: String) {
+        authManager.setSecurityQuestion(question, answer)
+        _state.update { it.copy(showSecurityQuestionDialog = false, hasSecurityQuestion = true) }
+    }
+
+    fun setRequirePinOnLaunch(enabled: Boolean) {
+        preferences.requirePinOnLaunch = enabled
+        _state.update { it.copy(requirePinOnLaunch = enabled) }
     }
 
     // --- Gestures ---

@@ -1,4 +1,6 @@
 <resources>
+    <string name="app_name">Харон</string>
+
     <!-- Common -->
     <string name="cancel">Отмена</string>
     <string name="close">Закрыть</string>
@@ -1035,4 +1037,19 @@
     <string name="smb_download_to_local">Скачать сюда</string>
     <string name="smb_upload_to_smb">Загрузить сюда</string>
     <string name="smb_local_panel">Устройство</string>
+
+    <!-- Security question & PIN settings -->
+    <string name="forgot_pin">Забыли PIN?</string>
+    <string name="security_question_title">Секретный вопрос</string>
+    <string name="security_question_hint">Введите ваш вопрос</string>
+    <string name="security_answer_hint">Введите ваш ответ</string>
+    <string name="security_answer_wrong">Неправильный ответ</string>
+    <string name="pin_reset_success">PIN сброшен. Установите новый в настройках</string>
+    <string name="require_pin_on_launch">Требовать PIN при запуске</string>
+    <string name="require_pin_on_launch_hint">PIN всегда потребуется для защищённых файлов</string>
+    <string name="set_security_question">Установить секретный вопрос</string>
+    <string name="change_security_question">Изменить секретный вопрос</string>
+    <string name="shield_requires_pin">Сначала установите PIN в настройках</string>
+    <string name="security_question_saved">Секретный вопрос сохранён</string>
+    <string name="check_answer">Проверить</string>
 </resources>

@@ -468,6 +468,22 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_PIN_LENGTH, 4)
         set(value) = prefs.edit().putInt(KEY_PIN_LENGTH, value).apply()
 
+    var securityQuestion: String?
+        get() = prefs.getString(KEY_SECURITY_QUESTION, null)
+        set(value) = prefs.edit().putString(KEY_SECURITY_QUESTION, value).apply()
+
+    var securityAnswerHash: String?
+        get() = prefs.getString(KEY_SECURITY_ANSWER_HASH, null)
+        set(value) = prefs.edit().putString(KEY_SECURITY_ANSWER_HASH, value).apply()
+
+    var requirePinOnLaunch: Boolean
+        get() = prefs.getBoolean(KEY_REQUIRE_PIN_ON_LAUNCH, true)
+        set(value) = prefs.edit().putBoolean(KEY_REQUIRE_PIN_ON_LAUNCH, value).apply()
+
+    var lockTimeoutMinutes: Int
+        get() = prefs.getInt(KEY_LOCK_TIMEOUT_MINUTES, 30)
+        set(value) = prefs.edit().putInt(KEY_LOCK_TIMEOUT_MINUTES, value).apply()
+
     // --- Gesture mappings ---
 
     fun getGestureAction(type: GestureType): GestureAction {
@@ -611,6 +627,10 @@ class HaronPreferences @Inject constructor(
         const val KEY_MIC_FAB_OFFSET_X = "mic_fab_offset_x"
         const val KEY_MIC_FAB_OFFSET_Y = "mic_fab_offset_y"
         const val KEY_MIC_HINT_SHOWN = "mic_hint_shown"
+        const val KEY_SECURITY_QUESTION = "security_question"
+        const val KEY_SECURITY_ANSWER_HASH = "security_answer_hash"
+        const val KEY_REQUIRE_PIN_ON_LAUNCH = "require_pin_on_launch"
+        const val KEY_LOCK_TIMEOUT_MINUTES = "lock_timeout_minutes"
         const val KEY_CONTENT_INDEXED_FOLDERS = "content_indexed_folders"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10

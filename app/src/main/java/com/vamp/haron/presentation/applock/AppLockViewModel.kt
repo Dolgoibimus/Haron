@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.applock
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.security.AuthManager
 import com.vamp.haron.domain.model.AppLockMethod
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,7 +23,8 @@ data class AppLockState(
 @HiltViewModel
 class AppLockViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    private val preferences: HaronPreferences
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AppLockState())
@@ -31,10 +33,13 @@ class AppLockViewModel @Inject constructor(
     /** Timestamp of last successful unlock — grace period 3 seconds */
     private var lastUnlockTime: Long = 0L
 
+    /** Timestamp when app went to background (ON_STOP) */
+    private var lastStopTime: Long = 0L
+
     init {
         val method = authManager.getAppLockMethod()
         val hasBio = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
-        val shouldLock = method != AppLockMethod.NONE
+        val shouldLock = method != AppLockMethod.NONE && preferences.requirePinOnLaunch
         _state.value = AppLockState(
             isLocked = shouldLock,
             lockMethod = method,
@@ -71,31 +76,34 @@ class AppLockViewModel @Inject constructor(
 
     /**
      * Called from lifecycle observer when app goes to foreground.
-     * Grace period: don't lock if less than 3 seconds since last unlock.
+     * Locks if timeout exceeded and requirePinOnLaunch is enabled.
      */
     fun onResume() {
         val method = authManager.getAppLockMethod()
-        if (method == AppLockMethod.NONE) return
-        val elapsed = System.currentTimeMillis() - lastUnlockTime
-        if (elapsed > 3000 && !_state.value.isLocked) {
-            // Only lock if we were previously unlocked for more than grace period
+        val hasBio = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
+        if (method == AppLockMethod.NONE || !preferences.requirePinOnLaunch) {
+            _state.update { it.copy(lockMethod = method, hasBiometric = hasBio) }
+            return
         }
-        _state.update {
-            it.copy(
-                lockMethod = method,
-                hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
-            )
+        if (lastStopTime > 0 && !_state.value.isLocked) {
+            val elapsed = System.currentTimeMillis() - lastStopTime
+            val timeoutMs = preferences.lockTimeoutMinutes * 60_000L
+            if (elapsed > timeoutMs) {
+                _state.update { it.copy(isLocked = true, lockMethod = method, hasBiometric = hasBio, pinError = false) }
+                return
+            }
         }
+        _state.update { it.copy(lockMethod = method, hasBiometric = hasBio) }
     }
 
     /**
      * Called when app goes to background (ON_STOP).
+     * Only records timestamp — does NOT lock immediately.
      */
     fun onStop() {
         val method = authManager.getAppLockMethod()
         if (method == AppLockMethod.NONE) return
-        // Mark time; actual lock happens on resume after grace period
-        _state.update { it.copy(isLocked = true, lockMethod = method) }
+        lastStopTime = System.currentTimeMillis()
     }
 
     fun refreshLockState() {
@@ -106,5 +114,17 @@ class AppLockViewModel @Inject constructor(
                 hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()
             )
         }
+    }
+
+    // --- Security question ---
+
+    fun getSecurityQuestion(): String? = authManager.getSecurityQuestion()
+
+    fun resetPinViaAnswer(answer: String): Boolean {
+        val ok = authManager.resetPinViaSecurityAnswer(answer)
+        if (ok) {
+            unlockApp()
+        }
+        return ok
     }
 }

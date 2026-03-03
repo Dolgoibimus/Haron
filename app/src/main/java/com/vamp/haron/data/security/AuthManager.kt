@@ -83,6 +83,33 @@ class AuthManager @Inject constructor(
         preferences.appLockMethod = method.ordinal
     }
 
+    // --- Security question ---
+
+    fun setSecurityQuestion(question: String, answer: String) {
+        preferences.securityQuestion = question
+        preferences.securityAnswerHash = hashAnswer(answer)
+    }
+
+    fun getSecurityQuestion(): String? = preferences.securityQuestion
+
+    fun hasSecurityQuestion(): Boolean = preferences.securityQuestion != null && preferences.securityAnswerHash != null
+
+    fun verifySecurityAnswer(answer: String): Boolean {
+        val stored = preferences.securityAnswerHash ?: return false
+        return hashAnswer(answer) == stored
+    }
+
+    fun resetPinViaSecurityAnswer(answer: String): Boolean {
+        if (!verifySecurityAnswer(answer)) return false
+        removePin()
+        setAppLockMethod(AppLockMethod.NONE)
+        return true
+    }
+
+    private fun hashAnswer(answer: String): String {
+        return hashPin(answer.trim().lowercase())
+    }
+
     private fun hashPin(pin: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val bytes = digest.digest(pin.toByteArray(Charsets.UTF_8))
