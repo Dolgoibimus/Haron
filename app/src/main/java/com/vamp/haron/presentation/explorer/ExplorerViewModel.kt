@@ -3198,9 +3198,43 @@ class ExplorerViewModel @Inject constructor(
             java.io.File(path).takeIf { it.exists() }
         }
         if (files.isEmpty()) return
-        com.vamp.haron.domain.model.TransferHolder.selectedFiles = files
+
+        try {
+            val uris = files.map { file ->
+                androidx.core.content.FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    file
+                )
+            }
+
+            val intent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = files[0].let { f ->
+                        android.webkit.MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(f.extension.lowercase())
+                            ?: "*/*"
+                    }
+                    putExtra(Intent.EXTRA_STREAM, uris[0])
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+
+            val chooser = Intent.createChooser(intent, null).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(chooser)
+        } catch (_: Exception) {
+            _toastMessage.tryEmit(appContext.getString(R.string.no_app_for_file))
+        }
+
         clearSelection(uiState.value.activePanel)
-        _navigationEvent.tryEmit(NavigationEvent.OpenTransfer)
     }
 
     // --- Open with external app ---

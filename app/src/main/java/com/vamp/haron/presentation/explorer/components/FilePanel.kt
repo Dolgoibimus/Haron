@@ -601,13 +601,14 @@ fun FilePanel(
                                 tint = if (selectionHasProtected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(
-                            onClick = onHideInFileSelection,
-                            enabled = selectionTotalCount == 1 && selectionDirCount == 0,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(18.dp))
-                        }
+                        // Steganography hidden until ready for release
+                        // IconButton(
+                        //     onClick = onHideInFileSelection,
+                        //     enabled = selectionTotalCount == 1 && selectionDirCount == 0,
+                        //     modifier = Modifier.size(32.dp)
+                        // ) {
+                        //     Icon(Icons.Filled.VisibilityOff, contentDescription = stringResource(R.string.stego_hide_action), modifier = Modifier.size(18.dp))
+                        // }
                         IconButton(
                             onClick = onInfoSelection,
                             enabled = selectionTotalCount == 1,
