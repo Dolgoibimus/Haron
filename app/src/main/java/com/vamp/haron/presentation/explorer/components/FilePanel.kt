@@ -240,8 +240,15 @@ fun FilePanel(
                 val snippets = state.contentSearchSnippets
                 when {
                     state.isContentIndexing -> files // still indexing — show all
-                    snippets != null && snippets.isNotEmpty() -> files.filter {
-                        it.path in snippets || (it.isDirectory && it.name.contains(state.searchQuery, ignoreCase = true))
+                    snippets != null && snippets.isNotEmpty() -> {
+                        val snippetKeys = snippets.keys
+                        files.filter {
+                            it.path in snippetKeys ||
+                            (it.isDirectory && (
+                                it.name.contains(state.searchQuery, ignoreCase = true) ||
+                                snippetKeys.any { key -> key.startsWith(it.path + "/") }
+                            ))
+                        }
                     }
                     snippets == null -> files // not yet searched — show all
                     else -> emptyList() // empty results — nothing found

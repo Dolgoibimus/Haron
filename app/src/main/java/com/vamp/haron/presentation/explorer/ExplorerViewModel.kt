@@ -1289,20 +1289,51 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    /** Active indexing jobs by folder path — shared between panels */
+    private val activeFolderIndexJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+
     private fun indexFolderAndSearch(panelId: PanelId, folderPath: String, query: String) {
         folderIndexJobs[panelId]?.cancel()
         folderIndexJobs[panelId] = viewModelScope.launch {
-            updatePanel(panelId) { it.copy(isContentIndexing = true, contentIndexProgress = null) }
-            try {
-                searchRepository.indexFolderContent(folderPath, force = true) { processed, total ->
-                    updatePanel(panelId) {
-                        it.copy(contentIndexProgress = "$processed / $total")
+            if (folderPath !in preferences.getContentIndexedFolders()) {
+                // Reuse existing indexing job if another panel is already indexing this folder
+                val existingJob = activeFolderIndexJobs[folderPath]
+                if (existingJob != null && existingJob.isActive) {
+                    updatePanel(panelId) { it.copy(isContentIndexing = true, contentIndexProgress = null) }
+                    try {
+                        existingJob.join()
+                    } finally {
+                        updatePanel(panelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
+                    }
+                } else {
+                    updatePanel(panelId) { it.copy(isContentIndexing = true, contentIndexProgress = null) }
+                    try {
+                        val indexJob = viewModelScope.launch {
+                            searchRepository.indexFolderContent(folderPath, force = false) { processed, total ->
+                                val progress = "$processed / $total"
+                                for (pid in PanelId.entries) {
+                                    val p = getPanel(pid)
+                                    if (p.currentPath == folderPath && p.searchInContent) {
+                                        updatePanel(pid) { it.copy(contentIndexProgress = progress) }
+                                    }
+                                }
+                            }
+                        }
+                        activeFolderIndexJobs[folderPath] = indexJob
+                        indexJob.join()
+                        activeFolderIndexJobs.remove(folderPath)
+                        preferences.addContentIndexedFolder(folderPath)
+                    } finally {
+                        updatePanel(panelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
+                        val otherPanelId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                        val otherPanel = getPanel(otherPanelId)
+                        if (otherPanel.currentPath == folderPath && otherPanel.isContentIndexing) {
+                            updatePanel(otherPanelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
+                        }
                     }
                 }
-            } finally {
-                updatePanel(panelId) { it.copy(isContentIndexing = false, contentIndexProgress = null) }
             }
-            // After indexing, perform content search if query is present
+            // After indexing (or skip), perform content search if query is present
             val currentPanel = getPanel(panelId)
             if (currentPanel.searchInContent && currentPanel.searchQuery.isNotBlank()) {
                 val paths = searchRepository.searchContentInFolder(currentPanel.currentPath, currentPanel.searchQuery)
@@ -2774,9 +2805,14 @@ class ExplorerViewModel @Inject constructor(
     }
 
     private fun refreshBothIfSamePath(panelId: PanelId) {
+        // Invalidate content index cache — files changed in this folder
+        val path = getPanel(panelId).currentPath
+        if (path.isNotEmpty()) preferences.removeContentIndexedFolder(path)
         refreshPanel(panelId)
         val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-        if (getPanel(panelId).currentPath == getPanel(otherId).currentPath) {
+        val otherPath = getPanel(otherId).currentPath
+        if (otherPath.isNotEmpty()) preferences.removeContentIndexedFolder(otherPath)
+        if (path == otherPath) {
             refreshPanel(otherId)
         }
     }

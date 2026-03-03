@@ -63,6 +63,12 @@ class SearchRepositoryImpl @Inject constructor(
         _indexCompleted.value = false
     }
 
+    override suspend fun isFolderContentIndexed(folderPath: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            fileContentDao.hasContentInFolder(folderPath)
+        }
+    }
+
     override suspend fun searchContentInFolder(folderPath: String, query: String): Map<String, String> {
         if (query.isBlank()) return emptyMap()
         return withContext(Dispatchers.IO) {
@@ -97,25 +103,38 @@ class SearchRepositoryImpl @Inject constructor(
                 val dir = File(folderPath)
                 if (!dir.exists() || !dir.isDirectory) return@withContext
 
-                // Collect files only in this folder (non-recursive)
-                val files = dir.listFiles()?.filter { f ->
+                val allChildren = dir.listFiles() ?: return@withContext
+
+                // Collect indexable files in this folder
+                var files = allChildren.filter { f ->
                     f.isFile && (contentExtractor.isTextOrDocument(f)
                             || contentExtractor.isArchiveFile(f)
                             || contentExtractor.isImageFile(f)
                             || imageLabeler.isImageFile(f))
-                } ?: return@withContext
+                }
+
+                // If no direct files found, collect from immediate subdirectories (one level deeper)
+                if (files.isEmpty()) {
+                    files = allChildren.filter { it.isDirectory && !shouldSkipDirectory(it) }
+                        .flatMap { subDir ->
+                            subDir.listFiles()?.filter { f ->
+                                f.isFile && (contentExtractor.isTextOrDocument(f)
+                                        || contentExtractor.isArchiveFile(f)
+                                        || contentExtractor.isImageFile(f)
+                                        || imageLabeler.isImageFile(f))
+                            } ?: emptyList()
+                        }
+                }
 
                 if (files.isEmpty()) return@withContext
 
                 val toIndex = if (force) {
                     files
                 } else {
-                    // Skip files that already have content with OCR/labels
-                    val existingEntities = fileContentDao.getByPaths(files.map { it.absolutePath })
-                    val richPaths = existingEntities
-                        .filter { it.fullText.length > 200 } // EXIF-only is short, OCR is longer
+                    // Skip files that already have any indexed content
+                    val existingPaths = fileContentDao.getByPaths(files.map { it.absolutePath })
                         .map { it.path }.toSet()
-                    files.filter { it.absolutePath !in richPaths }
+                    files.filter { it.absolutePath !in existingPaths }
                 }
 
                 if (toIndex.isEmpty()) return@withContext

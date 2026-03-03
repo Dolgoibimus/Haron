@@ -554,6 +554,24 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getBoolean(KEY_MIC_HINT_SHOWN, false)
         set(value) = prefs.edit().putBoolean(KEY_MIC_HINT_SHOWN, value).apply()
 
+    // --- Content-indexed folders cache ---
+
+    fun getContentIndexedFolders(): Set<String> =
+        prefs.getStringSet(KEY_CONTENT_INDEXED_FOLDERS, emptySet()) ?: emptySet()
+
+    fun addContentIndexedFolder(path: String) {
+        val set = getContentIndexedFolders().toMutableSet()
+        set.add(path)
+        prefs.edit().putStringSet(KEY_CONTENT_INDEXED_FOLDERS, set).apply()
+    }
+
+    fun removeContentIndexedFolder(path: String) {
+        val set = getContentIndexedFolders().toMutableSet()
+        if (set.remove(path)) {
+            prefs.edit().putStringSet(KEY_CONTENT_INDEXED_FOLDERS, set).apply()
+        }
+    }
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -593,6 +611,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_MIC_FAB_OFFSET_X = "mic_fab_offset_x"
         const val KEY_MIC_FAB_OFFSET_Y = "mic_fab_offset_y"
         const val KEY_MIC_HINT_SHOWN = "mic_hint_shown"
+        const val KEY_CONTENT_INDEXED_FOLDERS = "content_indexed_folders"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

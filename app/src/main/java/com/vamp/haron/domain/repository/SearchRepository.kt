@@ -53,4 +53,5 @@ interface SearchRepository {
     fun dismissIndexCompleted()
     suspend fun searchContentInFolder(folderPath: String, query: String): Map<String, String>
     suspend fun indexFolderContent(folderPath: String, force: Boolean = false, onProgress: (Int, Int) -> Unit = { _, _ -> })
+    suspend fun isFolderContentIndexed(folderPath: String): Boolean
 }

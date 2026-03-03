@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -135,6 +136,7 @@ fun VoiceFab(
                 .padding(end = 16.dp, bottom = 56.dp)
                 .onGloballyPositioned { fabW = it.size.width; fabH = it.size.height }
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                 .pointerInput(Unit) {
                     val touchSlop = 10f
                     val longPressMs = 400L

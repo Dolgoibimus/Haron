@@ -37,4 +37,7 @@ interface FileContentDao {
 
     @Query("DELETE FROM file_content WHERE path IN (:paths)")
     suspend fun deleteByPaths(paths: List<String>)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM file_content WHERE path LIKE :pathPrefix || '/%' LIMIT 1)")
+    suspend fun hasContentInFolder(pathPrefix: String): Boolean
 }
