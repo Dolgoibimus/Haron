@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,7 +64,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -193,47 +199,53 @@ fun QuickPreviewDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {},
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 16.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entry.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    val subtitle = buildSubtitle(entry) +
-                        if (hasPager) " \u00B7 ${currentFileIndex + 1}/${adjacentFiles.size}" else ""
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
+                // Title
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.close),
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val subtitle = buildSubtitle(entry) +
+                            if (hasPager) " \u00B7 ${currentFileIndex + 1}/${adjacentFiles.size}" else ""
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.close),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
-            }
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                HorizontalDivider()
+
+                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                 Spacer(Modifier.height(8.dp))
 
-                // Fixed-height content area — prevents dialog from resizing
+                // Content area
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -276,56 +288,55 @@ fun QuickPreviewDialog(
                     }
                 }
 
-                // Bottom controls — always occupy space, invisible for non-media
+                // Bottom controls — only for audio
                 val isMedia = previewData is PreviewData.VideoPreview || previewData is PreviewData.AudioPreview
                 val isAudio = previewData is PreviewData.AudioPreview
-                val controlsAlpha = if (isAudio) 1f else 0f
 
-                Spacer(Modifier.height(4.dp))
-                var isDragging by remember { mutableStateOf(false) }
-                var dragValue by remember { mutableFloatStateOf(0f) }
-                Slider(
-                    value = if (isDragging) dragValue
-                        else if (playerState.isActive && playerState.duration > 0)
-                            playerState.currentPosition.toFloat() / playerState.duration
-                        else 0f,
-                    onValueChange = {
-                        isDragging = true
-                        dragValue = it
-                    },
-                    onValueChangeFinished = {
-                        if (playerState.isActive) {
-                            val seekTarget = (dragValue * playerState.duration).toLong()
-                            playerState.currentPosition = seekTarget
-                            playerState.seekTo?.invoke(seekTarget)
-                        }
-                        isDragging = false
-                    },
-                    enabled = isAudio && playerState.isActive,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(if (isAudio && playerState.isActive) 1f else 0f)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(controlsAlpha),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = if (playerState.isActive) playerState.currentPosition.toDurationString() else "0:00",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                            alpha = if (playerState.isActive) 1f else 0.5f
-                        )
+                if (isAudio) {
+                    Spacer(Modifier.height(4.dp))
+                    var isDragging by remember { mutableStateOf(false) }
+                    var dragValue by remember { mutableFloatStateOf(0f) }
+                    Slider(
+                        value = if (isDragging) dragValue
+                            else if (playerState.isActive && playerState.duration > 0)
+                                playerState.currentPosition.toFloat() / playerState.duration
+                            else 0f,
+                        onValueChange = {
+                            isDragging = true
+                            dragValue = it
+                        },
+                        onValueChangeFinished = {
+                            if (playerState.isActive) {
+                                val seekTarget = (dragValue * playerState.duration).toLong()
+                                playerState.currentPosition = seekTarget
+                                playerState.seekTo?.invoke(seekTarget)
+                            }
+                            isDragging = false
+                        },
+                        enabled = playerState.isActive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(if (playerState.isActive) 1f else 0f)
                     )
-                    Text(
-                        text = playerState.duration.toDurationString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                            alpha = if (playerState.isActive) 1f else 0.5f
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (playerState.isActive) playerState.currentPosition.toDurationString() else "0:00",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                alpha = if (playerState.isActive) 1f else 0.5f
+                            )
                         )
-                    )
+                        Text(
+                            text = playerState.duration.toDurationString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                alpha = if (playerState.isActive) 1f else 0.5f
+                            )
+                        )
+                    }
                 }
 
                 // Action buttons (fullscreen / edit / open)
@@ -333,15 +344,16 @@ fun QuickPreviewDialog(
                 val isPdf = previewData is PreviewData.PdfPreview
                 val isArchive = previewData is PreviewData.ArchivePreview
                 val isText = previewData is PreviewData.TextPreview
-                val isDocument = isText && entry.iconRes() == "document"
+                val isFb2 = previewData is PreviewData.Fb2Preview
+                val isDocument = (isText && entry.iconRes() == "document") || isFb2
                 val isApk = previewData is PreviewData.ApkPreview
                 val isEditableText = isText && onEdit != null && entry.iconRes() in listOf("text", "code")
                 val hasAction = isMedia || isImage || isPdf || isArchive || isDocument || isEditableText || isApk
 
                 if (hasAction) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(16.dp))
                     HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(16.dp))
                     when {
                         isMedia && onFullscreenPlay != null -> {
                             Button(
@@ -417,7 +429,7 @@ fun QuickPreviewDialog(
                 }
             }
         }
-    )
+    }
 }
 
 // --- Pager for all file types ---
@@ -599,6 +611,7 @@ private fun PreviewContentBlock(
                 is PreviewData.PdfPreview -> PdfPreviewContent(previewData)
                 is PreviewData.ArchivePreview -> ArchivePreviewContent(previewData)
                 is PreviewData.ApkPreview -> ApkPreviewContent(previewData)
+                is PreviewData.Fb2Preview -> Fb2PreviewContent(previewData)
                 is PreviewData.UnsupportedPreview -> UnsupportedPreviewContent()
             }
         }
@@ -1020,6 +1033,140 @@ private fun ApkPreviewContent(data: PreviewData.ApkPreview) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun Fb2PreviewContent(data: PreviewData.Fb2Preview) {
+    when {
+        data.coverBitmap != null && data.annotation.isNotBlank() -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(2.dp)
+            ) {
+                Fb2FloatLayout(
+                    coverBitmap = data.coverBitmap,
+                    annotation = data.annotation,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+        data.coverBitmap != null -> {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(2.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Image(
+                    bitmap = data.coverBitmap.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth(0.6f)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+            }
+        }
+        data.annotation.isNotBlank() -> {
+            Text(
+                text = data.annotation,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(2.dp)
+            )
+        }
+        else -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.preview_unavailable),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Float layout: image pinned top-left, text wraps around it line-by-line */
+@Composable
+private fun Fb2FloatLayout(
+    coverBitmap: Bitmap,
+    annotation: String,
+    modifier: Modifier = Modifier
+) {
+    val spacingPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val bodySmall = MaterialTheme.typography.bodySmall
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val textMeasurer = rememberTextMeasurer()
+
+    SubcomposeLayout(modifier = modifier) { constraints ->
+        val totalWidth = constraints.maxWidth
+        val imageMaxWidth = (totalWidth * 0.4f).toInt()
+
+        val imagePlaceable = subcompose("cover") {
+            Image(
+                bitmap = coverBitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.TopStart,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp))
+            )
+        }.first().measure(
+            Constraints(maxWidth = imageMaxWidth, minWidth = 0)
+        )
+
+        val imageH = imagePlaceable.height
+        val rightX = imagePlaceable.width + spacingPx
+        val narrowW = (totalWidth - rightX).coerceAtLeast(1)
+
+        // Measure full text at narrow width to find the split line
+        val narrowResult = textMeasurer.measure(
+            text = AnnotatedString(annotation),
+            style = bodySmall,
+            constraints = Constraints(maxWidth = narrowW)
+        )
+
+        // Find last line that fully fits beside the image
+        var splitLineIdx = -1
+        for (i in 0 until narrowResult.lineCount) {
+            if (narrowResult.getLineBottom(i).toInt() <= imageH) {
+                splitLineIdx = i
+            } else break
+        }
+
+        val splitOffset = if (splitLineIdx >= 0) {
+            narrowResult.getLineEnd(splitLineIdx)
+        } else 0
+
+        val topText = annotation.substring(0, splitOffset).trimEnd()
+        val bottomText = annotation.substring(splitOffset).trimStart()
+
+        // Top text beside image (narrow)
+        val topPlaceable = if (topText.isNotEmpty()) {
+            subcompose("topText") {
+                Text(text = topText, style = bodySmall, color = textColor)
+            }.first().measure(Constraints(maxWidth = narrowW))
+        } else null
+
+        // Bottom text at full width, starting below image
+        val bottomPlaceable = if (bottomText.isNotEmpty()) {
+            subcompose("bottomText") {
+                Text(text = bottomText, style = bodySmall, color = textColor)
+            }.first().measure(Constraints(maxWidth = totalWidth))
+        } else null
+
+        val bottomY = imageH
+        val totalHeight = bottomY + (bottomPlaceable?.height ?: 0)
+
+        layout(totalWidth, maxOf(imageH, totalHeight)) {
+            imagePlaceable.placeRelative(0, 0)
+            topPlaceable?.placeRelative(rightX, 0)
+            bottomPlaceable?.placeRelative(0, bottomY)
         }
     }
 }

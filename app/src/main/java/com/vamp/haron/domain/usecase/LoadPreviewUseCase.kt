@@ -22,6 +22,7 @@ import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
+import android.util.Base64
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -40,15 +41,17 @@ class LoadPreviewUseCase @Inject constructor(
 
     suspend operator fun invoke(entry: FileEntry): Result<PreviewData> = withContext(Dispatchers.IO) {
         try {
-            val result = when (entry.iconRes()) {
-                "image" -> loadImage(entry)
-                "video" -> loadVideo(entry)
-                "audio" -> loadAudio(entry)
-                "text", "code" -> loadText(entry)
-                "pdf" -> loadPdf(entry)
-                "archive" -> loadArchive(entry)
-                "apk" -> loadApk(entry)
-                "document" -> loadDocument(entry)
+            val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
+            val result = when {
+                isFb2Zip -> loadFb2Zip(entry)
+                entry.iconRes() == "image" -> loadImage(entry)
+                entry.iconRes() == "video" -> loadVideo(entry)
+                entry.iconRes() == "audio" -> loadAudio(entry)
+                entry.iconRes() in listOf("text", "code") -> loadText(entry)
+                entry.iconRes() == "pdf" -> loadPdf(entry)
+                entry.iconRes() == "archive" -> loadArchive(entry)
+                entry.iconRes() == "apk" -> loadApk(entry)
+                entry.iconRes() == "document" -> loadDocument(entry)
                 else -> PreviewData.UnsupportedPreview(
                     fileName = entry.name,
                     fileSize = entry.size,
@@ -468,6 +471,7 @@ class LoadPreviewUseCase @Inject constructor(
             "odt" -> loadOdt(entry)
             "doc" -> loadDoc(entry)
             "rtf" -> loadRtf(entry)
+            "fb2" -> loadFb2(entry)
             else -> PreviewData.UnsupportedPreview(
                 fileName = entry.name,
                 fileSize = entry.size,
@@ -475,6 +479,114 @@ class LoadPreviewUseCase @Inject constructor(
                 mimeType = entry.extension
             )
         }
+    }
+
+    private fun loadFb2(entry: FileEntry): PreviewData {
+        val xml = if (entry.isContentUri) {
+            context.contentResolver.openInputStream(Uri.parse(entry.path))
+                ?.bufferedReader()?.readText()
+                ?: throw IllegalStateException(context.getString(R.string.open_file_failed))
+        } else {
+            File(entry.path).readText()
+        }
+        return parseFb2Xml(entry, xml)
+    }
+
+    private fun loadFb2Zip(entry: FileEntry): PreviewData {
+        val file = if (entry.isContentUri) copyToTemp(entry) else File(entry.path)
+        try {
+            ZipFile(file).use { zip ->
+                val fb2Entry = zip.entries().asSequence()
+                    .firstOrNull { it.name.lowercase().endsWith(".fb2") }
+                    ?: return PreviewData.UnsupportedPreview(
+                        fileName = entry.name, fileSize = entry.size,
+                        lastModified = entry.lastModified, mimeType = "fb2.zip"
+                    )
+                val xml = zip.getInputStream(fb2Entry).bufferedReader().readText()
+                return parseFb2Xml(entry, xml)
+            }
+        } finally {
+            if (entry.isContentUri) file.delete()
+        }
+    }
+
+    private fun parseFb2Xml(entry: FileEntry, xml: String): PreviewData {
+        // Extract base64 binaries
+        val binaries = mutableMapOf<String, ByteArray>()
+        val binRe = Regex("""<binary\s+[^>]*id="([^"]+)"[^>]*>(.*?)</binary>""", RegexOption.DOT_MATCHES_ALL)
+        for (m in binRe.findAll(xml)) {
+            try {
+                val id = m.groupValues[1]
+                val b64 = m.groupValues[2].replace(Regex("\\s"), "")
+                if (b64.length > 10) {
+                    binaries[id] = Base64.decode(b64, Base64.DEFAULT)
+                }
+            } catch (_: Exception) { }
+        }
+
+        // Extract cover image
+        val coverHref = Regex(
+            """<coverpage>.*?href="[#]?([^"]+)".*?</coverpage>""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(xml)?.groupValues?.get(1)
+        val coverBitmap = coverHref?.let { href ->
+            binaries[href]?.let { bytes ->
+                try {
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                    val sampleSize = calculateInSampleSize(
+                        opts.outWidth, opts.outHeight, MAX_IMAGE_SIZE, MAX_IMAGE_SIZE
+                    )
+                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts)
+                } catch (_: Exception) { null }
+            }
+        }
+
+        // Extract annotation
+        val annotationMatch = Regex(
+            """<annotation>(.*?)</annotation>""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(xml)
+        val annotation = if (annotationMatch != null) {
+            val body = annotationMatch.groupValues[1]
+            Regex("""<p>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(body)
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .filter { it.isNotBlank() }
+                .joinToString("\n")
+        } else ""
+
+        // Extract body text to fill the preview
+        val bodyMatch = Regex("""<body[^>]*>(.*)</body>""", RegexOption.DOT_MATCHES_ALL).find(xml)
+        val bodyText = bodyMatch?.groupValues?.get(1)?.let { body ->
+            Regex("""<p>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(body)
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .filter { it.isNotBlank() }
+                .take(MAX_TEXT_LINES)
+                .joinToString("\n")
+        } ?: ""
+
+        // If no cover and no annotation, fallback to plain text preview
+        if (coverBitmap == null && annotation.isBlank()) {
+            return textToPreview(entry, bodyText)
+        }
+
+        // Combine annotation + body text to fill the available space
+        val fullText = buildString {
+            if (annotation.isNotBlank()) {
+                append(annotation)
+                if (bodyText.isNotBlank()) append("\n\n")
+            }
+            append(bodyText)
+        }
+
+        return PreviewData.Fb2Preview(
+            fileName = entry.name,
+            fileSize = entry.size,
+            lastModified = entry.lastModified,
+            coverBitmap = coverBitmap,
+            annotation = fullText
+        )
     }
 
     private fun loadDocx(entry: FileEntry): PreviewData {

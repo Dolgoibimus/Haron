@@ -73,6 +73,14 @@ sealed interface PreviewData {
         val icon: Bitmap?
     ) : PreviewData
 
+    data class Fb2Preview(
+        override val fileName: String,
+        override val fileSize: Long,
+        override val lastModified: Long,
+        val coverBitmap: Bitmap?,
+        val annotation: String
+    ) : PreviewData
+
     data class UnsupportedPreview(
         override val fileName: String,
         override val fileSize: Long,

@@ -1675,6 +1675,33 @@ object DocumentParser {
             }
         }
 
+        // ── Cover image from <description><title-info><coverpage> ──
+        val coverHref = Regex(
+            """<coverpage>.*?href="[#]?([^"]+)".*?</coverpage>""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(raw)?.groupValues?.get(1)
+        val coverData = coverHref?.let { binaries[it] }
+        if (coverData != null) {
+            result += DocParagraph(spans = emptyList(), imageData = coverData)
+        }
+
+        // ── Annotation from <description><title-info><annotation> ──
+        val annotationMatch = Regex(
+            """<annotation>(.*?)</annotation>""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(raw)
+        if (annotationMatch != null) {
+            val annotationBody = annotationMatch.groupValues[1]
+            for (ap in pRe.findAll(annotationBody)) {
+                val spans = fb2Spans(ap.groupValues[1]).map { it.copy(italic = true) }
+                if (spans.isNotEmpty()) {
+                    result += DocParagraph(spans)
+                }
+            }
+            // Separator after annotation
+            result += DocParagraph(spans = listOf(DocSpan("———")), alignment = ParaAlignment.CENTER)
+        }
+
         val elements = Regex(
             """<title>(.*?)</title>|<image\s[^>]*/?>|<p>(.*?)</p>""",
             RegexOption.DOT_MATCHES_ALL

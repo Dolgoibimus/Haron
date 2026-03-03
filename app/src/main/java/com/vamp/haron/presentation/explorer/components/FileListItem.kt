@@ -1,6 +1,8 @@
 package com.vamp.haron.presentation.explorer.components
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
@@ -46,6 +50,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -63,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.vamp.haron.R
 import androidx.compose.material.icons.filled.Lock
+import com.vamp.haron.common.util.ThumbnailCache
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.FileEntry
@@ -107,7 +115,9 @@ fun FileListItem(
         )
     }
 
-    val fileIcon = when (entry.iconRes()) {
+    val fileType = entry.iconRes()
+
+    val fileIcon = when (fileType) {
         "folder" -> Icons.Filled.Folder
         "image" -> Icons.Filled.Image
         "video" -> Icons.Filled.VideoFile
@@ -124,40 +134,72 @@ fun FileListItem(
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
+    // Thumbnail loading
+    val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
+    val showThumbnail = fileType in listOf("image", "video", "text", "code", "apk", "document", "pdf") || isFb2Zip
+    var thumbnail by remember(entry.path) {
+        mutableStateOf<Bitmap?>(if (showThumbnail) ThumbnailCache.get(entry.path) else null)
+    }
+
+    if (showThumbnail && thumbnail == null) {
+        val context = LocalContext.current
+        LaunchedEffect(entry.path) {
+            thumbnail = ThumbnailCache.loadThumbnail(
+                context, entry.path, entry.isContentUri, fileType
+            )
+        }
+    }
+
     if (isGridMode) {
-        // Grid mode: vertical Column layout (icon on top, name below)
+        // Grid mode: square container, image fitted inside preserving aspect ratio
         Box(
             modifier = modifier
                 .background(bgColor)
                 .then(clickModifier)
-                .padding(4.dp),
+                .padding(2.dp),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                modifier = Modifier.padding(vertical = 2.dp, horizontal = 2.dp)
             ) {
-                // Selection badge overlay + icon click target + extension badge
+                // Square icon area — always 1:1, thumbnails fitted inside
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
-                        .clickable(onClick = onIconClick)
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onIconClick),
+                    contentAlignment = Alignment.BottomCenter
                 ) {
-                    val emptyFolderBorder = if (isEmptyFolder) Modifier.border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(6.dp)
-                    ) else Modifier
-                    Icon(
-                        imageVector = fileIcon,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .align(Alignment.Center)
-                            .then(emptyFolderBorder)
-                            .padding(if (isEmptyFolder) 4.dp else 0.dp),
-                        tint = iconTint
-                    )
+                    if (thumbnail != null) {
+                        // Fit inside square — centered for even corner rounding
+                        // APK icons slightly smaller (85%) for aesthetics
+                        Image(
+                            bitmap = thumbnail!!.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = if (fileType == "apk") Modifier.fillMaxSize(0.85f)
+                                       else Modifier.fillMaxSize()
+                        )
+                    } else {
+                        // Standard Material icon — 90% of cell, pinned to bottom
+                        val emptyFolderBorder = if (isEmptyFolder) Modifier.border(
+                            width = 1.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(6.dp)
+                        ) else Modifier
+                        Icon(
+                            imageVector = fileIcon,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize(0.9f)
+                                .align(Alignment.BottomCenter)
+                                .then(emptyFolderBorder)
+                                .padding(if (isEmptyFolder) 4.dp else 0.dp),
+                            tint = iconTint
+                        )
+                    }
                     // Extension badge (bottom-center)
                     if (!entry.isDirectory && entry.extension.isNotEmpty()) {
                         Text(
@@ -171,7 +213,9 @@ fun FileListItem(
                                 .align(Alignment.BottomCenter)
                                 .offset(y = 2.dp)
                                 .background(
-                                    MaterialTheme.colorScheme.secondaryContainer,
+                                    MaterialTheme.colorScheme.secondaryContainer.copy(
+                                        alpha = if (thumbnail != null) 0.85f else 1f
+                                    ),
                                     RoundedCornerShape(3.dp)
                                 )
                                 .padding(horizontal = 3.dp, vertical = 1.dp)
@@ -187,8 +231,9 @@ fun FileListItem(
                             },
                             contentDescription = null,
                             modifier = Modifier
-                                .size(18.dp)
-                                .align(Alignment.TopEnd),
+                                .size(20.dp)
+                                .align(Alignment.TopEnd)
+                                .padding(2.dp),
                             tint = if (isSelected) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -202,14 +247,15 @@ fun FileListItem(
                             imageVector = Icons.Filled.Lock,
                             contentDescription = null,
                             modifier = Modifier
-                                .size(14.dp)
-                                .align(Alignment.TopStart),
+                                .size(16.dp)
+                                .align(Alignment.TopStart)
+                                .padding(2.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
                 if (isRenaming) {
                     InlineRenameField(
@@ -286,25 +332,35 @@ fun FileListItem(
             Box(
                 modifier = Modifier
                     .size(36.dp)
+                    .clip(RoundedCornerShape(4.dp))
                     .clickable(onClick = onIconClick),
                 contentAlignment = Alignment.Center
             ) {
-                val emptyFolderBorderList = if (isEmptyFolder) Modifier.border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(4.dp)
-                ) else Modifier
-                Icon(
-                    imageVector = fileIcon,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(26.dp)
-                        .then(emptyFolderBorderList)
-                        .padding(if (isEmptyFolder) 2.dp else 0.dp),
-                    tint = iconTint
-                )
+                if (thumbnail != null) {
+                    Image(
+                        bitmap = thumbnail!!.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    val emptyFolderBorderList = if (isEmptyFolder) Modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(4.dp)
+                    ) else Modifier
+                    Icon(
+                        imageVector = fileIcon,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(26.dp)
+                            .then(emptyFolderBorderList)
+                            .padding(if (isEmptyFolder) 2.dp else 0.dp),
+                        tint = iconTint
+                    )
+                }
                 // Extension badge (bottom-center)
-                if (!entry.isDirectory && entry.extension.isNotEmpty()) {
+                if (!entry.isDirectory && entry.extension.isNotEmpty() && thumbnail == null) {
                     Text(
                         text = entry.extension.take(4).uppercase(),
                         style = MaterialTheme.typography.labelSmall.copy(
