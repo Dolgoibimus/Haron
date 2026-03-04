@@ -783,6 +783,13 @@
     <string name="transfer_receive">Принять</string>
     <string name="transfer_qr_title">Сканируйте QR-код</string>
     <string name="transfer_qr_subtitle">Откройте этот URL в любом браузере для скачивания файлов</string>
+    <string name="qr_step1_wifi">Шаг 1: Подключись к Wi-Fi</string>
+    <string name="qr_step2_download">Шаг 2: Скачай файлы</string>
+    <string name="qr_hotspot_ssid">Имя сети (SSID)</string>
+    <string name="qr_hotspot_password">Пароль</string>
+    <string name="qr_hotspot_setup">Настроить QR точки доступа</string>
+    <string name="qr_hotspot_save">Сохранить</string>
+    <string name="qr_hotspot_no_password">Открытая сеть</string>
     <string name="transfer_accept_title">Входящая передача</string>
     <string name="transfer_accept_message">%1$s хочет отправить %2$d файлов</string>
     <string name="transfer_accept">Принять</string>
@@ -790,7 +797,10 @@
     <string name="transfer_haron_device">Устройство Haron</string>
     <string name="transfer_battery_saver_warning">Включён режим энергосбережения. Передача может быть медленнее или прерваться.</string>
     <string name="transfer_no_wifi">Wi-Fi отключён</string>
-    <string name="transfer_no_wifi_for_qr">Подключите оба устройства к одной Wi-Fi сети для передачи через QR-код</string>
+    <string name="transfer_no_wifi_for_qr">Включите Wi-Fi для передачи через QR-код (подключение к сети не требуется)</string>
+    <string name="transfer_hotspot_needed_title">Передача невозможна</string>
+    <string name="transfer_hotspot_needed_msg">Ваша сеть не подходит для передачи. Включите точку доступа на телефоне — другие устройства подключатся к ней и скачают файлы.</string>
+    <string name="transfer_open_hotspot_settings">Открыть настройки точки доступа</string>
     <string name="transfer_no_bluetooth">Bluetooth отключён</string>
     <string name="transfer_no_connection">Нет доступных подключений</string>
     <string name="transfer_resume">Продолжить</string>
@@ -1052,4 +1062,5 @@
     <string name="shield_requires_pin">Сначала установите PIN в настройках</string>
     <string name="security_question_saved">Секретный вопрос сохранён</string>
     <string name="check_answer">Проверить</string>
+    <string name="features_title">Описание функций</string>
 </resources>

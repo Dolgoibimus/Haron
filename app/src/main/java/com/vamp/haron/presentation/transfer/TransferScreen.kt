@@ -1,7 +1,10 @@
 package com.vamp.haron.presentation.transfer
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,6 +33,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +63,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.domain.model.TransferState
@@ -151,7 +156,7 @@ fun TransferScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp, horizontal = 2.dp),
+                        .padding(vertical = 5.dp, horizontal = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -163,19 +168,19 @@ fun TransferScreen(
                                 onBack()
                             }
                         },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(35.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(30.dp))
                     }
                     Text(
                         stringResource(R.string.transfer_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
                         modifier = Modifier.padding(start = 4.dp).weight(1f)
                     )
                     // Receive button
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(35.dp)
                             .combinedClickable(
                                 role = Role.Button,
                                 onClick = {
@@ -189,7 +194,7 @@ fun TransferScreen(
                         Icon(
                             Icons.Filled.Download,
                             contentDescription = stringResource(R.string.transfer_receive),
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(30.dp),
                             tint = if (state.isReceiving) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -197,7 +202,7 @@ fun TransferScreen(
                     // QR button
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(35.dp)
                             .combinedClickable(
                                 role = Role.Button,
                                 onClick = {
@@ -208,13 +213,13 @@ fun TransferScreen(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.QrCode, contentDescription = stringResource(R.string.transfer_qr_title), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.QrCode, contentDescription = stringResource(R.string.transfer_qr_title), modifier = Modifier.size(30.dp))
                     }
                     IconButton(
                         onClick = { viewModel.startDiscovery() },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(35.dp)
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.reindex), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.reindex), modifier = Modifier.size(30.dp))
                     }
                 }
             }
@@ -258,6 +263,8 @@ fun TransferScreen(
     if (state.showQrDialog && state.serverUrl != null) {
         QrCodeDialog(
             url = state.serverUrl!!,
+            hotspotSsid = state.hotspotSsid,
+            hotspotPassword = state.hotspotPassword,
             onDismiss = { viewModel.dismissQrDialog() },
             onStopServer = { viewModel.stopHttpServer() }
         )
@@ -273,15 +280,68 @@ fun TransferScreen(
         )
     }
 
+    // Hotspot needed dialog
+    if (state.showWifiOffDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissWifiOffDialog() },
+            title = { Text(stringResource(R.string.transfer_hotspot_needed_title)) },
+            text = { Text(stringResource(R.string.transfer_hotspot_needed_msg)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissWifiOffDialog()
+                    try {
+                        context.startActivity(Intent("android.settings.TETHERING_SETTINGS"))
+                    } catch (_: Exception) {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                        } catch (_: Exception) {
+                            context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                        }
+                    }
+                }) {
+                    Text(stringResource(R.string.transfer_open_hotspot_settings))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissWifiOffDialog() }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     // QR Scanner Dialog
     if (showScanner) {
         QrScannerDialog(
-            onResult = { url ->
+            onResult = { result ->
                 showScanner = false
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    viewModel.downloadFromQr(url)
-                } else {
-                    Toast.makeText(context, url, Toast.LENGTH_LONG).show()
+                when {
+                    // Local network URL → Haron-to-Haron transfer download
+                    (result.startsWith("http://") || result.startsWith("https://")) &&
+                        isLocalNetworkUrl(result) -> {
+                        viewModel.downloadFromQr(result)
+                    }
+                    // Regular URL → open in browser
+                    result.startsWith("http://") || result.startsWith("https://") -> {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result)))
+                        } catch (_: Exception) {
+                            Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    // Other URI schemes (tel:, mailto:, geo:, wifi:, etc.)
+                    result.contains("://") || result.startsWith("tel:") ||
+                        result.startsWith("mailto:") || result.startsWith("geo:") -> {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result)))
+                        } catch (_: Exception) {
+                            Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    // Plain text
+                    else -> {
+                        Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                    }
                 }
             },
             onDismiss = { showScanner = false }
@@ -370,8 +430,8 @@ private fun TransferTabContent(
                 }
             }
 
-            // File info
-            if (state.files.isNotEmpty()) {
+            // File info (hide when completed)
+            if (state.files.isNotEmpty() && state.transferState != TransferState.COMPLETED) {
                 Text(
                     stringResource(R.string.transfer_select_files) + ": ${state.files.size}",
                     style = MaterialTheme.typography.labelMedium,
@@ -506,4 +566,12 @@ private fun TransferTabContent(
                 Spacer(Modifier.weight(1f))
             }
     }
+}
+
+/** Check if URL points to a local/private network address (for Haron-to-Haron transfers). */
+private fun isLocalNetworkUrl(url: String): Boolean {
+    val host = Uri.parse(url).host ?: return false
+    return host.startsWith("192.168.") ||
+        host.startsWith("10.") ||
+        host.matches(Regex("172\\.(1[6-9]|2[0-9]|3[01])\\..*"))
 }

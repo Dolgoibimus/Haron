@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Eject
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.SendToMobile
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Usb
@@ -96,6 +97,7 @@ fun DrawerMenu(
     onOpenTerminal: () -> Unit = {},
     isListeningForTransfer: Boolean = false,
     onOpenSettings: () -> Unit,
+    onOpenFeatures: () -> Unit = {},
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -439,6 +441,15 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Settings, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
                     title = stringResource(R.string.settings),
                     onClick = { onOpenSettings(); onDismiss() }
+                )
+            }
+
+            // --- Features ---
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Info, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                    title = stringResource(R.string.features_title),
+                    onClick = { onOpenFeatures(); onDismiss() }
                 )
             }
 

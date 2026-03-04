@@ -147,9 +147,14 @@ class NetworkDeviceScanner @Inject constructor(
     /**
      * Scan local subnet for SMB shares (port 445).
      * Quick scan: parallel probes with 300ms timeout.
+     * Skips VPN/CGNAT subnets (100.64.0.0/10) to avoid scanning Tailscale etc.
      */
     private suspend fun scanSubnetForSmb() {
         val localIp = getLocalIpAddress() ?: return
+        if (isCgnatAddress(localIp)) {
+            EcosystemLogger.d(TAG, "Skipping SMB subnet scan — CGNAT/VPN address: $localIp")
+            return
+        }
         val subnet = localIp.substringBeforeLast('.')
         if (subnet == localIp) return // No valid subnet
 
@@ -203,15 +208,34 @@ class NetworkDeviceScanner @Inject constructor(
         }
     }
 
+    /**
+     * Returns local IPv4 address, preferring Wi-Fi (wlan) over VPN/other interfaces.
+     */
     private fun getLocalIpAddress(): String? {
         return try {
-            NetworkInterface.getNetworkInterfaces()?.toList()
-                ?.flatMap { it.inetAddresses.toList() }
-                ?.firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
-                ?.hostAddress
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: return null
+            val candidates = interfaces
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { iface ->
+                    iface.inetAddresses.toList()
+                        .filterIsInstance<java.net.Inet4Address>()
+                        .filter { !it.isLoopbackAddress }
+                        .map { iface.name to it.hostAddress }
+                }
+            // Prefer wlan (Wi-Fi) over tun/tailscale/other
+            candidates.firstOrNull { it.first.startsWith("wlan") }?.second
+                ?: candidates.firstOrNull { !isCgnatAddress(it.second ?: "") }?.second
+                ?: candidates.firstOrNull()?.second
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** CGNAT range 100.64.0.0/10 — used by Tailscale, carrier NAT, etc. */
+    private fun isCgnatAddress(ip: String): Boolean {
+        val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4) return false
+        return parts[0] == 100 && parts[1] in 64..127
     }
 
     companion object {

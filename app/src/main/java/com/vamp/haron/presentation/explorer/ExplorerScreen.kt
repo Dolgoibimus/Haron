@@ -112,6 +112,7 @@ fun ExplorerScreen(
     onOpenDuplicateDetector: () -> Unit = { },
     onOpenAppManager: () -> Unit = { },
     onOpenSettings: () -> Unit = { },
+    onOpenFeatures: () -> Unit = { },
     onOpenGlobalSearch: () -> Unit = { },
     onOpenTransfer: () -> Unit = { },
     onOpenTerminal: () -> Unit = { },
@@ -156,6 +157,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenSettings -> {
                     onOpenSettings()
+                }
+                is NavigationEvent.OpenFeatures -> {
+                    onOpenFeatures()
                 }
                 is NavigationEvent.OpenGlobalSearch -> {
                     onOpenGlobalSearch()
@@ -724,6 +728,10 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.onSendSelected(selectedEntries.map { it.path })
                 },
+                onSendLongClick = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.onSendToTransfer(selectedEntries.map { it.path })
+                },
                 onCast = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.castSelected()
@@ -1262,6 +1270,7 @@ private fun ExplorerOverlays(
 
                     onRefreshNetwork = { viewModel.refreshNetwork() },
                     onOpenSettings = { viewModel.openSettings() },
+                    onOpenFeatures = { viewModel.openFeatures() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer
                 )

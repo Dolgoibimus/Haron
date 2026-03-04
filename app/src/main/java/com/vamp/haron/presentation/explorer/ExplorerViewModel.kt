@@ -17,6 +17,7 @@ import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.SearchNavigationHolder
+import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.domain.model.ShelfItem
 import com.vamp.haron.domain.model.ConflictFileInfo
 import com.vamp.haron.domain.model.ConflictPair
@@ -3229,6 +3230,15 @@ class ExplorerViewModel @Inject constructor(
         _navigationEvent.tryEmit(NavigationEvent.OpenTransfer)
     }
 
+    fun onSendToTransfer(paths: List<String>) {
+        val files = paths.mapNotNull { path ->
+            java.io.File(path).takeIf { it.exists() }
+        }
+        if (files.isEmpty()) return
+        TransferHolder.selectedFiles = files
+        _navigationEvent.tryEmit(NavigationEvent.OpenTransfer)
+    }
+
     fun onSendSelected(paths: List<String>) {
         val files = paths.mapNotNull { path ->
             java.io.File(path).takeIf { it.exists() }
@@ -3392,6 +3402,10 @@ class ExplorerViewModel @Inject constructor(
 
     fun openSettings() {
         _navigationEvent.tryEmit(NavigationEvent.OpenSettings)
+    }
+
+    fun openFeatures() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenFeatures)
     }
 
     // --- Gesture system ---

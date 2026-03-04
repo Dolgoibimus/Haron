@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import com.vamp.core.logger.EcosystemLogger
@@ -37,6 +38,7 @@ class FileOperationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operationJob: Job? = null
     private var currentOperationType: OperationType = OperationType.COPY
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -74,6 +76,10 @@ class FileOperationService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "haron:fileop")
+            .apply { acquire(60 * 60 * 1000L) }
 
         operationJob = scope.launch {
             executeOperation(sourcePaths, destinationDir, isMove, conflictResolution)
@@ -371,6 +377,8 @@ class FileOperationService : Service() {
     }
 
     override fun onDestroy() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         scope.cancel()
         super.onDestroy()
     }

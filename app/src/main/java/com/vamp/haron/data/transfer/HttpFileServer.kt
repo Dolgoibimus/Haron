@@ -16,6 +16,9 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -25,6 +28,12 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class HttpDownloadEvent(
+    val fileIndex: Int,
+    val fileName: String,
+    val fileSize: Long
+)
+
 @Singleton
 class HttpFileServer @Inject constructor(
     @ApplicationContext private val context: Context
@@ -33,6 +42,9 @@ class HttpFileServer @Inject constructor(
     private var sharedFiles: List<File> = emptyList()
     var actualPort: Int = 0
         private set
+
+    private val _downloadEvents = MutableSharedFlow<HttpDownloadEvent>(extraBufferCapacity = 64)
+    val downloadEvents: SharedFlow<HttpDownloadEvent> = _downloadEvents.asSharedFlow()
 
     // Extended cast data
     private var slideshowFiles: List<File> = emptyList()
@@ -71,6 +83,7 @@ class HttpFileServer @Inject constructor(
                         "attachment; filename*=UTF-8''$encodedName"
                     )
                     call.response.header(HttpHeaders.ContentLength, file.length().toString())
+                    val fileSize = file.length()
                     call.respondOutputStream(
                         contentType = ContentType.Application.OctetStream,
                         status = HttpStatusCode.OK
@@ -81,6 +94,7 @@ class HttpFileServer @Inject constructor(
                             }
                         }
                     }
+                    _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, fileSize))
                 }
                 get("/stream/{index}") {
                     val idx = call.parameters["index"]?.toIntOrNull()
@@ -94,7 +108,9 @@ class HttpFileServer @Inject constructor(
                         return@get
                     }
                     call.response.header(HttpHeaders.AcceptRanges, "bytes")
+                    val fileSize = file.length()
                     call.respondFile(file)
+                    _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, fileSize))
                 }
 
                 // JSON API for Haron-to-Haron QR download
@@ -188,57 +204,83 @@ class HttpFileServer @Inject constructor(
     fun getLocalIpAddress(): String? {
         try {
             // 1) ConnectivityManager — find specifically WiFi network (not mobile data!)
+            var cmCgnatIp: String? = null
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
                     as? android.net.ConnectivityManager
             if (cm != null) {
                 for (network in cm.allNetworks) {
                     val caps = cm.getNetworkCapabilities(network) ?: continue
                     if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) continue
+                    // Skip VPN networks (Tailscale etc. report both TRANSPORT_VPN and TRANSPORT_WIFI)
+                    if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue
                     val linkProps = cm.getLinkProperties(network) ?: continue
                     for (la in linkProps.linkAddresses) {
                         val addr = la.address
                         if (addr is Inet4Address && !addr.isLoopbackAddress) {
                             val ip = addr.hostAddress
                             if (ip != null && ip != "0.0.0.0") {
-                                EcosystemLogger.d(HaronConstants.TAG, "IP from WiFi network: $ip")
-                                return ip
+                                if (isCgnatIp(ip)) {
+                                    // CGNAT — remember but keep looking for better
+                                    if (cmCgnatIp == null) cmCgnatIp = ip
+                                } else {
+                                    EcosystemLogger.d(HaronConstants.TAG, "IP from WiFi network: $ip")
+                                    return ip
+                                }
                             }
                         }
                     }
                 }
-                EcosystemLogger.w(HaronConstants.TAG, "No WiFi network found via ConnectivityManager")
+                if (cmCgnatIp != null) {
+                    EcosystemLogger.w(HaronConstants.TAG, "WiFi has CGNAT IP: $cmCgnatIp, checking interfaces for hotspot...")
+                } else {
+                    EcosystemLogger.w(HaronConstants.TAG, "No WiFi network found via ConnectivityManager")
+                }
             }
 
-            // 2) Fallback: NetworkInterface, prefer wlan*
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            var fallback: String? = null
+            // 2) Fallback: NetworkInterface — prefer non-CGNAT on wlan/ap/swlan
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return cmCgnatIp
+            var bestWlanIp: String? = null
+            var cgnatWlanIp: String? = null
+            var otherFallback: String? = null
             for (intf in interfaces) {
                 if (!intf.isUp || intf.isLoopback) continue
                 val name = intf.name.lowercase()
                 for (addr in intf.inetAddresses) {
                     if (addr is Inet4Address && !addr.isLoopbackAddress) {
                         val ip = addr.hostAddress ?: continue
-                        if (name.startsWith("wlan") || name.startsWith("ap") || name.startsWith("swlan")) {
-                            EcosystemLogger.d(HaronConstants.TAG, "IP from interface $name: $ip")
-                            return ip
-                        }
-                        // Skip mobile data interfaces
-                        if (fallback == null && !name.startsWith("rmnet") && !name.startsWith("ccmni") && !name.startsWith("pdp")) {
-                            fallback = ip
+                        val cgnat = isCgnatIp(ip)
+                        if (name.startsWith("wlan") || name.startsWith("ap") ||
+                            name.startsWith("swlan") || name.contains("softap")) {
+                            if (!cgnat) {
+                                bestWlanIp = ip
+                            } else if (cgnatWlanIp == null) {
+                                cgnatWlanIp = ip
+                            }
+                        } else if (!cgnat && !name.startsWith("rmnet") &&
+                            !name.startsWith("ccmni") && !name.startsWith("pdp")) {
+                            if (otherFallback == null) otherFallback = ip
                         }
                     }
                 }
             }
-            if (fallback != null) {
-                EcosystemLogger.w(HaronConstants.TAG, "IP fallback (non-WiFi): $fallback")
+
+            val result = bestWlanIp ?: otherFallback ?: cmCgnatIp ?: cgnatWlanIp
+            if (result != null) {
+                EcosystemLogger.d(HaronConstants.TAG, "IP selected: $result (wlan=${bestWlanIp}, other=${otherFallback}, cmCgnat=${cmCgnatIp}, wlanCgnat=${cgnatWlanIp})")
             } else {
                 EcosystemLogger.e(HaronConstants.TAG, "No suitable IP found. Connect to WiFi.")
             }
-            return fallback
+            return result
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "Failed to get IP: ${e.message}")
         }
         return null
+    }
+
+    /** CGNAT range 100.64.0.0/10 */
+    private fun isCgnatIp(ip: String): Boolean {
+        val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
+        return parts.size == 4 && parts[0] == 100 && parts[1] in 64..127
     }
 
     private fun findAvailablePort(): Int {

@@ -783,6 +783,13 @@
     <string name="transfer_receive">Receive</string>
     <string name="transfer_qr_title">Scan QR code</string>
     <string name="transfer_qr_subtitle">Open this URL in any browser to download files</string>
+    <string name="qr_step1_wifi">Step 1: Connect to Wi-Fi</string>
+    <string name="qr_step2_download">Step 2: Download files</string>
+    <string name="qr_hotspot_ssid">Network name (SSID)</string>
+    <string name="qr_hotspot_password">Password</string>
+    <string name="qr_hotspot_setup">Set up hotspot QR</string>
+    <string name="qr_hotspot_save">Save</string>
+    <string name="qr_hotspot_no_password">Open network</string>
     <string name="transfer_accept_title">Incoming transfer</string>
     <string name="transfer_accept_message">%1$s wants to send %2$d files</string>
     <string name="transfer_accept">Accept</string>
@@ -790,7 +797,10 @@
     <string name="transfer_haron_device">Haron device</string>
     <string name="transfer_battery_saver_warning">Battery saver is on. Transfer may be slower or interrupted.</string>
     <string name="transfer_no_wifi">Wi-Fi is disabled</string>
-    <string name="transfer_no_wifi_for_qr">Connect both devices to the same Wi-Fi network to share via QR code</string>
+    <string name="transfer_no_wifi_for_qr">Turn on Wi-Fi to share via QR code (connection not required)</string>
+    <string name="transfer_hotspot_needed_title">Cannot transfer files</string>
+    <string name="transfer_hotspot_needed_msg">Your network is not suitable for transfer. Enable your phone\'s hotspot — other devices will connect to it and download files.</string>
+    <string name="transfer_open_hotspot_settings">Open hotspot settings</string>
     <string name="transfer_no_bluetooth">Bluetooth is disabled</string>
     <string name="transfer_no_connection">No connection available</string>
     <string name="transfer_resume">Resume</string>
@@ -1052,4 +1062,5 @@
     <string name="shield_requires_pin">Set up PIN in settings first</string>
     <string name="security_question_saved">Security question saved</string>
     <string name="check_answer">Check</string>
+    <string name="features_title">Features</string>
 </resources>

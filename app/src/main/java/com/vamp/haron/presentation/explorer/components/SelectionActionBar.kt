@@ -1,6 +1,7 @@
 package com.vamp.haron.presentation.explorer.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SelectionActionBar(
     dirCount: Int,
@@ -49,6 +53,7 @@ fun SelectionActionBar(
     onAddToShelf: () -> Unit,
     onTag: () -> Unit,
     onSend: () -> Unit = {},
+    onSendLongClick: () -> Unit = {},
     onCast: () -> Unit = {},
     isSizeCalculating: Boolean = false,
     isArchiveMode: Boolean = false,
@@ -154,7 +159,15 @@ fun SelectionActionBar(
                     IconButton(onClick = onTag, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Filled.Label, contentDescription = stringResource(R.string.tags_action), modifier = Modifier.size(20.dp))
                     }
-                    IconButton(onClick = onSend, modifier = Modifier.size(36.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .combinedClickable(
+                                onClick = onSend,
+                                onLongClick = onSendLongClick
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.transfer_send), modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = onCast, modifier = Modifier.size(36.dp)) {

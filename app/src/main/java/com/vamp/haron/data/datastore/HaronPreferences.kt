@@ -588,6 +588,14 @@ class HaronPreferences @Inject constructor(
         }
     }
 
+    var hotspotSsid: String
+        get() = prefs.getString(KEY_HOTSPOT_SSID, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_HOTSPOT_SSID, value).apply()
+
+    var hotspotPassword: String
+        get() = prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_HOTSPOT_PASSWORD, value).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -632,6 +640,8 @@ class HaronPreferences @Inject constructor(
         const val KEY_REQUIRE_PIN_ON_LAUNCH = "require_pin_on_launch"
         const val KEY_LOCK_TIMEOUT_MINUTES = "lock_timeout_minutes"
         const val KEY_CONTENT_INDEXED_FOLDERS = "content_indexed_folders"
+        const val KEY_HOTSPOT_SSID = "hotspot_ssid"
+        const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

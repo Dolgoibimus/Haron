@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.haron.R
 import com.vamp.haron.data.datastore.HaronPreferences
+import com.vamp.haron.data.transfer.HotspotManager
 import com.vamp.haron.data.transfer.HttpFileServer
 import com.vamp.haron.domain.model.DiscoveredDevice
 import com.vamp.haron.domain.model.TransferHolder
@@ -47,7 +48,10 @@ data class TransferUiState(
     val isReceiveTransfer: Boolean = false,
     val batteryWarning: Boolean = false,
     val errorMessage: String? = null,
-    val todayReceivedCount: Int = 0
+    val todayReceivedCount: Int = 0,
+    val hotspotSsid: String? = null,
+    val hotspotPassword: String? = null,
+    val showWifiOffDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -56,6 +60,7 @@ class TransferViewModel @Inject constructor(
     private val discoverDevicesUseCase: DiscoverDevicesUseCase,
     private val sendFilesUseCase: SendFilesUseCase,
     private val httpFileServer: HttpFileServer,
+    private val hotspotManager: HotspotManager,
     private val transferRepository: TransferRepository,
     private val preferences: HaronPreferences
 ) : ViewModel() {
@@ -208,46 +213,105 @@ class TransferViewModel @Inject constructor(
         if (files.isEmpty()) return
 
         viewModelScope.launch {
-            // Check WiFi before starting server
-            val testIp = httpFileServer.getLocalIpAddress()
-            if (testIp == null) {
-                _toastMessage.emit(appContext.getString(R.string.transfer_no_wifi_for_qr))
-                return@launch
+            // Check if we have a usable local network (not CGNAT/VPN)
+            val detectedIp = httpFileServer.getLocalIpAddress()
+            val isUsableLocalIp = detectedIp != null && !isCgnatAddress(detectedIp)
+
+            var serverIp: String?
+            var hotspotSsid: String? = null
+            var hotspotPassword: String? = null
+
+            if (isUsableLocalIp) {
+                // Good local Wi-Fi (home network etc.)
+                serverIp = detectedIp
+            } else {
+                // No usable local network — try to start a local-only hotspot
+                val hotspotInfo = hotspotManager.start()
+                if (hotspotInfo == null || hotspotInfo.ip.isEmpty()) {
+                    hotspotManager.stop()
+                    // Hotspot API failed — ask user to enable system hotspot
+                    _state.update { it.copy(showWifiOffDialog = true) }
+                    return@launch
+                } else {
+                    serverIp = hotspotInfo.ip
+                    hotspotSsid = hotspotInfo.ssid
+                    hotspotPassword = hotspotInfo.password.ifEmpty { null }
+                }
             }
 
             TransferService.startServer(appContext)
-            val port = httpFileServer.start(files)
-            val url = httpFileServer.getServerUrl()
-            if (url == null) {
-                _toastMessage.emit(appContext.getString(R.string.transfer_no_wifi_for_qr))
-                httpFileServer.stop()
-                TransferService.stopServer(appContext)
-                return@launch
-            }
+            httpFileServer.start(files)
+            // Build URL using known IP (don't rely on getLocalIpAddress() again — hotspot may not be detected)
+            val url = "http://$serverIp:${httpFileServer.actualPort}"
+            val totalBytes = files.sumOf { it.length() }
             _state.update {
                 it.copy(
                     serverUrl = url,
                     showQrDialog = true,
-                    transferState = TransferState.TRANSFERRING
+                    transferState = TransferState.TRANSFERRING,
+                    hotspotSsid = hotspotSsid,
+                    hotspotPassword = hotspotPassword,
+                    progress = TransferProgressInfo(
+                        totalBytes = totalBytes,
+                        totalFiles = files.size
+                    )
                 )
+            }
+            // Track HTTP downloads
+            collectHttpDownloads(files.size, totalBytes)
+        }
+    }
+
+    private fun collectHttpDownloads(totalFiles: Int, totalBytes: Long) {
+        viewModelScope.launch {
+            var downloadedFiles = 0
+            var downloadedBytes = 0L
+            httpFileServer.downloadEvents.collect { event ->
+                downloadedFiles++
+                downloadedBytes += event.fileSize
+                val progress = TransferProgressInfo(
+                    bytesTransferred = downloadedBytes,
+                    totalBytes = totalBytes,
+                    currentFileIndex = downloadedFiles,
+                    totalFiles = totalFiles,
+                    currentFileName = event.fileName
+                )
+                _state.update { it.copy(progress = progress) }
+                if (downloadedFiles >= totalFiles) {
+                    _state.update { it.copy(transferState = TransferState.COMPLETED) }
+                }
             }
         }
     }
 
+    /** CGNAT range 100.64.0.0/10 — used by Tailscale, carrier NAT, corporate networks */
+    private fun isCgnatAddress(ip: String): Boolean {
+        val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4) return false
+        return parts[0] == 100 && parts[1] in 64..127
+    }
+
     fun stopHttpServer() {
         httpFileServer.stop()
+        hotspotManager.stop()
         TransferService.stopServer(appContext)
         _state.update {
             it.copy(
                 serverUrl = null,
                 showQrDialog = false,
-                transferState = TransferState.IDLE
+                transferState = TransferState.IDLE,
+                hotspotSsid = null,
+                hotspotPassword = null
             )
         }
     }
 
     fun dismissQrDialog() {
         _state.update { it.copy(showQrDialog = false) }
+    }
+
+    fun dismissWifiOffDialog() {
+        _state.update { it.copy(showWifiOffDialog = false) }
     }
 
     fun cancelTransfer() {
