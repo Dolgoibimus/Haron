@@ -54,4 +54,6 @@ sealed interface NavigationEvent {
     data object OpenComparison : NavigationEvent
 
     data object OpenSteganography : NavigationEvent
+
+    data object OpenScanner : NavigationEvent
 }

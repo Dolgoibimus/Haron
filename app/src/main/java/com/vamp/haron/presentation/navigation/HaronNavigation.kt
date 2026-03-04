@@ -74,6 +74,11 @@ object HaronRoutes {
     const val SETTINGS = "settings"
     const val SEARCH = "search"
     const val TRANSFER = "transfer"
+    const val TRANSFER_ROUTE = "transfer?openScanner={openScanner}"
+
+    fun transfer(openScanner: Boolean = false): String {
+        return "transfer?openScanner=$openScanner"
+    }
     const val TERMINAL = "terminal"
     const val GESTURES_VOICE = "gestures_voice"
     const val GESTURES_VOICE_ROUTE = "gestures_voice?tab={tab}"
@@ -187,11 +192,12 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 val targetRoute = when (action) {
                     GestureAction.OPEN_SETTINGS -> HaronRoutes.SETTINGS
                     GestureAction.OPEN_TERMINAL -> HaronRoutes.TERMINAL
-                    GestureAction.OPEN_TRANSFER -> HaronRoutes.TRANSFER
+                    GestureAction.OPEN_TRANSFER -> HaronRoutes.transfer()
                     GestureAction.GLOBAL_SEARCH -> HaronRoutes.SEARCH
                     GestureAction.OPEN_STORAGE -> HaronRoutes.STORAGE_ANALYSIS
                     GestureAction.OPEN_DUPLICATES -> HaronRoutes.DUPLICATE_DETECTOR
                     GestureAction.OPEN_APPS -> HaronRoutes.APP_MANAGER
+                    GestureAction.OPEN_SCANNER -> HaronRoutes.transfer(openScanner = true)
                     else -> null
                 }
                 voiceCmdMgr.consumeResult()
@@ -344,7 +350,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                     navController.navigate(HaronRoutes.SEARCH)
                 },
                 onOpenTransfer = {
-                    navController.navigate(HaronRoutes.TRANSFER)
+                    navController.navigate(HaronRoutes.transfer())
                 },
                 onOpenTerminal = {
                     navController.navigate(HaronRoutes.TERMINAL)
@@ -354,6 +360,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenSteganography = {
                     navController.navigate(HaronRoutes.STEGANOGRAPHY)
+                },
+                onOpenScanner = {
+                    navController.navigate(HaronRoutes.transfer(openScanner = true))
                 },
                 onOpenDocumentViewer = { filePath, fileName ->
                     navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
@@ -398,13 +407,19 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 initialTab = backStackEntry.arguments?.getInt("tab") ?: 0
             )
         }
-        composable(HaronRoutes.TRANSFER) {
+        composable(
+            HaronRoutes.TRANSFER_ROUTE,
+            arguments = listOf(
+                navArgument("openScanner") { type = NavType.BoolType; defaultValue = false }
+            )
+        ) { backStackEntry ->
             TransferScreen(
                 onBack = { navController.popBackStack() },
                 onOpenFolder = { path ->
                     TransferHolder.pendingNavigationPath.value = path
                     navController.popBackStack()
-                }
+                },
+                openScanner = backStackEntry.arguments?.getBoolean("openScanner") ?: false
             )
         }
         composable(HaronRoutes.TERMINAL) {

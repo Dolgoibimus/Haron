@@ -79,13 +79,14 @@ import com.vamp.haron.presentation.transfer.components.TransferProgressCard
 fun TransferScreen(
     onBack: () -> Unit,
     onOpenFolder: (String) -> Unit = {},
+    openScanner: Boolean = false,
     viewModel: TransferViewModel = hiltViewModel(),
     smbViewModel: SmbViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val smbState by smbViewModel.state.collectAsState()
     val context = LocalContext.current
-    var showScanner by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(openScanner) }
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // Runtime permissions for Bluetooth and Wi-Fi Direct

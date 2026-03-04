@@ -169,7 +169,8 @@ private fun VoiceTab() {
             R.string.voice_cmd_trash to R.string.voice_cmd_trash_desc,
             R.string.voice_cmd_storage to R.string.voice_cmd_storage_desc,
             R.string.voice_cmd_duplicates to R.string.voice_cmd_duplicates_desc,
-            R.string.voice_cmd_apps to R.string.voice_cmd_apps_desc
+            R.string.voice_cmd_apps to R.string.voice_cmd_apps_desc,
+            R.string.voice_cmd_scanner to R.string.voice_cmd_scanner_desc
         )
 
         commands.forEach { (cmdRes, descRes) ->

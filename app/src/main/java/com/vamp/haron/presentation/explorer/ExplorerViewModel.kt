@@ -3433,7 +3433,35 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_STORAGE -> _navigationEvent.tryEmit(NavigationEvent.OpenStorageAnalysis)
             GestureAction.OPEN_DUPLICATES -> _navigationEvent.tryEmit(NavigationEvent.OpenDuplicateDetector)
             GestureAction.OPEN_APPS -> _navigationEvent.tryEmit(NavigationEvent.OpenAppManager)
+            GestureAction.OPEN_SCANNER -> _navigationEvent.tryEmit(NavigationEvent.OpenScanner)
+            GestureAction.SORT_SPECIFIC -> applySortFromVoice(panelId)
         }
+    }
+
+    private fun applySortFromVoice(panelId: PanelId) {
+        val field = voiceCommandManager.pendingSortField
+        val explicitDirection = voiceCommandManager.pendingSortDirection
+        voiceCommandManager.consumeSortParams()
+        if (field == null) return cycleSortOrder(panelId)
+        val current = getPanel(panelId).sortOrder
+        // If same field and no explicit direction → toggle direction
+        val direction = explicitDirection ?: if (current.field == field) {
+            if (current.direction == com.vamp.haron.data.model.SortDirection.ASCENDING)
+                com.vamp.haron.data.model.SortDirection.DESCENDING
+            else com.vamp.haron.data.model.SortDirection.ASCENDING
+        } else {
+            current.direction
+        }
+        val newOrder = com.vamp.haron.data.model.SortOrder(field, direction)
+        setSortOrder(panelId, newOrder)
+        val sortName = when (field) {
+            com.vamp.haron.data.model.SortField.NAME -> appContext.getString(R.string.sort_by_name)
+            com.vamp.haron.data.model.SortField.DATE -> appContext.getString(R.string.sort_by_date)
+            com.vamp.haron.data.model.SortField.SIZE -> appContext.getString(R.string.sort_by_size)
+            com.vamp.haron.data.model.SortField.EXTENSION -> appContext.getString(R.string.sort_by_type)
+        }
+        val dirName = if (direction == com.vamp.haron.data.model.SortDirection.ASCENDING) "↑" else "↓"
+        _toastMessage.tryEmit(appContext.getString(R.string.sort_changed_to, "$sortName $dirName"))
     }
 
     private fun cycleSortOrder(panelId: PanelId) {

@@ -118,6 +118,7 @@ fun ExplorerScreen(
     onOpenTerminal: () -> Unit = { },
     onOpenComparison: () -> Unit = { },
     onOpenSteganography: () -> Unit = { },
+    onOpenScanner: () -> Unit = { },
     onOpenDocumentViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
     onCastModeSelected: (com.vamp.haron.domain.model.CastMode, List<String>) -> Unit = { _, _ -> }
 ) {
@@ -175,6 +176,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenSteganography -> {
                     onOpenSteganography()
+                }
+                is NavigationEvent.OpenScanner -> {
+                    onOpenScanner()
                 }
                 is NavigationEvent.OpenDocumentViewer -> {
                     onOpenDocumentViewer(event.filePath, event.fileName)

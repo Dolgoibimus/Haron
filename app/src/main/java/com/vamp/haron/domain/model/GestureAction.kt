@@ -23,7 +23,10 @@ enum class GestureAction(val labelRes: Int) {
     OPEN_TRASH(R.string.gesture_action_trash),
     OPEN_STORAGE(R.string.gesture_action_storage),
     OPEN_DUPLICATES(R.string.gesture_action_duplicates),
-    OPEN_APPS(R.string.gesture_action_apps);
+    OPEN_APPS(R.string.gesture_action_apps),
+    OPEN_SCANNER(R.string.gesture_action_scanner),
+    /** Voice-only: sort with specific field/direction parsed from speech. */
+    SORT_SPECIFIC(R.string.gesture_action_sort_cycle);
 
     /** Actions that navigate to a separate screen (handled at NavHost level for voice). */
     val isScreenNavigation: Boolean get() = this in SCREEN_NAV_ACTIONS
@@ -31,7 +34,7 @@ enum class GestureAction(val labelRes: Int) {
     companion object {
         private val SCREEN_NAV_ACTIONS = setOf(
             OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER, GLOBAL_SEARCH,
-            OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS
+            OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS, OPEN_SCANNER
         )
     }
 }
