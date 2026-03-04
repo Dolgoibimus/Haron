@@ -1,0 +1,258 @@
+# Navigation & Interface
+- Two-panel vertical layout (top + bottom)
+- Draggable panel divider with 3 tap zones (bookmarks / 50-50 / tools)
+- Folder navigation with back button
+- Clickable breadcrumbs for quick path navigation
+- Navigation history per panel (← → like a browser)
+- Open current folder in other panel
+- Active panel highlighted with border
+- Scroll position preserved per panel
+
+# Files & Folders
+- File list with type icons
+- Preview thumbnails: images, video, text, PDF, documents, APK, FB2
+- Scalable grid: 1–6 columns via pinch gesture
+- Tap zones in list: tap → open, long tap left → select, long tap right → quick send, icon tap → preview
+- Tap zones in grid: icon tap → preview, long tap → select, name tap → open, long tap name → quick send
+- File extension badge on icons
+- Empty folders visually highlighted
+- Sort by name, date, size, extension
+- Show/hide hidden files
+- Quick search in current folder
+- Create templates: folder, TXT, MD, dated folder
+
+# Selection & Operations
+- Long tap + swipe for range selection
+- Select all / deselect all (long tap → select by extension)
+- File counter and total size of selection
+- Copy and move between panels
+- Delete to trash
+- Inline renaming (like Windows)
+- Drag-and-Drop between panels (single and group)
+- Conflict dialog: replace / rename / skip
+
+# Trash
+- Deleted files stored for 30 days
+- View, restore, clear trash
+- Auto-cleanup when size limit exceeded
+- Size limit: 0–5000 MB
+
+# Background Operations
+- Foreground Service for large operations (>10 files or >50 MB)
+- Notification with progress and cancel button
+- Progress bar at bottom of screen
+
+# Side Menu (Drawer)
+- Storages: internal + SD-cards
+- Favorites: favorite folders
+- Recent: last 5 visited folders
+- Tools: trash, analyzer, duplicates, empty folders, force delete, tags, transfer, terminal
+- Appearance: system / light / dark theme
+- Settings
+
+# Temporary Shelf
+- File buffer for moving between distant folders
+- "To Shelf" button when files selected
+- Paste / Move from shelf
+- Shelf persists between sessions
+
+# Storage (SAF)
+- SD-card and external storage support
+- All file operations work with content:// URI
+
+# Quick Preview
+- Tap file icon → preview dialog
+- Images, video, audio, text, PDF, archives, APK, documents, FB2
+- Play media in preview
+- Open in gallery / reader / archive buttons
+
+# Media Player
+- Built-in VLC engine (LibVLC)
+- All popular codecs: MP3, FLAC, OGG, WAV, AVI, MKV, MP4, etc.
+- Folder playlist with auto-advance
+- Background playback with lock screen controls
+- Seekbar + ±10s rewind
+- Position saved between sessions
+- Video: fullscreen, immersive mode
+
+# Internal Gallery
+- Fullscreen image viewing
+- Swipe between images in folder
+- Zoom: pinch (1x–5x) and double tap
+- Share button
+- Pre-load adjacent images
+
+# PDF Reader
+- Fullscreen PDF reader
+- Scroll, zoom (pinch + double tap)
+- Page indicator with quick jump
+- Search highlight with navigation
+- Password-protected PDF support
+- Position saved between sessions
+
+# Document Reader
+- DOC, DOCX, ODT, RTF, FB2, XLSX, XLS, CSV
+- FB2: cover + annotation before text
+- Zoom and scroll
+- Search highlight with navigation
+- Position saved between sessions
+
+# Archives
+- View ZIP, 7z, RAR (including RAR5)
+- Inline viewing in panel like regular folder
+- Navigate folders inside archive
+- Selective extraction
+- Create ZIP with optional password (AES-256) and split
+
+# Text Editor
+- View and edit TXT/MD files
+- View mode (default) and edit mode
+- Undo/Redo (up to 50 steps)
+- Save dialog on exit with unsaved changes
+- Cursor position saved between sessions
+
+# File Properties
+- Name, path, size, date, MIME-type, permissions
+- Recursive folder size calculation
+- EXIF data for photos (with delete option)
+- MD5 and SHA-256 hashes
+
+# Storage Analyzer
+- Pie chart by file type
+- Categories with size and file count
+- Top 200 largest files per category
+- Large files (>10 MB) section
+
+# Duplicate Detector
+- Find identical files across storage
+- Two-phase: group by size → MD5 hash
+- Original markers: original is kept, copies are suggested for deletion
+- Source folders mode: files in selected folders are automatically treated as originals
+- Auto-select copies for deletion
+
+# Settings
+- Night mode by schedule
+- Font size and icon size sliders
+- Haptic vibration toggle
+- Security: PIN, biometric, security question
+- Require PIN on launch toggle
+- Trash size limit
+
+# Tags (Labels)
+- Colored labels with text names (8 colors)
+- Assign to files and folders
+- Filter by label
+- Labels persist on rename/move/copy
+
+# Desktop Widget
+- Favorites list on home screen
+- Tap folder → app opens there
+
+# Quick Bookmarks (1–6)
+- Tap left divider zone → pie menu
+- Save/navigate to folders instantly
+- Persistent between launches
+
+# Tool Pie-Menu
+- Tap right divider zone → pie menu
+- Trash, Analyzer, Duplicates, APK, Player, Reader
+
+# App Lock
+- PIN (4–8 digits) with auto-enter
+- Biometric (fingerprint)
+- Combined: biometric + PIN backup
+- Timeout lock (30 min)
+- Security question for PIN recovery
+- Screenshot protection when locked
+
+# Protected Folder
+- AES-256-GCM encryption (Android Keystore)
+- Files completely invisible without shield
+- Shield button requires PIN
+- Long tap shield → enter protected files
+- Tap shield in protected mode → exit
+- Virtual directory for all protected files
+- Copy decrypts, move decrypts + unprotects
+
+# Global Search
+- Long tap search → enter global search
+- Search by name across entire device
+- Filters: category, size, date
+- Content search: text files, DOCX, ODT, PDF
+- Audio/video metadata search
+- ML Kit image labeling (objects on photos)
+- OCR on photos (text recognition)
+- Archive search (file names inside)
+- Indexing: basic (text, metadata, archives), media (audio/video tags), visual (ML + OCR)
+- Background index update on file changes and screen on (every 30 min)
+
+# Local Search (in Panel)
+- Name search: filters files in current folder by name
+- Content search: finds text inside files (TXT, DOCX, ODT, PDF, etc.)
+- First content search indexes the folder, subsequent searches are instant
+- Debounce 300ms, auto-reset on folder change
+
+# File Transfer
+- Wi-Fi Direct + NSD (LAN)
+- Auto-select best protocol
+- HTTP server with QR code for any device
+- Progress, resume, retry on disconnect
+- Foreground Service + WakeLock
+
+# Cast to TV
+- Chromecast, Miracast, DLNA support
+- Media, slideshow, PDF presentation, screen mirror modes
+- Remote control: play/pause, seek, volume
+
+# Network & SMB
+- Auto-discover devices on LAN
+- SMB browser with dual-panel mode
+- Upload/download with progress
+- Saved connections (encrypted)
+
+# Quick Send
+- Long tap file → device circles → drag to send
+- Trusted devices auto-accept
+- Device renaming (aliases)
+
+# USB OTG
+- Auto-detect USB drives
+- Navigate, safe eject
+- Free/total space indicator
+
+# Gestures
+- 4 customizable edge swipes
+- 13 available actions
+- Configure in Settings
+
+# Voice Commands
+- 12 commands (Russian + English)
+- Menu, shelf, hidden, create, search, terminal, select all, refresh, home, sort, settings, transfer
+
+# Terminal
+- Shell command execution
+- Color output (16/256/RGB)
+- Tab path autocomplete
+- Clickable paths in output
+- Command history (200)
+- SSH connection to remote servers (ssh user@host [-p port])
+- Interactive shell via SSH (cd, env, aliases persist)
+- Password dialog with save option (AES-256 encryption)
+- SSH control panel: Enter, Tab, Ctrl+C/D/Z/L, Esc, arrows, Home/End
+- Tap numbered choices in output to select
+- SSH badge and disconnect button in header
+
+# Default Opener
+- Registered as system file handler
+- Open from any app via "Open with"
+- Receive files via Share
+
+# File Comparison
+- Text diff: two columns with sync scroll
+- Color coding: green/red/yellow
+- Folder comparison
+- Auto mode detection
+
+# Appearance
+- Theme: system / light / dark
+- Material Design 3
