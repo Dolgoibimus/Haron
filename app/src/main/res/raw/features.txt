@@ -239,7 +239,6 @@
 - Interactive shell via SSH (cd, env, aliases persist)
 - Password dialog with save option (AES-256 encryption)
 - SSH control panel: Enter, Tab, Ctrl+C/D/Z/L, Esc, arrows, Home/End
-- Tap numbered choices in output to select
 - SSH badge and disconnect button in header
 
 # Default Opener

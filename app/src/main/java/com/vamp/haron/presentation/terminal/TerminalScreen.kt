@@ -426,28 +426,12 @@ fun TerminalScreen(
                 .padding(horizontal = 8.dp)
         ) {
             items(state.lines, key = null) { line ->
-                // In SSH mode, detect tappable choices (numbered lines like "1. Option")
-                val sshChoice = if (state.sshMode && !line.isCommand) {
-                    extractSshChoice(line.parsed?.plainText ?: line.text)
-                } else null
-
-                val tappableModifier = if (sshChoice != null) {
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(2.dp))
-                        .clickable { viewModel.sendSshRaw("$sshChoice\r") }
-                        .background(Color(0xFF2A2D3E))
-                        .padding(vertical = 1.dp)
-                } else {
-                    Modifier.padding(vertical = 1.dp)
-                }
-
                 if (line.parsed != null && line.parsed.spans.any { it.fg != null || it.bold || it.italic }) {
                     val annotated = buildStyledText(line, textColor, errorColor, commandColor, linkColor)
                     Text(
                         text = annotated,
                         style = monoStyle,
-                        modifier = tappableModifier
+                        modifier = Modifier.padding(vertical = 1.dp)
                     )
                 } else {
                     val plainText = line.parsed?.plainText ?: line.text
@@ -480,7 +464,7 @@ fun TerminalScreen(
                         Text(
                             text = annotated,
                             style = monoStyle,
-                            modifier = tappableModifier
+                            modifier = Modifier.padding(vertical = 1.dp)
                         )
                     } else {
                         val color = when {
@@ -492,23 +476,13 @@ fun TerminalScreen(
                             text = plainText,
                             style = monoStyle,
                             color = color,
-                            modifier = tappableModifier
+                            modifier = Modifier.padding(vertical = 1.dp)
                         )
                     }
                 }
             }
         }
     }
-}
-
-/** Extracts a choice value from interactive prompt lines. Returns the value to send, or null. */
-private fun extractSshChoice(text: String): String? {
-    val trimmed = text.trimStart()
-    // Patterns: "1. Option", "2) Option", ">1. Option", ")1. Option"
-    // Also: "[Y/n]", "(yes/no)"
-    val numberMatch = Regex("""^[>)\s]*(\d+)\s*[.):]\s*\S""").find(trimmed)
-    if (numberMatch != null) return numberMatch.groupValues[1]
-    return null
 }
 
 @Composable
