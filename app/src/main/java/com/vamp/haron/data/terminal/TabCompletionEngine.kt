@@ -54,7 +54,7 @@ class TabCompletionEngine {
 
     private fun completeCommands(prefix: String): List<String> {
         val builtins = listOf(
-            "cd", "pwd", "clear", "cls", "help", "exit",
+            "cd", "pwd", "clear", "cls", "help", "exit", "ssh",
             "ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir",
             "grep", "find", "wc", "head", "tail", "sort",
             "chmod", "touch", "echo", "df", "du", "ping",

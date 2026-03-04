@@ -6,21 +6,28 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.haron.data.terminal.AnsiParser
 import com.vamp.haron.data.terminal.ParsedLine
+import com.vamp.haron.data.terminal.SshConnectionParams
+import com.vamp.haron.data.terminal.SshCredentialStore
+import com.vamp.haron.data.terminal.SshSessionManager
 import com.vamp.haron.data.terminal.TabCompletionEngine
 import android.content.SharedPreferences
+import com.jcraft.jsch.JSchException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.inject.Inject
 
 data class TerminalLine(
@@ -41,12 +48,23 @@ data class TerminalState(
     val historyIndex: Int = -1,
     val completions: List<String> = emptyList(),
     val bufferSize: Int = 2000,
-    val timeoutSec: Int = 30
+    val timeoutSec: Int = 30,
+    // SSH
+    val sshMode: Boolean = false,
+    val sshUser: String = "",
+    val sshHost: String = "",
+    val sshPort: Int = 22,
+    val sshConnecting: Boolean = false,
+    val showPasswordDialog: Boolean = false,
+    val pendingSshUser: String = "",
+    val pendingSshHost: String = "",
+    val pendingSshPort: Int = 22
 )
 
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
-    @ApplicationContext private val appContext: Context
+    @ApplicationContext private val appContext: Context,
+    private val sshCredentialStore: SshCredentialStore
 ) : ViewModel() {
 
     private val prefs: SharedPreferences =
@@ -59,6 +77,11 @@ class TerminalViewModel @Inject constructor(
 
     private val ansiParser = AnsiParser()
     private val tabEngine = TabCompletionEngine()
+
+    // SSH
+    private val sshManager = SshSessionManager()
+    private var sshReaderJob: Job? = null
+    private val sshLineBuffer = StringBuilder()
 
     companion object {
         private const val MAX_HISTORY = 200
@@ -89,16 +112,22 @@ class TerminalViewModel @Inject constructor(
         val newHistory = (_state.value.commandHistory + trimmed).takeLast(MAX_HISTORY)
         saveHistory(newHistory)
 
-        // Show prompt + command
-        val prompt = "\$ $trimmed"
-        appendLine(TerminalLine(prompt, isCommand = true))
         _state.update {
             it.copy(
-                isRunning = true,
                 commandHistory = newHistory,
                 historyIndex = -1
             )
         }
+
+        if (_state.value.sshMode) {
+            executeSshCommand(trimmed)
+            return
+        }
+
+        // Show prompt + command
+        val prompt = "\$ $trimmed"
+        appendLine(TerminalLine(prompt, isCommand = true))
+        _state.update { it.copy(isRunning = true) }
 
         viewModelScope.launch {
             val result = processCommand(trimmed)
@@ -108,6 +137,32 @@ class TerminalViewModel @Inject constructor(
             }
         }
     }
+
+    private fun executeSshCommand(input: String) {
+        val lower = input.lowercase().trim()
+        when (lower) {
+            "clear", "cls" -> {
+                clearScreen()
+                return
+            }
+            "exit", "disconnect" -> {
+                disconnectSsh()
+                return
+            }
+        }
+        // Send command through SSH — no local prompt, PTY echoes
+        viewModelScope.launch {
+            sshManager.sendCommand(input)
+        }
+    }
+
+    fun sendSshRaw(data: String) {
+        viewModelScope.launch {
+            sshManager.sendRaw(data)
+        }
+    }
+
+
 
     fun requestCompletion(currentInput: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -180,10 +235,226 @@ class TerminalViewModel @Inject constructor(
             "clear", "cls" -> {
                 clearScreen(); emptyList()
             }
+            "ssh" -> {
+                parseSshCommand(args)
+                emptyList()
+            }
             "exit" -> listOf(TerminalLine("Use the back button to exit."))
             else -> executeExternal(input)
         }
     }
+
+    // --- SSH ---
+
+    private fun parseSshCommand(args: List<String>) {
+        if (args.isEmpty()) {
+            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
+            _state.update { it.copy(isRunning = false) }
+            return
+        }
+
+        var userHost = ""
+        var port = 22
+
+        var i = 0
+        while (i < args.size) {
+            when (args[i]) {
+                "-p" -> {
+                    if (i + 1 < args.size) {
+                        port = args[i + 1].toIntOrNull() ?: 22
+                        i += 2
+                    } else {
+                        i++
+                    }
+                }
+                else -> {
+                    if (userHost.isEmpty()) userHost = args[i]
+                    i++
+                }
+            }
+        }
+
+        if (!userHost.contains("@")) {
+            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
+            _state.update { it.copy(isRunning = false) }
+            return
+        }
+
+        val user = userHost.substringBefore("@")
+        val host = userHost.substringAfter("@")
+
+        if (user.isBlank() || host.isBlank()) {
+            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
+            _state.update { it.copy(isRunning = false) }
+            return
+        }
+
+        _state.update {
+            it.copy(
+                isRunning = false,
+                showPasswordDialog = true,
+                pendingSshUser = user,
+                pendingSshHost = host,
+                pendingSshPort = port
+            )
+        }
+    }
+
+    fun getSavedPassword(user: String, host: String, port: Int): String {
+        return sshCredentialStore.load(user, host, port)?.password ?: ""
+    }
+
+    fun connectSsh(password: String, savePassword: Boolean) {
+        val user = _state.value.pendingSshUser
+        val host = _state.value.pendingSshHost
+        val port = _state.value.pendingSshPort
+
+        _state.update {
+            it.copy(
+                showPasswordDialog = false,
+                sshConnecting = true
+            )
+        }
+
+        appendLine(TerminalLine("Connecting to $user@$host:$port...", isCommand = true))
+
+        viewModelScope.launch {
+            try {
+                sshManager.connect(SshConnectionParams(user, host, port, password))
+
+                if (savePassword) {
+                    withContext(Dispatchers.IO) {
+                        sshCredentialStore.save(
+                            com.vamp.haron.data.terminal.SshCredential(user, host, port, password)
+                        )
+                    }
+                }
+
+                sshLineBuffer.clear()
+                _state.update {
+                    it.copy(
+                        sshMode = true,
+                        sshUser = user,
+                        sshHost = host,
+                        sshPort = port,
+                        sshConnecting = false
+                    )
+                }
+
+                appendLine(TerminalLine("Connected to $user@$host. Type 'exit' to disconnect.", isCommand = true))
+                startSshReader()
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        sshConnecting = false,
+                        pendingSshUser = "",
+                        pendingSshHost = "",
+                        pendingSshPort = 22
+                    )
+                }
+                val message = when (e) {
+                    is JSchException -> {
+                        when {
+                            e.message?.contains("Auth") == true -> "Authentication failed"
+                            e.message?.contains("timeout", ignoreCase = true) == true -> "Connection timed out"
+                            e.message?.contains("reject", ignoreCase = true) == true -> "Connection refused"
+                            else -> "SSH error: ${e.message}"
+                        }
+                    }
+                    is UnknownHostException -> "Unknown host: $host"
+                    is ConnectException -> "Connection refused: $host:$port"
+                    is SocketTimeoutException -> "Connection timed out"
+                    is NoRouteToHostException -> "No route to host: $host"
+                    else -> "Connection failed: ${e.message}"
+                }
+                appendLine(TerminalLine(message, isError = true))
+            }
+        }
+    }
+
+    private fun startSshReader() {
+        sshReaderJob?.cancel()
+        sshReaderJob = viewModelScope.launch {
+            launch(Dispatchers.IO) {
+                sshManager.startReading()
+            }
+
+            sshManager.outputFlow.collect { chunk ->
+                // Split chunk into lines, handling partial lines
+                sshLineBuffer.append(chunk)
+                val content = sshLineBuffer.toString()
+                val lines = content.split('\n')
+
+                // All complete lines
+                for (i in 0 until lines.size - 1) {
+                    val line = lines[i].trimEnd('\r')
+                    ansiParser.reset()
+                    val parsed = ansiParser.parseLine(line)
+                    appendLine(TerminalLine(text = line, parsed = parsed))
+                }
+
+                // Keep the last partial line in buffer
+                sshLineBuffer.clear()
+                sshLineBuffer.append(lines.last())
+
+                // If buffer ends with something meaningful (prompt), flush it
+                val remaining = sshLineBuffer.toString()
+                if (remaining.isNotEmpty() && (remaining.endsWith("$ ") || remaining.endsWith("# ") || remaining.endsWith("> "))) {
+                    ansiParser.reset()
+                    val parsed = ansiParser.parseLine(remaining)
+                    appendLine(TerminalLine(text = remaining, parsed = parsed))
+                    sshLineBuffer.clear()
+                }
+            }
+        }
+
+        // Monitor connection state
+        viewModelScope.launch {
+            // Wait until reader finishes (connection closed)
+            sshReaderJob?.join()
+            if (_state.value.sshMode) {
+                disconnectSsh(showMessage = true)
+            }
+        }
+    }
+
+    fun disconnectSsh(showMessage: Boolean = true) {
+        sshReaderJob?.cancel()
+        sshReaderJob = null
+        sshManager.disconnect()
+        sshLineBuffer.clear()
+
+        if (showMessage) {
+            appendLine(TerminalLine("[SSH disconnected]", isCommand = true))
+        }
+
+        _state.update {
+            it.copy(
+                sshMode = false,
+                sshUser = "",
+                sshHost = "",
+                sshPort = 22,
+                sshConnecting = false,
+                pendingSshUser = "",
+                pendingSshHost = "",
+                pendingSshPort = 22
+            )
+        }
+    }
+
+    fun cancelSshPasswordDialog() {
+        _state.update {
+            it.copy(
+                showPasswordDialog = false,
+                pendingSshUser = "",
+                pendingSshHost = "",
+                pendingSshPort = 22
+            )
+        }
+        appendLine(TerminalLine("SSH connection cancelled.", isCommand = true))
+    }
+
+    // --- Help ---
 
     private fun showHelp(): List<TerminalLine> {
         return listOf(
@@ -192,6 +463,11 @@ class TerminalViewModel @Inject constructor(
             TerminalLine("  pwd         — Print working directory"),
             TerminalLine("  clear       — Clear screen"),
             TerminalLine("  help        — Show this help"),
+            TerminalLine(""),
+            TerminalLine("SSH remote access:"),
+            TerminalLine("  ssh user@host          — Connect to remote server"),
+            TerminalLine("  ssh user@host -p 2222  — Connect on custom port"),
+            TerminalLine("  exit / disconnect      — Close SSH session"),
             TerminalLine(""),
             TerminalLine("System commands (via sh):"),
             TerminalLine("  ls, cat, cp, mv, rm, mkdir, rmdir,"),
@@ -207,6 +483,8 @@ class TerminalViewModel @Inject constructor(
         )
     }
 
+    // --- Local commands ---
+
     private fun changeDirectory(args: List<String>): List<TerminalLine> {
         val target = when {
             args.isEmpty() -> Environment.getExternalStorageDirectory().absolutePath
@@ -221,8 +499,6 @@ class TerminalViewModel @Inject constructor(
         if (!dir.isDirectory) {
             return listOf(TerminalLine("cd: $target: No such directory", isError = true))
         }
-        // Case-sensitive check: sdcardfs/FUSE is case-insensitive,
-        // verify each path segment matches actual directory name
         if (!matchesCaseSensitive(dir)) {
             return listOf(TerminalLine("cd: $target: No such directory (case mismatch)", isError = true))
         }
@@ -231,7 +507,6 @@ class TerminalViewModel @Inject constructor(
     }
 
     private fun matchesCaseSensitive(target: File): Boolean {
-        // Walk from target up to root, checking each segment
         var current = target.canonicalFile
         while (current.parent != null) {
             val parent = current.parentFile ?: return true
@@ -339,5 +614,11 @@ class TerminalViewModel @Inject constructor(
         }
         if (current.isNotEmpty()) parts.add(current.toString())
         return parts
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sshReaderJob?.cancel()
+        sshManager.disconnect()
     }
 }

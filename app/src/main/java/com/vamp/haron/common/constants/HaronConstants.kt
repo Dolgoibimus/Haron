@@ -34,4 +34,8 @@ object HaronConstants {
     const val SMB_CREDENTIAL_FILE = "smb_credentials.enc"
     const val SMB_CONNECTION_TIMEOUT_SEC = 10L
     const val SMB_IDLE_TIMEOUT_MS = 300_000L
+
+    // SSH
+    const val SSH_CREDENTIAL_KEYSTORE_ALIAS = "haron_ssh_cred_key"
+    const val SSH_CREDENTIAL_FILE = "ssh_credentials.enc"
 }

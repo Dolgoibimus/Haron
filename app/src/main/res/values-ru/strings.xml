@@ -1066,4 +1066,12 @@
     <string name="security_question_saved">Секретный вопрос сохранён</string>
     <string name="check_answer">Проверить</string>
     <string name="features_title">Описание функций</string>
+
+    <!-- SSH -->
+    <string name="ssh_password_title">Авторизация SSH</string>
+    <string name="ssh_password_label">Пароль</string>
+    <string name="ssh_save_password">Сохранить пароль</string>
+    <string name="ssh_connect">Подключиться</string>
+    <string name="ssh_connecting">Подключение…</string>
+    <string name="ssh_disconnect">Отключить SSH</string>
 </resources>

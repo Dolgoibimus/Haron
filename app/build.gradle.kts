@@ -125,6 +125,9 @@ dependencies {
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("com.rapid7.client:dcerpc:0.12.13")
 
+    // SSH client (modern JSch fork — ed25519, rsa-sha2, curve25519)
+    implementation("com.github.mwiede:jsch:0.2.18")
+
     // Google Cast SDK (Chromecast)
     implementation("com.google.android.gms:play-services-cast-framework:22.0.0")
 
