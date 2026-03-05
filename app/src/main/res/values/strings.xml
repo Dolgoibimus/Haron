@@ -852,6 +852,11 @@
     <string name="gesture_action_duplicates">Duplicate detector</string>
     <string name="gesture_action_apps">App manager</string>
     <string name="gesture_action_scanner">Scanner</string>
+    <string name="gesture_action_logs">Logs</string>
+    <string name="gesture_action_logs_pause">Pause logging</string>
+    <string name="gesture_action_logs_resume">Resume logging</string>
+    <string name="logs_paused">Logging paused</string>
+    <string name="logs_resumed">Logging resumed</string>
     <string name="hidden_files_shown">Hidden files: shown</string>
     <string name="hidden_files_hidden">Hidden files: hidden</string>
     <string name="sort_changed_to">Sort: %s</string>
@@ -1083,6 +1088,18 @@
     <string name="support_contact_header">Feedback &amp; suggestions</string>
     <string name="support_contact_text">Have an idea for a new feature or want to share your opinion? Write to us — we read every message.</string>
     <string name="support_write_email">Write to us</string>
+
+    <!-- Logs -->
+    <string name="logs_title">Logs</string>
+    <string name="logs_clear">Clear</string>
+    <string name="logs_share">Share</string>
+    <string name="logs_empty">No logs yet</string>
+    <string name="logs_section">Diagnostics</string>
+    <string name="logs_button">View logs</string>
+    <string name="logs_all">All</string>
+    <string name="logs_share_title">Share logs</string>
+    <string name="logs_select_categories">Select categories to share:</string>
+    <string name="logs_share_selected">Share selected</string>
 
     <!-- SSH -->
     <string name="ssh_password_title">SSH Authentication</string>

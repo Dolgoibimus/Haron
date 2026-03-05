@@ -852,6 +852,11 @@
     <string name="gesture_action_duplicates">Детектор дубликатов</string>
     <string name="gesture_action_apps">Менеджер приложений</string>
     <string name="gesture_action_scanner">Сканер</string>
+    <string name="gesture_action_logs">Логи</string>
+    <string name="gesture_action_logs_pause">Пауза логов</string>
+    <string name="gesture_action_logs_resume">Продолжить логи</string>
+    <string name="logs_paused">Логирование на паузе</string>
+    <string name="logs_resumed">Логирование возобновлено</string>
     <string name="hidden_files_shown">Скрытые файлы: показаны</string>
     <string name="hidden_files_hidden">Скрытые файлы: скрыты</string>
     <string name="sort_changed_to">Сортировка: %s</string>
@@ -1082,6 +1087,18 @@
     <string name="support_contact_header">Обратная связь и предложения</string>
     <string name="support_contact_text">Есть идея для новой функции или хотите поделиться мнением? Напишите нам — мы читаем каждое сообщение.</string>
     <string name="support_write_email">Написать нам</string>
+
+    <!-- Logs -->
+    <string name="logs_title">Логи</string>
+    <string name="logs_clear">Очистить</string>
+    <string name="logs_share">Поделиться</string>
+    <string name="logs_empty">Логов пока нет</string>
+    <string name="logs_section">Диагностика</string>
+    <string name="logs_button">Просмотр логов</string>
+    <string name="logs_all">Все</string>
+    <string name="logs_share_title">Поделиться логами</string>
+    <string name="logs_select_categories">Выберите категории для отправки:</string>
+    <string name="logs_share_selected">Отправить выбранные</string>
 
     <!-- SSH -->
     <string name="ssh_password_title">Авторизация SSH</string>

@@ -28,6 +28,7 @@
 - Copy and move between panels
 - Delete to trash
 - Inline renaming (like Windows)
+- Batch rename: template, numbering, find & replace
 - Drag-and-Drop between panels (single and group)
 - Conflict dialog: replace / rename / skip
 

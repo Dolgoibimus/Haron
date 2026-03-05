@@ -39,6 +39,7 @@ import com.vamp.haron.presentation.player.MediaPlayerScreen
 import com.vamp.haron.presentation.appmanager.AppManagerScreen
 import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
 import com.vamp.haron.presentation.settings.GesturesVoiceScreen
+import com.vamp.haron.presentation.settings.LogsScreen
 import com.vamp.haron.presentation.settings.SettingsScreen
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.TransferHolder
@@ -90,6 +91,7 @@ object HaronRoutes {
     const val SUPPORT = "support"
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
+    const val LOGS = "logs"
     const val DOCUMENT_VIEWER = "document_viewer"
     const val DOCUMENT_VIEWER_ROUTE = "document_viewer?filePath={filePath}&fileName={fileName}"
 
@@ -188,7 +190,20 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             if (action == null) return@collect
             val currentRoute = navController.currentDestination?.route
 
-            if (action.isScreenNavigation) {
+            if (action in GestureAction.GLOBAL_ACTIONS) {
+                voiceCmdMgr.consumeResult()
+                when (action) {
+                    GestureAction.LOGS_PAUSE -> {
+                        com.vamp.core.logger.EcosystemLogger.isPaused = true
+                        Toast.makeText(context, context.getString(R.string.logs_paused), Toast.LENGTH_SHORT).show()
+                    }
+                    GestureAction.LOGS_RESUME -> {
+                        com.vamp.core.logger.EcosystemLogger.isPaused = false
+                        Toast.makeText(context, context.getString(R.string.logs_resumed), Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {}
+                }
+            } else if (action.isScreenNavigation) {
                 // Screen navigation — navigate directly, clean backstack to Explorer
                 val targetRoute = when (action) {
                     GestureAction.OPEN_SETTINGS -> HaronRoutes.SETTINGS
@@ -199,6 +214,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                     GestureAction.OPEN_DUPLICATES -> HaronRoutes.DUPLICATE_DETECTOR
                     GestureAction.OPEN_APPS -> HaronRoutes.APP_MANAGER
                     GestureAction.OPEN_SCANNER -> HaronRoutes.transfer(openScanner = true)
+                    GestureAction.OPEN_LOGS -> HaronRoutes.LOGS
                     else -> null
                 }
                 voiceCmdMgr.consumeResult()
@@ -389,7 +405,13 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         composable(HaronRoutes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) }
+                onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
+                onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
+            )
+        }
+        composable(HaronRoutes.LOGS) {
+            LogsScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(HaronRoutes.FEATURES) {

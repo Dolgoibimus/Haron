@@ -33,7 +33,7 @@ data class ExplorerUiState(
     val operationProgress: OperationProgress? = null,
     val trashSizeInfo: String = "",
     val themeMode: String = "system",
-    val safRoots: List<Pair<String, String>> = emptyList(), // (uri, label)
+    val safRoots: List<SafRootInfo> = emptyList(),
     val originalFolders: Set<String> = emptySet(),
     val showBookmarkPopup: Boolean = false,
     val showToolsPopup: Boolean = false,
@@ -138,3 +138,10 @@ enum class FileTemplate(val labelRes: Int, val extension: String) {
     MARKDOWN(R.string.template_markdown, ".md"),
     DATED_FOLDER(R.string.template_dated_folder, "")
 }
+
+data class SafRootInfo(
+    val label: String,
+    val safUri: String, // empty if no access
+    val totalSpace: Long = 0L,
+    val freeSpace: Long = 0L
+)

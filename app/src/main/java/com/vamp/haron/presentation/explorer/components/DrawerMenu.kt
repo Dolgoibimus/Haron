@@ -67,12 +67,13 @@ import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.data.network.NetworkDeviceType
 import com.vamp.haron.data.usb.UsbVolume
+import com.vamp.haron.presentation.explorer.state.SafRootInfo
 
 @Composable
 fun DrawerMenu(
     favorites: List<String>,
     recentPaths: List<String>,
-    safRoots: List<Pair<String, String>>,
+    safRoots: List<SafRootInfo>,
     themeMode: String,
     trashSizeInfo: String,
     onNavigate: (String) -> Unit,
@@ -132,12 +133,13 @@ fun DrawerMenu(
                     onClick = { onNavigateToInternalStorage() }
                 )
             }
-            items(safRoots, key = { "vol_${it.first}" }) { (label, safUri) ->
-                val hasAccess = safUri.isNotEmpty()
+            items(safRoots, key = { "vol_${it.label}" }) { root ->
+                val context = LocalContext.current
+                val hasAccess = root.safUri.isNotEmpty()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (hasAccess) Modifier.clickable { onNavigate(safUri) } else Modifier)
+                        .then(if (hasAccess) Modifier.clickable { onNavigate(root.safUri) } else Modifier)
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -149,13 +151,23 @@ fun DrawerMenu(
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(root.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!hasAccess) {
                             Text(stringResource(R.string.no_access), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else if (root.totalSpace > 0) {
+                            Text(
+                                stringResource(
+                                    R.string.usb_free_space,
+                                    root.freeSpace.toFileSize(context),
+                                    root.totalSpace.toFileSize(context)
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                     if (hasAccess) {
-                        IconButton(onClick = { onRevokeVolumeAccess(safUri) }) {
+                        IconButton(onClick = { onRevokeVolumeAccess(root.safUri) }) {
                             Icon(Icons.Filled.Delete, stringResource(R.string.disconnect), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
@@ -166,44 +178,79 @@ fun DrawerMenu(
 
             // --- USB OTG ---
             if (usbVolumes.isNotEmpty()) {
-                items(usbVolumes.distinctBy { it.path }, key = { "usb_${it.path}" }) { volume ->
+                items(
+                    usbVolumes.distinctBy { if (it.needsSaf) "saf_${it.uuid}" else it.path },
+                    key = { if (it.needsSaf) "usb_saf_${it.uuid}" else "usb_${it.path}" }
+                ) { volume ->
                     val context = LocalContext.current
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigateUsb(volume.path) }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Filled.Usb, null,
-                            Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                volume.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                stringResource(
-                                    R.string.usb_free_space,
-                                    volume.freeSpace.toFileSize(context),
-                                    volume.totalSpace.toFileSize(context)
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { onEjectUsb(volume.path) }) {
+                    if (volume.needsSaf) {
+                        // Volume detected but no direct file access — offer SAF
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
-                                Icons.Filled.Eject,
-                                stringResource(R.string.usb_eject),
-                                Modifier.size(20.dp),
+                                Icons.Filled.Usb, null,
+                                Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    volume.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    stringResource(R.string.no_access),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = onGrantVolumeAccess) {
+                                Text(stringResource(R.string.connect))
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigateUsb(volume.path) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.Usb, null,
+                                Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    volume.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    stringResource(
+                                        R.string.usb_free_space,
+                                        volume.freeSpace.toFileSize(context),
+                                        volume.totalSpace.toFileSize(context)
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { onEjectUsb(volume.path) }) {
+                                Icon(
+                                    Icons.Filled.Eject,
+                                    stringResource(R.string.usb_eject),
+                                    Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

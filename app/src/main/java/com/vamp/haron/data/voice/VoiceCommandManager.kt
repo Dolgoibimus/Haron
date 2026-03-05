@@ -3,9 +3,12 @@ package com.vamp.haron.data.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
 import com.vamp.haron.domain.model.GestureAction
@@ -15,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "VoiceCommand"
 
 enum class VoiceState {
     IDLE, LISTENING, PROCESSING, ERROR
@@ -37,44 +42,92 @@ class VoiceCommandManager @Inject constructor(
         private set
 
     private var recognizer: SpeechRecognizer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var busyRetryCount = 0
 
     val isAvailable: Boolean
         get() = SpeechRecognizer.isRecognitionAvailable(appContext)
+
+    private fun ensureRecognizer(): SpeechRecognizer? {
+        if (recognizer != null) return recognizer
+        EcosystemLogger.d(TAG, "Creating SpeechRecognizer")
+        recognizer = SpeechRecognizer.createSpeechRecognizer(appContext)?.apply {
+            setRecognitionListener(listener)
+        }
+        return recognizer
+    }
+
+    private val listener = object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {
+            EcosystemLogger.d(TAG, "onReadyForSpeech")
+            busyRetryCount = 0
+        }
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {
+            _state.value = VoiceState.PROCESSING
+        }
+        override fun onError(error: Int) {
+            val errorName = when (error) {
+                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT"
+                SpeechRecognizer.ERROR_NETWORK -> "NETWORK"
+                SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
+                SpeechRecognizer.ERROR_SERVER -> "SERVER"
+                SpeechRecognizer.ERROR_CLIENT -> "CLIENT"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT"
+                SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH"
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RECOGNIZER_BUSY"
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "INSUFFICIENT_PERMISSIONS"
+                else -> "UNKNOWN($error)"
+            }
+            EcosystemLogger.d(TAG, "onError: $errorName")
+
+            // Retry on BUSY — recognizer may still be shutting down from previous session
+            if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY && busyRetryCount < 3) {
+                busyRetryCount++
+                EcosystemLogger.d(TAG, "BUSY retry #$busyRetryCount in 300ms")
+                mainHandler.postDelayed({ doStartListening() }, 300)
+                return
+            }
+
+            // On CLIENT error — destroy and recreate (recognizer in bad state)
+            if (error == SpeechRecognizer.ERROR_CLIENT) {
+                destroyRecognizer()
+            }
+
+            _state.value = VoiceState.IDLE
+        }
+        override fun onResults(results: Bundle?) {
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            EcosystemLogger.d(TAG, "onResults: ${matches?.take(3)}")
+            val action = matches?.firstNotNullOfOrNull { matchPhrase(it) }
+            _lastResult.value = action
+            _state.value = VoiceState.IDLE
+        }
+        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
 
     fun startListening() {
         if (!isAvailable) {
             _state.value = VoiceState.ERROR
             return
         }
-        stop()
+        // Cancel previous listening without destroying recognizer
+        try { recognizer?.cancel() } catch (_: Exception) {}
         _state.value = VoiceState.LISTENING
         _lastResult.value = null
+        busyRetryCount = 0
+        doStartListening()
+    }
 
-        recognizer = SpeechRecognizer.createSpeechRecognizer(appContext).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {
-                    _state.value = VoiceState.PROCESSING
-                }
-                override fun onError(error: Int) {
-                    // Destroy finished recognizer immediately to avoid race on next start
-                    destroyRecognizer()
-                    _state.value = VoiceState.IDLE
-                }
-                override fun onResults(results: Bundle?) {
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val action = matches?.firstNotNullOfOrNull { matchPhrase(it) }
-                    _lastResult.value = action
-                    // Destroy finished recognizer immediately to avoid race on next start
-                    destroyRecognizer()
-                    _state.value = VoiceState.IDLE
-                }
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+    private fun doStartListening() {
+        val rec = ensureRecognizer()
+        if (rec == null) {
+            EcosystemLogger.d(TAG, "Failed to create SpeechRecognizer")
+            _state.value = VoiceState.ERROR
+            return
         }
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -85,22 +138,30 @@ class VoiceCommandManager @Inject constructor(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
             putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-US"))
+            // Extend silence timeout — give user more time to speak
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
         }
 
-        recognizer?.startListening(intent)
+        rec.startListening(intent)
     }
 
     fun stop() {
-        destroyRecognizer()
+        mainHandler.removeCallbacksAndMessages(null)
+        try { recognizer?.cancel() } catch (_: Exception) {}
         if (_state.value == VoiceState.LISTENING || _state.value == VoiceState.PROCESSING) {
             _state.value = VoiceState.IDLE
         }
     }
 
+    /** Full destroy — call only on Activity destroy or critical error */
+    fun destroy() {
+        stop()
+        destroyRecognizer()
+    }
+
     private fun destroyRecognizer() {
         try {
-            recognizer?.stopListening()
-            recognizer?.cancel()
             recognizer?.destroy()
         } catch (_: Exception) {}
         recognizer = null
@@ -122,10 +183,26 @@ class VoiceCommandManager @Inject constructor(
         val sortAction = tryMatchSort(lower)
         if (sortAction != null) return sortAction
 
+        // Logs pause/resume (check before general "логи" to avoid false match)
+        val logsAction = tryMatchLogs(lower)
+        if (logsAction != null) return logsAction
+
         // General phrase matching
         return PHRASE_MAP.entries.firstOrNull { (phrases, _) ->
             phrases.any { phrase -> lower.contains(phrase) }
         }?.value
+    }
+
+    private fun tryMatchLogs(lower: String): GestureAction? {
+        val logTriggers = listOf("лог", "logs")
+        if (logTriggers.none { lower.contains(it) }) return null
+        val stopWords = listOf("стоп", "stop", "пауза", "pause", "останов", "выключ")
+        val startWords = listOf("начать", "start", "resume", "продолж", "включ", "запуст")
+        return when {
+            stopWords.any { lower.contains(it) } -> GestureAction.LOGS_PAUSE
+            startWords.any { lower.contains(it) } -> GestureAction.LOGS_RESUME
+            else -> null // fall through to PHRASE_MAP for plain "логи" → OPEN_LOGS
+        }
     }
 
     private fun tryMatchSort(lower: String): GestureAction? {
@@ -206,7 +283,9 @@ class VoiceCommandManager @Inject constructor(
             // App manager
             listOf("приложени", "apps", "applications", "менеджер приложений", "app manager", "апк", "apk") to GestureAction.OPEN_APPS,
             // Scanner
-            listOf("сканер", "скан", "scanner", "scan", "штрихкод", "barcode", "qr") to GestureAction.OPEN_SCANNER
+            listOf("сканер", "скан", "scanner", "scan", "штрихкод", "barcode", "qr") to GestureAction.OPEN_SCANNER,
+            // Logs
+            listOf("логи", "logs", "лог") to GestureAction.OPEN_LOGS
         )
     }
 }

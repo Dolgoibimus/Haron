@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
@@ -60,6 +61,7 @@ import com.vamp.haron.presentation.applock.PinSetupDialog
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenGesturesVoice: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -413,6 +415,25 @@ fun SettingsScreen(
                 Icon(Icons.Filled.SwipeRight, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.gestures_and_voice_button))
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Diagnostics ---
+            SectionHeader(
+                icon = Icons.Filled.BugReport,
+                title = stringResource(R.string.logs_section)
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenLogs,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.BugReport, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.logs_button))
             }
 
             Spacer(Modifier.height(32.dp))

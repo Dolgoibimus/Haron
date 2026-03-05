@@ -25,6 +25,9 @@ enum class GestureAction(val labelRes: Int) {
     OPEN_DUPLICATES(R.string.gesture_action_duplicates),
     OPEN_APPS(R.string.gesture_action_apps),
     OPEN_SCANNER(R.string.gesture_action_scanner),
+    OPEN_LOGS(R.string.gesture_action_logs),
+    LOGS_PAUSE(R.string.gesture_action_logs_pause),
+    LOGS_RESUME(R.string.gesture_action_logs_resume),
     /** Voice-only: sort with specific field/direction parsed from speech. */
     SORT_SPECIFIC(R.string.gesture_action_sort_cycle);
 
@@ -34,8 +37,11 @@ enum class GestureAction(val labelRes: Int) {
     companion object {
         private val SCREEN_NAV_ACTIONS = setOf(
             OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER, GLOBAL_SEARCH,
-            OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS, OPEN_SCANNER
+            OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS, OPEN_SCANNER,
+            OPEN_LOGS
         )
+        /** Actions that don't navigate but are handled globally */
+        val GLOBAL_ACTIONS = setOf(LOGS_PAUSE, LOGS_RESUME)
     }
 }
 

@@ -72,6 +72,7 @@ import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
 import com.vamp.haron.presentation.explorer.state.FileTemplate
 import com.vamp.haron.presentation.explorer.state.PanelUiState
+import com.vamp.haron.presentation.explorer.state.SafRootInfo
 import com.vamp.haron.service.FileOperationService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -1170,7 +1171,11 @@ class ExplorerViewModel @Inject constructor(
         val removable = storageVolumeHelper.getRemovableVolumes()
         val persisted = safUriManager.getPersistedUris()
 
-        val roots = removable.map { vol ->
+        // Only show SD cards in SAF roots section — USB drives are shown separately
+        // "SD" must be a standalone word: "SD-карта", "SD card" — but NOT "SanDisk"
+        val sdPattern = Regex("(^|\\s)SD(\\s|[^a-zA-Z]|$)", RegexOption.IGNORE_CASE)
+        val sdCards = removable.filter { vol -> sdPattern.containsMatchIn(vol.label) }
+        val roots = sdCards.map { vol ->
             val matchingUri = persisted.find { uri ->
                 try {
                     val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(uri)
@@ -1179,7 +1184,13 @@ class ExplorerViewModel @Inject constructor(
                         (vol.uuid != null && volumeId.equals(vol.uuid, ignoreCase = true))
                 } catch (_: Exception) { false }
             }
-            vol.label to (matchingUri?.toString() ?: "")
+            val dir = vol.path?.let { java.io.File(it) }
+            SafRootInfo(
+                label = vol.label,
+                safUri = matchingUri?.toString() ?: "",
+                totalSpace = dir?.totalSpace ?: 0L,
+                freeSpace = dir?.freeSpace ?: 0L
+            )
         }
         _uiState.update { it.copy(safRoots = roots) }
     }
@@ -3439,6 +3450,8 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_APPS -> _navigationEvent.tryEmit(NavigationEvent.OpenAppManager)
             GestureAction.OPEN_SCANNER -> _navigationEvent.tryEmit(NavigationEvent.OpenScanner)
             GestureAction.SORT_SPECIFIC -> applySortFromVoice(panelId)
+            // Handled at NavHost level, not here
+            GestureAction.OPEN_LOGS, GestureAction.LOGS_PAUSE, GestureAction.LOGS_RESUME -> {}
         }
     }
 
