@@ -33,13 +33,18 @@ data class UsbVolume(
     val freeSpace: Long,
     /** Volume is detected but has no accessible file path — needs SAF to browse */
     val needsSaf: Boolean = false,
-    val uuid: String? = null
+    val uuid: String? = null,
+    /** Detected file system type: "FAT32", "NTFS", "unknown", null = not probed */
+    val fileSystemType: String? = null,
+    /** true → UI shows unsupported FS warning (NTFS etc.) */
+    val unsupportedFs: Boolean = false
 )
 
 @Singleton
 class UsbStorageManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val storageVolumeHelper: StorageVolumeHelper
+    private val storageVolumeHelper: StorageVolumeHelper,
+    private val libaumsManager: LibaumsManager
 ) {
     private val _usbVolumes = MutableStateFlow<List<UsbVolume>>(emptyList())
     val usbVolumes: StateFlow<List<UsbVolume>> = _usbVolumes.asStateFlow()
@@ -83,7 +88,10 @@ class UsbStorageManager @Inject constructor(
                         // Instantly remove volume from list (by path or by UUID for SAF-only volumes)
                         val current = _usbVolumes.value
                         val filtered = current.filter { vol ->
-                            if (vol.needsSaf) {
+                            if (vol.unsupportedFs) {
+                                // Unsupported FS volumes: always remove on media event
+                                false
+                            } else if (vol.needsSaf) {
                                 // SAF-only volumes: match by UUID from broadcast path
                                 vol.uuid != broadcastUuid
                             } else {
@@ -158,6 +166,7 @@ class UsbStorageManager @Inject constructor(
                         _usbVolumes.value = emptyList()
                         EcosystemLogger.d(TAG, "USB HW detached → cleared all volumes")
                     }
+                    libaumsManager.clearProbeResults()
                     scheduleRefresh()
                 }
             }
@@ -173,6 +182,7 @@ class UsbStorageManager @Inject constructor(
         registered = false
         retryJob?.cancel()
         pollJob?.cancel()
+        libaumsManager.clearProbeResults()
     }
 
     /** Single refresh, debounced via Mutex */
@@ -199,6 +209,53 @@ class UsbStorageManager @Inject constructor(
                 // Stop if we found new volumes with actual file paths (not SAF-only)
                 if (after > before && afterSafCount <= beforeSafCount) break
             }
+
+            // After all retries: if there are still physical USB devices with no mounted volumes,
+            // probe via libaums to detect unsupported FS (NTFS).
+            // Done AFTER retries to avoid false positives while kernel is still mounting.
+            probeUnmountedDevices()
+        }
+    }
+
+    /**
+     * Probe USB Mass Storage devices that Android completely failed to mount.
+     * Only called after ALL retries are done AND zero volumes were found.
+     * If Android mounted anything (even SAF-only), we skip libaums probe entirely —
+     * this avoids false NTFS detection and unwanted USB permission dialogs.
+     */
+    private suspend fun probeUnmountedDevices() {
+        val currentVolumes = _usbVolumes.value
+        if (currentVolumes.any { !it.unsupportedFs }) {
+            // Android found at least one volume (normal or SAF) — no need to probe
+            EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already found")
+            return
+        }
+
+        // Double-check: are there physical USB Mass Storage devices connected?
+        if (!libaumsManager.hasPhysicalDevices()) return
+
+        EcosystemLogger.d(TAG, "No volumes after retries but USB device present — probing via libaums...")
+        try {
+            val probeResults = libaumsManager.probeAllDevices()
+            val newVolumes = mutableListOf<UsbVolume>()
+            for (probe in probeResults) {
+                if (!probe.supported) {
+                    newVolumes.add(UsbVolume(
+                        path = "",
+                        label = probe.label,
+                        totalSpace = probe.totalSpace,
+                        freeSpace = probe.freeSpace,
+                        fileSystemType = probe.fileSystemType,
+                        unsupportedFs = true
+                    ))
+                }
+            }
+            if (newVolumes.isNotEmpty()) {
+                _usbVolumes.value = newVolumes
+                EcosystemLogger.d(TAG, "Added ${newVolumes.size} unsupported-FS volume(s)")
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.w(TAG, "libaums probe failed: ${e.message}")
         }
     }
 
@@ -286,7 +343,7 @@ class UsbStorageManager @Inject constructor(
 
             _usbVolumes.value = volumes
             if (volumes.isNotEmpty() || removable.isNotEmpty() || scanned.isNotEmpty()) {
-                EcosystemLogger.d(TAG, "Result: ${volumes.size} volume(s) (saf-only: ${volumes.count { it.needsSaf }})")
+                EcosystemLogger.d(TAG, "Result: ${volumes.size} volume(s) (saf-only: ${volumes.count { it.needsSaf }}, unsupported-fs: ${volumes.count { it.unsupportedFs }})")
             }
         } finally {
             refreshMutex.unlock()

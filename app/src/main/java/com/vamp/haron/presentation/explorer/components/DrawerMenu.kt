@@ -179,77 +179,121 @@ fun DrawerMenu(
             // --- USB OTG ---
             if (usbVolumes.isNotEmpty()) {
                 items(
-                    usbVolumes.distinctBy { if (it.needsSaf) "saf_${it.uuid}" else it.path },
-                    key = { if (it.needsSaf) "usb_saf_${it.uuid}" else "usb_${it.path}" }
+                    usbVolumes.distinctBy {
+                        when {
+                            it.unsupportedFs -> "unsupported_${it.label}_${it.fileSystemType}"
+                            it.needsSaf -> "saf_${it.uuid}"
+                            else -> it.path
+                        }
+                    },
+                    key = {
+                        when {
+                            it.unsupportedFs -> "usb_unsupported_${it.label}_${it.fileSystemType}"
+                            it.needsSaf -> "usb_saf_${it.uuid}"
+                            else -> "usb_${it.path}"
+                        }
+                    }
                 ) { volume ->
                     val context = LocalContext.current
-                    if (volume.needsSaf) {
-                        // Volume detected but no direct file access — offer SAF
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Filled.Usb, null,
-                                Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    volume.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    when {
+                        volume.unsupportedFs -> {
+                            // Unsupported file system (NTFS etc.) — show warning
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Usb, null,
+                                    Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.error
                                 )
-                                Text(
-                                    stringResource(R.string.no_access),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            TextButton(onClick = onGrantVolumeAccess) {
-                                Text(stringResource(R.string.connect))
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.usb_unsupported_fs, volume.fileSystemType ?: "?"),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        stringResource(R.string.usb_unsupported_fs_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onNavigateUsb(volume.path) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Filled.Usb, null,
-                                Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    volume.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    stringResource(
-                                        R.string.usb_free_space,
-                                        volume.freeSpace.toFileSize(context),
-                                        volume.totalSpace.toFileSize(context)
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = { onEjectUsb(volume.path) }) {
+                        volume.needsSaf -> {
+                            // Volume detected but no direct file access — offer SAF
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    Icons.Filled.Eject,
-                                    stringResource(R.string.usb_eject),
-                                    Modifier.size(20.dp),
+                                    Icons.Filled.Usb, null,
+                                    Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        volume.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        stringResource(R.string.no_access),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(onClick = onGrantVolumeAccess) {
+                                    Text(stringResource(R.string.connect))
+                                }
+                            }
+                        }
+                        else -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateUsb(volume.path) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Usb, null,
+                                    Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        volume.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        stringResource(
+                                            R.string.usb_free_space,
+                                            volume.freeSpace.toFileSize(context),
+                                            volume.totalSpace.toFileSize(context)
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = { onEjectUsb(volume.path) }) {
+                                    Icon(
+                                        Icons.Filled.Eject,
+                                        stringResource(R.string.usb_eject),
+                                        Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

@@ -825,6 +825,8 @@
     <string name="usb_eject">Извлечь</string>
     <string name="usb_free_space">%1$s свободно из %2$s</string>
     <string name="usb_bad_removal">USB отключён без безопасного извлечения</string>
+    <string name="usb_unsupported_fs">%s — не поддерживается</string>
+    <string name="usb_unsupported_fs_hint">Накопитель использует файловую систему, которую Android не может читать. Переформатируйте в FAT32 или exFAT для использования с этим устройством.</string>
 
     <!-- Gestures (Batch 33) -->
     <string name="gestures_section">Жесты</string>

@@ -43,6 +43,13 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        jniLibs {
+            // libaums ships native .so with 4KB alignment — incompatible with 16KB page size requirement.
+            // We use Android USB Host API (not native libusb), so these are not needed.
+            excludes += listOf("**/libusb-lib.so", "**/liberrno-lib.so")
+        }
+    }
 }
 
 configurations.all {
@@ -127,6 +134,9 @@ dependencies {
 
     // SSH client (modern JSch fork — ed25519, rsa-sha2, curve25519)
     implementation("com.github.mwiede:jsch:0.2.18")
+
+    // USB Mass Storage (libaums — FAT32 access + FS detection without root)
+    implementation("me.jahnen.libaums:core:0.10.0")
 
     // Google Cast SDK (Chromecast)
     implementation("com.google.android.gms:play-services-cast-framework:22.0.0")
