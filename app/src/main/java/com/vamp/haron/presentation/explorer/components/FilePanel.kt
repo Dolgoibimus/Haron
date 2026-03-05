@@ -185,6 +185,7 @@ fun FilePanel(
     currentFolderSize: Long? = null,
     marqueeEnabled: Boolean = true,
     folderSizeCache: Map<String, Long> = emptyMap(),
+    hasSelectionBar: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -1086,6 +1087,7 @@ fun FilePanel(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(state.gridColumns),
                     state = gridState,
+                    contentPadding = PaddingValues(bottom = if (hasSelectionBar) 64.dp else 0.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)

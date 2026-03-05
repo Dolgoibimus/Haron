@@ -3408,6 +3408,10 @@ class ExplorerViewModel @Inject constructor(
         _navigationEvent.tryEmit(NavigationEvent.OpenFeatures)
     }
 
+    fun openSupport() {
+        _navigationEvent.tryEmit(NavigationEvent.OpenSupport)
+    }
+
     // --- Gesture system ---
 
     fun executeGestureAction(action: GestureAction) {

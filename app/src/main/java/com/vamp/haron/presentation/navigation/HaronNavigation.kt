@@ -87,6 +87,7 @@ object HaronRoutes {
         return "gestures_voice?tab=$tab"
     }
     const val FEATURES = "features"
+    const val SUPPORT = "support"
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
     const val DOCUMENT_VIEWER = "document_viewer"
@@ -346,6 +347,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenFeatures = {
                     navController.navigate(HaronRoutes.FEATURES)
                 },
+                onOpenSupport = {
+                    navController.navigate(HaronRoutes.SUPPORT)
+                },
                 onOpenGlobalSearch = {
                     navController.navigate(HaronRoutes.SEARCH)
                 },
@@ -390,6 +394,11 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         }
         composable(HaronRoutes.FEATURES) {
             com.vamp.haron.presentation.features.FeaturesScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.SUPPORT) {
+            com.vamp.haron.presentation.support.SupportScreen(
                 onBack = { navController.popBackStack() }
             )
         }

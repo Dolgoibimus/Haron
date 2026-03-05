@@ -113,6 +113,7 @@ fun ExplorerScreen(
     onOpenAppManager: () -> Unit = { },
     onOpenSettings: () -> Unit = { },
     onOpenFeatures: () -> Unit = { },
+    onOpenSupport: () -> Unit = { },
     onOpenGlobalSearch: () -> Unit = { },
     onOpenTransfer: () -> Unit = { },
     onOpenTerminal: () -> Unit = { },
@@ -161,6 +162,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenFeatures -> {
                     onOpenFeatures()
+                }
+                is NavigationEvent.OpenSupport -> {
+                    onOpenSupport()
                 }
                 is NavigationEvent.OpenGlobalSearch -> {
                     onOpenGlobalSearch()
@@ -634,6 +638,7 @@ fun ExplorerScreen(
                 currentFolderSize = state.folderSizeCache[state.bottomPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
+                hasSelectionBar = hasSelection && !isDragging,
                 modifier = modifier
             )
         }
@@ -1275,6 +1280,7 @@ private fun ExplorerOverlays(
                     onRefreshNetwork = { viewModel.refreshNetwork() },
                     onOpenSettings = { viewModel.openSettings() },
                     onOpenFeatures = { viewModel.openFeatures() },
+                    onOpenSupport = { viewModel.openSupport() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer
                 )

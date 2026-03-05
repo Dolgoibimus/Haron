@@ -1067,6 +1067,23 @@
     <string name="check_answer">Check</string>
     <string name="features_title">Features</string>
 
+    <!-- Support -->
+    <string name="support_title">Support</string>
+    <string name="support_about_header">About the app</string>
+    <string name="support_about_text">Haron is a file manager developed by an independent developer. The app is built from scratch, with no ads and no data collection. Every feature is made with care for user convenience.</string>
+    <string name="support_bug_header">Found a bug?</string>
+    <string name="support_bug_text">Bug reports help make the app better. The more details you provide, the faster the fix.</string>
+    <string name="support_bug_checklist">Please include in your report:\n\n• What happened (describe the problem)\n• What you expected to happen\n• Steps to reproduce (what you tapped/did)\n• Screenshot or screen recording if possible\n• Your device info (shown below)</string>
+    <string name="support_your_device">Your device: %1$s</string>
+    <string name="support_send_report">Send bug report</string>
+    <string name="support_donate_header">Support the developer</string>
+    <string name="support_donate_text">If you like Haron, you can support the development with a donation. This helps keep the app ad-free and actively updated.</string>
+    <string name="support_donate_button">Donate</string>
+    <string name="support_donate_url" translatable="false">https://pay.cloudtips.ru/p/fbcef859</string>
+    <string name="support_contact_header">Feedback &amp; suggestions</string>
+    <string name="support_contact_text">Have an idea for a new feature or want to share your opinion? Write to us — we read every message.</string>
+    <string name="support_write_email">Write to us</string>
+
     <!-- SSH -->
     <string name="ssh_password_title">SSH Authentication</string>
     <string name="ssh_password_label">Password</string>
