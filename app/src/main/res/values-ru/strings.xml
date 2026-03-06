@@ -905,6 +905,12 @@
     <string name="voice_cmd_apps_desc">Открыть менеджер приложений</string>
     <string name="voice_cmd_scanner">"Сканер / Штрихкод / QR"</string>
     <string name="voice_cmd_scanner_desc">Открыть сканер штрихкодов</string>
+    <string name="voice_cmd_logs">"Логи"</string>
+    <string name="voice_cmd_logs_desc">Открыть экран логов</string>
+    <string name="voice_cmd_logs_pause">"Логи стоп / Логи пауза"</string>
+    <string name="voice_cmd_logs_pause_desc">Приостановить запись логов</string>
+    <string name="voice_cmd_logs_resume">"Логи старт / Логи продолжить"</string>
+    <string name="voice_cmd_logs_resume_desc">Возобновить запись логов</string>
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Терминал</string>

@@ -187,10 +187,19 @@ class VoiceCommandManager @Inject constructor(
         val logsAction = tryMatchLogs(lower)
         if (logsAction != null) return logsAction
 
-        // General phrase matching
-        return PHRASE_MAP.entries.firstOrNull { (phrases, _) ->
-            phrases.any { phrase -> lower.contains(phrase) }
-        }?.value
+        // General phrase matching — pick the longest matching phrase
+        // to avoid "найди" (search) winning over "дубликат" in "найди дубликаты"
+        var bestAction: GestureAction? = null
+        var bestLen = 0
+        for ((phrases, action) in PHRASE_MAP) {
+            for (phrase in phrases) {
+                if (lower.contains(phrase) && phrase.length > bestLen) {
+                    bestLen = phrase.length
+                    bestAction = action
+                }
+            }
+        }
+        return bestAction
     }
 
     private fun tryMatchLogs(lower: String): GestureAction? {
@@ -265,7 +274,7 @@ class VoiceCommandManager @Inject constructor(
             // Terminal
             listOf("терминал", "terminal", "консоль", "console", "командная строка") to GestureAction.OPEN_TERMINAL,
             // Select all
-            listOf("выделить все", "выдели все", "select all") to GestureAction.SELECT_ALL,
+            listOf("выделить все", "выдели все", "выделить всё", "выдели всё", "select all") to GestureAction.SELECT_ALL,
             // Refresh
             listOf("обновить", "обнови", "refresh", "reload") to GestureAction.REFRESH,
             // Home / Root

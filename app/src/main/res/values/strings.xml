@@ -905,6 +905,12 @@
     <string name="voice_cmd_apps_desc">Open app manager</string>
     <string name="voice_cmd_scanner">"Scanner / Barcode / QR"</string>
     <string name="voice_cmd_scanner_desc">Open barcode scanner</string>
+    <string name="voice_cmd_logs">"Logs"</string>
+    <string name="voice_cmd_logs_desc">Open logs screen</string>
+    <string name="voice_cmd_logs_pause">"Logs stop / Logs pause"</string>
+    <string name="voice_cmd_logs_pause_desc">Pause log recording</string>
+    <string name="voice_cmd_logs_resume">"Logs start / Logs resume"</string>
+    <string name="voice_cmd_logs_resume_desc">Resume log recording</string>
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Terminal</string>
