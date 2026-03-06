@@ -29,7 +29,21 @@ enum class GestureAction(val labelRes: Int) {
     LOGS_PAUSE(R.string.gesture_action_logs_pause),
     LOGS_RESUME(R.string.gesture_action_logs_resume),
     /** Voice-only: sort with specific field/direction parsed from speech. */
-    SORT_SPECIFIC(R.string.gesture_action_sort_cycle);
+    SORT_SPECIFIC(R.string.gesture_action_sort_cycle),
+
+    // --- Voice Level 1 + Level 2 ---
+    NAVIGATE_BACK(R.string.gesture_action_navigate_back),
+    NAVIGATE_UP(R.string.gesture_action_navigate_up),
+    DELETE_SELECTED(R.string.gesture_action_delete_selected),
+    COPY_SELECTED(R.string.gesture_action_copy_selected),
+    MOVE_SELECTED(R.string.gesture_action_move_selected),
+    RENAME(R.string.gesture_action_rename),
+    CREATE_ARCHIVE(R.string.gesture_action_create_archive),
+    EXTRACT_ARCHIVE(R.string.gesture_action_extract_archive),
+    FILE_PROPERTIES(R.string.gesture_action_file_properties),
+    DESELECT_ALL(R.string.gesture_action_deselect_all),
+    /** Voice-only: navigate to folder by name with fuzzy matching. */
+    NAVIGATE_TO_FOLDER(R.string.gesture_action_navigate_to_folder);
 
     /** Actions that navigate to a separate screen (handled at NavHost level for voice). */
     val isScreenNavigation: Boolean get() = this in SCREEN_NAV_ACTIONS

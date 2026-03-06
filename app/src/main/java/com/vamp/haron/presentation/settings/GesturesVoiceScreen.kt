@@ -173,7 +173,18 @@ private fun VoiceTab() {
             R.string.voice_cmd_scanner to R.string.voice_cmd_scanner_desc,
             R.string.voice_cmd_logs to R.string.voice_cmd_logs_desc,
             R.string.voice_cmd_logs_pause to R.string.voice_cmd_logs_pause_desc,
-            R.string.voice_cmd_logs_resume to R.string.voice_cmd_logs_resume_desc
+            R.string.voice_cmd_logs_resume to R.string.voice_cmd_logs_resume_desc,
+            R.string.voice_cmd_back to R.string.voice_cmd_back_desc,
+            R.string.voice_cmd_up to R.string.voice_cmd_up_desc,
+            R.string.voice_cmd_delete to R.string.voice_cmd_delete_desc,
+            R.string.voice_cmd_copy to R.string.voice_cmd_copy_desc,
+            R.string.voice_cmd_move to R.string.voice_cmd_move_desc,
+            R.string.voice_cmd_rename to R.string.voice_cmd_rename_desc,
+            R.string.voice_cmd_archive to R.string.voice_cmd_archive_desc,
+            R.string.voice_cmd_extract to R.string.voice_cmd_extract_desc,
+            R.string.voice_cmd_properties to R.string.voice_cmd_properties_desc,
+            R.string.voice_cmd_deselect to R.string.voice_cmd_deselect_desc,
+            R.string.voice_cmd_go_to to R.string.voice_cmd_go_to_desc
         )
 
         commands.forEach { (cmdRes, descRes) ->

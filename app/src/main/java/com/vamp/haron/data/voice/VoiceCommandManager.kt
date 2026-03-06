@@ -41,6 +41,14 @@ class VoiceCommandManager @Inject constructor(
     var pendingSortDirection: SortDirection? = null
         private set
 
+    /** Pending folder query for NAVIGATE_TO_FOLDER. */
+    var pendingFolderQuery: String? = null
+        private set
+
+    /** Pending rename name for RENAME (e.g. "переименуй в тест"). */
+    var pendingRenameName: String? = null
+        private set
+
     private var recognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var busyRetryCount = 0
@@ -176,6 +184,18 @@ class VoiceCommandManager @Inject constructor(
         pendingSortDirection = null
     }
 
+    fun consumeFolderQuery(): String? {
+        val q = pendingFolderQuery
+        pendingFolderQuery = null
+        return q
+    }
+
+    fun consumeRenameName(): String? {
+        val n = pendingRenameName
+        pendingRenameName = null
+        return n
+    }
+
     private fun matchPhrase(text: String): GestureAction? {
         val lower = text.lowercase().trim()
 
@@ -186,6 +206,14 @@ class VoiceCommandManager @Inject constructor(
         // Logs pause/resume (check before general "логи" to avoid false match)
         val logsAction = tryMatchLogs(lower)
         if (logsAction != null) return logsAction
+
+        // Rename: "переименуй в тест" / "rename to test"
+        val renameAction = tryMatchRename(lower)
+        if (renameAction != null) return renameAction
+
+        // Navigation: "открой загрузки" / "go to downloads"
+        val navAction = tryMatchNavigation(lower)
+        if (navAction != null) return navAction
 
         // General phrase matching — pick the longest matching phrase
         // to avoid "найди" (search) winning over "дубликат" in "найди дубликаты"
@@ -202,11 +230,53 @@ class VoiceCommandManager @Inject constructor(
         return bestAction
     }
 
+    private fun tryMatchRename(lower: String): GestureAction? {
+        val renameTriggers = listOf("переименуй в ", "переименовать в ", "rename to ")
+        for (trigger in renameTriggers) {
+            val idx = lower.indexOf(trigger)
+            if (idx >= 0) {
+                val name = lower.substring(idx + trigger.length).trim()
+                pendingRenameName = name.ifEmpty { null }
+                return GestureAction.RENAME
+            }
+        }
+        // Simple "переименуй" / "rename" without a name — handled by PHRASE_MAP
+        return null
+    }
+
+    private fun tryMatchNavigation(lower: String): GestureAction? {
+        val navPrefixes = listOf(
+            "открой ", "перейди в ", "перейди к ", "зайди в ",
+            "go to ", "open ", "navigate to "
+        )
+        for (prefix in navPrefixes) {
+            if (!lower.startsWith(prefix)) continue
+            val query = lower.removePrefix(prefix).trim()
+            if (query.isEmpty()) continue
+            // If the remaining query matches an existing PHRASE_MAP command — skip
+            if (isExistingCommand(query)) return null
+            pendingFolderQuery = query
+            EcosystemLogger.d(TAG, "Navigation query: $query")
+            return GestureAction.NAVIGATE_TO_FOLDER
+        }
+        return null
+    }
+
+    /** Check if query matches any phrase in PHRASE_MAP (to avoid "открой терминал" → navigation). */
+    private fun isExistingCommand(query: String): Boolean {
+        for ((phrases, _) in PHRASE_MAP) {
+            for (phrase in phrases) {
+                if (query.contains(phrase) || phrase.contains(query)) return true
+            }
+        }
+        return false
+    }
+
     private fun tryMatchLogs(lower: String): GestureAction? {
         val logTriggers = listOf("лог", "logs")
         if (logTriggers.none { lower.contains(it) }) return null
         val stopWords = listOf("стоп", "stop", "пауза", "pause", "останов", "выключ")
-        val startWords = listOf("начать", "start", "resume", "продолж", "включ", "запуст")
+        val startWords = listOf("начать", "start", "старт", "resume", "продолж", "включ", "запуст")
         return when {
             stopWords.any { lower.contains(it) } -> GestureAction.LOGS_PAUSE
             startWords.any { lower.contains(it) } -> GestureAction.LOGS_RESUME
@@ -294,7 +364,28 @@ class VoiceCommandManager @Inject constructor(
             // Scanner
             listOf("сканер", "скан", "scanner", "scan", "штрихкод", "barcode", "qr") to GestureAction.OPEN_SCANNER,
             // Logs
-            listOf("логи", "logs", "лог") to GestureAction.OPEN_LOGS
+            listOf("логи", "logs", "лог") to GestureAction.OPEN_LOGS,
+            // --- Level 1: new commands ---
+            // Back
+            listOf("назад", "back", "go back") to GestureAction.NAVIGATE_BACK,
+            // Up
+            listOf("вверх", "наверх", "up", "go up", "родительская") to GestureAction.NAVIGATE_UP,
+            // Delete
+            listOf("удалить", "удали", "delete", "remove") to GestureAction.DELETE_SELECTED,
+            // Copy
+            listOf("копировать", "копируй", "скопируй", "copy") to GestureAction.COPY_SELECTED,
+            // Move
+            listOf("переместить", "перемести", "перенести", "перенеси", "move") to GestureAction.MOVE_SELECTED,
+            // Rename (without "в name" — just opens rename dialog)
+            listOf("переименовать", "переименуй", "rename") to GestureAction.RENAME,
+            // Archive
+            listOf("архивировать", "архивируй", "заархивируй", "запаковать", "запакуй", "archive", "zip") to GestureAction.CREATE_ARCHIVE,
+            // Extract
+            listOf("распаковать", "распакуй", "извлечь", "извлеки", "разархивируй", "extract", "unpack", "unzip") to GestureAction.EXTRACT_ARCHIVE,
+            // Properties
+            listOf("свойства", "свойство", "информация", "properties", "info") to GestureAction.FILE_PROPERTIES,
+            // Deselect
+            listOf("снять выделение", "сними выделение", "убрать выделение", "deselect", "deselect all") to GestureAction.DESELECT_ALL
         )
     }
 }

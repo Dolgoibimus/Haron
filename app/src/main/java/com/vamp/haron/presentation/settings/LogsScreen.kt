@@ -75,6 +75,8 @@ fun LogsScreen(onBack: () -> Unit) {
     // Auto-refresh every 2 seconds
     LaunchedEffect(Unit) {
         while (true) {
+            // Sync with EcosystemLogger (voice commands change isPaused externally)
+            isPaused = EcosystemLogger.isPaused
             val file = EcosystemLogger.getLogFile()
             val lines = file?.readLines() ?: emptyList()
             allLines = lines

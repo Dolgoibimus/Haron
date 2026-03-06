@@ -3450,6 +3450,25 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_APPS -> _navigationEvent.tryEmit(NavigationEvent.OpenAppManager)
             GestureAction.OPEN_SCANNER -> _navigationEvent.tryEmit(NavigationEvent.OpenScanner)
             GestureAction.SORT_SPECIFIC -> applySortFromVoice(panelId)
+            // --- Voice Level 1 + Level 2 ---
+            GestureAction.NAVIGATE_BACK -> navigateBack(panelId)
+            GestureAction.NAVIGATE_UP -> { navigateUp(panelId) }
+            GestureAction.DELETE_SELECTED -> requestDeleteSelected()
+            GestureAction.COPY_SELECTED -> copySelectedToOtherPanel()
+            GestureAction.MOVE_SELECTED -> moveSelectedToOtherPanel()
+            GestureAction.RENAME -> executeVoiceRename(panelId)
+            GestureAction.CREATE_ARCHIVE -> requestCreateArchive()
+            GestureAction.EXTRACT_ARCHIVE -> {
+                val panel = getPanel(panelId)
+                if (panel.isArchiveMode) {
+                    extractFromArchive(panelId)
+                } else {
+                    _toastMessage.tryEmit(appContext.getString(R.string.not_in_archive))
+                }
+            }
+            GestureAction.FILE_PROPERTIES -> showSelectedFileProperties()
+            GestureAction.DESELECT_ALL -> clearSelection(panelId)
+            GestureAction.NAVIGATE_TO_FOLDER -> navigateToFolderFromVoice(panelId)
             // Handled at NavHost level, not here
             GestureAction.OPEN_LOGS, GestureAction.LOGS_PAUSE, GestureAction.LOGS_RESUME -> {}
         }
@@ -3479,6 +3498,84 @@ class ExplorerViewModel @Inject constructor(
         }
         val dirName = if (direction == com.vamp.haron.data.model.SortDirection.ASCENDING) "↑" else "↓"
         _toastMessage.tryEmit(appContext.getString(R.string.sort_changed_to, "$sortName $dirName"))
+    }
+
+    private fun executeVoiceRename(panelId: PanelId) {
+        val name = voiceCommandManager.consumeRenameName()
+        if (name == null) {
+            // No name specified — just open inline rename UI
+            requestRename()
+            return
+        }
+        val panel = getPanel(panelId)
+        val selected = panel.selectedPaths.firstOrNull()
+        if (selected == null) {
+            _toastMessage.tryEmit(appContext.getString(R.string.select_files_first))
+            return
+        }
+        viewModelScope.launch {
+            // Preserve extension
+            val file = java.io.File(selected)
+            val ext = file.extension
+            val newName = if (ext.isNotEmpty()) "$name.$ext" else name
+            renameFileUseCase(selected, newName).fold(
+                onSuccess = { newPath ->
+                    _toastMessage.tryEmit(appContext.getString(R.string.renamed_to, java.io.File(newPath).name))
+                    clearSelection(panelId)
+                    refreshPanel(panelId)
+                },
+                onFailure = { e ->
+                    _toastMessage.tryEmit(appContext.getString(R.string.error_rename) + ": ${e.message}")
+                }
+            )
+        }
+    }
+
+    private fun navigateToFolderFromVoice(panelId: PanelId) {
+        val query = voiceCommandManager.consumeFolderQuery() ?: return
+        val state = _uiState.value
+
+        // Build candidate list: well-known folders → favorites → recent → bookmarks → subfolders
+        val candidates = mutableListOf<String>()
+
+        // Well-known Android folders
+        val root = com.vamp.haron.common.constants.HaronConstants.ROOT_PATH
+        val wellKnown = listOf(
+            "$root/Download", "$root/Documents", "$root/DCIM",
+            "$root/DCIM/Camera", "$root/Pictures", "$root/Movies",
+            "$root/Music", "$root/Android", "$root/Telegram"
+        )
+        candidates.addAll(wellKnown.filter { java.io.File(it).isDirectory })
+
+        // Favorites
+        candidates.addAll(state.favorites.filter { java.io.File(it).isDirectory })
+
+        // Recent paths
+        candidates.addAll(state.recentPaths.filter { java.io.File(it).isDirectory })
+
+        // Bookmarks
+        candidates.addAll(state.bookmarks.values.filter { java.io.File(it).isDirectory })
+
+        // Subfolders of current directory
+        val panel = getPanel(panelId)
+        val currentFiles = panel.files.filter { it.isDirectory }.map { it.path }
+        candidates.addAll(currentFiles)
+
+        // Deduplicate
+        val unique = candidates.distinct()
+
+        // Match by folder name (last segment)
+        val nameMap = unique.associateBy { java.io.File(it).name }
+        val match = com.vamp.haron.common.util.FuzzyMatch.findBestMatch(
+            query, nameMap.keys.toList(), threshold = 0.4f
+        )
+        if (match != null) {
+            val path = nameMap[match]!!
+            navigateTo(panelId, path)
+            _toastMessage.tryEmit(appContext.getString(R.string.navigated_to_format, match))
+        } else {
+            _toastMessage.tryEmit(appContext.getString(R.string.folder_not_found_format, query))
+        }
     }
 
     private fun cycleSortOrder(panelId: PanelId) {

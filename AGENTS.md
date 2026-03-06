@@ -582,6 +582,15 @@ _(нет)_
 
 > Выполненные задачи с описанием как решили.
 
+### Голосовые команды Level 1 + Level 2 ⚠️ не проверено
+
+- **FuzzyMatch** (`common\util\FuzzyMatch.kt`): Levenshtein distance O(n*m), normalized similarity 0..1, `findBestMatch(query, candidates, threshold)` — exact > contains > startsWith > fuzzy.
+- **11 новых GestureAction**: NAVIGATE_BACK, NAVIGATE_UP, DELETE_SELECTED, COPY_SELECTED, MOVE_SELECTED, RENAME, CREATE_ARCHIVE, EXTRACT_ARCHIVE, FILE_PROPERTIES, DESELECT_ALL, NAVIGATE_TO_FOLDER.
+- **VoiceCommandManager**: новые поля `pendingFolderQuery`, `pendingRenameName` + consume-методы. Pipeline: tryMatchSort → tryMatchLogs → tryMatchRename → tryMatchNavigation → PHRASE_MAP. `tryMatchRename`: "переименуй в [имя]" извлекает имя. `tryMatchNavigation`: "открой/перейди в [папка]" + проверка isExistingCommand (чтобы "открой терминал" → OPEN_TERMINAL, а не навигация).
+- **ExplorerViewModel**: `executeVoiceRename` — если есть pendingRenameName, переименовывает напрямую (сохраняя расширение); иначе → requestRename(). `navigateToFolderFromVoice` — собирает кандидатов (well-known + favorites + recent + bookmarks + подпапки), FuzzyMatch по имени папки.
+- **VoiceTab**: 12 новых команд в списке.
+- **FuzzyMatchTest**: 11 тестов (levenshtein, similarity, findBestMatch).
+
 ### Передача файлов — корпоративные сети, системная точка доступа, QR UX ⚠️ не проверено
 
 **Проблема корпоративных сетей (CGNAT):**
@@ -1849,8 +1858,10 @@ _(нет)_
 - Настройка в Настройках
 
 ### Голосовые команды
-- 17 команд (русский + английский)
-- Меню, полка, скрытые, создать, поиск, терминал, выделить все, обновить, домой, сортировка, настройки, передача, корзина, анализ, дубликаты, приложения, сканер
+- 28+ команд (русский + английский)
+- Level 0: Меню, полка, скрытые, создать, поиск, терминал, выделить все, обновить, домой, сортировка, настройки, передача, корзина, анализ, дубликаты, приложения, сканер, логи (пауза/продолжить)
+- Level 1: назад, вверх, удалить, копировать, переместить, переименовать (в [имя]), архивировать, распаковать, свойства, снять выделение
+- Level 2: навигация в папку по имени с нечётким поиском ("открой загрузки", "перейди в документы")
 - Альтернативные фразы для каждой команды отображаются в настройках
 
 ### Терминал
