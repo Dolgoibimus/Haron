@@ -451,6 +451,7 @@
     <!-- Archive extraction -->
     <string name="extract_unsupported_format">Неподдерживаемый формат</string>
     <string name="extract_error_generic">Ошибка извлечения</string>
+    <string name="extract_no_space">Недостаточно места (доступно: %s)</string>
 
     <!-- APK parse -->
     <string name="apk_parse_error">Не удалось прочитать APK</string>

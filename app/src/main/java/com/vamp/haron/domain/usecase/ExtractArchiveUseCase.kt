@@ -19,10 +19,14 @@ import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
+import android.os.StatFs
+import com.vamp.core.logger.EcosystemLogger
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import javax.inject.Inject
+
+private const val TAG = "ExtractArchive"
 
 data class ExtractProgress(
     val current: Int,
@@ -43,8 +47,27 @@ class ExtractArchiveUseCase @Inject constructor(
         basePrefix: String = "" // strip this prefix from output paths (for inline archive browsing)
     ): Flow<ExtractProgress> = flow {
         try {
+            // Check free space before extraction
+            val freeBytes = try {
+                val stat = StatFs(destinationDir)
+                stat.availableBytes
+            } catch (_: Exception) { Long.MAX_VALUE }
+            val archiveSize = try {
+                if (archivePath.startsWith("content://")) 0L
+                else File(archivePath).length()
+            } catch (_: Exception) { 0L }
+            // Heuristic: need at least 2x archive size for extraction
+            if (archiveSize > 0 && freeBytes < archiveSize * 2) {
+                val needed = android.text.format.Formatter.formatFileSize(context, archiveSize * 2)
+                val available = android.text.format.Formatter.formatFileSize(context, freeBytes)
+                EcosystemLogger.e(TAG, "Not enough space: need ~$needed, available $available")
+                emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_no_space, available)))
+                return@flow
+            }
+
             val isContentUri = archivePath.startsWith("content://")
             val extension = archivePath.substringAfterLast('.').lowercase()
+            EcosystemLogger.d(TAG, "Extracting $extension: ${archivePath.takeLast(60)} → $destinationDir")
             when (extension) {
                 "zip" -> extractZip(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
                 "7z" -> extract7z(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
@@ -52,6 +75,7 @@ class ExtractArchiveUseCase @Inject constructor(
                 else -> emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_unsupported_format)))
             }
         } catch (e: Exception) {
+            EcosystemLogger.e(TAG, "Extract failed: ${e.javaClass.simpleName}: ${e.message}")
             emit(ExtractProgress(0, 0, "", error = e.message ?: context.getString(R.string.extract_error_generic)))
         }
     }.flowOn(Dispatchers.IO)
@@ -194,6 +218,7 @@ class ExtractArchiveUseCase @Inject constructor(
                 }
             } catch (e: Exception) {
                 // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
+                EcosystemLogger.d(TAG, "junrar failed (${e.javaClass.simpleName}), trying 7-Zip-JBinding")
                 extractRarWith7Zip(file, destinationDir, selectedEntries, password, basePrefix)
             }
         } finally {

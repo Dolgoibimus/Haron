@@ -3030,6 +3030,48 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    /** Extract selected archive file(s) from normal folder view into other panel. */
+    private fun extractSelectedArchiveFiles(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val archiveExts = com.vamp.haron.common.util.ContentExtractor.ARCHIVE_EXTENSIONS
+        val selectedArchives = panel.files
+            .filter { it.path in panel.selectedPaths && it.name.substringAfterLast('.').lowercase() in archiveExts }
+        if (selectedArchives.isEmpty()) {
+            _toastMessage.tryEmit(appContext.getString(R.string.not_in_archive))
+            return
+        }
+        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val destDir = getPanel(otherId).currentPath.ifEmpty { panel.currentPath }
+
+        viewModelScope.launch {
+            for (archive in selectedArchives) {
+                extractArchiveUseCase(
+                    archivePath = archive.path,
+                    destinationDir = destDir
+                ).collect { progress ->
+                    updatePanel(panelId) { it.copy(archiveExtractProgress = progress) }
+                    if (progress.isComplete) {
+                        delay(300)
+                        refreshPanel(otherId)
+                        if (getPanel(panelId).currentPath == destDir) refreshPanel(panelId)
+                        updatePanel(panelId) {
+                            it.copy(
+                                selectedPaths = emptySet(),
+                                isSelectionMode = false,
+                                archiveExtractProgress = null
+                            )
+                        }
+                        if (progress.error != null) {
+                            _toastMessage.tryEmit(progress.error)
+                        } else {
+                            _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destDir))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun showStatusMessage(panelId: PanelId, message: String) {
         updatePanel(panelId) { it.copy(statusMessage = message) }
         viewModelScope.launch {
@@ -3479,7 +3521,8 @@ class ExplorerViewModel @Inject constructor(
                 if (panel.isArchiveMode) {
                     extractFromArchive(panelId)
                 } else {
-                    _toastMessage.tryEmit(appContext.getString(R.string.not_in_archive))
+                    // Try to extract selected archive file(s) into other panel
+                    extractSelectedArchiveFiles(panelId)
                 }
             }
             GestureAction.FILE_PROPERTIES -> showSelectedFileProperties()
