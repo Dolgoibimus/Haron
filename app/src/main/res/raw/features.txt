@@ -227,12 +227,18 @@
 - Configure in Settings
 
 # Voice Commands
-- 35+ commands (Russian + English), tap mic or say "Haron"
-- Wake word "Haron": say "Haron [command]" or just "Haron" then command separately
-- Mic auto-stops when app goes to background, resumes on return
-- Panel targeting: add "top"/"bottom" to any command (e.g. "back top")
+- 35+ commands in Russian and English
+- Tap mic — single command, tap again — stop
+- Long tap mic — list of all commands
+- Drag mic button to any position on screen
+- Wake word: say "Haron [command]" or "Haron" then command (enable in settings)
+- Mic stops when app is minimized, resumes on return
+- Panel targeting: add "top/upper/first" or "bottom/lower/second" to any command
+  Example: "back top", "open downloads bottom", "copy in first"
+- Folder navigation: "open camera", "go to downloads" — finds folder across entire storage
+  Understands Russian names (камера→Camera, загрузки→Download, музыка→Music, etc.)
 - Open dialog/menu/shelf auto-closes when new voice command is given
-- All phrases (RU / EN):
+- All commands and phrase variants:
   - Menu: меню, открой меню / menu, open menu
   - Shelf: полка, полку, буфер / shelf, clipboard
   - Hidden: скрытые, показать скрытые, спрятанные / hidden, show hidden
