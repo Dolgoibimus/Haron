@@ -585,10 +585,19 @@ _(нет)_
 ### Голосовые команды Level 1 + Level 2 ⚠️ не проверено
 
 - **FuzzyMatch** (`common\util\FuzzyMatch.kt`): Levenshtein distance O(n*m), normalized similarity 0..1, `findBestMatch(query, candidates, threshold)` — exact > contains > startsWith > fuzzy.
-- **11 новых GestureAction**: NAVIGATE_BACK, NAVIGATE_UP, DELETE_SELECTED, COPY_SELECTED, MOVE_SELECTED, RENAME, CREATE_ARCHIVE, EXTRACT_ARCHIVE, FILE_PROPERTIES, DESELECT_ALL, NAVIGATE_TO_FOLDER.
-- **VoiceCommandManager**: новые поля `pendingFolderQuery`, `pendingRenameName` + consume-методы. Pipeline: tryMatchSort → tryMatchLogs → tryMatchRename → tryMatchNavigation → PHRASE_MAP. `tryMatchRename`: "переименуй в [имя]" извлекает имя. `tryMatchNavigation`: "открой/перейди в [папка]" + проверка isExistingCommand (чтобы "открой терминал" → OPEN_TERMINAL, а не навигация).
-- **ExplorerViewModel**: `executeVoiceRename` — если есть pendingRenameName, переименовывает напрямую (сохраняя расширение); иначе → requestRename(). `navigateToFolderFromVoice` — собирает кандидатов (well-known + favorites + recent + bookmarks + подпапки), FuzzyMatch по имени папки.
-- **VoiceTab**: 12 новых команд в списке.
+- **14 GestureAction**: NAVIGATE_BACK, NAVIGATE_FORWARD, NAVIGATE_UP, DELETE_SELECTED, COPY_SELECTED, MOVE_SELECTED, RENAME, CREATE_ARCHIVE, EXTRACT_ARCHIVE, FILE_PROPERTIES, DESELECT_ALL, NAVIGATE_TO_FOLDER, REFRESH_FOLDER_CACHE, OPEN_SECURE_FOLDER.
+- **VoiceCommandManager**: полностью переписан.
+  - Pipeline: tryMatchSort → tryMatchLogs → tryMatchRename → tryMatchNavigation → PHRASE_MAP.
+  - **Wake word "Харон"**: непрерывное прослушивание, при обнаружении "харон" + команда → выполнение. "Харон" без команды → WAKE_ACTIVATED, ожидание команды. Auto-restart на timeout/no-match. Сохраняется в preferences.
+  - **5 вариантов wake word**: харон, харун, хорон, хару, haron — все альтернативы распознавания проверяются (не только первая).
+  - **Panel override**: `pendingPanelOverride` — детектор "вверху"/"внизу"/"верхн"/"нижн" в фразе → PanelId.TOP/BOTTOM. Позволяет "назад вверху" → back в верхней панели.
+  - `pendingFolderQuery`, `pendingRenameName` + consume-методы.
+  - Таймауты: wake=5с/3с, manual=1.5с/1с, wake_activated=1.5с/1с.
+  - VoiceState: IDLE, LISTENING, PROCESSING, ERROR, WAKE_LISTENING, WAKE_ACTIVATED.
+  - **Lifecycle**: pause() / resume() — останавливает микрофон при уходе в фон, возобновляет при возврате.
+- **ExplorerViewModel**: `executeGestureAction` использует `consumePanelOverride()` для определения целевой панели. Автозакрытие диалога/меню/полки при голосовой команде. `navigateToFolderFromVoice` — кэш папок (permanent, сортировка по глубине — корневые приоритетнее вложенных, обновление по команде "обнови кэш"). `folderStemAliases` — стем-маппинг русских названий (камер*→Camera, загрузк*→Download и т.д.), обрабатывает все падежные формы. `OPEN_SECURE_FOLDER` → `showAllProtectedFiles()` (запрашивает PIN/биометрию).
+- **GesturesVoiceViewModel** + **GesturesVoiceScreen**: toggle "Активация голосом «Харон»".
+- **VoiceFab**: индикатор wake mode (tertiary цвет для WAKE_LISTENING, primary для WAKE_ACTIVATED). Init wake word из preferences при первой композиции. Lifecycle observer: ON_STOP → pause, ON_START → resume.
 - **FuzzyMatchTest**: 11 тестов (levenshtein, similarity, findBestMatch).
 
 ### Передача файлов — корпоративные сети, системная точка доступа, QR UX ⚠️ не проверено
@@ -1858,10 +1867,46 @@ _(нет)_
 - Настройка в Настройках
 
 ### Голосовые команды
-- 28+ команд (русский + английский)
-- Level 0: Меню, полка, скрытые, создать, поиск, терминал, выделить все, обновить, домой, сортировка, настройки, передача, корзина, анализ, дубликаты, приложения, сканер, логи (пауза/продолжить)
-- Level 1: назад, вверх, удалить, копировать, переместить, переименовать (в [имя]), архивировать, распаковать, свойства, снять выделение
-- Level 2: навигация в папку по имени с нечётким поиском ("открой загрузки", "перейди в документы")
+- 35+ команд (русский + английский), тап на микрофон или скажи «Харон»
+- Активация голосом «Харон»: скажи «Харон [команда]» или просто «Харон» а потом команду отдельно
+- Микрофон автоматически останавливается при сворачивании приложения и включается при возврате
+- Выбор панели: добавь «вверху» или «внизу» к любой команде (например «назад вверху»)
+- Открытый диалог/меню/полка автоматически закрывается при новой голосовой команде
+- Все фразы (РУ / EN):
+  - Меню: меню, открой меню / menu, open menu
+  - Полка: полка, полку, буфер / shelf, clipboard
+  - Скрытые: скрытые, показать скрытые, спрятанные / hidden, show hidden
+  - Создать: создать, создай, новый, новая / create, new
+  - Поиск: поиск, найти, найди / search, find
+  - Терминал: терминал, консоль, командная строка / terminal, console
+  - Выделить все: выделить все, выдели все / select all
+  - Обновить: обновить, обнови / refresh, reload
+  - Домой: домой, на главную, корень / home, root, go home
+  - Сортировка: сортировка [имя/размер/дата/тип] [вверх/вниз] / sort [name/size/date/type] [asc/desc]
+  - Настройки: настройки, параметры / settings
+  - Передача: передача, передать, отправить / transfer, send
+  - Корзина: корзина, мусор / trash
+  - Анализ: анализ, память, хранилище / storage, analysis
+  - Дубликаты: дубликаты, копии / duplicates
+  - Приложения: приложения, апк / apps, apk
+  - Сканер: сканер, скан, штрихкод, qr / scanner, scan, barcode, qr
+  - Логи: логи / logs
+  - Логи пауза: логи стоп, логи пауза / logs stop, logs pause
+  - Логи продолжить: логи старт, логи продолжить / logs start, logs resume
+  - Назад: назад / back, go back
+  - Вперёд: вперёд / forward, go forward
+  - Наверх: наверх, родительская / up, go up
+  - Удалить: удалить, удали / delete, remove
+  - Копировать: копировать, копируй, скопируй / copy
+  - Переместить: переместить, перемести, перенести, перенеси / move
+  - Переименовать: переименуй [имя], переименовать в [имя] / rename [name], rename to [name]
+  - Архив: архивировать, заархивируй, запаковать, запакуй / archive, zip
+  - Распаковать: распаковать, распакуй, извлечь, разархивируй / extract, unpack, unzip
+  - Свойства: свойства, информация / properties, info
+  - Снять выделение: снять выделение, сними выделение / deselect
+  - Перейти: открой [папку], перейди в [папку], зайди в [папку] / open [folder], go to [folder]
+  - Обнови кэш: обнови кэш, обнови голосовой кэш / refresh cache
+  - Защищённые: защищённые, защита, сейф / secure, protected
 - Альтернативные фразы для каждой команды отображаются в настройках
 
 ### Терминал

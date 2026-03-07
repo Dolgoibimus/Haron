@@ -3426,7 +3426,15 @@ class ExplorerViewModel @Inject constructor(
     // --- Gesture system ---
 
     fun executeGestureAction(action: GestureAction) {
-        val panelId = _uiState.value.activePanel
+        if (action == GestureAction.NONE) return
+        // Dismiss any open dialog/drawer/shelf before executing voice command
+        // (except when the command itself opens drawer/shelf)
+        val st = _uiState.value
+        if (st.dialogState != DialogState.None) dismissDialog()
+        if (action != GestureAction.OPEN_DRAWER && st.showDrawer) dismissDrawer()
+        if (action != GestureAction.OPEN_SHELF && st.showShelf) dismissShelf()
+        // Use panel override if set (e.g. "назад вверху"), otherwise active panel
+        val panelId = voiceCommandManager.consumePanelOverride() ?: _uiState.value.activePanel
         when (action) {
             GestureAction.NONE -> { /* do nothing */ }
             GestureAction.OPEN_DRAWER -> toggleDrawer()
@@ -3451,7 +3459,15 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_SCANNER -> _navigationEvent.tryEmit(NavigationEvent.OpenScanner)
             GestureAction.SORT_SPECIFIC -> applySortFromVoice(panelId)
             // --- Voice Level 1 + Level 2 ---
-            GestureAction.NAVIGATE_BACK -> navigateBack(panelId)
+            GestureAction.NAVIGATE_BACK -> {
+                if (canNavigateBack(panelId)) navigateBack(panelId)
+                else _toastMessage.tryEmit(appContext.getString(R.string.no_history_back))
+            }
+            GestureAction.NAVIGATE_FORWARD -> {
+                val panel = getPanel(panelId)
+                if (panel.historyIndex < panel.navigationHistory.lastIndex) navigateForward(panelId)
+                else _toastMessage.tryEmit(appContext.getString(R.string.no_history_forward))
+            }
             GestureAction.NAVIGATE_UP -> { navigateUp(panelId) }
             GestureAction.DELETE_SELECTED -> requestDeleteSelected()
             GestureAction.COPY_SELECTED -> copySelectedToOtherPanel()
@@ -3469,6 +3485,11 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.FILE_PROPERTIES -> showSelectedFileProperties()
             GestureAction.DESELECT_ALL -> clearSelection(panelId)
             GestureAction.NAVIGATE_TO_FOLDER -> navigateToFolderFromVoice(panelId)
+            GestureAction.REFRESH_FOLDER_CACHE -> {
+                val map = rebuildFolderCache()
+                _toastMessage.tryEmit(appContext.getString(R.string.folder_cache_refreshed, map.size))
+            }
+            GestureAction.OPEN_SECURE_FOLDER -> showAllProtectedFiles()
             // Handled at NavHost level, not here
             GestureAction.OPEN_LOGS, GestureAction.LOGS_PAUSE, GestureAction.LOGS_RESUME -> {}
         }
@@ -3531,50 +3552,128 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
-    private fun navigateToFolderFromVoice(panelId: PanelId) {
-        val query = voiceCommandManager.consumeFolderQuery() ?: return
-        val state = _uiState.value
+    /**
+     * Stem-based aliases: Russian word stem → English folder name.
+     * Ordered longest-first so "фотограф" matches before "фото".
+     * Handles all case forms: камера/камеру/камере/камерой → Camera.
+     */
+    private val folderStemAliases = listOf(
+        // Download
+        "загрузк" to "Download", "загрузо" to "Download",
+        // Documents
+        "документ" to "Documents",
+        // Pictures
+        "изображен" to "Pictures", "картин" to "Pictures",
+        // DCIM
+        "фотограф" to "DCIM",
+        // Camera
+        "камер" to "Camera",
+        // Movies
+        "фильм" to "Movies",
+        // Music
+        "музык" to "Music",
+        // Telegram
+        "телеграм" to "Telegram",
+        // WhatsApp
+        "ватсап" to "WhatsApp", "вотсап" to "WhatsApp", "вацап" to "WhatsApp",
+        // Screenshots
+        "скриншот" to "Screenshots",
+        // Bluetooth
+        "блютуз" to "Bluetooth", "блютус" to "Bluetooth",
+        // Notifications
+        "уведомлен" to "Notifications",
+        // Ringtones
+        "рингтон" to "Ringtones",
+        // Podcasts
+        "подкаст" to "Podcasts",
+        // Short stems last (to avoid false prefix matches)
+        "фото" to "DCIM", "видео" to "Movies",
+    )
 
-        // Build candidate list: well-known folders → favorites → recent → bookmarks → subfolders
+    /** Resolve Russian query to English folder name via stem matching. */
+    private fun resolveAlias(query: String): String? {
+        val lower = query.lowercase()
+        return folderStemAliases.firstOrNull { (stem, _) -> lower.startsWith(stem) }?.second
+    }
+
+    /** Cached folder name → path map. Permanent until manual refresh via voice command. */
+    private var folderScanCache: Map<String, String> = emptyMap()
+
+    private fun getFolderNameMap(): Map<String, String> {
+        if (folderScanCache.isNotEmpty()) return folderScanCache
+        return rebuildFolderCache()
+    }
+
+    /** Rebuild folder cache from storage scan. */
+    private fun rebuildFolderCache(): Map<String, String> {
         val candidates = mutableListOf<String>()
+        val root = java.io.File(com.vamp.haron.common.constants.HaronConstants.ROOT_PATH)
+        scanFolders(root, maxDepth = 3, currentDepth = 0, candidates)
 
-        // Well-known Android folders
-        val root = com.vamp.haron.common.constants.HaronConstants.ROOT_PATH
-        val wellKnown = listOf(
-            "$root/Download", "$root/Documents", "$root/DCIM",
-            "$root/DCIM/Camera", "$root/Pictures", "$root/Movies",
-            "$root/Music", "$root/Android", "$root/Telegram"
-        )
-        candidates.addAll(wellKnown.filter { java.io.File(it).isDirectory })
-
-        // Favorites
+        val state = _uiState.value
         candidates.addAll(state.favorites.filter { java.io.File(it).isDirectory })
-
-        // Recent paths
         candidates.addAll(state.recentPaths.filter { java.io.File(it).isDirectory })
-
-        // Bookmarks
         candidates.addAll(state.bookmarks.values.filter { java.io.File(it).isDirectory })
 
-        // Subfolders of current directory
+        // Sort by depth (shallowest first) so root-level folders win over nested ones
+        // e.g. /storage/.../Music wins over /storage/.../TwinApps/Music
+        val map = mutableMapOf<String, String>()
+        for (path in candidates.distinct().sortedBy { it.count { c -> c == '/' || c == '\\' } }) {
+            val name = java.io.File(path).name
+            map.putIfAbsent(name, path)
+        }
+        folderScanCache = map
+        return map
+    }
+
+    private fun navigateToFolderFromVoice(panelId: PanelId) {
+        val query = voiceCommandManager.consumeFolderQuery() ?: return
+
+        // Check Russian alias first (stem-based: камеру/камере/камерой → Camera)
+        val resolvedAlias = resolveAlias(query)
+        val searchName = resolvedAlias ?: query
+
+        // Get cached folder map + add current directory subfolders
+        val nameToPathMap = getFolderNameMap().toMutableMap()
         val panel = getPanel(panelId)
-        val currentFiles = panel.files.filter { it.isDirectory }.map { it.path }
-        candidates.addAll(currentFiles)
+        for (f in panel.files) {
+            if (f.isDirectory) nameToPathMap.putIfAbsent(java.io.File(f.path).name, f.path)
+        }
 
-        // Deduplicate
-        val unique = candidates.distinct()
+        // Direct lookup by alias/name (case-insensitive)
+        val directMatch = nameToPathMap.entries.firstOrNull {
+            it.key.equals(searchName, ignoreCase = true)
+        }
+        if (directMatch != null) {
+            navigateTo(panelId, directMatch.value)
+            _toastMessage.tryEmit(appContext.getString(R.string.navigated_to_format, directMatch.key))
+            return
+        }
 
-        // Match by folder name (last segment)
-        val nameMap = unique.associateBy { java.io.File(it).name }
+        // Fuzzy match
         val match = com.vamp.haron.common.util.FuzzyMatch.findBestMatch(
-            query, nameMap.keys.toList(), threshold = 0.4f
+            searchName, nameToPathMap.keys.toList(), threshold = 0.4f
         )
         if (match != null) {
-            val path = nameMap[match]!!
+            val path = nameToPathMap[match]!!
             navigateTo(panelId, path)
             _toastMessage.tryEmit(appContext.getString(R.string.navigated_to_format, match))
         } else {
             _toastMessage.tryEmit(appContext.getString(R.string.folder_not_found_format, query))
+        }
+    }
+
+    /** Recursively collect directory paths up to maxDepth. Skips hidden and Android/data. */
+    private fun scanFolders(dir: java.io.File, maxDepth: Int, currentDepth: Int, out: MutableList<String>) {
+        if (currentDepth > maxDepth) return
+        val children = dir.listFiles() ?: return
+        for (child in children) {
+            if (!child.isDirectory) continue
+            val name = child.name
+            // Skip hidden dirs and heavy system dirs
+            if (name.startsWith(".") || name == "Android" && currentDepth == 0) continue
+            out.add(child.absolutePath)
+            scanFolders(child, maxDepth, currentDepth + 1, out)
         }
     }
 

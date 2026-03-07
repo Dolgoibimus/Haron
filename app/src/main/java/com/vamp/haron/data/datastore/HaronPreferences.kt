@@ -570,6 +570,10 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getBoolean(KEY_MIC_HINT_SHOWN, false)
         set(value) = prefs.edit().putBoolean(KEY_MIC_HINT_SHOWN, value).apply()
 
+    var wakeWordEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WAKE_WORD_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_WAKE_WORD_ENABLED, value).apply()
+
     // --- Content-indexed folders cache ---
 
     fun getContentIndexedFolders(): Set<String> =
@@ -635,6 +639,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_MIC_FAB_OFFSET_X = "mic_fab_offset_x"
         const val KEY_MIC_FAB_OFFSET_Y = "mic_fab_offset_y"
         const val KEY_MIC_HINT_SHOWN = "mic_hint_shown"
+        const val KEY_WAKE_WORD_ENABLED = "wake_word_enabled"
         const val KEY_SECURITY_QUESTION = "security_question"
         const val KEY_SECURITY_ANSWER_HASH = "security_answer_hash"
         const val KEY_REQUIRE_PIN_ON_LAUNCH = "require_pin_on_launch"

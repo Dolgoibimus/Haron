@@ -132,13 +132,41 @@ private fun GesturesTab(
 }
 
 @Composable
-private fun VoiceTab() {
+private fun VoiceTab(
+    viewModel: GesturesVoiceViewModel = hiltViewModel()
+) {
+    val wakeEnabled by viewModel.wakeWordEnabled.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        // Wake word toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.wake_word_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    stringResource(R.string.wake_word_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            androidx.compose.material3.Switch(
+                checked = wakeEnabled,
+                onCheckedChange = { viewModel.setWakeWordEnabled(it) }
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+
         Text(
             stringResource(R.string.voice_description),
             style = MaterialTheme.typography.bodySmall,
@@ -175,6 +203,7 @@ private fun VoiceTab() {
             R.string.voice_cmd_logs_pause to R.string.voice_cmd_logs_pause_desc,
             R.string.voice_cmd_logs_resume to R.string.voice_cmd_logs_resume_desc,
             R.string.voice_cmd_back to R.string.voice_cmd_back_desc,
+            R.string.voice_cmd_forward to R.string.voice_cmd_forward_desc,
             R.string.voice_cmd_up to R.string.voice_cmd_up_desc,
             R.string.voice_cmd_delete to R.string.voice_cmd_delete_desc,
             R.string.voice_cmd_copy to R.string.voice_cmd_copy_desc,
@@ -184,7 +213,9 @@ private fun VoiceTab() {
             R.string.voice_cmd_extract to R.string.voice_cmd_extract_desc,
             R.string.voice_cmd_properties to R.string.voice_cmd_properties_desc,
             R.string.voice_cmd_deselect to R.string.voice_cmd_deselect_desc,
-            R.string.voice_cmd_go_to to R.string.voice_cmd_go_to_desc
+            R.string.voice_cmd_go_to to R.string.voice_cmd_go_to_desc,
+            R.string.voice_cmd_refresh_cache to R.string.voice_cmd_refresh_cache_desc,
+            R.string.voice_cmd_secure to R.string.voice_cmd_secure_desc
         )
 
         commands.forEach { (cmdRes, descRes) ->

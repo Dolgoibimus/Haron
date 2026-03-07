@@ -227,8 +227,46 @@
 - Configure in Settings
 
 # Voice Commands
-- 12 commands (Russian + English)
-- Menu, shelf, hidden, create, search, terminal, select all, refresh, home, sort, settings, transfer
+- 35+ commands (Russian + English), tap mic or say "Haron"
+- Wake word "Haron": say "Haron [command]" or just "Haron" then command separately
+- Mic auto-stops when app goes to background, resumes on return
+- Panel targeting: add "top"/"bottom" to any command (e.g. "back top")
+- Open dialog/menu/shelf auto-closes when new voice command is given
+- All phrases (RU / EN):
+  - Menu: меню, открой меню / menu, open menu
+  - Shelf: полка, полку, буфер / shelf, clipboard
+  - Hidden: скрытые, показать скрытые, спрятанные / hidden, show hidden
+  - Create: создать, создай, новый, новая / create, new
+  - Search: поиск, найти, найди / search, find
+  - Terminal: терминал, консоль, командная строка / terminal, console
+  - Select all: выделить все, выдели все / select all
+  - Refresh: обновить, обнови / refresh, reload
+  - Home: домой, на главную, корень / home, root, go home
+  - Sort: сортировка [имя/размер/дата/тип] [вверх/вниз] / sort [name/size/date/type] [asc/desc]
+  - Settings: настройки, параметры / settings
+  - Transfer: передача, передать, отправить / transfer, send
+  - Trash: корзина, мусор / trash
+  - Storage: анализ, память, хранилище / storage, analysis
+  - Duplicates: дубликаты, копии / duplicates
+  - Apps: приложения, апк / apps, apk
+  - Scanner: сканер, скан, штрихкод, qr / scanner, scan, barcode, qr
+  - Logs: логи / logs
+  - Logs pause: логи стоп, логи пауза / logs stop, logs pause
+  - Logs resume: логи старт, логи продолжить / logs start, logs resume
+  - Back: назад / back, go back
+  - Forward: вперёд / forward, go forward
+  - Up: наверх, родительская / up, go up
+  - Delete: удалить, удали / delete, remove
+  - Copy: копировать, копируй, скопируй / copy
+  - Move: переместить, перемести, перенести, перенеси / move
+  - Rename: переименуй [имя], переименовать в [имя] / rename [name], rename to [name]
+  - Archive: архивировать, заархивируй, запаковать, запакуй / archive, zip
+  - Extract: распаковать, распакуй, извлечь, разархивируй / extract, unpack, unzip
+  - Properties: свойства, информация / properties, info
+  - Deselect: снять выделение, сними выделение / deselect
+  - Go to: открой [папку], перейди в [папку], зайди в [папку] / open [folder], go to [folder]
+  - Refresh cache: обнови кэш, обнови голосовой кэш / refresh cache
+  - Secure folder: защищённые, защита, сейф / secure, protected
 
 # Terminal
 - Shell command execution

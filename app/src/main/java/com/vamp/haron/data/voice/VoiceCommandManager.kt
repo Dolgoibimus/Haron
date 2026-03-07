@@ -12,6 +12,7 @@ import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
 import com.vamp.haron.domain.model.GestureAction
+import com.vamp.haron.domain.model.PanelId
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,9 +21,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "VoiceCommand"
+private val WAKE_WORDS = listOf("харон", "харун", "хорон", "хару", "haron")
 
 enum class VoiceState {
-    IDLE, LISTENING, PROCESSING, ERROR
+    IDLE, LISTENING, PROCESSING, ERROR,
+    /** Wake word mode — listening for "Харон". */
+    WAKE_LISTENING,
+    /** Wake word heard, listening for command. */
+    WAKE_ACTIVATED
 }
 
 @Singleton
@@ -49,9 +55,23 @@ class VoiceCommandManager @Inject constructor(
     var pendingRenameName: String? = null
         private set
 
+    /** Panel override for "назад вверху" / "копировать внизу". */
+    var pendingPanelOverride: PanelId? = null
+        private set
+
     private var recognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var busyRetryCount = 0
+
+    /** Wake word mode flag — when true, auto-restarts recognizer after each result/error. */
+    private val _wakeWordEnabled = MutableStateFlow(false)
+    val wakeWordEnabled: StateFlow<Boolean> = _wakeWordEnabled.asStateFlow()
+
+    /** True when "Харон" was heard, waiting for command. */
+    private var wakeActivated = false
+
+    /** True while manual one-shot listening (FAB tap) is active — overrides wake restart. */
+    private var manualMode = false
 
     val isAvailable: Boolean
         get() = SpeechRecognizer.isRecognitionAvailable(appContext)
@@ -67,7 +87,7 @@ class VoiceCommandManager @Inject constructor(
 
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
-            EcosystemLogger.d(TAG, "onReadyForSpeech")
+            EcosystemLogger.d(TAG, "onReadyForSpeech (wake=${_wakeWordEnabled.value}, activated=$wakeActivated, manual=$manualMode)")
             busyRetryCount = 0
         }
         override fun onBeginningOfSpeech() {}
@@ -104,19 +124,131 @@ class VoiceCommandManager @Inject constructor(
                 destroyRecognizer()
             }
 
+            // Wake word mode: auto-restart on timeout/no-match/network errors
+            if (_wakeWordEnabled.value && !manualMode) {
+                wakeActivated = false
+                val delay = if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    || error == SpeechRecognizer.ERROR_NO_MATCH) 100L else 1000L
+                _state.value = VoiceState.WAKE_LISTENING
+                mainHandler.postDelayed({ restartWakeListening() }, delay)
+                return
+            }
+
             _state.value = VoiceState.IDLE
         }
         override fun onResults(results: Bundle?) {
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            EcosystemLogger.d(TAG, "onResults: ${matches?.take(3)}")
+            EcosystemLogger.d(TAG, "onResults: ${matches?.take(3)} (wake=${_wakeWordEnabled.value}, activated=$wakeActivated, manual=$manualMode)")
+
+            if (_wakeWordEnabled.value && !manualMode) {
+                handleWakeResults(matches)
+                return
+            }
+
+            // Normal (manual) mode
             val action = matches?.firstNotNullOfOrNull { matchPhrase(it) }
             _lastResult.value = action
-            _state.value = VoiceState.IDLE
+            manualMode = false
+            // After manual command, return to wake listening if enabled
+            if (_wakeWordEnabled.value) {
+                _state.value = VoiceState.WAKE_LISTENING
+                mainHandler.postDelayed({ restartWakeListening() }, 300)
+            } else {
+                _state.value = VoiceState.IDLE
+            }
         }
         override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
+    // --- Wake word result handling ---
+
+    private fun handleWakeResults(matches: java.util.ArrayList<String>?) {
+        if (matches.isNullOrEmpty()) {
+            _state.value = VoiceState.WAKE_LISTENING
+            mainHandler.postDelayed({ restartWakeListening() }, 100)
+            return
+        }
+
+        if (wakeActivated) {
+            // Already heard "Харон", this is the command — try all alternatives
+            EcosystemLogger.d(TAG, "Wake command alternatives: ${matches.take(5)}")
+            val action = matches.firstNotNullOfOrNull { matchPhrase(it) }
+            _lastResult.value = action
+            wakeActivated = false
+            _state.value = VoiceState.WAKE_LISTENING
+            mainHandler.postDelayed({ restartWakeListening() }, 300)
+            return
+        }
+
+        // Check ALL alternatives for wake word
+        for (alt in matches) {
+            val lower = alt.lowercase().trim()
+            val wakeMatch = findWakeWord(lower) ?: continue
+
+            val afterWake = lower.substring(wakeMatch.endIndex).trim()
+            if (afterWake.isNotEmpty()) {
+                // "Харон открой загрузки" — try matching command from this alternative
+                val action = matchPhrase(afterWake)
+                if (action != null) {
+                    EcosystemLogger.d(TAG, "Wake + command (alt): '$afterWake' from '$lower'")
+                    _lastResult.value = action
+                    _state.value = VoiceState.WAKE_LISTENING
+                    mainHandler.postDelayed({ restartWakeListening() }, 300)
+                    return
+                }
+            } else {
+                // Just "Харон" — activate, wait for command
+                EcosystemLogger.d(TAG, "Wake word activated from: '$lower'")
+                wakeActivated = true
+                _state.value = VoiceState.WAKE_ACTIVATED
+                mainHandler.postDelayed({ restartWakeListening() }, 100)
+                return
+            }
+        }
+
+        // Also try: maybe Google split the command weirdly — extract text after any wake word
+        // and try matchPhrase on ALL alternatives' afterWake parts
+        val afterWakeCandidates = matches.mapNotNull { alt ->
+            val lower = alt.lowercase().trim()
+            val wm = findWakeWord(lower) ?: return@mapNotNull null
+            lower.substring(wm.endIndex).trim().takeIf { it.isNotEmpty() }
+        }
+        if (afterWakeCandidates.isNotEmpty()) {
+            val action = afterWakeCandidates.firstNotNullOfOrNull { matchPhrase(it) }
+            if (action != null) {
+                EcosystemLogger.d(TAG, "Wake + command (fallback): $afterWakeCandidates")
+                _lastResult.value = action
+                _state.value = VoiceState.WAKE_LISTENING
+                mainHandler.postDelayed({ restartWakeListening() }, 300)
+                return
+            }
+        }
+
+        // No wake word found — ignore, restart
+        _state.value = VoiceState.WAKE_LISTENING
+        mainHandler.postDelayed({ restartWakeListening() }, 100)
+    }
+
+    /** Find wake word in text, return match with end index. */
+    private data class WakeMatch(val word: String, val endIndex: Int)
+
+    private fun findWakeWord(lower: String): WakeMatch? {
+        for (w in WAKE_WORDS) {
+            val idx = lower.indexOf(w)
+            if (idx >= 0) return WakeMatch(w, idx + w.length)
+        }
+        return null
+    }
+
+    private fun restartWakeListening() {
+        if (!_wakeWordEnabled.value) return
+        doStartListening()
+    }
+
+    // --- Public API ---
+
+    /** Manual one-shot listening (FAB tap). */
     fun startListening() {
         if (!isAvailable) {
             _state.value = VoiceState.ERROR
@@ -124,20 +256,47 @@ class VoiceCommandManager @Inject constructor(
         }
         // Cancel previous listening without destroying recognizer
         try { recognizer?.cancel() } catch (_: Exception) {}
+        mainHandler.removeCallbacksAndMessages(null)
+        manualMode = true
+        wakeActivated = false
         _state.value = VoiceState.LISTENING
         _lastResult.value = null
         busyRetryCount = 0
         doStartListening()
     }
 
+    fun setWakeWordEnabled(enabled: Boolean) {
+        _wakeWordEnabled.value = enabled
+        if (enabled) {
+            if (_state.value == VoiceState.IDLE) {
+                manualMode = false
+                wakeActivated = false
+                _state.value = VoiceState.WAKE_LISTENING
+                doStartListening()
+            }
+        } else {
+            if (!manualMode) {
+                mainHandler.removeCallbacksAndMessages(null)
+                try { recognizer?.cancel() } catch (_: Exception) {}
+                wakeActivated = false
+                _state.value = VoiceState.IDLE
+            }
+        }
+    }
+
     private fun doStartListening() {
         val rec = ensureRecognizer()
         if (rec == null) {
             EcosystemLogger.d(TAG, "Failed to create SpeechRecognizer")
-            _state.value = VoiceState.ERROR
+            _state.value = if (_wakeWordEnabled.value && !manualMode) VoiceState.WAKE_LISTENING else VoiceState.ERROR
+            // Retry wake mode after delay
+            if (_wakeWordEnabled.value && !manualMode) {
+                mainHandler.postDelayed({ restartWakeListening() }, 2000)
+            }
             return
         }
 
+        val isWake = _wakeWordEnabled.value && !manualMode
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
@@ -146,9 +305,15 @@ class VoiceCommandManager @Inject constructor(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
             putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-US"))
-            // Extend silence timeout — give user more time to speak
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            if (isWake && !wakeActivated) {
+                // Wake mode: longer silence timeout (wait for user to speak)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            } else {
+                // Manual mode or wake-activated: shorter timeout for faster response
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+            }
         }
 
         rec.startListening(intent)
@@ -156,16 +321,46 @@ class VoiceCommandManager @Inject constructor(
 
     fun stop() {
         mainHandler.removeCallbacksAndMessages(null)
+        manualMode = false
         try { recognizer?.cancel() } catch (_: Exception) {}
         if (_state.value == VoiceState.LISTENING || _state.value == VoiceState.PROCESSING) {
-            _state.value = VoiceState.IDLE
+            // After manual stop, return to wake if enabled
+            if (_wakeWordEnabled.value) {
+                _state.value = VoiceState.WAKE_LISTENING
+                mainHandler.postDelayed({ restartWakeListening() }, 300)
+            } else {
+                _state.value = VoiceState.IDLE
+            }
+        }
+    }
+
+    /** Pause wake word when app goes to background. */
+    fun pause() {
+        if (_wakeWordEnabled.value && !manualMode) {
+            mainHandler.removeCallbacksAndMessages(null)
+            try { recognizer?.cancel() } catch (_: Exception) {}
+            wakeActivated = false
+            _state.value = VoiceState.WAKE_LISTENING // keep state so UI shows it's "enabled but paused"
+            EcosystemLogger.d(TAG, "Paused (app backgrounded)")
+        }
+    }
+
+    /** Resume wake word when app comes back to foreground. */
+    fun resume() {
+        if (_wakeWordEnabled.value && !manualMode) {
+            EcosystemLogger.d(TAG, "Resumed (app foregrounded)")
+            restartWakeListening()
         }
     }
 
     /** Full destroy — call only on Activity destroy or critical error */
     fun destroy() {
-        stop()
+        mainHandler.removeCallbacksAndMessages(null)
+        manualMode = false
+        wakeActivated = false
+        try { recognizer?.cancel() } catch (_: Exception) {}
         destroyRecognizer()
+        _state.value = VoiceState.IDLE
     }
 
     private fun destroyRecognizer() {
@@ -196,8 +391,19 @@ class VoiceCommandManager @Inject constructor(
         return n
     }
 
+    fun consumePanelOverride(): PanelId? {
+        val p = pendingPanelOverride
+        pendingPanelOverride = null
+        return p
+    }
+
+    // --- Phrase matching ---
+
     private fun matchPhrase(text: String): GestureAction? {
         val lower = text.lowercase().trim()
+
+        // Detect panel modifier: "вверху"/"внизу" → override target panel
+        pendingPanelOverride = detectPanelOverride(lower)
 
         // Special sort handling: "сортировка имя вниз" etc.
         val sortAction = tryMatchSort(lower)
@@ -228,6 +434,15 @@ class VoiceCommandManager @Inject constructor(
             }
         }
         return bestAction
+    }
+
+    /** Detect panel modifier in phrase: "вверху"/"внизу"/"верхн"/"нижн". */
+    private fun detectPanelOverride(lower: String): PanelId? {
+        val topWords = listOf("вверху", "верхн", "первая", "первой", "top panel")
+        val bottomWords = listOf("внизу", "нижн", "вторая", "второй", "bottom panel")
+        if (topWords.any { lower.contains(it) }) return PanelId.TOP
+        if (bottomWords.any { lower.contains(it) }) return PanelId.BOTTOM
+        return null
     }
 
     private fun tryMatchRename(lower: String): GestureAction? {
@@ -322,7 +537,7 @@ class VoiceCommandManager @Inject constructor(
         private val SORT_FIELD_EXT = listOf("тип", "расширени", "extension", "type", "формат")
 
         // Sort direction keywords
-        private val SORT_DIR_ASC = listOf("вверх", "возрастани", "asc", "ascending", "up")
+        private val SORT_DIR_ASC = listOf("возрастани", "asc", "ascending")
         private val SORT_DIR_DESC = listOf("вниз", "убывани", "desc", "descending", "down")
 
         /**
@@ -368,8 +583,10 @@ class VoiceCommandManager @Inject constructor(
             // --- Level 1: new commands ---
             // Back
             listOf("назад", "back", "go back") to GestureAction.NAVIGATE_BACK,
+            // Forward
+            listOf("вперед", "вперёд", "forward", "go forward") to GestureAction.NAVIGATE_FORWARD,
             // Up
-            listOf("вверх", "наверх", "up", "go up", "родительская") to GestureAction.NAVIGATE_UP,
+            listOf("наверх", "up", "go up", "родительская") to GestureAction.NAVIGATE_UP,
             // Delete
             listOf("удалить", "удали", "delete", "remove") to GestureAction.DELETE_SELECTED,
             // Copy
@@ -385,7 +602,11 @@ class VoiceCommandManager @Inject constructor(
             // Properties
             listOf("свойства", "свойство", "информация", "properties", "info") to GestureAction.FILE_PROPERTIES,
             // Deselect
-            listOf("снять выделение", "сними выделение", "убрать выделение", "deselect", "deselect all") to GestureAction.DESELECT_ALL
+            listOf("снять выделение", "сними выделение", "убрать выделение", "deselect", "deselect all") to GestureAction.DESELECT_ALL,
+            // Refresh folder cache
+            listOf("обнови кэш", "обновить кэш", "обнови кеш", "обновить кеш", "refresh cache", "обнови голосовой кэш") to GestureAction.REFRESH_FOLDER_CACHE,
+            // Secure folder
+            listOf("защищённые", "защищенные", "защита", "сейф", "secure", "protected") to GestureAction.OPEN_SECURE_FOLDER
         )
     }
 }

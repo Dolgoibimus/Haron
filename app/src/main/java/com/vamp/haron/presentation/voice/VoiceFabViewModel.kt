@@ -20,6 +20,8 @@ class VoiceFabViewModel @Inject constructor(
 
     val shouldShowHint: Boolean get() = !prefs.micHintShown
 
+    val wakeWordEnabled = voiceCommandManager.wakeWordEnabled
+
     fun markHintShown() {
         prefs.micHintShown = true
     }
@@ -35,5 +37,25 @@ class VoiceFabViewModel @Inject constructor(
 
     fun stopListening() {
         voiceCommandManager.stop()
+    }
+
+    /** Initialize wake word from saved preference. Call once on first composition. */
+    fun initWakeWord() {
+        if (prefs.wakeWordEnabled) {
+            voiceCommandManager.setWakeWordEnabled(true)
+        }
+    }
+
+    fun setWakeWordEnabled(enabled: Boolean) {
+        prefs.wakeWordEnabled = enabled
+        voiceCommandManager.setWakeWordEnabled(enabled)
+    }
+
+    fun pauseWakeWord() {
+        voiceCommandManager.pause()
+    }
+
+    fun resumeWakeWord() {
+        voiceCommandManager.resume()
     }
 }

@@ -44,6 +44,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.vamp.haron.R
 import com.vamp.haron.data.voice.VoiceState
 import com.vamp.haron.domain.model.TransferHolder
@@ -60,7 +63,31 @@ fun VoiceFab(
     val context = LocalContext.current
     val fabVisible by TransferHolder.voiceFabVisible.collectAsState()
 
+    val wakeEnabled by viewModel.wakeWordEnabled.collectAsState()
+
     if (!viewModel.isAvailable) return
+
+    // Init wake word on first composition (restore from prefs)
+    LaunchedEffect(Unit) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED ==
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)) {
+            viewModel.initWakeWord()
+        }
+    }
+
+    // Pause/resume wake word on app lifecycle (stop mic when app goes to background)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> viewModel.pauseWakeWord()
+                Lifecycle.Event.ON_START -> viewModel.resumeWakeWord()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Stop listening when mic becomes hidden (e.g. exiting reader while mic active)
     LaunchedEffect(fabVisible) {
@@ -78,10 +105,23 @@ fun VoiceFab(
     }
 
     val isListening = voiceState == VoiceState.LISTENING
-    val micColor = if (isListening) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.surfaceContainerHigh
-    val micIconTint = if (isListening) MaterialTheme.colorScheme.onPrimary
-        else MaterialTheme.colorScheme.onSurfaceVariant
+    val isWakeActive = voiceState == VoiceState.WAKE_LISTENING || voiceState == VoiceState.WAKE_ACTIVATED
+    val micColor = when {
+        isListening || voiceState == VoiceState.WAKE_ACTIVATED ->
+            MaterialTheme.colorScheme.primary
+        isWakeActive ->
+            MaterialTheme.colorScheme.tertiary
+        else ->
+            MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val micIconTint = when {
+        isListening || voiceState == VoiceState.WAKE_ACTIVATED ->
+            MaterialTheme.colorScheme.onPrimary
+        isWakeActive ->
+            MaterialTheme.colorScheme.onTertiary
+        else ->
+            MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     var offsetX by remember { mutableFloatStateOf(viewModel.savedOffsetX) }
     var offsetY by remember { mutableFloatStateOf(viewModel.savedOffsetY) }
