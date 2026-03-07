@@ -104,7 +104,9 @@ fun MediaPlayerScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val castViewModel: CastViewModel = hiltViewModel()
+    val castViewModel: CastViewModel = hiltViewModel(
+        viewModelStoreOwner = context as androidx.activity.ComponentActivity
+    )
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }

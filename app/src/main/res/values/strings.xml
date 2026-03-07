@@ -1066,6 +1066,9 @@
     <string name="cast_mirror_notification_title">Screen mirroring</string>
     <string name="cast_mirror_notification_text">Haron is mirroring your screen</string>
     <string name="cast_mirror_channel_name">Screen mirroring</string>
+    <string name="cast_transcoding_progress">Preparing: %d%%</string>
+    <string name="cast_transcoding_preparing">Preparing…</string>
+    <string name="cast_transcoding_error">Conversion failed</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">No Haron devices nearby</string>

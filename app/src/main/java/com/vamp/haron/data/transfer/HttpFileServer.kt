@@ -176,6 +176,7 @@ class HttpFileServer @Inject constructor(
                         call.respondText("No info", status = HttpStatusCode.NotFound)
                     }
                 }
+
             }
         }
 

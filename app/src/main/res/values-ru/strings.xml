@@ -1066,6 +1066,9 @@
     <string name="cast_mirror_notification_title">Зеркалирование экрана</string>
     <string name="cast_mirror_notification_text">Haron транслирует ваш экран</string>
     <string name="cast_mirror_channel_name">Зеркалирование экрана</string>
+    <string name="cast_transcoding_progress">Подготовка: %d%%</string>
+    <string name="cast_transcoding_preparing">Подготовка…</string>
+    <string name="cast_transcoding_error">Ошибка конвертации</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">Нет устройств Haron поблизости</string>

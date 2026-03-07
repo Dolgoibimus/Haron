@@ -136,6 +136,20 @@ class MainActivity : FragmentActivity() {
                     putExtra(ScreenMirrorService.EXTRA_RESULT_DATA, result.data)
                 }
                 startForegroundService(serviceIntent)
+
+                // Wait for mirror server URL and cast it to TV
+                val castVm = androidx.lifecycle.ViewModelProvider(this)[com.vamp.haron.presentation.cast.CastViewModel::class.java]
+                lifecycleScope.launch {
+                    repeat(20) {
+                        val url = ScreenMirrorService.serverUrl
+                        if (url != null) {
+                            castVm.castMirrorUrl(url)
+                            return@launch
+                        }
+                        delay(500)
+                    }
+                    com.vamp.core.logger.EcosystemLogger.e(HaronConstants.TAG, "Screen mirror: server URL not available after 10s")
+                }
             }
         }
 

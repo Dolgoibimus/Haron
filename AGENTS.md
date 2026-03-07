@@ -18,40 +18,61 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-### ▶ libaums + NTFS-предупреждение (НЕ ЗАВЕРШЕНО)
+### ▶ Транскодирование + зеркалирование экрана (Cast) — ДОДЕЛКА
 
-**Что делаем:** определение неподдерживаемой FS (NTFS) на USB через libaums, красное предупреждение в меню.
+**Что делали:** фикс прогресс-бара транскодирования + зеркалирование экрана на Chromecast.
 
-**Что сделано:**
-- Добавлена зависимость `libaums:core:0.10.0` (нативные .so исключены через `packaging.jniLibs.excludes`)
-- Расширен `UsbVolume` полями `fileSystemType`, `unsupportedFs`
-- Создан `LibaumsManager` (probe USB устройств, запрос разрешений, определение FS)
-- Интегрирован в `UsbStorageManager` — probe вызывается только после всех retry, только если 0 томов найдено
-- UI в `DrawerMenu` — третья ветка для `unsupportedFs` (красная иконка USB + текст предупреждения)
-- Строки EN + RU (`usb_unsupported_fs`, `usb_unsupported_fs_hint`)
-- Фикс PendingIntent: explicit Intent (`.setPackage()`) для API 34+
-- Метка тома: `productName` → `manufacturerName + " USB"` → "USB"
+**Что сделано и работает:**
+- ✅ Прогресс-бар транскодирования AVI/MKV → MP4 отображается в пульте MediaRemotePanel
+- ✅ Исправлен корневой баг — `hiltViewModel()` внутри NavHost создавал отдельные экземпляры CastViewModel. Фикс: все 4 вызова используют `viewModelStoreOwner = context as ComponentActivity` (Activity-scoped singleton)
+- ✅ Кеширование: `getCacheFile()` генерирует hash от имени+размера файла, повторный каст не перекодирует
+- ✅ Реконнект: если Chromecast отключился во время длинного транскода (~9 мин), после завершения пытается переподключиться и кастить
+- ✅ AC3/DTS аудио: автоматический retry с `setRemoveAudio(true)` при ошибке аудиокодека
+- ✅ fastStartMp4() — moov box перемещается перед mdat для progressive download
+- ✅ Альфа 0.6 на пульте управления (CastOverlay)
+- ✅ Фикс ScreenMirrorService: `RESULT_OK == -1` совпадал с default value для `getIntExtra` → сервис всегда сразу останавливался. Заменено на `Int.MIN_VALUE`
+- ✅ После `startForegroundService()` для mirror → polling `ScreenMirrorService.serverUrl` каждые 500мс → `castMirrorUrl(url)`
 
-**Что проверено:**
-- ✅ ASUS + NTFS флешка → открывается (ASUS монтирует NTFS нативно, probe не вызывается)
-- ✅ Sony + NTFS флешка → предупреждение "не поддерживается" (probe определил NTFS)
+**Что НЕ работает / не проверено:**
+- ❌ **Зеркалирование экрана крашит приложение** — после фикса `RESULT_OK` приложение крашится при попытке зеркалирования (логи показывают "Cast initialized" x3 = краш + рестарт). Возможные причины:
+  1. `wm.defaultDisplay.getMetrics()` deprecated на новых Android
+  2. MediaProjection/VirtualDisplay создание в foreground service
+  3. Ktor HTTP-сервер в ScreenMirrorService конфликт
+  4. `onImageAvailableListener` крашит при получении первого фрейма
+- ⚠️ **Транскодирование**: прогресс-бар показывается, дошёл до 100%, но первый раз ничего не произошло (Chromecast отключился за 9 мин). После добавления кеша и реконнекта — не проверено повторно
+- ⚠️ **Debug элементы в CastOverlay**: красный текст `"tp=$transcodePercent | $debugCastInfo"` — убрать после проверки
 
-**Что НЕ работает (баги на Sony):**
-- ❌ **Регрессия USB на Sony**: после добавления libaums у почти ВСЕХ не-NTFS флешек пропал доступ ("Нет доступа"). Раньше такое было только у двух проблемных. Нужно разбираться — возможно libaums или его зависимости конфликтуют с чем-то на Sony API 28, или `hasPhysicalDevices()` / `getMassStorageDevices()` как-то ломает Android USB Host API стек.
-- ❌ **Две флешки с кнопкой "Подключить" гоняют по кругу** — были и раньше (SAF-only), но нужно проверить не усугубилось ли.
+**Файлы (изменённые):**
+- `presentation/cast/CastViewModel.kt` — реконнект, кеш, castMirrorUrl(), debugCastInfo
+- `presentation/cast/CastOverlay.kt` — compute transcodePercent напрямую, alpha 0.6, debug text
+- `presentation/cast/components/MediaRemotePanel.kt` — transcodePercent + onCancelTranscode параметры
+- `presentation/gallery/GalleryScreen.kt` — viewModelStoreOwner fix
+- `presentation/player/MediaPlayerScreen.kt` — viewModelStoreOwner fix
+- `presentation/navigation/HaronNavigation.kt` — viewModelStoreOwner fix
+- `domain/usecase/TranscodeVideoUseCase.kt` — getCacheFile(), cache check, cleanupTempFiles()
+- `service/ScreenMirrorService.kt` — Int.MIN_VALUE fix
+- `MainActivity.kt` — mirror URL polling + castMirrorUrl()
+
+**Следующий шаг:**
+1. Расследовать краш зеркалирования (нужны свежие логи или logcat)
+2. Проверить транскодирование с кешем и реконнектом
+3. Убрать debug элементы из CastOverlay
+
+---
+
+### libaums + NTFS-предупреждение (ОТЛОЖЕНО)
+
+**Что делали:** определение неподдерживаемой FS (NTFS) на USB через libaums, красное предупреждение в меню.
+
+**Статус:** работает на Sony (NTFS → предупреждение), но вызывает регрессию доступа к другим флешкам. Отложено.
 
 **Файлы:**
 - `app/build.gradle.kts` — зависимость + packaging excludes
 - `data/usb/LibaumsManager.kt` — новый файл
 - `data/usb/UsbStorageManager.kt` — интеграция
 - `presentation/explorer/components/DrawerMenu.kt` — UI
-- `res/values/strings.xml` + `res/values-ru/strings.xml` — строки
 
-**Следующий шаг:** разобраться с регрессией USB на Sony. Возможные направления:
-1. Проверить — если убрать `libaums` зависимость, восстанавливается ли доступ к флешкам?
-2. Если да — значит сам факт наличия libaums в APK конфликтует с Android USB Host API на Sony
-3. Если нет — значит баг в другом (случайное изменение в UsbStorageManager/StorageVolumeHelper)
-4. Альтернатива: вместо libaums определять NTFS по UUID формату (NTFS serial = 16 hex символов, FAT32 = 8 hex через дефис типа 0633-7530)
+**Следующий шаг при возврате:** проверить, является ли сама зависимость libaums причиной регрессии USB на Sony
 
 ### План до релиза 1.0:
 | Батч | Задача | Статус |
@@ -821,6 +842,22 @@ _(нет)_
 - **DocumentViewerScreen**: позиция LazyColumn (index + offset) + textScale. Debounce 1с + при выходе.
 - **TextEditorScreen**: курсор + скролл + fontSizeSp. Debounce 1с + при выходе. Не переопределяет если открыт из поиска.
 - **MediaPlayerScreen**: позиция воспроизведения (seekTo), сохранение каждые 5 сек + при выходе.
+
+### Транскодирование видео для Chromecast ⚠️ не проверено (прогресс-бар работает, каст после транскода — не проверен)
+- **TranscodeVideoUseCase.kt**: `domain/usecase/TranscodeVideoUseCase.kt` — транскодирование через Media3 Transformer. AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 (H.264 + AAC). Кеширование: `getCacheFile()` генерирует `cast_transcode_{hash}.mp4` из имени+размера файла, при повторном вызове возвращает кешированный. AC3/DTS fallback: при ошибке аудиокодека автоматический retry с `setRemoveAudio(true)`. `fastStartMp4()` — перемещение moov box перед mdat для Chromecast progressive download. `cleanupTempFiles()` удаляет все `cast_transcode_*` файлы.
+- **CastViewModel.kt**: `castMedia()` проверяет формат: Chromecast + неподдерживаемый → `startTranscodedCast()`, DLNA → как есть. `_transcodeProgress: StateFlow<TranscodeProgress?>`. При завершении транскода: если Chromecast отключился (timeout при долгом транскоде) → сохраняет `pendingCastIsTranscoded=true`, пытается реконнект через `castManager.selectCastDevice(lastCastDeviceId)`. При реконнекте → кастит готовый файл. `castTranscodedFile()` — запуск HTTP-сервера + каст. `castMirrorUrl()` — каст URL зеркалирования. `_debugCastInfo` — StateFlow для отладки.
+- **CastOverlay.kt**: `transcodePercent` вычисляется напрямую из `transcodeProgress` (не через derived StateFlow — избежан баг двойной подписки). Alpha 0.6 на пульте. Debug text `"tp=$transcodePercent | $debugCastInfo"` (убрать после проверки).
+- **MediaRemotePanel.kt**: параметры `transcodePercent: Int?` и `onCancelTranscode: (() -> Unit)?` — прогресс внутри карточки пульта.
+- **ViewModel scoping fix**: все 4 точки `hiltViewModel<CastViewModel>()` (GalleryScreen, MediaPlayerScreen, HaronNavigation, CastOverlay) используют `viewModelStoreOwner = context as ComponentActivity` — единый Activity-scoped экземпляр.
+- **build.gradle.kts**: `media3-transformer:1.5.1`, `media3-effect:1.5.1`.
+- **strings.xml**: `cast_transcoding_progress`, `cast_transcoding_error`.
+- **Поведение**: MP4/WebM → напрямую. Остальные → Transformer. DLNA → без конвертации.
+
+### Зеркалирование экрана — фиксы ⚠️ не проверено (крашит приложение)
+- **ScreenMirrorService.kt**: фикс `getIntExtra(EXTRA_RESULT_CODE, -1)` → `Int.MIN_VALUE` (Activity.RESULT_OK == -1 совпадал с default, сервис сразу останавливался).
+- **MainActivity.kt**: после `startForegroundService()` для mirror → polling `ScreenMirrorService.serverUrl` каждые 500мс (до 10 сек) → `castVm.castMirrorUrl(url)`.
+- **CastViewModel.kt**: новый метод `castMirrorUrl(url)` — устанавливает `_castMode = SCREEN_MIRROR` и кастит URL через Chromecast или DLNA.
+- **Статус**: после фикса приложение крашится при попытке зеркалирования. Нужен logcat для диагностики.
 
 ### DLNA-поддержка для Cast ⚠️ не проверено
 - **DlnaManager.kt** (НОВЫЙ): `data/cast/DlnaManager.kt` — @Singleton, SSDP M-SEARCH discovery (UDP multicast 239.255.255.250:1900, ST: MediaRenderer:1), HTTP GET device description + XmlPullParser (friendlyName, UDN, controlURL для AVTransport:1 и RenderingControl:1). SOAP POST для SetAVTransportURI + Play/Pause/Stop/Seek/SetVolume. Polling каждые 1с (GetTransportInfo + GetPositionInfo). DIDL-Lite metadata. StateFlows: isConnected, connectedDeviceName, mediaIsPlaying, mediaPositionMs, mediaDurationMs. Без внешних библиотек — чистый UPnP.

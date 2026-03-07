@@ -86,6 +86,10 @@ dependencies {
     // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
     implementation("org.videolan.android:libvlc-all:3.6.5")
 
+    // Media3 Transformer (video transcoding for Chromecast — AVI/MKV/WMV → MP4)
+    implementation("androidx.media3:media3-transformer:1.5.1")
+    implementation("androidx.media3:media3-effect:1.5.1")
+
     // Room
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")

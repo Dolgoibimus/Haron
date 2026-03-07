@@ -66,7 +66,7 @@ class ScreenMirrorService : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
-                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Int.MIN_VALUE)
                 val resultData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
                 } else {
@@ -74,7 +74,7 @@ class ScreenMirrorService : Service() {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA)
                 }
 
-                if (resultCode != -1 && resultData != null) {
+                if (resultCode != Int.MIN_VALUE && resultData != null) {
                     startMirroring(resultCode, resultData)
                 } else {
                     stopForeground(STOP_FOREGROUND_REMOVE)

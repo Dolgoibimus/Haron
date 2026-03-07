@@ -91,7 +91,9 @@ fun GalleryScreen(
 
     val context = LocalContext.current
     val activity = context as? Activity
-    val castViewModel: CastViewModel = hiltViewModel()
+    val castViewModel: CastViewModel = hiltViewModel(
+        viewModelStoreOwner = LocalContext.current as androidx.activity.ComponentActivity
+    )
 
     // Immersive mode: hide system bars, toggle with tap
     DisposableEffect(Unit) {

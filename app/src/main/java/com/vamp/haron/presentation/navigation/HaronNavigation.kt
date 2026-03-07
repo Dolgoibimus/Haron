@@ -236,7 +236,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
     }
 
     // Cast mode action handler (composable context for Hilt ViewModel)
-    val castViewModel: CastViewModel = hiltViewModel()
+    val castViewModel: CastViewModel = hiltViewModel(
+        viewModelStoreOwner = context as androidx.activity.ComponentActivity
+    )
     val pendingCastMode = CastActionHolder.pendingMode
     val pendingCastFiles = CastActionHolder.pendingFilePaths
     LaunchedEffect(pendingCastMode) {

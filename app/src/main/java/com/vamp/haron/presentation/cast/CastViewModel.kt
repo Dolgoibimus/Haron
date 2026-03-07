@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.cast
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.cast.DlnaManager
 import com.vamp.haron.data.cast.GoogleCastManager
 import com.vamp.haron.data.cast.MiracastManager
@@ -12,6 +14,8 @@ import com.vamp.haron.domain.model.CastType
 import com.vamp.haron.domain.model.PresentationState
 import com.vamp.haron.domain.model.RemoteInputEvent
 import com.vamp.haron.domain.model.SlideshowConfig
+import com.vamp.haron.domain.usecase.TranscodeProgress
+import com.vamp.haron.domain.usecase.TranscodeVideoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -31,7 +36,8 @@ class CastViewModel @Inject constructor(
     val castManager: GoogleCastManager,
     private val miracastManager: MiracastManager,
     private val dlnaManager: DlnaManager,
-    private val httpFileServer: HttpFileServer
+    private val httpFileServer: HttpFileServer,
+    private val transcodeVideoUseCase: TranscodeVideoUseCase
 ) : ViewModel() {
 
     val isAvailable = castManager.isAvailable
@@ -41,6 +47,8 @@ class CastViewModel @Inject constructor(
         dlnaManager.isConnected
     ) { cast, dlna -> cast || dlna }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val isChromecastConnected = castManager.isConnected
 
     val connectedDeviceName = combine(
         castManager.connectedDeviceName,
@@ -81,9 +89,23 @@ class CastViewModel @Inject constructor(
     private val _presentationState = MutableStateFlow(PresentationState())
     val presentationState: StateFlow<PresentationState> = _presentationState.asStateFlow()
 
+    private val _transcodeProgress = MutableStateFlow<TranscodeProgress?>(null)
+    val transcodeProgress: StateFlow<TranscodeProgress?> = _transcodeProgress.asStateFlow()
+
+    val isTranscoding: StateFlow<Boolean> = _transcodeProgress
+        .map { it != null && !it.isComplete }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // DEBUG: track castMedia flow
+    private val _debugCastInfo = MutableStateFlow("")
+    val debugCastInfo: StateFlow<String> = _debugCastInfo.asStateFlow()
+
     private var discoveryJob: Job? = null
+    private var transcodeJob: Job? = null
     private var pendingCastPath: String? = null
     private var pendingCastTitle: String? = null
+    private var pendingCastIsTranscoded: Boolean = false
+    private var lastCastDeviceId: String? = null
     private var pdfPageCount: Int = 0
 
     init {
@@ -93,7 +115,17 @@ class CastViewModel @Inject constructor(
                 if (connected) {
                     val path = pendingCastPath
                     if (path != null) {
-                        castMedia(path, pendingCastTitle ?: "")
+                        if (pendingCastIsTranscoded) {
+                            // Reconnected after transcode — cast the ready file
+                            val file = File(path)
+                            if (file.exists() && file.length() > 0) {
+                                castTranscodedFile(file, pendingCastTitle ?: "", false)
+                                EcosystemLogger.d(HaronConstants.TAG, "Reconnected, casting transcoded file")
+                            }
+                            pendingCastIsTranscoded = false
+                        } else {
+                            castMedia(path, pendingCastTitle ?: "")
+                        }
                         pendingCastPath = null
                         pendingCastTitle = null
                     }
@@ -146,7 +178,10 @@ class CastViewModel @Inject constructor(
 
     fun selectDevice(device: CastDevice) {
         when (device.type) {
-            CastType.CHROMECAST -> castManager.selectCastDevice(device.id)
+            CastType.CHROMECAST -> {
+                lastCastDeviceId = device.id
+                castManager.selectCastDevice(device.id)
+            }
             CastType.MIRACAST -> miracastManager.selectRoute(device.id)
             CastType.DLNA -> { /* DLNA connects on castMedia, no separate select */ }
         }
@@ -185,19 +220,94 @@ class CastViewModel @Inject constructor(
     fun castMedia(filePath: String, title: String = "") {
         viewModelScope.launch {
             val file = File(filePath)
-            if (!file.exists()) return@launch
-
-            httpFileServer.start(listOf(file))
-            val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
-            val mimeType = guessMimeType(file.extension)
+            if (!file.exists()) {
+                _debugCastInfo.value = "FILE NOT FOUND"
+                EcosystemLogger.e(HaronConstants.TAG, "castMedia: file not found: $filePath")
+                return@launch
+            }
 
             val dlnaDeviceId = dlnaManager.connectedDeviceId
-            if (dlnaDeviceId != null) {
-                dlnaManager.castMedia(dlnaDeviceId, streamUrl, mimeType, title.ifEmpty { file.name })
+            val isChromecast = dlnaDeviceId == null
+            val ext = file.extension.lowercase()
+            val needsT = transcodeVideoUseCase.needsTranscode(filePath)
+            _debugCastInfo.value = "ext=$ext cc=$isChromecast dlna=$dlnaDeviceId need=$needsT"
+            EcosystemLogger.d(HaronConstants.TAG, "castMedia: ext=$ext, isChromecast=$isChromecast, needsTranscode=${isChromecast && needsT}")
+
+            // DLNA — cast as-is (most Smart TVs support more formats)
+            // Chromecast — transcode if needed
+            if (isChromecast && needsT) {
+                _debugCastInfo.value = "TRANSCODING ext=$ext"
+                startTranscodedCast(filePath, title)
             } else {
-                castManager.castMedia(streamUrl, mimeType, title)
+                httpFileServer.start(listOf(file))
+                val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
+                val mimeType = guessMimeType(file.extension)
+                if (dlnaDeviceId != null) {
+                    dlnaManager.castMedia(dlnaDeviceId, streamUrl, mimeType, title.ifEmpty { file.name })
+                } else {
+                    castManager.castMedia(streamUrl, mimeType, title)
+                }
             }
         }
+    }
+
+    private fun startTranscodedCast(filePath: String, title: String) {
+        transcodeJob?.cancel()
+        _transcodeProgress.value = TranscodeProgress(percent = 0)
+        EcosystemLogger.d(HaronConstants.TAG, "startTranscodedCast: $filePath")
+
+        transcodeJob = viewModelScope.launch {
+            transcodeVideoUseCase(filePath).collect { progress ->
+                _transcodeProgress.value = progress
+
+                if (progress.isComplete) {
+                    _transcodeProgress.value = null
+
+                    if (progress.error != null) {
+                        EcosystemLogger.e(HaronConstants.TAG, "Transcode failed: ${progress.error}")
+                    } else if (progress.outputPath != null) {
+                        val transcodedFile = File(progress.outputPath)
+                        if (transcodedFile.exists() && transcodedFile.length() > 0) {
+                            if (!castManager.isConnected.value) {
+                                // Chromecast disconnected during transcode — wait for reconnect
+                                EcosystemLogger.w(HaronConstants.TAG, "Chromecast disconnected during transcode, waiting for reconnect...")
+                                pendingCastPath = progress.outputPath
+                                pendingCastTitle = title
+                                pendingCastIsTranscoded = true
+                                // Re-select last device to trigger reconnect
+                                lastCastDeviceId?.let { castManager.selectCastDevice(it) }
+                            } else {
+                                castTranscodedFile(transcodedFile, title, progress.audioStripped)
+                            }
+                        } else {
+                            EcosystemLogger.e(HaronConstants.TAG, "Transcode done but file missing")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun castTranscodedFile(file: File, title: String, audioStripped: Boolean) {
+        viewModelScope.launch {
+            httpFileServer.start(listOf(file))
+            val streamUrl = httpFileServer.getStreamUrl(0)
+            if (streamUrl != null) {
+                castManager.castMedia(streamUrl, "video/mp4", title)
+                EcosystemLogger.d(HaronConstants.TAG, "Cast started: $streamUrl (${file.length() / 1024}KB)")
+                if (audioStripped) {
+                    EcosystemLogger.w(HaronConstants.TAG, "Cast WITHOUT audio (codec not supported)")
+                }
+            }
+        }
+    }
+
+    fun cancelTranscode() {
+        transcodeVideoUseCase.cancelTranscode()
+        transcodeJob?.cancel()
+        transcodeJob = null
+        _transcodeProgress.value = null
+        transcodeVideoUseCase.cleanupTempFiles()
     }
 
     fun sendRemoteInput(event: RemoteInputEvent) {
@@ -284,6 +394,20 @@ class CastViewModel @Inject constructor(
         }
     }
 
+    fun castMirrorUrl(url: String) {
+        _castMode.value = CastMode.SCREEN_MIRROR
+        viewModelScope.launch {
+            if (dlnaManager.isConnected.value) {
+                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "text/html", "Screen Mirror")
+            } else if (castManager.isConnected.value) {
+                castManager.castMedia(url, "text/html", "Screen Mirror")
+            } else {
+                EcosystemLogger.e(HaronConstants.TAG, "Screen mirror: no device connected")
+            }
+        }
+        EcosystemLogger.d(HaronConstants.TAG, "Screen mirror casting: $url")
+    }
+
     fun castFileInfo(name: String, path: String, size: String, modified: String, mimeType: String) {
         _castMode.value = CastMode.FILE_INFO
         viewModelScope.launch {
@@ -303,11 +427,13 @@ class CastViewModel @Inject constructor(
     }
 
     fun disconnect() {
+        cancelTranscode()
         _castMode.value = CastMode.SINGLE_MEDIA
         _presentationState.value = PresentationState()
         castManager.disconnect()
         dlnaManager.disconnect()
         httpFileServer.stop()
+        transcodeVideoUseCase.cleanupTempFiles()
     }
 
     private fun guessMimeType(ext: String): String {
@@ -331,6 +457,9 @@ class CastViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         discoveryJob?.cancel()
+        transcodeJob?.cancel()
+        transcodeVideoUseCase.cancelTranscode()
+        transcodeVideoUseCase.cleanupTempFiles()
         httpFileServer.stop()
     }
 }
