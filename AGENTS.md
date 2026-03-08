@@ -61,6 +61,9 @@
 - ✅ Зеркалирование экрана — работает через браузер (URL)
 - ✅ Инфо о файле — работает через браузер (URL)
 - ⚠️ Foreground Service для каста — не проверено (видео продолжает играть при закрытии, уведомление с play/pause и disconnect)
+- ✅ R8/ProGuard — минификация, обфускация, shrink resources (release build)
+- ✅ Signing config — release APK подписывается автоматически (keystore в local.properties)
+- ✅ Gradle heap — 4 ГБ (для release-сборки с R8)
 
 ---
 
@@ -615,6 +618,17 @@
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### R8/ProGuard + Release signing ⚠️ не проверено
+
+**Что сделано:**
+- Включён R8: `isMinifyEnabled = true`, `isShrinkResources = true` в release build type
+- Написаны ProGuard-правила для всех библиотек: Room entities/DAOs (Haron + ecosystem-core), VLC, FFmpegKit, 7-Zip-JBinding, JSch, smbj, BouncyCastle, Apache POI, PDFBox, Ktor, Tesseract, libaums, ML Kit, ZXing, Google Cast
+- Добавлены dontwarn для missing classes (JNA/Windows API, RMI, JGSS/Kerberos, OSGI, Unix sockets, log4j, mbassy)
+- Signing config: keystore из `local.properties` (gitignored), alias `key0`
+- Gradle heap увеличен с 2 ГБ до 4 ГБ (R8 release сборка требует больше памяти)
+
+**Файлы:** `app/build.gradle.kts` (signingConfig + R8), `app/proguard-rules.pro` (полные правила), `gradle.properties` (heap 4G), `local.properties` (keystore пароли, gitignored)
 
 ### Batch 53 — HLS-транскодирование + прогрессивный каст ⚠️ не проверено
 
