@@ -2,6 +2,7 @@ package com.vamp.haron.data.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -62,6 +63,8 @@ class VoiceCommandManager @Inject constructor(
     private var recognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var busyRetryCount = 0
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var beepMuted = false
 
     /** Wake word mode flag — when true, auto-restarts recognizer after each result/error. */
     private val _wakeWordEnabled = MutableStateFlow(false)
@@ -77,6 +80,23 @@ class VoiceCommandManager @Inject constructor(
         get() = SpeechRecognizer.isRecognitionAvailable(appContext)
 
     private var lastRecognizerCreateTime = 0L
+
+    /** Mute recognition beep in wake mode to avoid constant sounds. */
+    private fun muteBeep() {
+        if (beepMuted) return
+        try {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+            beepMuted = true
+        } catch (_: Exception) {}
+    }
+
+    private fun unmuteBeep() {
+        if (!beepMuted) return
+        try {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            beepMuted = false
+        } catch (_: Exception) {}
+    }
 
     private fun ensureRecognizer(): SpeechRecognizer? {
         if (recognizer != null) return recognizer
@@ -94,11 +114,17 @@ class VoiceCommandManager @Inject constructor(
         override fun onReadyForSpeech(params: Bundle?) {
             EcosystemLogger.d(TAG, "onReadyForSpeech (wake=${_wakeWordEnabled.value}, activated=$wakeActivated, manual=$manualMode)")
             busyRetryCount = 0
+            // Unmute after beep window is over (~500ms after startListening)
+            if (beepMuted) {
+                mainHandler.postDelayed({ unmuteBeep() }, 500)
+            }
         }
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {
+            // In wake mode keep WAKE_LISTENING to avoid visual flicker on FAB
+            if (_wakeWordEnabled.value && !manualMode) return
             _state.value = VoiceState.PROCESSING
         }
         override fun onError(error: Int) {
@@ -262,6 +288,7 @@ class VoiceCommandManager @Inject constructor(
             _state.value = VoiceState.ERROR
             return
         }
+        unmuteBeep() // manual mode — let the user hear the beep
         // Cancel previous listening without destroying recognizer
         try { recognizer?.cancel() } catch (_: Exception) {}
         mainHandler.removeCallbacksAndMessages(null)
@@ -287,6 +314,7 @@ class VoiceCommandManager @Inject constructor(
                 mainHandler.removeCallbacksAndMessages(null)
                 try { recognizer?.cancel() } catch (_: Exception) {}
                 wakeActivated = false
+                unmuteBeep()
                 _state.value = VoiceState.IDLE
             }
         }
@@ -324,6 +352,9 @@ class VoiceCommandManager @Inject constructor(
             }
         }
 
+        // Mute beep sound in wake mode to avoid constant pinging
+        if (isWake) muteBeep()
+
         rec.startListening(intent)
     }
 
@@ -348,6 +379,7 @@ class VoiceCommandManager @Inject constructor(
             mainHandler.removeCallbacksAndMessages(null)
             try { recognizer?.cancel() } catch (_: Exception) {}
             wakeActivated = false
+            unmuteBeep()
             _state.value = VoiceState.WAKE_LISTENING // keep state so UI shows it's "enabled but paused"
             EcosystemLogger.d(TAG, "Paused (app backgrounded)")
         }
@@ -366,6 +398,7 @@ class VoiceCommandManager @Inject constructor(
         mainHandler.removeCallbacksAndMessages(null)
         manualMode = false
         wakeActivated = false
+        unmuteBeep()
         try { recognizer?.cancel() } catch (_: Exception) {}
         destroyRecognizer()
         _state.value = VoiceState.IDLE

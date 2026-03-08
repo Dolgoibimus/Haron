@@ -105,20 +105,17 @@ fun VoiceFab(
     }
 
     val isListening = voiceState == VoiceState.LISTENING
-    val isWakeActive = voiceState == VoiceState.WAKE_LISTENING || voiceState == VoiceState.WAKE_ACTIVATED
+    val isWakeActivated = voiceState == VoiceState.WAKE_ACTIVATED
+    // WAKE_LISTENING looks like IDLE ("sleeping"), only WAKE_ACTIVATED lights up
     val micColor = when {
-        isListening || voiceState == VoiceState.WAKE_ACTIVATED ->
+        isListening || isWakeActivated ->
             MaterialTheme.colorScheme.primary
-        isWakeActive ->
-            MaterialTheme.colorScheme.tertiary
         else ->
             MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val micIconTint = when {
-        isListening || voiceState == VoiceState.WAKE_ACTIVATED ->
+        isListening || isWakeActivated ->
             MaterialTheme.colorScheme.onPrimary
-        isWakeActive ->
-            MaterialTheme.colorScheme.onTertiary
         else ->
             MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -176,7 +173,11 @@ fun VoiceFab(
                 .padding(end = 16.dp, bottom = 56.dp)
                 .onGloballyPositioned { fabW = it.size.width; fabH = it.size.height }
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                .then(
+                    if (wakeEnabled && !isListening && !isWakeActivated)
+                        Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    else Modifier
+                )
                 .pointerInput(Unit) {
                     val touchSlop = 10f
                     val longPressMs = 400L
