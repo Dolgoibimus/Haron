@@ -302,6 +302,18 @@ class ExplorerViewModel @Inject constructor(
             }
         }
 
+        // Quick Receive — progress tracking
+        viewModelScope.launch {
+            receiveFileManager.quickReceiveProgress.collect { progress ->
+                _uiState.update {
+                    it.copy(
+                        quickReceiveProgress = progress,
+                        quickReceiveDeviceName = if (progress != null) (it.quickReceiveDeviceName ?: "") else null
+                    )
+                }
+            }
+        }
+
     }
 
     override fun onCleared() {
@@ -562,18 +574,42 @@ class ExplorerViewModel @Inject constructor(
                     }
 
                     // Send file header + data
+                    val totalBytes = file.length()
                     output.writeUTF(
                         com.vamp.haron.data.transfer.TransferProtocolNegotiator.buildFileHeader(
-                            file.name, file.length(), 0
+                            file.name, totalBytes, 0
                         )
                     )
                     output.flush()
 
+                    var transferred = 0L
+                    val startTime = System.currentTimeMillis()
+                    var lastUpdateTime = 0L
                     file.inputStream().use { input ->
                         val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
                         var read: Int
                         while (input.read(buffer).also { read = it } != -1) {
                             output.write(buffer, 0, read)
+                            transferred += read
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdateTime >= 100 || transferred == totalBytes) {
+                                lastUpdateTime = now
+                                val elapsed = now - startTime
+                                val speed = if (elapsed > 0) (transferred * 1000 / elapsed) else 0
+                                val eta = if (speed > 0) ((totalBytes - transferred) / speed) else 0
+                                val progress = com.vamp.haron.domain.model.TransferProgressInfo(
+                                    bytesTransferred = transferred,
+                                    totalBytes = totalBytes,
+                                    currentFileIndex = 0,
+                                    totalFiles = 1,
+                                    currentFileName = file.name,
+                                    speedBytesPerSec = speed,
+                                    etaSeconds = eta
+                                )
+                                _uiState.update {
+                                    it.copy(quickSendState = QuickSendState.Sending(deviceName, progress))
+                                }
+                            }
                         }
                     }
                     output.flush()
@@ -633,12 +669,17 @@ class ExplorerViewModel @Inject constructor(
                 else -> path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
             }
 
+            val t0 = System.nanoTime()
             getFilesUseCase(
                 path = path,
                 sortOrder = panel.sortOrder,
                 showHidden = panel.showHidden,
                 showProtected = _uiState.value.isShieldUnlocked
             ).onSuccess { files ->
+                val loadMs = (System.nanoTime() - t0) / 1_000_000
+                if (loadMs > 50) {
+                    EcosystemLogger.d("Perf", "navigateTo($path): ${loadMs}ms, ${files.size} files")
+                }
                 val isNewPath = currentPath != path
                 val savedScroll = if (isNewPath) scrollCache[path] ?: 0 else -1
                 if (isNewPath) scrollTrigger++
@@ -2439,28 +2480,58 @@ class ExplorerViewModel @Inject constructor(
 
     fun deleteFromTrashPermanently(ids: List<String>) {
         viewModelScope.launch {
-            trashRepository.deleteFromTrash(ids)
-                .onSuccess {
-                    updateTrashSizeInfo()
-                    showTrash()
+            _uiState.update { state ->
+                val dialog = state.dialogState as? DialogState.ShowTrash ?: return@update state
+                state.copy(dialogState = dialog.copy(
+                    deleteProgress = 0f,
+                    deleteCurrentName = ""
+                ))
+            }
+            trashRepository.deleteFromTrashWithProgress(ids) { deleted, total, name ->
+                _uiState.update { state ->
+                    val dialog = state.dialogState as? DialogState.ShowTrash ?: return@update state
+                    state.copy(dialogState = dialog.copy(
+                        deleteProgress = deleted.toFloat() / total,
+                        deleteCurrentName = name
+                    ))
                 }
-                .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка удаления из корзины: ${e.message}")
-                }
+            }
+            updateTrashSizeInfo()
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+            showTrash()
         }
     }
 
     fun emptyTrash() {
         viewModelScope.launch {
-            emptyTrashUseCase()
-                .onSuccess { count ->
-                    updateTrashSizeInfo()
-                    showStatusMessage(_uiState.value.activePanel, appContext.getString(R.string.trash_cleared_count, count))
-                    dismissDialog()
+            val entries = trashRepository.getTrashEntries().getOrNull() ?: return@launch
+            if (entries.isEmpty()) {
+                dismissDialog()
+                return@launch
+            }
+            val allIds = entries.map { it.id }
+            _uiState.update { state ->
+                val dialog = state.dialogState as? DialogState.ShowTrash ?: return@update state
+                state.copy(dialogState = dialog.copy(
+                    deleteProgress = 0f,
+                    deleteCurrentName = ""
+                ))
+            }
+            trashRepository.deleteFromTrashWithProgress(allIds) { deleted, total, name ->
+                _uiState.update { state ->
+                    val dialog = state.dialogState as? DialogState.ShowTrash ?: return@update state
+                    state.copy(dialogState = dialog.copy(
+                        deleteProgress = deleted.toFloat() / total,
+                        deleteCurrentName = name
+                    ))
                 }
-                .onFailure { e ->
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка очистки корзины: ${e.message}")
-                }
+            }
+            updateTrashSizeInfo()
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+            showStatusMessage(_uiState.value.activePanel, appContext.getString(R.string.trash_cleared_count, entries.size))
+            dismissDialog()
         }
     }
 

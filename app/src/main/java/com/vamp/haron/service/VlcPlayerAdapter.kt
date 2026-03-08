@@ -27,6 +27,10 @@ class VlcPlayerAdapter(
     private val handler = Handler(Looper.getMainLooper())
     private var playlist: List<PlaylistHolder.PlaylistItem> = emptyList()
     private var currentIndex: Int = 0
+    /** Called when a track finishes — used to clear stale positions in ReadingPositionManager */
+    var onTrackFinished: ((filePath: String) -> Unit)? = null
+    /** Called when repeat mode changes — used to update notification custom layout */
+    var onRepeatModeChanged: ((Int) -> Unit)? = null
     private var _isPlaying: Boolean = false
     private var _hasMedia: Boolean = false
     private var positionMs: Long = 0L
@@ -63,14 +67,15 @@ class VlcPlayerAdapter(
                     invalidateState()
                 }
                 VlcMediaPlayer.Event.EndReached -> {
-                    // Save position = 0 (track finished)
+                    // Save position = 0 (track finished) and clear stale reading position
                     val item = playlist.getOrNull(currentIndex)
                     if (item != null) {
                         VideoPositionStore.save(context, item.filePath, 0)
+                        onTrackFinished?.invoke(item.filePath)
                     }
-                    val nextIndex = currentIndex + 1
                     val targetIndex = when {
-                        nextIndex < playlist.size -> nextIndex
+                        _repeatMode == Player.REPEAT_MODE_ONE -> currentIndex
+                        currentIndex + 1 < playlist.size -> currentIndex + 1
                         _repeatMode == Player.REPEAT_MODE_ALL && playlist.isNotEmpty() -> 0
                         else -> -1
                     }
@@ -103,6 +108,9 @@ class VlcPlayerAdapter(
     }
 
     private fun playItemInternal(index: Int) {
+        // Prevent stale TimeChanged events from previous track
+        _isTransitioning = true
+
         // Save position of old track
         val oldItem = playlist.getOrNull(currentIndex)
         if (oldItem != null && positionMs > 0) {
@@ -225,6 +233,7 @@ class VlcPlayerAdapter(
 
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
         _repeatMode = repeatMode
+        onRepeatModeChanged?.invoke(repeatMode)
         return Futures.immediateVoidFuture()
     }
 
@@ -242,4 +251,10 @@ class VlcPlayerAdapter(
     fun isCurrentlyPlaying(): Boolean = _isPlaying
     fun getCurrentPositionMs(): Long = positionMs
     fun getCurrentDurationMs(): Long = durationMs
+    fun getCurrentRepeatMode(): Int = _repeatMode
+    fun setRepeat(mode: Int) {
+        _repeatMode = mode
+        invalidateState()
+        onRepeatModeChanged?.invoke(mode)
+    }
 }

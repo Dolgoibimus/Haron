@@ -129,6 +129,7 @@ class MainActivity : FragmentActivity() {
         mediaProjectionLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
+            com.vamp.core.logger.EcosystemLogger.d("CastFlow", "MediaProjection result: code=${result.resultCode}, hasData=${result.data != null}")
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
                 val serviceIntent = Intent(this, ScreenMirrorService::class.java).apply {
                     action = ScreenMirrorService.ACTION_START

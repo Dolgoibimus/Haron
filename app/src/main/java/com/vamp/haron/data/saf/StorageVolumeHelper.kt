@@ -25,30 +25,30 @@ data class StorageVolumeInfo(
 class StorageVolumeHelper @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    /** Cache to avoid spamming logs on repeated calls */
+    private var cachedVolumes: List<StorageVolumeInfo>? = null
+    private var cacheTimestamp = 0L
+
     fun getStorageVolumes(): List<StorageVolumeInfo> {
+        val now = System.currentTimeMillis()
+        cachedVolumes?.let { cached ->
+            if (now - cacheTimestamp < CACHE_TTL_MS) return cached
+        }
+
         val volumes = mutableListOf<StorageVolumeInfo>()
         val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
-
         val storageVolumes = storageManager.storageVolumes
-        EcosystemLogger.d(TAG, "StorageManager returned ${storageVolumes.size} volume(s)")
 
         for (volume in storageVolumes) {
             val label = volume.getDescription(context) ?: "Storage"
             val uuid = volume.uuid
             val isRemovable = volume.isRemovable
-            val state = volume.state
 
-            EcosystemLogger.d(TAG, "Volume: label=$label, uuid=$uuid, removable=$isRemovable, state=$state")
-
-            // Try multiple strategies to resolve path
             val path = getVolumePath(volume, uuid, isRemovable)
             val needsSaf = if (path != null) !File(path).canWrite() else isRemovable
 
-            if (path != null) {
-                val dir = File(path)
-                EcosystemLogger.d(TAG, "  path=$path, exists=${dir.exists()}, canRead=${dir.canRead()}, canWrite=${dir.canWrite()}")
-            } else {
-                EcosystemLogger.d(TAG, "  path=null (could not resolve via any method)")
+            if (path == null) {
+                EcosystemLogger.d(TAG, "Volume path=null: label=$label, uuid=$uuid, removable=$isRemovable, state=${volume.state}")
             }
 
             volumes.add(
@@ -61,13 +61,13 @@ class StorageVolumeHelper @Inject constructor(
                 )
             )
         }
+        cachedVolumes = volumes
+        cacheTimestamp = now
         return volumes
     }
 
     fun getRemovableVolumes(): List<StorageVolumeInfo> {
-        val removable = getStorageVolumes().filter { it.isRemovable }
-        EcosystemLogger.d(TAG, "Removable volumes: ${removable.size} — ${removable.map { "${it.label}(${it.path})" }}")
-        return removable
+        return getStorageVolumes().filter { it.isRemovable }
     }
 
     /**
@@ -80,64 +80,38 @@ class StorageVolumeHelper @Inject constructor(
      * 6. Scan known alternative mount points
      */
     private fun getVolumePath(volume: StorageVolume, uuid: String?, isRemovable: Boolean): String? {
-        // Strategy 1: /storage/{uuid} — most reliable for removable volumes
-        // Must be BEFORE reflection: some devices (Sony) return wrong path from getPath()
+        // Strategy 1: /storage/{uuid}
         if (uuid != null) {
             val direct = File("/storage/$uuid")
-            if (direct.exists() && direct.canRead()) {
-                EcosystemLogger.d(TAG, "  [strategy:direct] /storage/$uuid")
-                return direct.absolutePath
-            } else {
-                EcosystemLogger.d(TAG, "  [strategy:direct] /storage/$uuid — exists=${direct.exists()}, canRead=${direct.canRead()}")
-            }
+            if (direct.exists() && direct.canRead()) return direct.absolutePath
         }
 
         // Strategy 2: getDirectory() — API 30+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 val dir = volume.directory
-                if (dir != null && dir.exists()) {
-                    EcosystemLogger.d(TAG, "  [strategy:getDirectory] ${dir.absolutePath}")
-                    return dir.absolutePath
-                } else {
-                    EcosystemLogger.d(TAG, "  [strategy:getDirectory] returned null (state=${volume.state})")
-                }
-            } catch (e: Exception) {
-                EcosystemLogger.d(TAG, "  [strategy:getDirectory] failed: ${e.message}")
-            }
+                if (dir != null && dir.exists()) return dir.absolutePath
+            } catch (_: Exception) { }
         }
 
-        // Strategy 3: /mnt/media_rw/{uuid} — raw mount point on older Android
+        // Strategy 3: /mnt/media_rw/{uuid}
         if (uuid != null) {
             val mntPath = File("/mnt/media_rw/$uuid")
-            if (mntPath.exists() && mntPath.canRead()) {
-                EcosystemLogger.d(TAG, "  [strategy:mnt_media_rw] /mnt/media_rw/$uuid")
-                return mntPath.absolutePath
-            }
+            if (mntPath.exists() && mntPath.canRead()) return mntPath.absolutePath
         }
 
-        // Strategy 4: reflection getPath() — hidden API
-        // On Sony API 28, getPath() returns the WRONG path (SD card path for all removable volumes).
-        // Only trust it if the path contains the volume's UUID, or if there's no UUID.
+        // Strategy 4: reflection getPath()
         try {
             val getPathMethod = volume.javaClass.getMethod("getPath")
             val path = getPathMethod.invoke(volume) as? String
             if (path != null && File(path).exists()) {
                 val pathMatchesUuid = uuid == null || path.contains(uuid, ignoreCase = true)
-                if (pathMatchesUuid) {
-                    EcosystemLogger.d(TAG, "  [strategy:reflection] $path")
-                    return path
-                } else {
-                    EcosystemLogger.d(TAG, "  [strategy:reflection] SKIP $path — doesn't match uuid=$uuid (Sony bug?)")
-                }
+                if (pathMatchesUuid) return path
             }
-        } catch (e: Exception) {
-            EcosystemLogger.d(TAG, "  [strategy:reflection] failed: ${e.message}")
-        }
+        } catch (_: Exception) { }
 
-        // Strategy 5: getExternalFilesDirs fallback — match by uuid
+        // Strategy 5: getExternalFilesDirs fallback
         val dirs = ContextCompat.getExternalFilesDirs(context, null)
-        EcosystemLogger.d(TAG, "  [strategy:extFilesDirs] ${dirs.map { it?.absolutePath }}")
         if (!isRemovable) {
             return dirs.firstOrNull()?.let { extractRootPath(it) }
         }
@@ -145,12 +119,7 @@ class StorageVolumeHelper @Inject constructor(
             if (dir == null) continue
             val root = extractRootPath(dir)
             if (root != null) {
-                // If we have a UUID, only accept paths containing it (avoid returning SD card path for USB)
-                if (uuid != null && !root.contains(uuid, ignoreCase = true)) {
-                    EcosystemLogger.d(TAG, "  [strategy:extFilesDirs] SKIP $root — doesn't match uuid=$uuid")
-                    continue
-                }
-                EcosystemLogger.d(TAG, "  [strategy:extFilesDirs] root=$root")
+                if (uuid != null && !root.contains(uuid, ignoreCase = true)) continue
                 return root
             }
         }
@@ -159,16 +128,12 @@ class StorageVolumeHelper @Inject constructor(
         if (uuid != null) {
             for (prefix in ALTERNATIVE_MOUNT_PREFIXES) {
                 val alt = File("$prefix/$uuid")
-                if (alt.exists() && alt.canRead()) {
-                    EcosystemLogger.d(TAG, "  [strategy:altMount] $prefix/$uuid")
-                    return alt.absolutePath
-                }
+                if (alt.exists() && alt.canRead()) return alt.absolutePath
             }
         }
 
         // All strategies failed — log diagnostic info
         logStorageDirectoryContents(uuid)
-
         return null
     }
 
@@ -264,6 +229,8 @@ class StorageVolumeHelper @Inject constructor(
     }
 
     companion object {
+        private const val CACHE_TTL_MS = 5_000L
+
         /** Alternative mount point prefixes to try when standard paths fail */
         private val ALTERNATIVE_MOUNT_PREFIXES = listOf(
             "/mnt/media_rw",     // Raw mount point before FUSE (common on Android 6-9)

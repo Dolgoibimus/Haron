@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.explorer.state
 
 import androidx.compose.ui.geometry.Offset
 import com.vamp.haron.data.network.NetworkDevice
+import com.vamp.haron.domain.model.TransferProgressInfo
 
 sealed interface QuickSendState {
     data object Idle : QuickSendState
@@ -17,6 +18,9 @@ sealed interface QuickSendState {
         val haronDevices: List<NetworkDevice>
     ) : QuickSendState
 
-    /** File is being sent */
-    data class Sending(val deviceName: String) : QuickSendState
+    /** File is being sent — with live progress */
+    data class Sending(
+        val deviceName: String,
+        val progress: TransferProgressInfo? = null
+    ) : QuickSendState
 }

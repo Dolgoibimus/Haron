@@ -319,6 +319,7 @@
     <!-- Media player -->
     <string name="previous">Предыдущий</string>
     <string name="next">Следующий</string>
+    <string name="repeat_mode">Режим повтора</string>
 
     <!-- Permission screen -->
     <string name="file_access_title">Доступ к файлам</string>
@@ -1069,6 +1070,9 @@
     <string name="cast_transcoding_progress">Подготовка: %d%%</string>
     <string name="cast_transcoding_preparing">Подготовка…</string>
     <string name="cast_transcoding_error">Ошибка конвертации</string>
+    <string name="cast_browser_hint">Откройте эту ссылку в браузере на любом устройстве в сети:</string>
+    <string name="cast_copy_url">Скопировать ссылку</string>
+    <string name="cast_url_copied">Ссылка скопирована</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">Нет устройств Haron поблизости</string>
@@ -1078,6 +1082,7 @@
     <string name="quick_send_declined">Отменено пользователем</string>
     <string name="quick_send_request_sent">Запрос отправлен на %s</string>
     <string name="quick_send_drop_here">Перетащите файлы сюда</string>
+    <string name="quick_receive_receiving">Приём файла…</string>
 
     <!-- Transfer stats -->
     <string name="transfer_today_received">Принято сегодня: %d</string>

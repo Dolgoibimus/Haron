@@ -21,10 +21,12 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -53,6 +55,8 @@ fun TrashDialog(
     entries: List<TrashEntry>,
     totalSize: Long,
     maxSizeMb: Int = 0,
+    deleteProgress: Float? = null,
+    deleteCurrentName: String? = null,
     onRestore: (List<String>) -> Unit,
     onDeletePermanently: (List<String>) -> Unit,
     onEmptyTrash: () -> Unit,
@@ -137,6 +141,27 @@ fun TrashDialog(
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Delete progress
+            if (deleteProgress != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = deleteCurrentName ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { deleteProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .padding(horizontal = 0.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
 
             if (entries.isEmpty()) {
                 Box(

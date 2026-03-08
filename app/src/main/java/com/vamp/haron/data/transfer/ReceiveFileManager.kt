@@ -100,6 +100,10 @@ class ReceiveFileManager @Inject constructor(
     private val _quickSendPending = MutableSharedFlow<QuickSendPending>(extraBufferCapacity = 1)
     val quickSendPending: SharedFlow<QuickSendPending> = _quickSendPending.asSharedFlow()
 
+    /** Emits progress during Quick Send receive — collected by ExplorerViewModel */
+    private val _quickReceiveProgress = MutableSharedFlow<TransferProgressInfo?>(extraBufferCapacity = 64)
+    val quickReceiveProgress: SharedFlow<TransferProgressInfo?> = _quickReceiveProgress.asSharedFlow()
+
     val actualPort: Int get() = serverSocket?.localPort ?: 0
 
     /**
@@ -377,6 +381,9 @@ class ReceiveFileManager @Inject constructor(
             val totalBytes = requestData.files.sumOf { it.size }
             val saveDir = getReceiveDir()
             val savedFiles = mutableListOf<File>()
+            var transferred = 0L
+            val startTime = System.currentTimeMillis()
+            var lastProgressTime = 0L
 
             // Receive files
             var fileIndex = 0
@@ -399,6 +406,14 @@ class ReceiveFileManager @Inject constructor(
                         if (read == -1) break
                         fos.write(buffer, 0, read)
                         remaining -= read
+                        transferred += read
+                        val now = System.currentTimeMillis()
+                        if (now - lastProgressTime >= 100 || transferred == totalBytes) {
+                            lastProgressTime = now
+                            emitProgress(transferred, totalBytes, fileIndex, requestData.files.size, header.name, startTime)?.let {
+                                _quickReceiveProgress.tryEmit(it)
+                            }
+                        }
                     }
                 }
 
@@ -406,6 +421,9 @@ class ReceiveFileManager @Inject constructor(
                 EcosystemLogger.d(HaronConstants.TAG, "Quick received: ${header.name} → ${destFile.absolutePath}")
                 fileIndex++
             }
+
+            // Signal completion (null = done)
+            _quickReceiveProgress.tryEmit(null)
 
             EcosystemLogger.d(HaronConstants.TAG, "Quick send complete: $fileIndex files received from $senderName")
             _quickReceiveCompleted.tryEmit(saveDir.absolutePath)
@@ -418,6 +436,7 @@ class ReceiveFileManager @Inject constructor(
             }
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "handleQuickSend error: ${e.message}")
+            _quickReceiveProgress.tryEmit(null)
         } finally {
             try { socket.close() } catch (_: Exception) { }
         }

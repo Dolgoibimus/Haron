@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.51b (Phase 4, Batch 51b)
+**Текущая версия:** 0.52 (Phase 4, Batch 52)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -18,45 +18,22 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-### ▶ Транскодирование + зеркалирование экрана (Cast) — ДОДЕЛКА
+### ▶ Cast-система — доработки качества транскодирования
 
-**Что делали:** фикс прогресс-бара транскодирования + зеркалирование экрана на Chromecast.
-
-**Что сделано и работает:**
-- ✅ Прогресс-бар транскодирования AVI/MKV → MP4 отображается в пульте MediaRemotePanel
-- ✅ Исправлен корневой баг — `hiltViewModel()` внутри NavHost создавал отдельные экземпляры CastViewModel. Фикс: все 4 вызова используют `viewModelStoreOwner = context as ComponentActivity` (Activity-scoped singleton)
-- ✅ Кеширование: `getCacheFile()` генерирует hash от имени+размера файла, повторный каст не перекодирует
-- ✅ Реконнект: если Chromecast отключился во время длинного транскода (~9 мин), после завершения пытается переподключиться и кастить
-- ✅ AC3/DTS аудио: автоматический retry с `setRemoveAudio(true)` при ошибке аудиокодека
-- ✅ fastStartMp4() — moov box перемещается перед mdat для progressive download
-- ✅ Альфа 0.6 на пульте управления (CastOverlay)
-- ✅ Фикс ScreenMirrorService: `RESULT_OK == -1` совпадал с default value для `getIntExtra` → сервис всегда сразу останавливался. Заменено на `Int.MIN_VALUE`
-- ✅ После `startForegroundService()` для mirror → polling `ScreenMirrorService.serverUrl` каждые 500мс → `castMirrorUrl(url)`
-
-**Что НЕ работает / не проверено:**
-- ❌ **Зеркалирование экрана крашит приложение** — после фикса `RESULT_OK` приложение крашится при попытке зеркалирования (логи показывают "Cast initialized" x3 = краш + рестарт). Возможные причины:
-  1. `wm.defaultDisplay.getMetrics()` deprecated на новых Android
-  2. MediaProjection/VirtualDisplay создание в foreground service
-  3. Ktor HTTP-сервер в ScreenMirrorService конфликт
-  4. `onImageAvailableListener` крашит при получении первого фрейма
-- ⚠️ **Транскодирование**: прогресс-бар показывается, дошёл до 100%, но первый раз ничего не произошло (Chromecast отключился за 9 мин). После добавления кеша и реконнекта — не проверено повторно
-- ⚠️ **Debug элементы в CastOverlay**: красный текст `"tp=$transcodePercent | $debugCastInfo"` — убрать после проверки
-
-**Файлы (изменённые):**
-- `presentation/cast/CastViewModel.kt` — реконнект, кеш, castMirrorUrl(), debugCastInfo
-- `presentation/cast/CastOverlay.kt` — compute transcodePercent напрямую, alpha 0.6, debug text
-- `presentation/cast/components/MediaRemotePanel.kt` — transcodePercent + onCancelTranscode параметры
-- `presentation/gallery/GalleryScreen.kt` — viewModelStoreOwner fix
-- `presentation/player/MediaPlayerScreen.kt` — viewModelStoreOwner fix
-- `presentation/navigation/HaronNavigation.kt` — viewModelStoreOwner fix
-- `domain/usecase/TranscodeVideoUseCase.kt` — getCacheFile(), cache check, cleanupTempFiles()
-- `service/ScreenMirrorService.kt` — Int.MIN_VALUE fix
-- `MainActivity.kt` — mirror URL polling + castMirrorUrl()
+**Текущий статус Cast-системы:**
+- ✅ Каст видео/аудио на Chromecast — работает
+- ✅ Каст видео на DLNA — работает
+- ✅ Транскодирование AVI/MKV/etc → MP4 — работает (с артефактами, идёт улучшение)
+- ✅ Кеширование транскодов — работает, кеш сохраняется между сессиями
+- ✅ Зеркалирование экрана — работает через браузер (URL)
+- ✅ Инфо о файле — работает через браузер (URL)
+- ❌ Качество транскодирования — артефакты и дёрганье не уходят. Перепробовано: 8 Mbps VBR, highQualityTargeting, 8 Mbps CBR + Main Profile 4.1 + 1080p + 30fps. Аппаратный MediaCodec не справляется. Нужен FFmpeg
+- ⚠️ Debug элементы в CastOverlay: красный текст `"tp=$transcodePercent | $debugCastInfo"` — убрать после проверки
 
 **Следующий шаг:**
-1. Расследовать краш зеркалирования (нужны свежие логи или logcat)
-2. Проверить транскодирование с кешем и реконнектом
-3. Убрать debug элементы из CastOverlay
+1. Проверить качество транскодирования с `experimentalSetEnableHighQualityTargeting`
+2. Убрать debug элементы из CastOverlay
+3. Если артефакты остаются — попробовать ограничение разрешения до 1080p (`Presentation.createForHeight(1080)`)
 
 ---
 
@@ -104,13 +81,14 @@
 | 47 | Безрамочные таблицы DOCX/ODT + ODT column spans | ✅ проверено |
 | 48 | XLSX: открытие, пропорции колонок, per-cell borders, заголовки | ✅ проверено |
 | 50 | Архивирование с паролем (AES-256), split ZIP, кросс-панельное сравнение | ✅ проверено |
-| 51 | SMB-браузер (вкладка в Передача) | ✅ проверено (есть вопросы) |
-| 51b | Двухпанельный SMB-режим (SMB + локальные файлы) | ✅ проверено (есть вопросы) |
+| 51 | SMB-браузер (вкладка в Передача) | ✅ проверено |
+| 51b | Двухпанельный SMB-режим (SMB + локальные файлы) | ✅ проверено |
+| 52 | Фиксы корзины + тап на пустом месте | ✅ проверено |
 
 ### Хотелки (после релиза):
 | Фича | Описание |
 |------|----------|
-| FFmpeg транскодинг | AVI и другие неподдерживаемые форматы на Chromecast через конвертацию в реальном времени (+15-30 МБ к APK) |
+| FFmpeg транскодинг | **ПРИОРИТЕТ** — Media3 Transformer даёт артефакты/дёрганье. Software encoder через FFmpeg — единственный надёжный вариант (+15-30 МБ к APK) |
 | Торрент-клиент | Встроенный торрент: последовательная загрузка + стрим на ТВ через Cast (libtorrent4j) |
 | Сетевой поток на Cast | Ввод URL видео (HTTP/HLS/DASH/m3u8) → трансляция на телевизор через Chromecast/DLNA без скачивания на телефон. IPTV-ссылки, видео с NAS, прямые эфиры — всё кидается на ТВ, телефон как пульт |
 | Вложенные архивы | tar.gz внутри ZIP — извлечь во temp, открыть как вложенный архив |
@@ -590,12 +568,20 @@
 > Формат: **Проблема** → Решение / Что сделали.
 
 - **MANAGE_EXTERNAL_STORAGE** → на Android 11+ требует `ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` Intent, обычные READ/WRITE не дают полного доступа
+- **DLNA не имеет шага "connect"** → в отличие от Chromecast, DLNA-устройство не требует предварительного подключения. `selectDevice()` ничего не делает для DLNA → `pendingAction` через `isConnected` collector не срабатывает. Решение: `pendingDlnaDeviceId` + немедленный `executePendingAction()`.
+- **Chromecast default receiver не рендерит HTML/MJPEG** → зеркалирование экрана и инфо о файле нельзя показать через Chromecast. Решение: браузерный подход — показывать URL для открытия в браузере на ТВ.
+- **Транскод кеш удалялся при disconnect** → `cleanupTempFiles()` вызывался в `disconnect()` и `onCleared()`, что удаляло кеш при каждом отключении. Решение: удалять только при `cancelTranscode()`.
+- **Trash meta.json может быть пустым** → если запись прерывается (краш, нет места), `meta.json` становится `[]` (2 байта), UI показывает 0 файлов хотя файлы в `.haron_trash/` есть. Решение: `recoverOrphanEntries()` + atomic write через `.tmp` файл.
+- **findItemIndexAtPosition() fallback** → функция возвращала индекс ближайшего элемента при тапе на пустое место в LazyVerticalGrid. Решение: убрать fallback, возвращать `-1` для пустого пространства.
+- **deleteRecursively() не даёт прогресса** → для папки с 1000 файлами `deleteRecursively()` — одна операция, прогрессбар = 0% → готово. Решение: `walkBottomUp()` + удаление по одному файлу с колбэком прогресса.
+- **Media3 Transformer profile ignored for H264** → `setEncodingProfileLevel()` игнорируется при использовании `DefaultEncoderFactory` + H264. Вместо этого: `experimentalSetEnableHighQualityTargeting(true)` для автоподбора битрейта.
 
 ---
 
 ## Известные проблемы (нерешённые)
 
-_(нет)_
+- **Транскодирование артефакты** — каст видео (AVI/MKV→MP4) показывает артефакты и дёрганье на Chromecast. Перепробовано всё: 8 Mbps VBR → `experimentalSetEnableHighQualityTargeting` → 8 Mbps CBR + Main Profile 4.1 + 1080p cap + 30fps cap. **Артефакты не уходят.** Вероятно, аппаратный MediaCodec на устройстве даёт низкое качество. Следующий вариант — FFmpeg (software encoder, +15-30 МБ к APK).
+- **Debug в CastOverlay** — красный текст `"tp=$transcodePercent | $debugCastInfo"` + alpha 0.6 на пульте. Убрать после финальной проверки.
 
 ---
 
@@ -761,7 +747,7 @@ _(нет)_
 - **ExplorerScreen**: QuickSendOverlay рендеринг, передача quickSend параметров в FilePanel, `onRequestDropTarget` в DrawerMenu, `handleDropOnTarget` при cross-panel drag на DropTarget.
 - **Строки**: 6 новых строк (quick_send_no_devices, _sending, _done, _failed, _request_sent, _drop_here) в обоих strings.xml.
 
-### Batch 39 — Расширенный шаринг на ТВ ⚠️ не проверено
+### Batch 39 — Расширенный шаринг на ТВ ✅ проверено (Chromecast + DLNA работают, Mirror через браузер)
 - **CastMode enum** (`domain/model/CastMode.kt`): 5 режимов — SINGLE_MEDIA, SLIDESHOW, PDF_PRESENTATION, FILE_INFO, SCREEN_MIRROR. `SlideshowConfig(intervalSec, loop, shuffle)`, `PresentationState(currentPage, totalPages, pdfPath)`.
 - **CastModeSheet** (`presentation/cast/components/CastModeSheet.kt`): ModalBottomSheet с иконками и описаниями для каждого режима. Extension-функции `CastMode.icon()`, `titleRes()`, `subtitleRes()`.
 - **SlideshowConfigDialog** (`presentation/cast/components/SlideshowConfigDialog.kt`): AlertDialog со слайдером интервала (2-30 сек), чекбоксами «Зациклить» и «Перемешать».
@@ -843,32 +829,43 @@ _(нет)_
 - **TextEditorScreen**: курсор + скролл + fontSizeSp. Debounce 1с + при выходе. Не переопределяет если открыт из поиска.
 - **MediaPlayerScreen**: позиция воспроизведения (seekTo), сохранение каждые 5 сек + при выходе.
 
-### Транскодирование видео для Chromecast ⚠️ не проверено (прогресс-бар работает, каст после транскода — не проверен)
-- **TranscodeVideoUseCase.kt**: `domain/usecase/TranscodeVideoUseCase.kt` — транскодирование через Media3 Transformer. AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 (H.264 + AAC). Кеширование: `getCacheFile()` генерирует `cast_transcode_{hash}.mp4` из имени+размера файла, при повторном вызове возвращает кешированный. AC3/DTS fallback: при ошибке аудиокодека автоматический retry с `setRemoveAudio(true)`. `fastStartMp4()` — перемещение moov box перед mdat для Chromecast progressive download. `cleanupTempFiles()` удаляет все `cast_transcode_*` файлы.
-- **CastViewModel.kt**: `castMedia()` проверяет формат: Chromecast + неподдерживаемый → `startTranscodedCast()`, DLNA → как есть. `_transcodeProgress: StateFlow<TranscodeProgress?>`. При завершении транскода: если Chromecast отключился (timeout при долгом транскоде) → сохраняет `pendingCastIsTranscoded=true`, пытается реконнект через `castManager.selectCastDevice(lastCastDeviceId)`. При реконнекте → кастит готовый файл. `castTranscodedFile()` — запуск HTTP-сервера + каст. `castMirrorUrl()` — каст URL зеркалирования. `_debugCastInfo` — StateFlow для отладки.
-- **CastOverlay.kt**: `transcodePercent` вычисляется напрямую из `transcodeProgress` (не через derived StateFlow — избежан баг двойной подписки). Alpha 0.6 на пульте. Debug text `"tp=$transcodePercent | $debugCastInfo"` (убрать после проверки).
-- **MediaRemotePanel.kt**: параметры `transcodePercent: Int?` и `onCancelTranscode: (() -> Unit)?` — прогресс внутри карточки пульта.
-- **ViewModel scoping fix**: все 4 точки `hiltViewModel<CastViewModel>()` (GalleryScreen, MediaPlayerScreen, HaronNavigation, CastOverlay) используют `viewModelStoreOwner = context as ComponentActivity` — единый Activity-scoped экземпляр.
+### Batch 52 — Фиксы корзины + тап на пустом месте ✅ проверено
+- **Корзина — восстановление из orphan-файлов**: `TrashRepositoryImpl.recoverOrphanEntries()` — при пустом/повреждённом `meta.json` сканирует `.haron_trash/` и восстанавливает записи из имён файлов (формат `{timestamp}_{name}`). Atomic write через `.tmp` файл.
+- **Корзина — пофайловый прогресс удаления**: `deleteFromTrashWithProgress()` — обходит содержимое папок через `walkBottomUp()`, удаляет по одному файлу, вызывает колбэк с прогрессом `(deleted/total, currentName)`. Ранее для папки progress = 0/1 = 0%.
+- **Корзина — обновление панелей**: `deleteFromTrashPermanently()` и `emptyTrash()` теперь вызывают `refreshPanel(TOP)` + `refreshPanel(BOTTOM)` после удаления (как `restoreFromTrash`).
+- **Тап на пустом месте**: `findItemIndexAtPosition()` в FilePanel — убран fallback, который возвращал индекс ближайшего элемента при тапе на пустое пространство. Теперь возвращает `-1`, обработчик игнорирует.
+
+### Транскодирование видео для Chromecast ⚠️ не проверено (качество `experimentalSetEnableHighQualityTargeting`)
+- **TranscodeVideoUseCase.kt**: `domain/usecase/TranscodeVideoUseCase.kt` — транскодирование через Media3 Transformer. AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 (H.264 + AAC). Кеширование: `getCacheFile()` генерирует `cast_transcode_{hash}_q3.mp4` из имени+размера файла, при повторном вызове возвращает кешированный. AC3/DTS fallback: при ошибке аудиокодека автоматический retry с `setRemoveAudio(true)`. `fastStartMp4()` — перемещение moov box перед mdat для Chromecast progressive download. `cleanupTempFiles()` удаляет все `cast_transcode_*` файлы.
+- **Качество кодирования**: `experimentalSetEnableHighQualityTargeting(true)` — автоматический подбор оптимального битрейта (вместо фиксированных 8 Mbps). Нельзя совмещать с `setBitrate()`. Кеш инвалидирован: `_q2` → `_q3`.
+- **CastViewModel.kt**: `castMedia()` проверяет формат: Chromecast + неподдерживаемый → `startTranscodedCast()`, DLNA → как есть. `_transcodeProgress: StateFlow<TranscodeProgress?>`. Реконнект при disconnect во время транскода. `castTranscodedFile()` — HTTP-сервер + каст. `_browserUrl` для зеркалирования/инфо. `_debugCastInfo` — StateFlow для отладки. Кеш не удаляется при disconnect/onCleared (только при `cancelTranscode()`).
+- **DLNA fix**: `pendingDlnaDeviceId` — DLNA не имеет отдельного шага "connect", поэтому при выборе DLNA-устройства `pendingAction` сохраняется и выполняется немедленно.
+- **Браузерный подход для Mirror/FileInfo**: Chromecast default receiver не рендерит HTML/MJPEG. `castMirrorUrl()` и `castFileInfo()` устанавливают `_browserUrl` вместо каста. `BrowserCastPanel.kt` — URL + кнопка копирования + закрытие.
+- **CastOverlay.kt**: `BrowserCastPanel` как первый branch (приоритет). `transcodePercent` напрямую из `transcodeProgress`. Alpha 0.6 на пульте. Debug text (убрать после проверки).
+- **MediaRemotePanel.kt**: параметры `transcodePercent: Int?` и `onCancelTranscode: (() -> Unit)?`.
+- **ViewModel scoping fix**: все 4 точки `hiltViewModel<CastViewModel>()` используют `viewModelStoreOwner = context as ComponentActivity`.
+- **HaronNavigation.kt**: SCREEN_MIRROR — без проверки соединения, сразу MediaProjection. FILE_INFO — без проверки, сразу `castFileInfo()`.
 - **build.gradle.kts**: `media3-transformer:1.5.1`, `media3-effect:1.5.1`.
-- **strings.xml**: `cast_transcoding_progress`, `cast_transcoding_error`.
+- **strings.xml**: `cast_transcoding_progress`, `cast_transcoding_error`, `cast_browser_hint`, `cast_copy_url`, `cast_url_copied`.
 - **Поведение**: MP4/WebM → напрямую. Остальные → Transformer. DLNA → без конвертации.
 
-### Зеркалирование экрана — фиксы ⚠️ не проверено (крашит приложение)
-- **ScreenMirrorService.kt**: фикс `getIntExtra(EXTRA_RESULT_CODE, -1)` → `Int.MIN_VALUE` (Activity.RESULT_OK == -1 совпадал с default, сервис сразу останавливался).
-- **MainActivity.kt**: после `startForegroundService()` для mirror → polling `ScreenMirrorService.serverUrl` каждые 500мс (до 10 сек) → `castVm.castMirrorUrl(url)`.
-- **CastViewModel.kt**: новый метод `castMirrorUrl(url)` — устанавливает `_castMode = SCREEN_MIRROR` и кастит URL через Chromecast или DLNA.
-- **Статус**: после фикса приложение крашится при попытке зеркалирования. Нужен logcat для диагностики.
+### Зеркалирование экрана ✅ проверено (работает через браузер)
+- **ScreenMirrorService.kt**: фикс `getIntExtra(EXTRA_RESULT_CODE, -1)` → `Int.MIN_VALUE` (Activity.RESULT_OK == -1 совпадал с default). HTTP-сервер `/mirror` (HTML + auto-refresh) + `/frame` (JPEG).
+- **Браузерный подход**: Chromecast default receiver не может рендерить HTML/MJPEG. Вместо каста — показывается URL для открытия в браузере на ТВ. `castMirrorUrl()` устанавливает `_browserUrl`, `BrowserCastPanel` показывает URL + кнопка копирования.
+- **HaronNavigation.kt**: SCREEN_MIRROR запускает MediaProjection напрямую, без проверки соединения с Chromecast.
+- **CastOverlay.kt**: `BrowserCastPanel` — первый branch, приоритет над другими режимами Cast.
 
-### DLNA-поддержка для Cast ⚠️ не проверено
+### DLNA-поддержка для Cast ✅ проверено (видео на ТВ работает)
 - **DlnaManager.kt** (НОВЫЙ): `data/cast/DlnaManager.kt` — @Singleton, SSDP M-SEARCH discovery (UDP multicast 239.255.255.250:1900, ST: MediaRenderer:1), HTTP GET device description + XmlPullParser (friendlyName, UDN, controlURL для AVTransport:1 и RenderingControl:1). SOAP POST для SetAVTransportURI + Play/Pause/Stop/Seek/SetVolume. Polling каждые 1с (GetTransportInfo + GetPositionInfo). DIDL-Lite metadata. StateFlows: isConnected, connectedDeviceName, mediaIsPlaying, mediaPositionMs, mediaDurationMs. Без внешних библиотек — чистый UPnP.
 - **CastDevice.kt**: `CastType.DLNA` добавлен в enum.
 - **CastRepositoryImpl.kt**: DlnaManager внедрён через Hilt, `discoverCastDevices()` combine Miracast + DLNA, `castMedia()` маршрутизирует по типу, `sendRemoteInput()` делегирует в подключённый менеджер, `disconnect()` вызывает оба.
 - **CastViewModel.kt**: DlnaManager добавлен в конструктор, все StateFlows (isConnected, connectedDeviceName, mediaIsPlaying, mediaPositionMs, mediaDurationMs) объединены через combine. Discovery: 3-way combine (Chromecast + Miracast + DLNA). selectDeviceAndCast: DLNA → немедленный каст без pending. Extended modes (slideshow, PDF, fileInfo) маршрутизируются по активному менеджеру.
 - **CastButton.kt**: убрана зависимость от GoogleCastManager, принимает StateFlow<Boolean> isConnected, видна всегда (DLNA не требует GMS).
 - **CastDeviceSheet.kt**: DLNA-устройства с иконкой SettingsRemote и подписью "DLNA".
+- **DLNA device selection fix**: DLNA не имеет отдельного шага "connect" (в отличие от Chromecast). При выборе DLNA-устройства `selectDevice()` ничего не делал → `pendingAction` через `isConnected` collector никогда не срабатывал. Фикс: `pendingDlnaDeviceId` + немедленный `executePendingAction()` для DLNA.
 - **strings.xml / strings-ru.xml**: строка `cast_dlna` = "DLNA".
 
-### Batch 51b — Двухпанельный SMB-режим ⚠️ не проверено
+### Batch 51b — Двухпанельный SMB-режим ✅ проверено
 - **Концепция**: после подключения к SMB-серверу экран переходит в двухпанельный режим — верхняя панель = SMB-файлы, нижняя = локальные файлы устройства. До подключения — однопанельный список серверов.
 - **state/LocalPanelState.kt** (NEW): `LocalFileEntry` (name, path, isDirectory, size, lastModified) + `LocalPanelState` (currentPath, files, isLoading, error, selectedPaths).
 - **components/LocalFilePanel.kt** (NEW): composable нижней панели — `LocalBreadcrumb` (кликабельные сегменты пути с авто-скроллом), `LocalActionBar` (Upload↑/CreateFolder/Delete/Rename/Refresh/Clear), `LazyColumn` с `combinedClickable` (тап + долгий тап), бордер активной панели. Функция `formatLocalSize()`.
@@ -878,7 +875,7 @@ _(нет)_
 - **strings.xml**: +`smb_download_to_local`, +`smb_upload_to_smb`, +`smb_local_panel`, +`selected_count`, +`folder_empty`.
 - **Фиксы**: PanelDivider не реагировал на drag (`.clickable()` на root Column перехватывал события — убран), PanelDivider реагировал но не двигался (stale state capture — заменён на `applyPanelRatioDelta(delta)`), навигация по хлебным крошкам SMB (index 0 = список шар, index 1 = корень шары, index 2+ = `take(index-1)`).
 
-### Batch 51 — SMB-браузер (вкладка в экране Передача) ⚠️ не проверено
+### Batch 51 — SMB-браузер (вкладка в экране Передача) ✅ проверено
 - **build.gradle.kts**: добавлены `com.hierynomus:smbj:0.13.0`, `com.rapid7.client:dcerpc:0.12.13`. Глобальный exclude `bcprov-jdk18on` для устранения конфликта с `bcprov-jdk15to18` от smbj.
 - **HaronConstants.kt**: 5 новых SMB-констант (SMB_PREFIX, SMB_CREDENTIAL_KEYSTORE_ALIAS, SMB_CREDENTIAL_FILE, SMB_CONNECTION_TIMEOUT_SEC, SMB_IDLE_TIMEOUT_MS).
 - **data/smb/SmbCredential.kt**: data class (host, username, password, domain).
@@ -1707,6 +1704,8 @@ _(нет)_
 - Просмотр, восстановление, очистка корзины
 - Автоочистка при превышении лимита
 - Лимит размера: 0–5000 МБ
+- Пофайловый прогресс удаления (показывает каждый удаляемый файл)
+- Автовосстановление записей из файловой системы при повреждении метаданных
 
 ### Фоновые операции
 - Фоновая служба для крупных операций (>10 файлов или >50 МБ)
@@ -1879,8 +1878,11 @@ _(нет)_
 
 ### Трансляция на ТВ
 - Chromecast, Miracast, DLNA
-- Режимы: медиа, слайд-шоу, PDF-презентация, зеркало экрана
+- Режимы: медиа, слайд-шоу, PDF-презентация, информация о файле, зеркало экрана (через браузер)
 - Пульт: воспроизведение/пауза, перемотка, громкость
+- Транскодирование: AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 для Chromecast
+- Кеширование транскодов — повторный каст мгновенный
+- Автоматический fallback при неподдерживаемом аудио (AC3/DTS → без аудио)
 
 ### Сеть и SMB
 - Автообнаружение устройств в сети
@@ -2010,17 +2012,11 @@ _(нет)_
 
 ### Есть вопросы (от пользователя)
 
-- **SMB-браузер (батч 51/51b)** — у пользователя есть вопросы по работе SMB. Уточнить при тестировании.
 - **Поиск по содержимому в папке** — есть вопросы по логике поиска внутри файлов. Уточнить при тестировании.
 
 ### Не проверено
 
-- **Batch 51b** — Двухпанельный SMB-режим (SMB + локальные файлы)
-- **Batch 51** — SMB-браузер (вкладка в Передача)
-- **Batch 39** — Расширенный шаринг на ТВ
 - **Batch 38** — Стеганография (скрыта до отдельного релиза)
-- **Batch 31** — Счётчик на иконке + Сетевое обнаружение
-- **Batch 30** — Поиск в архивах + OCR + USB OTG
 - **UI-фиксы** — Терминал (капитализация после пробела) + Текстовый редактор (полоса между текстом и клавиатурой)
 - **libaums + NTFS-предупреждение** — ❌ регрессия: на Sony пропал доступ к большинству не-NTFS флешек. NTFS на Sony определяется верно. NTFS на ASUS работает (ASUS монтирует нативно).
 

@@ -13,7 +13,10 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
@@ -26,7 +29,10 @@ import io.ktor.server.cio.*
 import io.ktor.server.engine.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
@@ -49,8 +55,9 @@ class ScreenMirrorService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var imageThread: HandlerThread? = null
     private var engine: ApplicationEngine? = null
-    private var lastFrameBytes: ByteArray? = null
+    @Volatile private var lastFrameBytes: ByteArray? = null
     private var actualPort: Int = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -64,6 +71,7 @@ class ScreenMirrorService : Service() {
         // Always call startForeground immediately to avoid ForegroundServiceDidNotStartInTimeException
         startForeground(NOTIFICATION_ID, buildNotification())
 
+        EcosystemLogger.d("CastFlow", "ScreenMirrorService.onStartCommand: action=${intent?.action}")
         when (intent?.action) {
             ACTION_START -> {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Int.MIN_VALUE)
@@ -108,6 +116,11 @@ class ScreenMirrorService : Service() {
         val density = metrics.densityDpi / 2
 
         imageReader = ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
+
+        // Use background thread for JPEG compression — compress() is CPU-heavy and would ANR on main
+        imageThread = HandlerThread("ImageReader").also { it.start() }
+        val imageHandler = Handler(imageThread!!.looper)
+
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
@@ -131,7 +144,18 @@ class ScreenMirrorService : Service() {
             } finally {
                 image.close()
             }
-        }, null)
+        }, imageHandler)
+
+        // Android 14+ requires registering a callback before createVirtualDisplay
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    stopMirroring()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }, Handler(Looper.getMainLooper()))
+        }
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "HaronMirror",
@@ -185,6 +209,21 @@ refresh();
                         call.respondText("No frame", status = HttpStatusCode.ServiceUnavailable)
                     }
                 }
+                get("/mjpeg") {
+                    call.respondBytesWriter(contentType = ContentType.parse("multipart/x-mixed-replace; boundary=frame")) {
+                        while (isActive && isRunning) {
+                            val frame = lastFrameBytes
+                            if (frame != null) {
+                                val header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
+                                writeFully(header.toByteArray())
+                                writeFully(frame)
+                                writeFully("\r\n".toByteArray())
+                                flush()
+                            }
+                            delay(150)
+                        }
+                    }
+                }
             }
         }
         engine?.start(wait = false)
@@ -199,6 +238,8 @@ refresh();
         virtualDisplay = null
         imageReader?.close()
         imageReader = null
+        imageThread?.quitSafely()
+        imageThread = null
         mediaProjection?.stop()
         mediaProjection = null
         lastFrameBytes = null

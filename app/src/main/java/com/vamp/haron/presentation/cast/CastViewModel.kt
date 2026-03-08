@@ -1,5 +1,7 @@
 package com.vamp.haron.presentation.cast
 
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.core.logger.EcosystemLogger
@@ -17,6 +19,7 @@ import com.vamp.haron.domain.model.SlideshowConfig
 import com.vamp.haron.domain.usecase.TranscodeProgress
 import com.vamp.haron.domain.usecase.TranscodeVideoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,11 +31,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.vamp.haron.service.ScreenMirrorService
 import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
 class CastViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     val castManager: GoogleCastManager,
     private val miracastManager: MiracastManager,
     private val dlnaManager: DlnaManager,
@@ -106,17 +111,28 @@ class CastViewModel @Inject constructor(
     private var pendingCastTitle: String? = null
     private var pendingCastIsTranscoded: Boolean = false
     private var lastCastDeviceId: String? = null
+
+    /** Pending action to execute after device connection (for modes selected before connecting) */
+    private var pendingAction: (() -> Unit)? = null
     private var pdfPageCount: Int = 0
+
+    /** DLNA device selected from sheet before castMedia — DLNA has no separate "connect" step */
+    private var pendingDlnaDeviceId: String? = null
+
+    /** Browser URL for modes that can't be cast to Chromecast (mirror, file info) */
+    private val _browserUrl = MutableStateFlow<String?>(null)
+    val browserUrl: StateFlow<String?> = _browserUrl.asStateFlow()
 
     init {
         // Auto-cast when Chromecast session connects if there's a pending request
         viewModelScope.launch {
             castManager.isConnected.collect { connected ->
+                EcosystemLogger.d("CastFlow", "chromecast.isConnected=$connected, hasPendingAction=${pendingAction != null}")
                 if (connected) {
+                    executePendingAction()
                     val path = pendingCastPath
                     if (path != null) {
                         if (pendingCastIsTranscoded) {
-                            // Reconnected after transcode — cast the ready file
                             val file = File(path)
                             if (file.exists() && file.length() > 0) {
                                 castTranscodedFile(file, pendingCastTitle ?: "", false)
@@ -133,6 +149,14 @@ class CastViewModel @Inject constructor(
             }
         }
 
+        // Auto-action when DLNA connects with pending action
+        viewModelScope.launch {
+            dlnaManager.isConnected.collect { connected ->
+                EcosystemLogger.d("CastFlow", "dlna.isConnected=$connected, hasPendingAction=${pendingAction != null}")
+                if (connected) executePendingAction()
+            }
+        }
+
         // Poll media position every second when Chromecast connected
         viewModelScope.launch {
             while (isActive) {
@@ -145,6 +169,7 @@ class CastViewModel @Inject constructor(
     }
 
     fun showSheet() {
+        EcosystemLogger.d("CastFlow", "showSheet()")
         _showDeviceSheet.value = true
         startDiscovery()
     }
@@ -177,6 +202,7 @@ class CastViewModel @Inject constructor(
     }
 
     fun selectDevice(device: CastDevice) {
+        EcosystemLogger.d("CastFlow", "selectDevice: ${device.name} (${device.type}), hasPendingAction=${pendingAction != null}")
         when (device.type) {
             CastType.CHROMECAST -> {
                 lastCastDeviceId = device.id
@@ -226,12 +252,14 @@ class CastViewModel @Inject constructor(
                 return@launch
             }
 
-            val dlnaDeviceId = dlnaManager.connectedDeviceId
+            // Check DLNA: either already connected or just selected from sheet
+            val dlnaDeviceId = dlnaManager.connectedDeviceId ?: pendingDlnaDeviceId
+            pendingDlnaDeviceId = null
             val isChromecast = dlnaDeviceId == null
             val ext = file.extension.lowercase()
             val needsT = transcodeVideoUseCase.needsTranscode(filePath)
             _debugCastInfo.value = "ext=$ext cc=$isChromecast dlna=$dlnaDeviceId need=$needsT"
-            EcosystemLogger.d(HaronConstants.TAG, "castMedia: ext=$ext, isChromecast=$isChromecast, needsTranscode=${isChromecast && needsT}")
+            EcosystemLogger.d(HaronConstants.TAG, "castMedia: ext=$ext, isChromecast=$isChromecast, dlnaDevice=$dlnaDeviceId, needsTranscode=${isChromecast && needsT}")
 
             // DLNA — cast as-is (most Smart TVs support more formats)
             // Chromecast — transcode if needed
@@ -394,18 +422,36 @@ class CastViewModel @Inject constructor(
         }
     }
 
-    fun castMirrorUrl(url: String) {
-        _castMode.value = CastMode.SCREEN_MIRROR
-        viewModelScope.launch {
-            if (dlnaManager.isConnected.value) {
-                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "text/html", "Screen Mirror")
-            } else if (castManager.isConnected.value) {
-                castManager.castMedia(url, "text/html", "Screen Mirror")
-            } else {
-                EcosystemLogger.e(HaronConstants.TAG, "Screen mirror: no device connected")
-            }
+    /** Set a pending action to execute after device connection */
+    fun setPendingAction(action: () -> Unit) {
+        EcosystemLogger.d("CastFlow", "setPendingAction: action set")
+        pendingAction = action
+    }
+
+    private fun executePendingAction() {
+        val action = pendingAction ?: return
+        EcosystemLogger.d("CastFlow", "executePendingAction: running")
+        pendingAction = null
+        action()
+    }
+
+    /** Select device and execute pending action (for non-media cast modes from Explorer) */
+    fun selectDeviceWithPendingAction(device: CastDevice) {
+        EcosystemLogger.d("CastFlow", "selectDeviceWithPendingAction: ${device.name} (${device.type})")
+        if (device.type == CastType.DLNA) {
+            // DLNA has no separate "connect" step — store device ID and execute action immediately
+            pendingDlnaDeviceId = device.id
+            hideSheet()
+            executePendingAction()
+        } else {
+            selectDevice(device)
         }
-        EcosystemLogger.d(HaronConstants.TAG, "Screen mirror casting: $url")
+    }
+
+    fun castMirrorUrl(url: String) {
+        EcosystemLogger.d("CastFlow", "castMirrorUrl (browser): $url")
+        _castMode.value = CastMode.SCREEN_MIRROR
+        _browserUrl.value = url
     }
 
     fun castFileInfo(name: String, path: String, size: String, modified: String, mimeType: String) {
@@ -414,12 +460,25 @@ class CastViewModel @Inject constructor(
             httpFileServer.start(emptyList())
             httpFileServer.setupFileInfo(name, path, size, modified, mimeType)
             val url = httpFileServer.getFileInfoUrl() ?: return@launch
-            if (dlnaManager.isConnected.value) {
-                dlnaManager.castMedia(dlnaManager.connectedDeviceId ?: "", url, "text/html", name)
-            } else {
-                castManager.castMedia(url, "text/html", name)
-            }
+            _browserUrl.value = url
+            EcosystemLogger.d("CastFlow", "castFileInfo (browser): $url")
         }
+    }
+
+    /** Close browser-based cast (mirror / file info) */
+    fun closeBrowserCast() {
+        val mode = _castMode.value
+        _browserUrl.value = null
+        _castMode.value = CastMode.SINGLE_MEDIA
+        if (mode == CastMode.SCREEN_MIRROR) {
+            val intent = Intent(appContext, ScreenMirrorService::class.java).apply {
+                action = ScreenMirrorService.ACTION_STOP
+            }
+            appContext.startService(intent)
+        } else if (mode == CastMode.FILE_INFO) {
+            httpFileServer.stop()
+        }
+        EcosystemLogger.d("CastFlow", "closeBrowserCast: mode was $mode")
     }
 
     fun setCastMode(mode: CastMode) {
@@ -427,13 +486,18 @@ class CastViewModel @Inject constructor(
     }
 
     fun disconnect() {
-        cancelTranscode()
+        transcodeVideoUseCase.cancelTranscode()
+        transcodeJob?.cancel()
+        transcodeJob = null
+        _transcodeProgress.value = null
+        _browserUrl.value = null
         _castMode.value = CastMode.SINGLE_MEDIA
         _presentationState.value = PresentationState()
+        pendingDlnaDeviceId = null
         castManager.disconnect()
         dlnaManager.disconnect()
         httpFileServer.stop()
-        transcodeVideoUseCase.cleanupTempFiles()
+        // Don't cleanupTempFiles — keep transcode cache for reuse
     }
 
     private fun guessMimeType(ext: String): String {
@@ -459,7 +523,7 @@ class CastViewModel @Inject constructor(
         discoveryJob?.cancel()
         transcodeJob?.cancel()
         transcodeVideoUseCase.cancelTranscode()
-        transcodeVideoUseCase.cleanupTempFiles()
+        // Don't cleanupTempFiles — keep transcode cache for reuse
         httpFileServer.stop()
     }
 }

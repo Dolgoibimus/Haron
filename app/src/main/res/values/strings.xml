@@ -319,6 +319,7 @@
     <!-- Media player -->
     <string name="previous">Previous</string>
     <string name="next">Next</string>
+    <string name="repeat_mode">Repeat mode</string>
 
     <!-- Permission screen -->
     <string name="file_access_title">File Access</string>
@@ -1069,6 +1070,9 @@
     <string name="cast_transcoding_progress">Preparing: %d%%</string>
     <string name="cast_transcoding_preparing">Preparing…</string>
     <string name="cast_transcoding_error">Conversion failed</string>
+    <string name="cast_browser_hint">Open this URL in a browser on any device in your network:</string>
+    <string name="cast_copy_url">Copy URL</string>
+    <string name="cast_url_copied">URL copied</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">No Haron devices nearby</string>
@@ -1078,6 +1082,7 @@
     <string name="quick_send_declined">Cancelled by user</string>
     <string name="quick_send_request_sent">Request sent to %s</string>
     <string name="quick_send_drop_here">Drop files here</string>
+    <string name="quick_receive_receiving">Receiving file…</string>
 
     <!-- Transfer stats -->
     <string name="transfer_today_received">Received today: %d</string>

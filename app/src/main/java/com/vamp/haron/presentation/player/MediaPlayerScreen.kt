@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -116,6 +119,7 @@ fun MediaPlayerScreen(
     var duration by remember { mutableLongStateOf(0L) }
     var currentIndex by remember { mutableIntStateOf(startIndex) }
     var showControls by remember { mutableStateOf(true) }
+    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_ALL) }
     var tapFeedback by remember { mutableStateOf<TapZone?>(null) }
     var tapCounter by remember { mutableStateOf(0) }
     var showSystemBarsTemporarily by remember { mutableStateOf(false) }
@@ -137,10 +141,16 @@ fun MediaPlayerScreen(
             val ctrl = future.get()
             controller = ctrl
             // Initialize playlist in adapter
-            PlaybackService.instance?.getAdapter()?.setPlaylist(PlaylistHolder.items, startIndex)
+            val adapter = PlaybackService.instance?.getAdapter()
+            adapter?.setPlaylist(PlaylistHolder.items, startIndex)
+            // Clear stale ReadingPositionManager when track finishes
+            adapter?.onTrackFinished = { filePath ->
+                ReadingPositionManager.saveAsync(filePath, 0, 0L)
+            }
         }, MoreExecutors.directExecutor())
 
         onDispose {
+            PlaybackService.instance?.getAdapter()?.onTrackFinished = null
             controllerFuture?.let { MediaController.releaseFuture(it) }
             controller = null
         }
@@ -157,6 +167,7 @@ fun MediaPlayerScreen(
                 }
                 isPlaying = adapter.isCurrentlyPlaying()
                 currentPosition = adapter.getCurrentPositionMs()
+                repeatMode = adapter.getCurrentRepeatMode()
                 val d = adapter.getCurrentDurationMs()
                 if (d > 0) duration = d else if (adapterIndex != currentIndex) duration = 0
             }
@@ -164,12 +175,20 @@ fun MediaPlayerScreen(
         }
     }
 
-    // Restore playback position
+    // Restore playback position (only if VideoPositionStore didn't reset it to 0 = track completed)
     var positionRestored by remember { mutableStateOf(false) }
     LaunchedEffect(controller, currentIndex) {
         val ctrl = controller ?: return@LaunchedEffect
         if (positionRestored) return@LaunchedEffect
         val item = PlaylistHolder.items.getOrNull(currentIndex) ?: return@LaunchedEffect
+        val videoStorePos = withContext(Dispatchers.IO) {
+            com.vamp.haron.data.datastore.VideoPositionStore.load(context, item.filePath)
+        }
+        // If VideoPositionStore has 0, the track was played to completion — don't restore stale position
+        if (videoStorePos == 0L) {
+            positionRestored = true
+            return@LaunchedEffect
+        }
         val saved = withContext(Dispatchers.IO) { ReadingPositionManager.get(item.filePath) }
         if (saved != null && saved.positionExtra > 0) {
             delay(500) // wait for playback to initialize
@@ -512,19 +531,49 @@ fun MediaPlayerScreen(
                         .background(Color.Black.copy(alpha = if (isVideo) 0.5f else 0f))
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    // Prev / Next buttons
+                    // Prev / Repeat / Play / Next buttons
                     if (PlaylistHolder.items.size > 1) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(onClick = {
-                                controller?.seekToPreviousMediaItem()
-                            }) {
-                                Icon(Icons.Filled.SkipPrevious, stringResource(R.string.previous), tint = Color.White, modifier = Modifier.size(32.dp))
+                            // Left side: Repeat + Prev (aligned right toward center)
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Repeat mode toggle: ALL → ONE → OFF → ALL
+                                IconButton(onClick = {
+                                    val newMode = when (repeatMode) {
+                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                        Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
+                                        else -> Player.REPEAT_MODE_ALL
+                                    }
+                                    PlaybackService.instance?.getAdapter()?.setRepeat(newMode)
+                                    repeatMode = newMode
+                                }) {
+                                    Icon(
+                                        imageVector = when (repeatMode) {
+                                            Player.REPEAT_MODE_ONE -> Icons.Filled.RepeatOne
+                                            else -> Icons.Filled.Repeat
+                                        },
+                                        contentDescription = stringResource(R.string.repeat_mode),
+                                        tint = when (repeatMode) {
+                                            Player.REPEAT_MODE_OFF -> Color.White.copy(alpha = 0.4f)
+                                            else -> Color.White
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    controller?.seekToPreviousMediaItem()
+                                }) {
+                                    Icon(Icons.Filled.SkipPrevious, stringResource(R.string.previous), tint = Color.White, modifier = Modifier.size(32.dp))
+                                }
                             }
-                            Spacer(Modifier.width(24.dp))
+
+                            // Center: Play/Pause
                             IconButton(onClick = {
                                 controller?.let { ctrl ->
                                     if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
@@ -537,11 +586,18 @@ fun MediaPlayerScreen(
                                     modifier = Modifier.size(40.dp)
                                 )
                             }
-                            Spacer(Modifier.width(24.dp))
-                            IconButton(onClick = {
-                                controller?.seekToNextMediaItem()
-                            }) {
-                                Icon(Icons.Filled.SkipNext, stringResource(R.string.next), tint = Color.White, modifier = Modifier.size(32.dp))
+
+                            // Right side: Next (aligned left toward center)
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.Start,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = {
+                                    controller?.seekToNextMediaItem()
+                                }) {
+                                    Icon(Icons.Filled.SkipNext, stringResource(R.string.next), tint = Color.White, modifier = Modifier.size(32.dp))
+                                }
                             }
                         }
                     }

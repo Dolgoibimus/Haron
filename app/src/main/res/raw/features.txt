@@ -37,6 +37,8 @@
 - View, restore, clear trash
 - Auto-cleanup when size limit exceeded
 - Size limit: 0–5000 MB
+- Per-file deletion progress (shows each file being deleted)
+- Auto-recovery of records from filesystem if metadata is corrupted
 
 # Background Operations
 - Foreground Service for large operations (>10 files or >50 MB)
@@ -202,8 +204,11 @@
 
 # Cast to TV
 - Chromecast, Miracast, DLNA support
-- Media, slideshow, PDF presentation, screen mirror modes
+- Media, slideshow, PDF presentation, file info, screen mirror (via browser) modes
 - Remote control: play/pause, seek, volume
+- Transcoding: AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 for Chromecast
+- Transcode caching — instant replay of previously transcoded files
+- Automatic audio fallback for unsupported codecs (AC3/DTS)
 
 # Network & SMB
 - Auto-discover devices on LAN

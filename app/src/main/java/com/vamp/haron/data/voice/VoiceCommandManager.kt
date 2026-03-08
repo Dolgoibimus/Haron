@@ -76,9 +76,14 @@ class VoiceCommandManager @Inject constructor(
     val isAvailable: Boolean
         get() = SpeechRecognizer.isRecognitionAvailable(appContext)
 
+    private var lastRecognizerCreateTime = 0L
+
     private fun ensureRecognizer(): SpeechRecognizer? {
         if (recognizer != null) return recognizer
-        EcosystemLogger.d(TAG, "Creating SpeechRecognizer")
+        val now = System.currentTimeMillis()
+        val sinceLast = now - lastRecognizerCreateTime
+        EcosystemLogger.d(TAG, "Creating SpeechRecognizer (since last: ${sinceLast}ms)")
+        lastRecognizerCreateTime = now
         recognizer = SpeechRecognizer.createSpeechRecognizer(appContext)?.apply {
             setRecognitionListener(listener)
         }
@@ -137,11 +142,14 @@ class VoiceCommandManager @Inject constructor(
             _state.value = VoiceState.IDLE
         }
         override fun onResults(results: Bundle?) {
+            val t0 = System.nanoTime()
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             EcosystemLogger.d(TAG, "onResults: ${matches?.take(3)} (wake=${_wakeWordEnabled.value}, activated=$wakeActivated, manual=$manualMode)")
 
             if (_wakeWordEnabled.value && !manualMode) {
                 handleWakeResults(matches)
+                val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+                if (elapsedMs > 2) EcosystemLogger.d("Perf", "onResults(wake): ${elapsedMs}ms")
                 return
             }
 
@@ -166,7 +174,7 @@ class VoiceCommandManager @Inject constructor(
     private fun handleWakeResults(matches: java.util.ArrayList<String>?) {
         if (matches.isNullOrEmpty()) {
             _state.value = VoiceState.WAKE_LISTENING
-            mainHandler.postDelayed({ restartWakeListening() }, 100)
+            mainHandler.postDelayed({ restartWakeListening() }, 200)
             return
         }
 
@@ -227,7 +235,7 @@ class VoiceCommandManager @Inject constructor(
 
         // No wake word found — ignore, restart
         _state.value = VoiceState.WAKE_LISTENING
-        mainHandler.postDelayed({ restartWakeListening() }, 100)
+        mainHandler.postDelayed({ restartWakeListening() }, 200)
     }
 
     /** Find wake word in text, return match with end index. */
@@ -399,7 +407,16 @@ class VoiceCommandManager @Inject constructor(
 
     // --- Phrase matching ---
 
+    /** Pre-sorted flat list: (phrase, action) sorted by phrase length descending.
+     *  First match = longest match, no need to scan the whole map. */
+    private val sortedPhrases: List<Pair<String, GestureAction>> by lazy {
+        PHRASE_MAP.flatMap { (phrases, action) ->
+            phrases.map { phrase -> phrase to action }
+        }.sortedByDescending { it.first.length }
+    }
+
     private fun matchPhrase(text: String): GestureAction? {
+        val t0 = System.nanoTime()
         val lower = text.lowercase().trim()
 
         // Detect panel modifier: "вверху"/"внизу" → override target panel
@@ -407,33 +424,31 @@ class VoiceCommandManager @Inject constructor(
 
         // Special sort handling: "сортировка имя вниз" etc.
         val sortAction = tryMatchSort(lower)
-        if (sortAction != null) return sortAction
+        if (sortAction != null) { logPerfMatch(t0); return sortAction }
 
         // Logs pause/resume (check before general "логи" to avoid false match)
         val logsAction = tryMatchLogs(lower)
-        if (logsAction != null) return logsAction
+        if (logsAction != null) { logPerfMatch(t0); return logsAction }
 
         // Rename: "переименуй в тест" / "rename to test"
         val renameAction = tryMatchRename(lower)
-        if (renameAction != null) return renameAction
+        if (renameAction != null) { logPerfMatch(t0); return renameAction }
 
         // Navigation: "открой загрузки" / "go to downloads"
         val navAction = tryMatchNavigation(lower)
-        if (navAction != null) return navAction
+        if (navAction != null) { logPerfMatch(t0); return navAction }
 
-        // General phrase matching — pick the longest matching phrase
-        // to avoid "найди" (search) winning over "дубликат" in "найди дубликаты"
-        var bestAction: GestureAction? = null
-        var bestLen = 0
-        for ((phrases, action) in PHRASE_MAP) {
-            for (phrase in phrases) {
-                if (lower.contains(phrase) && phrase.length > bestLen) {
-                    bestLen = phrase.length
-                    bestAction = action
-                }
-            }
+        // General phrase matching — sorted by length desc, first match = longest
+        val result = sortedPhrases.firstOrNull { lower.contains(it.first) }?.second
+        logPerfMatch(t0)
+        return result
+    }
+
+    private fun logPerfMatch(startNanos: Long) {
+        val elapsedUs = (System.nanoTime() - startNanos) / 1000
+        if (elapsedUs > 500) { // log only if > 0.5ms
+            EcosystemLogger.d("Perf", "matchPhrase: ${elapsedUs}μs")
         }
-        return bestAction
     }
 
     /** Detect panel modifier in phrase: "вверху"/"внизу"/"верхн"/"нижн". */
@@ -479,12 +494,9 @@ class VoiceCommandManager @Inject constructor(
 
     /** Check if query matches any phrase in PHRASE_MAP (to avoid "открой терминал" → navigation). */
     private fun isExistingCommand(query: String): Boolean {
-        for ((phrases, _) in PHRASE_MAP) {
-            for (phrase in phrases) {
-                if (query.contains(phrase) || phrase.contains(query)) return true
-            }
+        return sortedPhrases.any { (phrase, _) ->
+            query.contains(phrase) || phrase.contains(query)
         }
-        return false
     }
 
     private fun tryMatchLogs(lower: String): GestureAction? {

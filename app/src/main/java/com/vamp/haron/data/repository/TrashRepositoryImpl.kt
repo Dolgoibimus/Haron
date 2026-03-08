@@ -149,6 +149,54 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
             }
         }
 
+    override suspend fun deleteFromTrashWithProgress(
+        ids: List<String>,
+        onProgress: suspend (deletedFiles: Int, totalFiles: Int, currentName: String) -> Unit
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            mutex.withLock {
+                val entries = readMeta().toMutableList()
+                val toRemove = mutableListOf<TrashEntry>()
+                // Collect all files to delete + count total
+                data class FileTask(val file: File, val entryId: String, val entry: TrashEntry)
+                val allFiles = mutableListOf<FileTask>()
+                for (id in ids) {
+                    val entry = entries.find { it.id == id } ?: continue
+                    val root = File(trashDir, id)
+                    if (!root.exists()) {
+                        toRemove.add(entry)
+                        continue
+                    }
+                    if (root.isDirectory) {
+                        // Collect all files bottom-up (files first, then dirs)
+                        val files = root.walkBottomUp().toList()
+                        for (f in files) {
+                            allFiles.add(FileTask(f, id, entry))
+                        }
+                    } else {
+                        allFiles.add(FileTask(root, id, entry))
+                    }
+                    toRemove.add(entry)
+                }
+                val totalFiles = allFiles.size.coerceAtLeast(1)
+                var deletedCount = 0
+                for (task in allFiles) {
+                    val name = task.file.name
+                    task.file.delete()
+                    deletedCount++
+                    onProgress(deletedCount, totalFiles, name)
+                }
+                entries.removeAll(toRemove.toSet())
+                writeMeta(entries)
+                EcosystemLogger.d(HaronConstants.TAG, "Удалено из корзины навсегда: ${toRemove.size} записей, $deletedCount файлов")
+                Result.success(toRemove.size)
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "Ошибка удаления из корзины: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     override suspend fun emptyTrash(): Result<Int> =
         withContext(Dispatchers.IO) {
             try {
@@ -236,6 +284,20 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
     }
 
     private fun readMeta(): List<TrashEntry> {
+        val entries = readMetaFromFile()
+        // If meta is empty but trash folder has orphan files — recover
+        if (entries.isEmpty()) {
+            val recovered = recoverOrphanEntries()
+            if (recovered.isNotEmpty()) {
+                EcosystemLogger.w(HaronConstants.TAG, "Корзина: восстановлено ${recovered.size} записей из файловой системы")
+                writeMeta(recovered)
+                return recovered
+            }
+        }
+        return entries
+    }
+
+    private fun readMetaFromFile(): List<TrashEntry> {
         if (!metaFile.exists()) return emptyList()
         return try {
             val json = metaFile.readText()
@@ -251,8 +313,37 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
                     isDirectory = obj.optBoolean("isDirectory", false)
                 )
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "Ошибка парсинга meta.json: ${e.message}")
             emptyList()
+        }
+    }
+
+    /** Recover trash entries from orphan files when meta.json is lost/empty */
+    private fun recoverOrphanEntries(): List<TrashEntry> {
+        if (!trashDir.exists()) return emptyList()
+        val orphans = trashDir.listFiles()?.filter {
+            it.name != HaronConstants.TRASH_META_FILE
+        } ?: return emptyList()
+        if (orphans.isEmpty()) return emptyList()
+
+        return orphans.map { file ->
+            val name = file.name
+            // Parse timestamp from name format: {timestamp}_{originalName}
+            val underscoreIdx = name.indexOf('_')
+            val timestamp = if (underscoreIdx > 0) {
+                name.substring(0, underscoreIdx).toLongOrNull() ?: file.lastModified()
+            } else {
+                file.lastModified()
+            }
+            val originalName = if (underscoreIdx > 0) name.substring(underscoreIdx + 1) else name
+            TrashEntry(
+                id = name,
+                originalPath = "${HaronConstants.ROOT_PATH}/$originalName",
+                trashedAt = timestamp,
+                size = if (file.isDirectory) dirSize(file) else file.length(),
+                isDirectory = file.isDirectory
+            )
         }
     }
 
@@ -270,7 +361,15 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
                 }
             )
         }
-        metaFile.writeText(array.toString())
+        // Atomic write: write to temp file, then rename to prevent corruption
+        val tmpFile = File(trashDir, "meta.json.tmp")
+        tmpFile.writeText(array.toString())
+        if (tmpFile.length() > 0 || entries.isEmpty()) {
+            metaFile.delete()
+            tmpFile.renameTo(metaFile)
+        } else {
+            tmpFile.delete()
+        }
     }
 
     private fun dirSize(dir: File): Long {

@@ -1344,28 +1344,8 @@ private fun findItemIndexAtPosition(
             return item.index
         }
     }
-    // Fallback: find closest item by Y then X
-    if (layoutInfo.visibleItemsInfo.isEmpty()) return -1
-    val first = layoutInfo.visibleItemsInfo.first()
-    val last = layoutInfo.visibleItemsInfo.last()
-    return when {
-        position.y < first.offset.y -> first.index
-        position.y > last.offset.y + last.size.height -> last.index
-        else -> {
-            // Find the row, then the column
-            val rowItems = layoutInfo.visibleItemsInfo.filter { item ->
-                val top = item.offset.y.toFloat()
-                val bottom = top + item.size.height.toFloat()
-                position.y in top..bottom
-            }
-            if (rowItems.isEmpty()) return last.index
-            // Find closest column
-            rowItems.minByOrNull {
-                val centerX = it.offset.x + it.size.width / 2f
-                kotlin.math.abs(position.x - centerX)
-            }?.index ?: last.index
-        }
-    }
+    // No item directly under the touch point — empty space
+    return -1
 }
 
 @Composable

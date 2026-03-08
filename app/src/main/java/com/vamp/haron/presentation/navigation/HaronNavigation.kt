@@ -51,7 +51,6 @@ import com.vamp.haron.domain.model.CastMode
 import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.comparison.ComparisonScreen
 import com.vamp.haron.presentation.steganography.SteganographyScreen
-import com.vamp.haron.service.ScreenMirrorService
 import com.vamp.haron.presentation.document.DocumentViewerScreen
 import com.vamp.haron.presentation.terminal.TerminalScreen
 import com.vamp.haron.presentation.transfer.TransferScreen
@@ -246,31 +245,45 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         CastActionHolder.pendingMode = null
         val filePaths = pendingCastFiles
         CastActionHolder.pendingFilePaths = emptyList()
+        val connected = castViewModel.isConnected.value
+        com.vamp.core.logger.EcosystemLogger.d("CastFlow", "pendingCastMode=$mode, connected=$connected, files=${filePaths.size}")
 
         when (mode) {
             CastMode.SINGLE_MEDIA -> {
                 if (filePaths.isNotEmpty()) {
                     castViewModel.setCastMode(CastMode.SINGLE_MEDIA)
-                    if (castViewModel.isConnected.value) {
-                        castViewModel.castMedia(filePaths.first(), File(filePaths.first()).name)
+                    val path = filePaths.first()
+                    val name = File(path).name
+                    if (connected) {
+                        com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SINGLE_MEDIA: casting now: $name")
+                        castViewModel.castMedia(path, name)
                     } else {
+                        com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SINGLE_MEDIA: not connected, showing sheet + pending")
+                        castViewModel.setPendingAction { castViewModel.castMedia(path, name) }
                         castViewModel.showSheet()
                     }
                 }
             }
             CastMode.SLIDESHOW -> {
                 val files = filePaths.map { File(it) }.filter { it.exists() }
-                if (castViewModel.isConnected.value) {
+                if (connected) {
+                    com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SLIDESHOW: casting now")
                     castViewModel.castSlideshow(files, com.vamp.haron.domain.model.SlideshowConfig())
                 } else {
+                    com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SLIDESHOW: not connected, showing sheet + pending")
+                    castViewModel.setPendingAction { castViewModel.castSlideshow(files, com.vamp.haron.domain.model.SlideshowConfig()) }
                     castViewModel.showSheet()
                 }
             }
             CastMode.PDF_PRESENTATION -> {
                 if (filePaths.isNotEmpty()) {
-                    if (castViewModel.isConnected.value) {
-                        castViewModel.castPdfPresentation(filePaths.first())
+                    val path = filePaths.first()
+                    if (connected) {
+                        com.vamp.core.logger.EcosystemLogger.d("CastFlow", "PDF: casting now")
+                        castViewModel.castPdfPresentation(path)
                     } else {
+                        com.vamp.core.logger.EcosystemLogger.d("CastFlow", "PDF: not connected, showing sheet + pending")
+                        castViewModel.setPendingAction { castViewModel.castPdfPresentation(path) }
                         castViewModel.showSheet()
                     }
                 }
@@ -278,22 +291,43 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             CastMode.FILE_INFO -> {
                 if (filePaths.isNotEmpty()) {
                     val file = File(filePaths.first())
-                    if (castViewModel.isConnected.value) {
-                        castViewModel.castFileInfo(
-                            name = file.name,
-                            path = file.absolutePath,
-                            size = file.length().toFileSize(context),
-                            modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                                .format(java.util.Date(file.lastModified())),
-                            mimeType = guessMimeTypeFromFile(file)
-                        )
-                    } else {
-                        castViewModel.showSheet()
-                    }
+                    val name = file.name
+                    val path = file.absolutePath
+                    val size = file.length().toFileSize(context)
+                    val modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date(file.lastModified()))
+                    val mimeType = guessMimeTypeFromFile(file)
+                    com.vamp.core.logger.EcosystemLogger.d("CastFlow", "FILE_INFO: browser mode")
+                    castViewModel.castFileInfo(name, path, size, modified, mimeType)
                 }
             }
-            CastMode.SCREEN_MIRROR -> { /* handled in non-composable function */ }
+            CastMode.SCREEN_MIRROR -> {
+                com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SCREEN_MIRROR: browser mode, launching MediaProjection")
+                val activity = context as? com.vamp.haron.MainActivity ?: return@LaunchedEffect
+                val projectionManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
+                        as android.media.projection.MediaProjectionManager
+                activity.mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            }
         }
+    }
+
+    // Global Cast device selection sheet (for Explorer and other screens without their own)
+    val showCastSheet by castViewModel.showDeviceSheet.collectAsState()
+    val castDevices by castViewModel.devices.collectAsState()
+    val castSearching by castViewModel.isSearching.collectAsState()
+    val castConnectedDevice by castViewModel.connectedDeviceName.collectAsState()
+    // Only show from HaronNavigation when on Explorer (other screens have their own sheet)
+    val currentRoute = navController.currentBackStackEntry?.destination?.route
+    val showGlobalSheet = showCastSheet && (currentRoute == null || currentRoute == HaronRoutes.EXPLORER)
+    if (showGlobalSheet) {
+        com.vamp.haron.presentation.cast.components.CastDeviceSheet(
+            devices = castDevices,
+            isSearching = castSearching,
+            connectedDeviceName = castConnectedDevice,
+            onSelectDevice = { device -> castViewModel.selectDeviceWithPendingAction(device) },
+            onDisconnect = { castViewModel.disconnect() },
+            onDismiss = { castViewModel.hideSheet() }
+        )
     }
 
     // Navigate back to Explorer when pendingNavigationPath is set from any screen
@@ -639,7 +673,7 @@ private fun saveReceivedFilesToDownloads(context: android.content.Context, files
 
 /** Holder for cast mode + file paths, set from ExplorerScreen, consumed in HaronNavigation */
 object CastActionHolder {
-    var pendingMode: CastMode? = null
+    var pendingMode: CastMode? by androidx.compose.runtime.mutableStateOf(null)
     var pendingFilePaths: List<String> = emptyList()
 }
 
@@ -648,20 +682,9 @@ private fun handleCastModeSelected(
     filePaths: List<String>,
     context: android.content.Context
 ) {
-    // Save for composable consumption, or handle non-composable actions directly
-    when (mode) {
-        CastMode.SCREEN_MIRROR -> {
-            val activity = context as? com.vamp.haron.MainActivity ?: return
-            val projectionManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
-                    as android.media.projection.MediaProjectionManager
-            activity.mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-        }
-        else -> {
-            // Store for composable-level CastViewModel handling
-            CastActionHolder.pendingMode = mode
-            CastActionHolder.pendingFilePaths = filePaths
-        }
-    }
+    com.vamp.core.logger.EcosystemLogger.d("CastFlow", "handleCastModeSelected: mode=$mode, files=${filePaths.size}")
+    CastActionHolder.pendingMode = mode
+    CastActionHolder.pendingFilePaths = filePaths
 }
 
 private fun guessMimeTypeFromFile(file: File): String {

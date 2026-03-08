@@ -53,10 +53,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -97,10 +100,18 @@ fun TextEditorScreen(
     val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
 
     var isEditMode by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // VoiceFab: visible in view mode, hidden in edit mode
     LaunchedEffect(isEditMode) {
         TransferHolder.voiceFabVisible.value = !isEditMode
+        if (isEditMode) {
+            // Small delay to let recomposition apply readOnly=false before requesting focus
+            delay(100)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
     }
     DisposableEffect(Unit) { onDispose { TransferHolder.voiceFabVisible.value = true } }
 
@@ -476,6 +487,7 @@ fun TextEditorScreen(
                             .pointerInput(Unit) {
                                 awaitEachGesture {
                                     awaitFirstDown(requireUnconsumed = false)
+                                    // Only process pinch-to-zoom (2+ fingers), let single taps through to TextField
                                     do {
                                         val event = awaitPointerEvent()
                                         if (event.changes.size >= 2) {
@@ -503,6 +515,7 @@ fun TextEditorScreen(
                             visualTransformation = highlightTransformation,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .focusRequester(focusRequester)
                                 .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
                         )
                     }

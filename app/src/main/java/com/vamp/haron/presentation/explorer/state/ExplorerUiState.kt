@@ -53,7 +53,9 @@ data class ExplorerUiState(
     val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction },
     val quickSendState: QuickSendState = QuickSendState.Idle,
     val isListeningForTransfer: Boolean = false,
-    val marqueeEnabled: Boolean = true
+    val marqueeEnabled: Boolean = true,
+    val quickReceiveProgress: com.vamp.haron.domain.model.TransferProgressInfo? = null,
+    val quickReceiveDeviceName: String? = null
 )
 
 sealed interface DialogState {
@@ -65,7 +67,9 @@ sealed interface DialogState {
     data class ShowTrash(
         val entries: List<TrashEntry> = emptyList(),
         val totalSize: Long = 0L,
-        val maxSizeMb: Int = 0
+        val maxSizeMb: Int = 0,
+        val deleteProgress: Float? = null,
+        val deleteCurrentName: String? = null
     ) : DialogState
     data class ConfirmConflict(
         val conflictPairs: List<ConflictPair>,

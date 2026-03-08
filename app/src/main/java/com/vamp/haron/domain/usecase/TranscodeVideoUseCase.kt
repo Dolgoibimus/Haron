@@ -1,24 +1,35 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.Effect
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
+import androidx.media3.transformer.Codec
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
@@ -49,7 +60,8 @@ class TranscodeVideoUseCase @Inject constructor(
 
     private fun getCacheFile(inputPath: String): File {
         val input = File(inputPath)
-        val hash = "${input.name}_${input.length()}".hashCode().toUInt().toString(16)
+        // Include quality version in hash so cache invalidates when settings change
+        val hash = "${input.name}_${input.length()}_q4".hashCode().toUInt().toString(16)
         return File(context.cacheDir, "cast_transcode_$hash.mp4")
     }
 
@@ -130,8 +142,31 @@ class TranscodeVideoUseCase @Inject constructor(
                     "Transcode start: $inputPath → $outputPath (removeAudio=$removeAudio)"
                 )
 
+                val videoEncoderSettings = VideoEncoderSettings.Builder()
+                    .setBitrate(8_000_000) // 8 Mbps CBR — stable for Chromecast streaming
+                    .setBitrateMode(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                    .setEncodingProfileLevel(
+                        MediaCodecInfo.CodecProfileLevel.AVCProfileMain,
+                        MediaCodecInfo.CodecProfileLevel.AVCLevel41
+                    )
+                    .build()
+
+                val baseEncoderFactory = DefaultEncoderFactory.Builder(context)
+                    .setRequestedVideoEncoderSettings(videoEncoderSettings)
+                    .build()
+
+                // Wrap to inject KEY_I_FRAME_INTERVAL = 2 seconds for frequent keyframes
+                val encoderFactory = CastEncoderFactory(baseEncoderFactory)
+
+                // Cap at 1080p/30fps — Chromecast H264 High Profile 4.1 max
+                val videoEffects = listOf<Effect>(
+                    Presentation.createForHeight(1080)
+                )
+
                 val transformer = Transformer.Builder(context)
                     .setVideoMimeType(MimeTypes.VIDEO_H264)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .setEncoderFactory(encoderFactory)
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(
                             composition: Composition,
@@ -143,19 +178,21 @@ class TranscodeVideoUseCase @Inject constructor(
                                 "Transcode complete: $outputPath (audioStripped=$removeAudio, size=${outputFile.length() / 1024}KB)"
                             )
 
-                            // Move moov box to front for Chromecast progressive download
-                            val fastStarted = fastStartMp4(outputFile)
-                            EcosystemLogger.d(HaronConstants.TAG, "FastStart: $fastStarted")
+                            // Move moov box to front on IO thread — heavy file I/O, would ANR on main
+                            this@callbackFlow.launch(Dispatchers.IO) {
+                                val fastStarted = fastStartMp4(outputFile)
+                                EcosystemLogger.d(HaronConstants.TAG, "FastStart: $fastStarted")
 
-                            trySend(
-                                TranscodeProgress(
-                                    percent = 100,
-                                    outputPath = outputPath,
-                                    isComplete = true,
-                                    audioStripped = removeAudio
+                                trySend(
+                                    TranscodeProgress(
+                                        percent = 100,
+                                        outputPath = outputPath,
+                                        isComplete = true,
+                                        audioStripped = removeAudio
+                                    )
                                 )
-                            )
-                            channel.close()
+                                channel.close()
+                            }
                         }
 
                         override fun onError(
@@ -198,6 +235,7 @@ class TranscodeVideoUseCase @Inject constructor(
                 val mediaItem = MediaItem.fromUri("file://$inputPath")
                 val editedMediaItem = EditedMediaItem.Builder(mediaItem)
                     .setRemoveAudio(removeAudio)
+                    .setEffects(Effects(emptyList(), videoEffects))
                     .build()
 
                 try {
@@ -420,4 +458,29 @@ class TranscodeVideoUseCase @Inject constructor(
 
         scanContainer(pos, len)
     }
+}
+
+/**
+ * Encoder factory wrapper that caps frame rate to 30fps for Chromecast playback.
+ * DefaultEncoderFactory already sets KEY_I_FRAME_INTERVAL = 1s internally.
+ * Stable 30fps without drops looks better than jerky 60fps on Chromecast.
+ */
+@UnstableApi
+private class CastEncoderFactory(
+    private val delegate: Codec.EncoderFactory
+) : Codec.EncoderFactory {
+
+    override fun createForAudioEncoding(format: Format): Codec =
+        delegate.createForAudioEncoding(format)
+
+    override fun createForVideoEncoding(format: Format): Codec {
+        val cappedFormat = if (format.frameRate > 30f) {
+            format.buildUpon().setFrameRate(30f).build()
+        } else {
+            format
+        }
+        return delegate.createForVideoEncoding(cappedFormat)
+    }
+
+    override fun videoNeedsEncoding(): Boolean = true
 }

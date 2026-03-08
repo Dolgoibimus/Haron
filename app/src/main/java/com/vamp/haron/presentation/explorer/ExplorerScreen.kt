@@ -82,6 +82,7 @@ import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
 import com.vamp.haron.presentation.explorer.components.BatchRenameDialog
 import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
+import com.vamp.haron.presentation.explorer.components.QuickReceiveOverlay
 import com.vamp.haron.presentation.explorer.components.QuickSendOverlay
 import com.vamp.haron.presentation.explorer.state.QuickSendState
 import com.vamp.haron.presentation.explorer.components.SelectionActionBar
@@ -272,6 +273,19 @@ fun ExplorerScreen(
     val selectedEntries = selectionPanelState.files.filter { it.path in selectionPanelState.selectedPaths }
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
+    // Cache selection-derived values — avoid repeated .filter() on every recomposition
+    val topSelectedEntries = remember(state.topPanel.files, state.topPanel.selectedPaths) {
+        state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }
+    }
+    val topSelectionHasProtected = remember(topSelectedEntries) { topSelectedEntries.any { it.isProtected } }
+    val topSelectionDirCount = remember(topSelectedEntries) { topSelectedEntries.count { it.isDirectory } }
+
+    val bottomSelectedEntries = remember(state.bottomPanel.files, state.bottomPanel.selectedPaths) {
+        state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }
+    }
+    val bottomSelectionHasProtected = remember(bottomSelectedEntries) { bottomSelectedEntries.any { it.isProtected } }
+    val bottomSelectionDirCount = remember(bottomSelectedEntries) { bottomSelectedEntries.count { it.isDirectory } }
+
     val hasRenaming = state.topPanel.renamingPath != null || state.bottomPanel.renamingPath != null
     val hasSearch = state.topPanel.isSearchActive || state.bottomPanel.isSearchActive
     val showDrawerOrShelf = state.showDrawer || state.showShelf
@@ -471,9 +485,8 @@ fun ExplorerScreen(
                 isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
                 onProtectSelection = {
                     viewModel.setActivePanel(PanelId.TOP)
-                    val paths = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.map { it.path }
-                    val hasProtected = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.any { it.isProtected }
-                    if (hasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
+                    val paths = topSelectedEntries.map { it.path }
+                    if (topSelectionHasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
                 },
                 onCompareSelection = {
                     viewModel.setActivePanel(PanelId.TOP)
@@ -491,10 +504,10 @@ fun ExplorerScreen(
                     viewModel.setActivePanel(PanelId.TOP)
                     viewModel.openSelectedWithExternalApp()
                 },
-                selectionHasProtected = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.any { it.isProtected },
+                selectionHasProtected = topSelectionHasProtected,
                 selectionTotalCount = state.topPanel.selectedPaths.size,
                 otherPanelSelectionCount = state.bottomPanel.selectedPaths.size,
-                selectionDirCount = state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }.count { it.isDirectory },
+                selectionDirCount = topSelectionDirCount,
                 currentFolderSize = state.folderSizeCache[state.topPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
@@ -611,9 +624,8 @@ fun ExplorerScreen(
                 isQuickSendActive = state.quickSendState !is QuickSendState.Idle,
                 onProtectSelection = {
                     viewModel.setActivePanel(PanelId.BOTTOM)
-                    val paths = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.map { it.path }
-                    val hasProtected = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.any { it.isProtected }
-                    if (hasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
+                    val paths = bottomSelectedEntries.map { it.path }
+                    if (bottomSelectionHasProtected) viewModel.unprotectSelectedFiles(paths) else viewModel.protectSelectedFiles(paths)
                 },
                 onCompareSelection = {
                     viewModel.setActivePanel(PanelId.BOTTOM)
@@ -631,10 +643,10 @@ fun ExplorerScreen(
                     viewModel.setActivePanel(PanelId.BOTTOM)
                     viewModel.openSelectedWithExternalApp()
                 },
-                selectionHasProtected = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.any { it.isProtected },
+                selectionHasProtected = bottomSelectionHasProtected,
                 selectionTotalCount = state.bottomPanel.selectedPaths.size,
                 otherPanelSelectionCount = state.topPanel.selectedPaths.size,
-                selectionDirCount = state.bottomPanel.files.filter { it.path in state.bottomPanel.selectedPaths }.count { it.isDirectory },
+                selectionDirCount = bottomSelectionDirCount,
                 currentFolderSize = state.folderSizeCache[state.bottomPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
@@ -877,6 +889,17 @@ fun ExplorerScreen(
         if (state.quickSendState !is QuickSendState.Idle) {
             QuickSendOverlay(state = state.quickSendState)
         }
+
+        // Quick Receive progress overlay
+        val receiveProgress = state.quickReceiveProgress
+        if (receiveProgress != null) {
+            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                QuickReceiveOverlay(
+                    progress = receiveProgress,
+                    deviceName = state.quickReceiveDeviceName
+                )
+            }
+        }
     }
 
     ExplorerDialogs(
@@ -932,6 +955,8 @@ private fun ExplorerDialogs(
                 entries = dialog.entries,
                 totalSize = dialog.totalSize,
                 maxSizeMb = dialog.maxSizeMb,
+                deleteProgress = dialog.deleteProgress,
+                deleteCurrentName = dialog.deleteCurrentName,
                 onRestore = viewModel::restoreFromTrash,
                 onDeletePermanently = viewModel::deleteFromTrashPermanently,
                 onEmptyTrash = viewModel::emptyTrash,
