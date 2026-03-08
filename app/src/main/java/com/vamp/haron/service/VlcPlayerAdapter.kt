@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
@@ -39,6 +41,7 @@ class VlcPlayerAdapter(
     private var _isTransitioning: Boolean = false
 
     init {
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: initialized")
         vlcPlayer.setEventListener { event ->
             when (event.type) {
                 VlcMediaPlayer.Event.Playing -> {
@@ -99,6 +102,7 @@ class VlcPlayerAdapter(
     }
 
     fun setPlaylist(items: List<PlaylistHolder.PlaylistItem>, startIndex: Int) {
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: setPlaylist size=${items.size} startIndex=$startIndex")
         playlist = items
         currentIndex = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
         if (items.isNotEmpty()) {
@@ -119,6 +123,7 @@ class VlcPlayerAdapter(
 
         currentIndex = index
         val item = playlist.getOrNull(index) ?: return
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: playing item [$index] ${item.fileName}")
         val uri = if (item.filePath.startsWith("content://")) {
             Uri.parse(item.filePath)
         } else {
@@ -200,6 +205,7 @@ class VlcPlayerAdapter(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: ${if (playWhenReady) "play" else "pause"}")
         if (playWhenReady) {
             vlcPlayer.play()
         } else {
@@ -238,6 +244,7 @@ class VlcPlayerAdapter(
     }
 
     fun cleanup() {
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: cleanup")
         // Save current position before releasing
         val item = playlist.getOrNull(currentIndex)
         if (item != null) {

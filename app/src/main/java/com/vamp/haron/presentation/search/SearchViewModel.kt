@@ -16,6 +16,8 @@ import com.vamp.haron.domain.repository.SizeFilter
 import com.vamp.haron.domain.usecase.LoadPreviewUseCase
 import com.vamp.haron.domain.usecase.SearchFilesUseCase
 import com.vamp.haron.domain.model.PreviewData
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
@@ -147,14 +149,17 @@ class SearchViewModel @Inject constructor(
     }
 
     fun startBasicIndex() {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchVM: starting basic index")
         searchRepository.startIndexByMode(IndexMode.BASIC)
     }
 
     fun startMediaIndex() {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchVM: starting media index")
         searchRepository.startIndexByMode(IndexMode.MEDIA)
     }
 
     fun startVisualIndex() {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchVM: starting visual index")
         searchRepository.startIndexByMode(IndexMode.VISUAL)
     }
 
@@ -179,6 +184,7 @@ class SearchViewModel @Inject constructor(
                     }
                 }
                 .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "SearchVM: preview load failed for ${entity.name}: ${e.message}")
                     _uiState.update {
                         it.copy(previewDialog = it.previewDialog?.copy(
                             isLoading = false,
@@ -222,6 +228,10 @@ class SearchViewModel @Inject constructor(
         val state = _uiState.value
         val page = if (resetPage) 0 else state.currentPage + 1
 
+        if (state.query.isNotBlank()) {
+            EcosystemLogger.d(HaronConstants.TAG, "SearchVM: search query=\"${state.query}\" category=${state.category} inContent=${state.searchInContent} page=$page")
+        }
+
         searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true) }
 
@@ -235,15 +245,20 @@ class SearchViewModel @Inject constructor(
                 offset = page * PAGE_SIZE
             )
 
-            val results = searchFilesUseCase(filter)
-            _uiState.update { current ->
-                val allResults = if (resetPage) results else current.results + results
-                current.copy(
-                    results = allResults,
-                    isSearching = false,
-                    currentPage = page,
-                    hasMore = results.size == PAGE_SIZE
-                )
+            try {
+                val results = searchFilesUseCase(filter)
+                _uiState.update { current ->
+                    val allResults = if (resetPage) results else current.results + results
+                    current.copy(
+                        results = allResults,
+                        isSearching = false,
+                        currentPage = page,
+                        hasMore = results.size == PAGE_SIZE
+                    )
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SearchVM: search failed: ${e.message}")
+                _uiState.update { it.copy(isSearching = false) }
             }
         }
     }

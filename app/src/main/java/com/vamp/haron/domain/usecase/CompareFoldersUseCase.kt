@@ -1,5 +1,7 @@
 package com.vamp.haron.domain.usecase
 
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.ComparisonStatus
 import com.vamp.haron.domain.model.FolderComparisonEntry
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +18,7 @@ class CompareFoldersUseCase @Inject constructor() {
         onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }
     ): List<FolderComparisonEntry> =
         withContext(Dispatchers.IO) {
+            EcosystemLogger.d(HaronConstants.TAG, "CompareFoldersUseCase: comparing left=$leftPath, right=$rightPath")
             val leftDir = File(leftPath)
             val rightDir = File(rightPath)
 
@@ -24,8 +27,9 @@ class CompareFoldersUseCase @Inject constructor() {
 
             val allPaths = (leftMap.keys + rightMap.keys).sorted()
             val total = allPaths.size
+            EcosystemLogger.d(HaronConstants.TAG, "CompareFoldersUseCase: left=${leftMap.size} entries, right=${rightMap.size} entries, total=$total")
 
-            allPaths.mapIndexed { index, relPath ->
+            val results = allPaths.mapIndexed { index, relPath ->
                 onProgress(index + 1, total)
                 val leftFile = leftMap[relPath]
                 val rightFile = rightMap[relPath]
@@ -79,6 +83,12 @@ class CompareFoldersUseCase @Inject constructor() {
                     }
                 }
             }
+            val identical = results.count { it.status == ComparisonStatus.IDENTICAL }
+            val different = results.count { it.status == ComparisonStatus.DIFFERENT }
+            val leftOnly = results.count { it.status == ComparisonStatus.LEFT_ONLY }
+            val rightOnly = results.count { it.status == ComparisonStatus.RIGHT_ONLY }
+            EcosystemLogger.d(HaronConstants.TAG, "CompareFoldersUseCase: complete, identical=$identical, different=$different, leftOnly=$leftOnly, rightOnly=$rightOnly")
+            results
         }
 
     private fun collectRelativePaths(root: File): Map<String, File> {

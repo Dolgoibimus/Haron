@@ -1,5 +1,7 @@
 package com.vamp.haron.data.repository
 
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.cast.DlnaManager
 import com.vamp.haron.data.cast.GoogleCastManager
 import com.vamp.haron.data.cast.MiracastManager
@@ -20,6 +22,7 @@ class CastRepositoryImpl @Inject constructor(
 ) : CastRepository {
 
     override fun discoverCastDevices(): Flow<List<CastDevice>> {
+        EcosystemLogger.d(HaronConstants.TAG, "CastRepo: starting device discovery")
         return combine(
             miracastManager.discoverDisplays(),
             dlnaManager.discoverDevices()
@@ -27,16 +30,23 @@ class CastRepositoryImpl @Inject constructor(
     }
 
     override suspend fun castMedia(device: CastDevice, mediaUrl: String, mimeType: String) {
-        when (device.type) {
-            CastType.CHROMECAST -> {
-                googleCastManager.castMedia(mediaUrl, mimeType, title = "")
+        EcosystemLogger.d(HaronConstants.TAG, "CastRepo: castMedia type=${device.type} device=${device.name} mimeType=$mimeType")
+        try {
+            when (device.type) {
+                CastType.CHROMECAST -> {
+                    googleCastManager.castMedia(mediaUrl, mimeType, title = "")
+                }
+                CastType.MIRACAST -> {
+                    miracastManager.selectRoute(device.id)
+                }
+                CastType.DLNA -> {
+                    dlnaManager.castMedia(device.id, mediaUrl, mimeType, "")
+                }
             }
-            CastType.MIRACAST -> {
-                miracastManager.selectRoute(device.id)
-            }
-            CastType.DLNA -> {
-                dlnaManager.castMedia(device.id, mediaUrl, mimeType, "")
-            }
+            EcosystemLogger.d(HaronConstants.TAG, "CastRepo: castMedia started on ${device.name}")
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "CastRepo: castMedia failed: ${e.message}")
+            throw e
         }
     }
 
@@ -50,6 +60,7 @@ class CastRepositoryImpl @Inject constructor(
     }
 
     override fun disconnect() {
+        EcosystemLogger.d(HaronConstants.TAG, "CastRepo: disconnecting all cast devices")
         googleCastManager.disconnect()
         dlnaManager.disconnect()
     }

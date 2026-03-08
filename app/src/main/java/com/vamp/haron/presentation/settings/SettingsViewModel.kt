@@ -26,6 +26,8 @@ data class SettingsUiState(
     val hapticEnabled: Boolean = true,
     val marqueeEnabled: Boolean = true,
     val trashMaxSizeMb: Int = 500,
+    // Cast
+    val transcodeCacheTtlHours: Int = 24,
     // Security
     val appLockMethod: AppLockMethod = AppLockMethod.NONE,
     val isPinSet: Boolean = false,
@@ -58,6 +60,7 @@ class SettingsViewModel @Inject constructor(
             hapticEnabled = preferences.hapticEnabled,
             marqueeEnabled = preferences.marqueeEnabled,
             trashMaxSizeMb = preferences.trashMaxSizeMb,
+            transcodeCacheTtlHours = preferences.transcodeCacheTtlHours,
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
             hasBiometric = authManager.hasBiometricHardware() && authManager.isBiometricEnrolled(),
@@ -111,6 +114,11 @@ class SettingsViewModel @Inject constructor(
         val clamped = sizeMb.coerceIn(0, 5000)
         preferences.trashMaxSizeMb = clamped
         _state.update { it.copy(trashMaxSizeMb = clamped) }
+    }
+
+    fun setTranscodeCacheTtlHours(hours: Int) {
+        preferences.transcodeCacheTtlHours = hours
+        _state.update { it.copy(transcodeCacheTtlHours = hours) }
     }
 
     // --- Security ---

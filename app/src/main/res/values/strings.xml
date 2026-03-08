@@ -223,6 +223,15 @@
     <string name="trash_no_limit">No limit</string>
     <string name="trash_info">0 = no limit. When exceeded, oldest files are deleted automatically.</string>
 
+    <!-- Cast -->
+    <string name="cast_section">Cast</string>
+    <string name="transcode_cache_ttl_label">Transcode cache lifetime</string>
+    <string name="transcode_cache_ttl_1h">1 hour</string>
+    <string name="transcode_cache_ttl_6h">6 hours</string>
+    <string name="transcode_cache_ttl_12h">12 hours</string>
+    <string name="transcode_cache_ttl_24h">24 hours</string>
+    <string name="transcode_cache_ttl_hint">Transcoded videos are cached for faster re-casting</string>
+
     <!-- App manager -->
     <string name="app_manager_title">App Manager</string>
     <string name="search_apps">Search apps…</string>
@@ -1073,6 +1082,9 @@
     <string name="cast_browser_hint">Open this URL in a browser on any device in your network:</string>
     <string name="cast_copy_url">Copy URL</string>
     <string name="cast_url_copied">URL copied</string>
+    <string name="cast_media_channel_name">Cast playback</string>
+    <string name="cast_media_notification_text">Casting to %s</string>
+    <string name="cast_notification_disconnect">Disconnect</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">No Haron devices nearby</string>

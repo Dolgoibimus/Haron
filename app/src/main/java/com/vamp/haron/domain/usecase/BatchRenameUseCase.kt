@@ -1,7 +1,9 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.repository.FileRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -19,6 +21,7 @@ class BatchRenameUseCase @Inject constructor(
         if (renames.isEmpty()) {
             return Result.success(0)
         }
+        EcosystemLogger.d(HaronConstants.TAG, "BatchRenameUseCase: starting rename, count=${renames.size}")
         var successCount = 0
         val errors = mutableListOf<String>()
         for ((oldPath, newName) in renames) {
@@ -49,9 +52,11 @@ class BatchRenameUseCase @Inject constructor(
                     .onFailure { e -> errors.add("$currentName: ${e.message}") }
             }
         }
+        EcosystemLogger.d(HaronConstants.TAG, "BatchRenameUseCase: complete, success=$successCount, errors=${errors.size}")
         return if (errors.isEmpty() || successCount > 0) {
             Result.success(successCount)
         } else {
+            EcosystemLogger.e(HaronConstants.TAG, "BatchRenameUseCase: all renames failed, first error=${errors.first()}")
             Result.failure(Exception(appContext.getString(R.string.batch_rename_error, errors.first())))
         }
     }

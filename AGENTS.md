@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.52 (Phase 4, Batch 52)
+**Текущая версия:** 0.53 (Phase 4, Batch 53)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -18,22 +18,49 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-### ▶ Cast-система — доработки качества транскодирования
+### ▶ Batch 53 — HLS-транскодирование + прогрессивный каст ✅ проверено (каст работает)
+
+**Что сделано (Batch 53):**
+- Заменён Media3 Transformer на FFmpeg (`com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1`)
+- Кеш перенесён из `cacheDir` в `filesDir/transcode_cache/` — переживает смахивание и очистку кеша
+- Добавлена TTL-очистка кеша (настраивается в Настройках → Трансляция: 1ч / 6ч / 12ч / 24ч)
+- **HLS прогрессивный каст**: FFmpeg выводит HLS-сегменты (.ts) + плейлист (.m3u8), Chromecast начинает воспроизведение через ~30 сек (3 сегмента), пока транскод продолжается
+- Энкодер: приоритет `libx264` > `h264_mediacodec` > `mpeg4` (на устройстве используется h264_mediacodec)
+- HTTP-сервер: эндпоинт `/hls/{filename}` с правильными Content-Type (m3u8/ts) + CORS
+- Аудио: принудительный даунмикс в стерео (`-ac 2`) для совместимости с Chromecast
+- GOP: `-g 60` (ключевые кадры каждые 2 сек при 30fps)
+- HLS: `-hls_playlist_type event` + version 3 (совместимость с Chromecast)
+- При завершении транскода — автоматическая перезагрузка каста как VOD (STREAM_TYPE_BUFFERED) для перемотки
+- Удалены debug-элементы (`_debugCastInfo`, `audioStripped`)
+- Ручной `HaronWorkerFactory` вместо `@HiltWorker` (обход KSP бага Dagger 2.59.1)
+
+**Изменённые файлы:**
+- `app/build.gradle.kts` — убраны media3-transformer/effect, добавлен ffmpeg-kit-16kb, убран hilt-work/hilt-compiler
+- `domain/usecase/TranscodeVideoUseCase.kt` — полная переработка: HLS-выход, кеш HLS-директорий
+- `presentation/cast/CastViewModel.kt` — HLS-каст (live → VOD), убраны debug-поля
+- `data/transfer/HttpFileServer.kt` — HLS-эндпоинт вместо stream-live, CORS
+- `data/cast/GoogleCastManager.kt` — параметр streamType в castMedia()
+- `presentation/cast/components/MediaRemotePanel.kt` — убран синий фон транскода
+- `service/FileIndexWorker.kt` — ручная @AssistedFactory вместо @HiltWorker
+- `di/WorkerModule.kt` — новый файл, HaronWorkerFactory
+- `HaronApp.kt` — HaronWorkerFactory вместо HiltWorkerFactory
+- `data/datastore/HaronPreferences.kt` — добавлен `transcodeCacheTtlHours`
+- `presentation/settings/SettingsViewModel.kt` — TTL state + setter
+- `presentation/settings/SettingsScreen.kt` — секция "Трансляция" с RadioButton TTL
+- `res/values/strings.xml` + `res/values-ru/strings.xml` — строки для Cast-секции
 
 **Текущий статус Cast-системы:**
 - ✅ Каст видео/аудио на Chromecast — работает
 - ✅ Каст видео на DLNA — работает
-- ✅ Транскодирование AVI/MKV/etc → MP4 — работает (с артефактами, идёт улучшение)
-- ✅ Кеширование транскодов — работает, кеш сохраняется между сессиями
+- ✅ Транскодирование AVI/MKV → HLS через FFmpeg (h264_mediacodec + AAC stereo) — работает
+- ✅ Прогрессивный каст (воспроизведение до окончания транскода) — работает
+- ✅ Перемотка после завершения транскода (VOD reload) — работает
+- ⚠️ Стойкий кеш в filesDir — не проверено
+- ⚠️ TTL-очистка кеша — не проверено
+- ⚠️ Перемотка ВО ВРЕМЯ транскода — не работает (STREAM_TYPE_LIVE не поддерживает seek)
 - ✅ Зеркалирование экрана — работает через браузер (URL)
 - ✅ Инфо о файле — работает через браузер (URL)
-- ❌ Качество транскодирования — артефакты и дёрганье не уходят. Перепробовано: 8 Mbps VBR, highQualityTargeting, 8 Mbps CBR + Main Profile 4.1 + 1080p + 30fps. Аппаратный MediaCodec не справляется. Нужен FFmpeg
-- ⚠️ Debug элементы в CastOverlay: красный текст `"tp=$transcodePercent | $debugCastInfo"` — убрать после проверки
-
-**Следующий шаг:**
-1. Проверить качество транскодирования с `experimentalSetEnableHighQualityTargeting`
-2. Убрать debug элементы из CastOverlay
-3. Если артефакты остаются — попробовать ограничение разрешения до 1080p (`Presentation.createForHeight(1080)`)
+- ⚠️ Foreground Service для каста — не проверено (видео продолжает играть при закрытии, уведомление с play/pause и disconnect)
 
 ---
 
@@ -88,7 +115,7 @@
 ### Хотелки (после релиза):
 | Фича | Описание |
 |------|----------|
-| FFmpeg транскодинг | **ПРИОРИТЕТ** — Media3 Transformer даёт артефакты/дёрганье. Software encoder через FFmpeg — единственный надёжный вариант (+15-30 МБ к APK) |
+| Перемотка во время транскода | HLS live seek — перемотка видео на Chromecast пока транскодирование ещё идёт (STREAM_TYPE_LIVE не поддерживает seek, нужен ▶ Media Source Extensions или ▶ частичный VOD reload) |
 | Торрент-клиент | Встроенный торрент: последовательная загрузка + стрим на ТВ через Cast (libtorrent4j) |
 | Сетевой поток на Cast | Ввод URL видео (HTTP/HLS/DASH/m3u8) → трансляция на телевизор через Chromecast/DLNA без скачивания на телефон. IPTV-ссылки, видео с NAS, прямые эфиры — всё кидается на ТВ, телефон как пульт |
 | Вложенные архивы | tar.gz внутри ZIP — извлечь во temp, открыть как вложенный архив |
@@ -588,6 +615,45 @@
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 53 — HLS-транскодирование + прогрессивный каст ⚠️ не проверено
+
+**Проблема:** Media3 Transformer (аппаратный MediaCodec) даёт артефакты и дёрганье при транскодировании AVI/MKV→MP4. Chromecast не поддерживает mpeg4 кодек, chunked transfer не работает (Chromecast ждёт Content-Length).
+
+**Решение — HLS прогрессивный каст:**
+- FFmpeg (`ffmpeg-kit-16kb:6.1.1`) транскодирует видео в HLS-сегменты (.ts по 10 сек) + плейлист (.m3u8)
+- Приоритет энкодеров: `libx264` > `h264_mediacodec` > `mpeg4` (определяется через `-encoders`)
+- Параметры: `-profile:v high -level:v 4.1 -maxrate 8M -bufsize 16M -g 60 -r 30 -c:a aac -ac 2 -b:a 192k`
+- `-ac 2` обязательно — Chromecast не поддерживает многоканальный AAC (AC3 5.1 → AAC stereo)
+- `-g 60` — ключевые кадры каждые 2 сек (без этого h264_mediacodec ставит gop_size=1)
+- HLS version 3 (не 6!) — Chromecast отказывается загружать сегменты при version 6 (`independent_segments`)
+- `-hls_playlist_type event` — плейлист растёт, сегменты не удаляются
+
+**HTTP-сервер (HttpFileServer):**
+- Эндпоинт `/hls/{filename}` вместо старого `/stream-live`
+- Content-Type: `.m3u8` → `application/vnd.apple.mpegurl`, `.ts` → `video/mp2t`
+- CORS: `Access-Control-Allow-Origin: *` — Chromecast использует JS-based HLS плеер
+- `respondOutputStream(contentType = ct)` вместо `respondFile()` — иначе .m3u8 получает `application/octet-stream`
+
+**CastViewModel — потоковый каст:**
+- `readyToStream` (30 сек = 3 сегмента) → `castHls(live=true)` с `STREAM_TYPE_LIVE`
+- Завершение транскода → `reloadHlsAsVod()` с `STREAM_TYPE_BUFFERED` → перемотка работает
+- Reconnect: проверяет `file.isDirectory && File(file, "playlist.m3u8").exists()` для HLS-директорий
+
+**GoogleCastManager:**
+- Параметр `streamType` в `castMedia()` (default `STREAM_TYPE_BUFFERED`)
+- Живой HLS → `STREAM_TYPE_LIVE`, завершённый → `STREAM_TYPE_BUFFERED`
+
+**Кеш:**
+- `filesDir/transcode_cache/hls_<hash>/` — стойкий, переживает смахивание
+- TTL-очистка при каждом новом транскоде (настраивается: 1ч / 6ч / 12ч / 24ч)
+- Версия кеша в хеше: `q6` (инвалидация старого)
+
+**Дополнительно:**
+- Ручной `HaronWorkerFactory` вместо `@HiltWorker` (обход Dagger KSP бага `@AssistedFactory` + generic)
+- Убран debug: `_debugCastInfo`, `audioStripped`, синий фон транскода в MediaRemotePanel
+
+**Файлы:** `TranscodeVideoUseCase.kt`, `CastViewModel.kt`, `HttpFileServer.kt`, `GoogleCastManager.kt`, `MediaRemotePanel.kt`, `HaronApp.kt`, `FileIndexWorker.kt`, `WorkerModule.kt` (новый), `HaronPreferences.kt`, `SettingsViewModel.kt`, `SettingsScreen.kt`, `strings.xml` (EN+RU), `app/build.gradle.kts`
 
 ### Голосовые команды Level 1 + Level 2 ⚠️ не проверено
 
@@ -1256,6 +1322,18 @@
 ---
 
 ## Changelog
+
+### 0.53.0 — Batch 53 (Phase 4, v2.0)
+- HLS прогрессивный каст: FFmpeg выводит HLS-сегменты (.ts) + плейлист (.m3u8), Chromecast начинает воспроизведение через ~30 сек пока транскод продолжается
+- Замена Media3 Transformer на FFmpeg (`ffmpeg-kit-16kb:6.1.1`): энкодер h264_mediacodec/libx264, AAC stereo даунмикс, GOP 60
+- HTTP-сервер: эндпоинт `/hls/{filename}` с Content-Type (m3u8/ts) + CORS заголовки
+- HLS version 3 + `-hls_playlist_type event` для совместимости с Chromecast
+- Автоматическая перезагрузка каста как VOD (STREAM_TYPE_BUFFERED) после завершения транскода — перемотка работает
+- Стойкий кеш в `filesDir/transcode_cache/` — переживает смахивание и очистку кеша
+- TTL-очистка кеша: настраивается в Настройки → Трансляция (1ч / 6ч / 12ч / 24ч)
+- Ручной HaronWorkerFactory вместо @HiltWorker (обход KSP бага Dagger 2.59.1)
+- Убраны debug-элементы (`_debugCastInfo`, `audioStripped`, синий фон транскода)
+- Параметр `streamType` в `GoogleCastManager.castMedia()` (LIVE для HLS, BUFFERED для VOD)
 
 ### 0.41.0 — Batch 41 (Phase 4, v2.0)
 - Доверенные устройства: звёздочка на экране передачи, тап для переключения доверия

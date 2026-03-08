@@ -3,6 +3,8 @@ package com.vamp.haron.domain.usecase
 import android.content.Context
 import android.net.Uri
 import com.github.junrar.Archive
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.R
 import com.vamp.haron.domain.model.ArchiveEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -31,12 +33,14 @@ class BrowseArchiveUseCase @Inject constructor(
         try {
             val isContentUri = archivePath.startsWith("content://")
             val extension = archivePath.substringAfterLast('.').lowercase()
+            EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: opening type=$extension, virtualPath=$virtualPath")
             val entries = when (extension) {
                 "zip" -> browseZip(archivePath, virtualPath, isContentUri, password)
                 "7z" -> browse7z(archivePath, virtualPath, isContentUri, password)
                 "rar" -> browseRar(archivePath, virtualPath, isContentUri, password)
                 else -> emptyList()
             }
+            EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: found ${entries.size} entries")
             Result.success(entries)
         } catch (e: Exception) {
             val className = e.javaClass.simpleName
@@ -52,7 +56,10 @@ class BrowseArchiveUseCase @Inject constructor(
                     causeMsg.contains("encrypted", ignoreCase = true) ||
                     causeMsg.contains("password", ignoreCase = true) ->
                     Result.failure(IllegalStateException("encrypted"))
-                else -> Result.failure(e)
+                else -> {
+                    EcosystemLogger.e(HaronConstants.TAG, "BrowseArchiveUseCase: error — ${e.message}")
+                    Result.failure(e)
+                }
             }
         }
     }

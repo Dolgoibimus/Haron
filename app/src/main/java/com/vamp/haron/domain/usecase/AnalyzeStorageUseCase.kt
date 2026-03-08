@@ -3,7 +3,9 @@ package com.vamp.haron.domain.usecase
 import android.content.Context
 import android.os.Environment
 import android.os.StatFs
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileEntry
 import com.vamp.haron.domain.model.FileEntry
@@ -45,6 +47,7 @@ class AnalyzeStorageUseCase @Inject constructor(
 ) {
 
     operator fun invoke(): Flow<StorageAnalysis> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "AnalyzeStorageUseCase: starting storage analysis")
         val root = Environment.getExternalStorageDirectory()
         val statFs = StatFs(root.absolutePath)
         val totalSize = statFs.totalBytes
@@ -154,6 +157,7 @@ class AnalyzeStorageUseCase @Inject constructor(
             }
 
         // Final result
+        EcosystemLogger.d(HaronConstants.TAG, "AnalyzeStorageUseCase: complete, scanned=$scannedFiles files, categories=${sizeMap.size}")
         val categories = buildCategories(sizeMap, countMap, categoryIcons)
         emit(StorageAnalysis(
             totalSize = totalSize,

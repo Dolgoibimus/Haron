@@ -1,39 +1,19 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
-import android.media.MediaCodecInfo
-import android.media.MediaFormat
-import android.os.Handler
-import android.os.Looper
-import androidx.media3.common.Effect
-import androidx.media3.common.Format
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Presentation
-import androidx.media3.transformer.Codec
-import androidx.media3.transformer.Composition
-import androidx.media3.transformer.DefaultEncoderFactory
-import androidx.media3.transformer.EditedMediaItem
-import androidx.media3.transformer.Effects
-import androidx.media3.transformer.ExportException
-import androidx.media3.transformer.ExportResult
-import androidx.media3.transformer.ProgressHolder
-import androidx.media3.transformer.Transformer
-import androidx.media3.transformer.VideoEncoderSettings
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegSession
+import com.arthenica.ffmpegkit.FFprobeKit
+import com.arthenica.ffmpegkit.ReturnCode
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
+import com.vamp.haron.data.datastore.HaronPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import java.io.File
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import javax.inject.Inject
 
 data class TranscodeProgress(
@@ -41,34 +21,137 @@ data class TranscodeProgress(
     val outputPath: String? = null,
     val error: String? = null,
     val isComplete: Boolean = false,
-    val audioStripped: Boolean = false
+    val readyToStream: Boolean = false,
+    /** HLS directory path — if set, cast via HLS playlist URL */
+    val hlsDir: String? = null
 )
 
-@UnstableApi
 class TranscodeVideoUseCase @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val preferences: HaronPreferences
 ) {
-    private var currentTransformer: Transformer? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private var currentSession: FFmpegSession? = null
 
     private val chromecastFormats = setOf("mp4", "m4v", "webm")
+
+    /** Start HLS cast after 30 sec of content (3 segments × 10 sec) */
+    private val streamThresholdMs = 30_000L
+
+    private val cacheDir: File
+        get() = File(context.filesDir, "transcode_cache").also { it.mkdirs() }
 
     fun needsTranscode(filePath: String): Boolean {
         val ext = File(filePath).extension.lowercase()
         return ext !in chromecastFormats
     }
 
-    private fun getCacheFile(inputPath: String): File {
+    private fun getHlsDir(inputPath: String): File {
         val input = File(inputPath)
-        // Include quality version in hash so cache invalidates when settings change
-        val hash = "${input.name}_${input.length()}_q4".hashCode().toUInt().toString(16)
-        return File(context.cacheDir, "cast_transcode_$hash.mp4")
+        val hash = "${input.name}_${input.length()}_q6".hashCode().toUInt().toString(16)
+        return File(cacheDir, "hls_$hash")
+    }
+
+    private fun isHlsCached(hlsDir: File): Boolean {
+        val playlist = File(hlsDir, "playlist.m3u8")
+        if (!playlist.exists()) return false
+        return try {
+            playlist.readText().contains("#EXT-X-ENDLIST")
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun evictExpiredCache() {
+        val ttlMs = preferences.transcodeCacheTtlHours * 3600_000L
+        val now = System.currentTimeMillis()
+        cacheDir.listFiles()?.forEach { entry ->
+            val isOldMp4 = entry.isFile && entry.name.startsWith("cast_transcode_")
+            val isHls = entry.isDirectory && entry.name.startsWith("hls_")
+            if (isOldMp4 || isHls) {
+                if (now - entry.lastModified() > ttlMs) {
+                    entry.deleteRecursively()
+                    EcosystemLogger.d(HaronConstants.TAG, "Transcode cache evicted (TTL): ${entry.name}")
+                }
+            }
+        }
+    }
+
+    private fun getDurationMs(inputPath: String): Long {
+        return try {
+            val session = FFprobeKit.getMediaInformation(inputPath)
+            val info = session.mediaInformation
+            val durationStr = info?.duration
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: FFprobe duration=$durationStr")
+            if (durationStr == null) return 0L
+            (durationStr.toDouble() * 1000).toLong()
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: getDurationMs CRASH: ${e.javaClass.simpleName}: ${e.message}")
+            0L
+        }
+    }
+
+    /**
+     * Detect best available H.264 encoder.
+     * Priority: libx264 (software, best quality) > h264_mediacodec (hardware) > mpeg4 (fallback).
+     */
+    private enum class VideoEncoder { LIBX264, H264_MEDIACODEC, MPEG4 }
+
+    private val bestEncoder: VideoEncoder by lazy {
+        try {
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: detecting encoders...")
+            val session = FFmpegKit.execute("-encoders")
+            val output = session.output ?: ""
+            val result = when {
+                output.contains("libx264") -> VideoEncoder.LIBX264
+                output.contains("h264_mediacodec") -> VideoEncoder.H264_MEDIACODEC
+                else -> VideoEncoder.MPEG4
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: bestEncoder=$result")
+            result
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: encoder detection CRASH: ${e.javaClass.simpleName}: ${e.message}")
+            VideoEncoder.MPEG4
+        }
+    }
+
+    private fun buildHlsCommand(inputPath: String, hlsDir: File): String {
+        val segPattern = File(hlsDir, "seg_%05d.ts").absolutePath
+        val playlistPath = File(hlsDir, "playlist.m3u8").absolutePath
+
+        return buildString {
+            append("-i \"$inputPath\" ")
+            when (bestEncoder) {
+                VideoEncoder.LIBX264 -> {
+                    append("-c:v libx264 -profile:v high -level:v 4.1 ")
+                    append("-preset medium -crf 20 ")
+                    append("-maxrate 8M -bufsize 16M ")
+                }
+                VideoEncoder.H264_MEDIACODEC -> {
+                    append("-c:v h264_mediacodec ")
+                    append("-b:v 8M -maxrate 8M -bufsize 16M ")
+                }
+                VideoEncoder.MPEG4 -> {
+                    append("-c:v mpeg4 -q:v 3 ")
+                    append("-maxrate 8M -bufsize 16M ")
+                }
+            }
+            append("-vf \"scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease\" ")
+            append("-g 60 -r 30 ")
+            append("-c:a aac -ac 2 -b:a 192k ")
+            append("-f hls -hls_time 10 -hls_list_size 0 ")
+            append("-hls_segment_type mpegts ")
+            append("-hls_playlist_type event ")
+            append("-hls_segment_filename \"$segPattern\" ")
+            append("-y \"$playlistPath\"")
+        }
     }
 
     operator fun invoke(inputPath: String): Flow<TranscodeProgress> {
+        EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase.invoke ENTER: $inputPath")
         val ext = File(inputPath).extension.lowercase()
 
         if (ext in chromecastFormats) {
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: no transcode needed (ext=$ext)")
             return flowOf(
                 TranscodeProgress(
                     percent = 100,
@@ -78,409 +161,127 @@ class TranscodeVideoUseCase @Inject constructor(
             )
         }
 
-        // Check cache — don't re-transcode the same file
-        val cachedFile = getCacheFile(inputPath)
-        if (cachedFile.exists() && cachedFile.length() > 0) {
-            EcosystemLogger.d(HaronConstants.TAG, "Transcode cache hit: ${cachedFile.name} (${cachedFile.length() / 1024}KB)")
+        // Evict expired cache entries
+        try {
+            evictExpiredCache()
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: evictExpiredCache CRASH: ${e.message}")
+        }
+
+        // Check HLS cache
+        val hlsDir = getHlsDir(inputPath)
+        EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: hlsDir=${hlsDir.absolutePath}, cached=${isHlsCached(hlsDir)}")
+        if (isHlsCached(hlsDir)) {
+            EcosystemLogger.d(HaronConstants.TAG, "HLS cache hit: ${hlsDir.name}")
             return flowOf(
                 TranscodeProgress(
                     percent = 100,
-                    outputPath = cachedFile.absolutePath,
+                    hlsDir = hlsDir.absolutePath,
+                    readyToStream = true,
                     isComplete = true
                 )
             )
         }
 
+        // Clean partial HLS and prepare directory
+        hlsDir.deleteRecursively()
+        hlsDir.mkdirs()
+
+        EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: creating callbackFlow (HLS)")
         return callbackFlow {
-            var activeProgressRunnable: Runnable? = null
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: getting duration via FFprobe")
+            val durationMs = getDurationMs(inputPath)
 
-            fun stopPoller() {
-                activeProgressRunnable?.let { mainHandler.removeCallbacks(it) }
-                activeProgressRunnable = null
-            }
+            val cmd = buildHlsCommand(inputPath, hlsDir)
+            EcosystemLogger.d(HaronConstants.TAG, "Transcode start (HLS): $inputPath → ${hlsDir.name} (duration=${durationMs}ms, encoder=$bestEncoder)")
+            EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: FFmpeg cmd=$cmd")
 
-            fun startPoller(transformer: Transformer, outputPath: String) {
-                stopPoller()
-                val holder = ProgressHolder()
-                var lastLoggedPercent = -1
-                val runnable = object : Runnable {
-                    override fun run() {
-                        val state = transformer.getProgress(holder)
-
-                        val p = if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
-                            holder.progress
+            try {
+                val session = FFmpegKit.executeAsync(cmd,
+                    { session ->
+                        // Completion callback
+                        val returnCode = session.returnCode
+                        EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: completion callback, rc=$returnCode")
+                        if (ReturnCode.isSuccess(returnCode)) {
+                            val segCount = hlsDir.listFiles()?.count { it.extension == "ts" } ?: 0
+                            EcosystemLogger.d(HaronConstants.TAG, "Transcode complete: ${hlsDir.name} ($segCount segments)")
+                            trySend(
+                                TranscodeProgress(
+                                    percent = 100,
+                                    hlsDir = hlsDir.absolutePath,
+                                    readyToStream = true,
+                                    isComplete = true
+                                )
+                            )
+                        } else if (ReturnCode.isCancel(returnCode)) {
+                            EcosystemLogger.d(HaronConstants.TAG, "Transcode cancelled")
+                            hlsDir.deleteRecursively()
+                            trySend(
+                                TranscodeProgress(error = "Cancelled", isComplete = true)
+                            )
                         } else {
-                            0
-                        }
-
-                        if (p > 0 && p != lastLoggedPercent && (p % 10 == 0 || p == 1)) {
-                            EcosystemLogger.d(HaronConstants.TAG, "Transcode progress: $p%")
-                            lastLoggedPercent = p
-                        }
-
-                        trySend(
-                            TranscodeProgress(
-                                percent = p,
-                                outputPath = outputPath
-                            )
-                        )
-
-                        mainHandler.postDelayed(this, 500)
-                    }
-                }
-                activeProgressRunnable = runnable
-                mainHandler.postDelayed(runnable, 500)
-            }
-
-            fun startTransformer(removeAudio: Boolean) {
-                val outputFile = cachedFile
-                if (outputFile.exists()) outputFile.delete()
-                val outputPath = outputFile.absolutePath
-
-                EcosystemLogger.d(
-                    HaronConstants.TAG,
-                    "Transcode start: $inputPath → $outputPath (removeAudio=$removeAudio)"
-                )
-
-                val videoEncoderSettings = VideoEncoderSettings.Builder()
-                    .setBitrate(8_000_000) // 8 Mbps CBR — stable for Chromecast streaming
-                    .setBitrateMode(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-                    .setEncodingProfileLevel(
-                        MediaCodecInfo.CodecProfileLevel.AVCProfileMain,
-                        MediaCodecInfo.CodecProfileLevel.AVCLevel41
-                    )
-                    .build()
-
-                val baseEncoderFactory = DefaultEncoderFactory.Builder(context)
-                    .setRequestedVideoEncoderSettings(videoEncoderSettings)
-                    .build()
-
-                // Wrap to inject KEY_I_FRAME_INTERVAL = 2 seconds for frequent keyframes
-                val encoderFactory = CastEncoderFactory(baseEncoderFactory)
-
-                // Cap at 1080p/30fps — Chromecast H264 High Profile 4.1 max
-                val videoEffects = listOf<Effect>(
-                    Presentation.createForHeight(1080)
-                )
-
-                val transformer = Transformer.Builder(context)
-                    .setVideoMimeType(MimeTypes.VIDEO_H264)
-                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
-                    .setEncoderFactory(encoderFactory)
-                    .addListener(object : Transformer.Listener {
-                        override fun onCompleted(
-                            composition: Composition,
-                            exportResult: ExportResult
-                        ) {
-                            stopPoller()
-                            EcosystemLogger.d(
-                                HaronConstants.TAG,
-                                "Transcode complete: $outputPath (audioStripped=$removeAudio, size=${outputFile.length() / 1024}KB)"
-                            )
-
-                            // Move moov box to front on IO thread — heavy file I/O, would ANR on main
-                            this@callbackFlow.launch(Dispatchers.IO) {
-                                val fastStarted = fastStartMp4(outputFile)
-                                EcosystemLogger.d(HaronConstants.TAG, "FastStart: $fastStarted")
-
-                                trySend(
-                                    TranscodeProgress(
-                                        percent = 100,
-                                        outputPath = outputPath,
-                                        isComplete = true,
-                                        audioStripped = removeAudio
-                                    )
-                                )
-                                channel.close()
-                            }
-                        }
-
-                        override fun onError(
-                            composition: Composition,
-                            exportResult: ExportResult,
-                            exportException: ExportException
-                        ) {
-                            stopPoller()
-                            val errorMsg = exportException.message ?: "Transcode failed"
+                            val errorMsg = session.failStackTrace ?: "Transcode failed (rc=${returnCode?.value})"
                             EcosystemLogger.e(HaronConstants.TAG, "Transcode error: $errorMsg")
-
-                            val isAudioCodecError =
-                                errorMsg.contains("AudioDecoder", ignoreCase = true)
-                                    || errorMsg.contains("audio/ac3", ignoreCase = true)
-                                    || errorMsg.contains("audio/eac3", ignoreCase = true)
-                                    || errorMsg.contains("audio/vnd.dts", ignoreCase = true)
-                                    || errorMsg.contains("audio/mp4a-latm", ignoreCase = true)
-                                    || (exportException.errorCode == ExportException.ERROR_CODE_DECODER_INIT_FAILED
-                                    && errorMsg.contains("audio", ignoreCase = true))
-
-                            if (!removeAudio && isAudioCodecError) {
-                                EcosystemLogger.w(
-                                    HaronConstants.TAG,
-                                    "Audio codec not supported, retrying without audio"
-                                )
-                                if (outputFile.exists()) outputFile.delete()
-                                mainHandler.post { startTransformer(removeAudio = true) }
-                            } else {
-                                trySend(
-                                    TranscodeProgress(error = errorMsg, isComplete = true)
-                                )
-                                channel.close()
-                            }
+                            hlsDir.deleteRecursively()
+                            trySend(
+                                TranscodeProgress(error = errorMsg, isComplete = true)
+                            )
                         }
-                    })
-                    .build()
+                        channel.close()
+                    },
+                    { log ->
+                        EcosystemLogger.d("FFmpeg", log.message ?: "")
+                    },
+                    { statistics ->
+                        // Statistics callback — progress
+                        if (durationMs > 0) {
+                            val timeMs = statistics.time.toLong()
+                            val p = ((timeMs * 100) / durationMs).toInt().coerceIn(0, 99)
+                            val ready = timeMs >= streamThresholdMs
+                            trySend(
+                                TranscodeProgress(
+                                    percent = p,
+                                    hlsDir = hlsDir.absolutePath,
+                                    readyToStream = ready
+                                )
+                            )
+                        }
+                    }
+                )
 
-                currentTransformer = transformer
-
-                val mediaItem = MediaItem.fromUri("file://$inputPath")
-                val editedMediaItem = EditedMediaItem.Builder(mediaItem)
-                    .setRemoveAudio(removeAudio)
-                    .setEffects(Effects(emptyList(), videoEffects))
-                    .build()
-
-                try {
-                    transformer.start(editedMediaItem, outputPath)
-                    startPoller(transformer, outputPath)
-                } catch (e: Exception) {
-                    EcosystemLogger.e(
-                        HaronConstants.TAG,
-                        "Transcode start error: ${e.message}"
-                    )
-                    trySend(
-                        TranscodeProgress(
-                            error = e.message ?: "Failed to start transcode",
-                            isComplete = true
-                        )
-                    )
-                    channel.close()
-                }
+                currentSession = session
+                EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: session created, id=${session.sessionId}")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: FFmpegKit.executeAsync CRASH: ${e.javaClass.simpleName}: ${e.message}")
+                e.printStackTrace()
+                trySend(TranscodeProgress(error = "FFmpeg init failed: ${e.message}", isComplete = true))
+                channel.close()
             }
-
-            mainHandler.post { startTransformer(removeAudio = false) }
 
             awaitClose {
-                stopPoller()
-                mainHandler.post {
-                    try {
-                        currentTransformer?.cancel()
-                    } catch (_: Exception) { }
-                }
-                currentTransformer = null
+                try {
+                    currentSession?.cancel()
+                } catch (_: Exception) { }
+                currentSession = null
             }
         }
     }
 
     fun cancelTranscode() {
-        val transformer = currentTransformer ?: return
-        mainHandler.post {
-            try {
-                transformer.cancel()
-            } catch (_: Exception) { }
-        }
-        currentTransformer = null
+        try {
+            currentSession?.cancel()
+        } catch (_: Exception) { }
+        currentSession = null
     }
 
     fun cleanupTempFiles() {
-        context.cacheDir.listFiles()?.filter { it.name.startsWith("cast_transcode_") }?.forEach {
-            it.delete()
-            EcosystemLogger.d(HaronConstants.TAG, "Transcode cache deleted: ${it.name}")
-        }
-    }
-
-    /**
-     * Move moov box before mdat (qt-faststart algorithm).
-     * Chromecast needs moov at the front for progressive download playback.
-     *
-     * Steps:
-     * 1. Find top-level boxes (ftyp, moov, mdat)
-     * 2. If moov already before mdat → done
-     * 3. Read moov, update stco/co64 chunk offsets
-     * 4. Rewrite file: ftyp + moov + mdat
-     */
-    private fun fastStartMp4(file: File): Boolean {
-        if (!file.exists() || file.length() < 8) return false
-
-        try {
-            data class Box(val type: String, val offset: Long, val size: Long)
-
-            val raf = RandomAccessFile(file, "r")
-            val boxes = mutableListOf<Box>()
-            var pos = 0L
-            val fileLen = raf.length()
-            val header = ByteArray(8)
-
-            // Parse top-level boxes
-            while (pos < fileLen - 8) {
-                raf.seek(pos)
-                raf.readFully(header)
-                var boxSize = ByteBuffer.wrap(header, 0, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
-                val boxType = String(header, 4, 4)
-
-                if (boxSize == 1L) {
-                    // 64-bit extended size
-                    val ext = ByteArray(8)
-                    raf.readFully(ext)
-                    boxSize = ByteBuffer.wrap(ext).order(ByteOrder.BIG_ENDIAN).long
-                } else if (boxSize == 0L) {
-                    boxSize = fileLen - pos
-                }
-
-                if (boxSize < 8) break
-                boxes.add(Box(boxType, pos, boxSize))
-                pos += boxSize
-            }
-
-            val moov = boxes.find { it.type == "moov" }
-            val mdat = boxes.find { it.type == "mdat" }
-
-            if (moov == null || mdat == null) {
-                raf.close()
-                EcosystemLogger.w(HaronConstants.TAG, "FastStart: moov or mdat not found")
-                return false
-            }
-
-            if (moov.offset < mdat.offset) {
-                raf.close()
-                EcosystemLogger.d(HaronConstants.TAG, "FastStart: moov already before mdat")
-                return true
-            }
-
-            // Read moov data
-            val moovData = ByteArray(moov.size.toInt())
-            raf.seek(moov.offset)
-            raf.readFully(moovData)
-
-            // Calculate offset delta: moov will be placed right after ftyp,
-            // shifting mdat forward by moov.size
-            val moovSize = moov.size
-
-            // Update stco and co64 chunk offsets inside moov
-            updateChunkOffsets(moovData, moovSize)
-
-            // Build new file: boxes before mdat + moov + mdat + boxes after mdat (except moov)
-            val tmpFile = File(file.parent, file.name + ".tmp")
-            val out = RandomAccessFile(tmpFile, "rw")
-
-            // Write boxes that come before mdat (ftyp, etc.)
-            for (box in boxes) {
-                if (box.type == "moov") continue
-                if (box.type == "mdat") break
-                val data = ByteArray(box.size.toInt())
-                raf.seek(box.offset)
-                raf.readFully(data)
-                out.write(data)
-            }
-
-            // Write moov (with updated offsets)
-            out.write(moovData)
-
-            // Write mdat and everything after it (except moov)
-            val buffer = ByteArray(65536)
-            for (box in boxes) {
-                if (box.offset < mdat.offset) continue
-                if (box.type == "moov") continue
-                raf.seek(box.offset)
-                var remaining = box.size
-                while (remaining > 0) {
-                    val toRead = minOf(remaining, buffer.size.toLong()).toInt()
-                    val read = raf.read(buffer, 0, toRead)
-                    if (read <= 0) break
-                    out.write(buffer, 0, read)
-                    remaining -= read
-                }
-            }
-
-            out.close()
-            raf.close()
-
-            // Replace original with faststarted version
-            if (tmpFile.length() > 0) {
-                file.delete()
-                tmpFile.renameTo(file)
-                EcosystemLogger.d(HaronConstants.TAG, "FastStart: moov moved to front (${moovSize / 1024}KB)")
-                return true
-            } else {
-                tmpFile.delete()
-                return false
-            }
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "FastStart error: ${e.message}")
-            return false
-        }
-    }
-
-    /** Scan moov data for stco/co64 boxes and add offset delta to all chunk offsets */
-    private fun updateChunkOffsets(moovData: ByteArray, delta: Long) {
-        var pos = 8 // skip moov header
-        val len = moovData.size
-
-        fun scanContainer(start: Int, end: Int) {
-            var p = start
-            while (p < end - 8) {
-                val boxSize = ByteBuffer.wrap(moovData, p, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
-                if (boxSize < 8 || p + boxSize > end) break
-                val boxType = String(moovData, p + 4, 4)
-
-                when (boxType) {
-                    "trak", "mdia", "minf", "stbl" -> {
-                        scanContainer(p + 8, (p + boxSize).toInt())
-                    }
-                    "stco" -> {
-                        // version(1) + flags(3) + entry_count(4)
-                        val dataStart = p + 8
-                        val entryCount = ByteBuffer.wrap(moovData, dataStart + 4, 4)
-                            .order(ByteOrder.BIG_ENDIAN).int
-                        for (i in 0 until entryCount) {
-                            val off = dataStart + 8 + i * 4
-                            val oldVal = ByteBuffer.wrap(moovData, off, 4)
-                                .order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
-                            val newVal = oldVal + delta
-                            ByteBuffer.wrap(moovData, off, 4)
-                                .order(ByteOrder.BIG_ENDIAN).putInt(newVal.toInt())
-                        }
-                    }
-                    "co64" -> {
-                        val dataStart = p + 8
-                        val entryCount = ByteBuffer.wrap(moovData, dataStart + 4, 4)
-                            .order(ByteOrder.BIG_ENDIAN).int
-                        for (i in 0 until entryCount) {
-                            val off = dataStart + 8 + i * 8
-                            val oldVal = ByteBuffer.wrap(moovData, off, 8)
-                                .order(ByteOrder.BIG_ENDIAN).long
-                            ByteBuffer.wrap(moovData, off, 8)
-                                .order(ByteOrder.BIG_ENDIAN).putLong(oldVal + delta)
-                        }
-                    }
-                }
-                p += boxSize.toInt()
+        cacheDir.listFiles()?.forEach { entry ->
+            val isOldMp4 = entry.isFile && entry.name.startsWith("cast_transcode_")
+            val isHls = entry.isDirectory && entry.name.startsWith("hls_")
+            if (isOldMp4 || isHls) {
+                entry.deleteRecursively()
+                EcosystemLogger.d(HaronConstants.TAG, "Transcode cache deleted: ${entry.name}")
             }
         }
-
-        scanContainer(pos, len)
     }
-}
-
-/**
- * Encoder factory wrapper that caps frame rate to 30fps for Chromecast playback.
- * DefaultEncoderFactory already sets KEY_I_FRAME_INTERVAL = 1s internally.
- * Stable 30fps without drops looks better than jerky 60fps on Chromecast.
- */
-@UnstableApi
-private class CastEncoderFactory(
-    private val delegate: Codec.EncoderFactory
-) : Codec.EncoderFactory {
-
-    override fun createForAudioEncoding(format: Format): Codec =
-        delegate.createForAudioEncoding(format)
-
-    override fun createForVideoEncoding(format: Format): Codec {
-        val cappedFormat = if (format.frameRate > 30f) {
-            format.buildUpon().setFrameRate(30f).build()
-        } else {
-            format
-        }
-        return delegate.createForVideoEncoding(cappedFormat)
-    }
-
-    override fun videoNeedsEncoding(): Boolean = true
 }

@@ -48,6 +48,8 @@ android {
             // libaums ships native .so with 4KB alignment — incompatible with 16KB page size requirement.
             // We use Android USB Host API (not native libusb), so these are not needed.
             excludes += listOf("**/libusb-lib.so", "**/liberrno-lib.so")
+            // VLC and ffmpeg-kit both ship libc++_shared.so — pick first to avoid conflict
+            pickFirsts += "**/libc++_shared.so"
         }
     }
 }
@@ -86,9 +88,8 @@ dependencies {
     // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
     implementation("org.videolan.android:libvlc-all:3.6.5")
 
-    // Media3 Transformer (video transcoding for Chromecast — AVI/MKV/WMV → MP4)
-    implementation("androidx.media3:media3-transformer:1.5.1")
-    implementation("androidx.media3:media3-effect:1.5.1")
+    // FFmpeg (video transcoding for Chromecast — AVI/MKV/WMV → MP4)
+    implementation("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
 
     // Room
     implementation("androidx.room:room-runtime:2.7.1")
@@ -97,8 +98,7 @@ dependencies {
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.10.0")
-    implementation("androidx.hilt:hilt-work:1.2.0")
-    ksp("androidx.hilt:hilt-compiler:1.2.0")
+    // hilt-work/hilt-compiler removed — manual WorkerFactory avoids KSP bug with generic @AssistedFactory
 
     // ML Kit Image Labeling + OCR Text Recognition
     implementation("com.google.mlkit:image-labeling:17.0.9")

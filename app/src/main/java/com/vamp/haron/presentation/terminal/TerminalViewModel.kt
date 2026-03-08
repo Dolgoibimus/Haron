@@ -12,6 +12,8 @@ import com.vamp.haron.data.terminal.SshSessionManager
 import com.vamp.haron.data.terminal.TabCompletionEngine
 import android.content.SharedPreferences
 import com.jcraft.jsch.JSchException
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
@@ -104,6 +106,7 @@ class TerminalViewModel @Inject constructor(
     fun executeCommand(input: String) {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
+        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: execute cmd=${trimmed.take(80)}, sshMode=${_state.value.sshMode}")
 
         // Clear completions
         _state.update { it.copy(completions = emptyList()) }
@@ -309,6 +312,8 @@ class TerminalViewModel @Inject constructor(
         val host = _state.value.pendingSshHost
         val port = _state.value.pendingSshPort
 
+        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connect $user@$host:$port")
+
         _state.update {
             it.copy(
                 showPasswordDialog = false,
@@ -341,9 +346,11 @@ class TerminalViewModel @Inject constructor(
                     )
                 }
 
+                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connected to $user@$host:$port")
                 appendLine(TerminalLine("Connected to $user@$host. Type 'exit' to disconnect.", isCommand = true))
                 startSshReader()
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: SSH connect failed $user@$host:$port — ${e.message}")
                 _state.update {
                     it.copy(
                         sshConnecting = false,
@@ -419,6 +426,7 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun disconnectSsh(showMessage: Boolean = true) {
+        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH disconnect ${_state.value.sshUser}@${_state.value.sshHost}")
         sshReaderJob?.cancel()
         sshReaderJob = null
         sshManager.disconnect()
@@ -582,6 +590,7 @@ class TerminalViewModel @Inject constructor(
                     lines
                 }
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: external cmd error — ${e.message}")
                 listOf(TerminalLine("Error: ${e.message}", isError = true))
             }
         }

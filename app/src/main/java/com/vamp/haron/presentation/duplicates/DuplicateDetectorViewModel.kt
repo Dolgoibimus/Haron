@@ -82,6 +82,7 @@ class DuplicateDetectorViewModel @Inject constructor(
     }
 
     fun startScan() {
+        EcosystemLogger.d(HaronConstants.TAG, "DuplicateDetectorVM: scan started")
         _state.update {
             it.copy(
                 isScanning = true,
@@ -99,6 +100,7 @@ class DuplicateDetectorViewModel @Inject constructor(
             findDuplicatesUseCase().collect { progress ->
                 _state.update { st ->
                     if (progress.isComplete) {
+                        EcosystemLogger.d(HaronConstants.TAG, "DuplicateDetectorVM: scan complete, groups=${progress.groups.size}, files=${progress.groups.sumOf { it.files.size }}")
                         st.copy(
                             isScanning = false,
                             progress = progress,
@@ -432,6 +434,7 @@ class DuplicateDetectorViewModel @Inject constructor(
         val paths = _state.value.selectedPaths.toList()
         if (paths.isEmpty()) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "DuplicateDetectorVM: deleteSelected count=${paths.size}")
         _state.update { it.copy(isDeleting = true) }
 
         viewModelScope.launch {
@@ -448,6 +451,7 @@ class DuplicateDetectorViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "Delete duplicate error: ${e.message}")
                 }
             }
+            EcosystemLogger.d(HaronConstants.TAG, "DuplicateDetectorVM: deleted $deleted/${paths.size} duplicates")
             _toastMessage.tryEmit(appContext.getString(R.string.duplicates_deleted_format, deleted))
             _state.update { st ->
                 val updatedGroups = st.groups.mapNotNull { group ->

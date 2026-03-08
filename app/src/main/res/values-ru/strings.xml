@@ -223,6 +223,15 @@
     <string name="trash_no_limit">Без лимита</string>
     <string name="trash_info">0 = без лимита. При превышении старые файлы удаляются автоматически.</string>
 
+    <!-- Cast -->
+    <string name="cast_section">Трансляция</string>
+    <string name="transcode_cache_ttl_label">Время хранения кеша транскодирования</string>
+    <string name="transcode_cache_ttl_1h">1 час</string>
+    <string name="transcode_cache_ttl_6h">6 часов</string>
+    <string name="transcode_cache_ttl_12h">12 часов</string>
+    <string name="transcode_cache_ttl_24h">24 часа</string>
+    <string name="transcode_cache_ttl_hint">Перекодированные видео сохраняются для быстрого повторного каста</string>
+
     <!-- App manager -->
     <string name="app_manager_title">Менеджер приложений</string>
     <string name="search_apps">Поиск приложений…</string>
@@ -1073,6 +1082,9 @@
     <string name="cast_browser_hint">Откройте эту ссылку в браузере на любом устройстве в сети:</string>
     <string name="cast_copy_url">Скопировать ссылку</string>
     <string name="cast_url_copied">Ссылка скопирована</string>
+    <string name="cast_media_channel_name">Воспроизведение на ТВ</string>
+    <string name="cast_media_notification_text">Трансляция на %s</string>
+    <string name="cast_notification_disconnect">Отключить</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">Нет устройств Haron поблизости</string>

@@ -12,6 +12,8 @@ import net.lingala.zip4j.model.enums.AesKeyStrength
 import net.lingala.zip4j.model.enums.CompressionMethod
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import net.lingala.zip4j.progress.ProgressMonitor
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import java.io.File
 import javax.inject.Inject
 
@@ -33,6 +35,7 @@ class CreateZipUseCase @Inject constructor() {
         val sources = sourcePaths.map { File(it) }
         val allFiles = collectFiles(sources)
         val total = allFiles.size
+        EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: starting zip, files=$total, output=$outputPath, split=${splitSizeMb}MB")
 
         val zipFile = ZipFile(outputPath)
         if (!password.isNullOrEmpty()) {
@@ -90,8 +93,12 @@ class CreateZipUseCase @Inject constructor() {
             }
 
             if (monitor.result == ProgressMonitor.Result.ERROR) {
-                throw monitor.exception ?: Exception("ZIP creation error")
+                val ex = monitor.exception ?: Exception("ZIP creation error")
+                EcosystemLogger.e(HaronConstants.TAG, "CreateZipUseCase: split zip failed — ${ex.message}")
+                throw ex
             }
+            val outputSize = File(outputPath).length()
+            EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: split zip complete, outputSize=$outputSize")
             emit(ZipProgress(total, total, "", isComplete = true))
         } else {
             // Non-split — add files one by one for exact per-file progress
@@ -102,6 +109,8 @@ class CreateZipUseCase @Inject constructor() {
                 }
                 zipFile.addFile(file, fileParams)
             }
+            val outputSize = File(outputPath).length()
+            EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: zip complete, outputSize=$outputSize")
             emit(ZipProgress(total, total, "", isComplete = true))
         }
     }.flowOn(Dispatchers.IO)

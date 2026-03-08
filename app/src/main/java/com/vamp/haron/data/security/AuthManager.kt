@@ -5,7 +5,9 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.domain.model.AppLockMethod
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,17 +27,25 @@ class AuthManager @Inject constructor(
 
     fun verifyPin(pin: String): Boolean {
         val stored = preferences.pinHash ?: return false
-        return hashPin(pin) == stored
+        val result = hashPin(pin) == stored
+        if (result) {
+            EcosystemLogger.d(HaronConstants.TAG, "AuthManager: PIN verification succeeded")
+        } else {
+            EcosystemLogger.w(HaronConstants.TAG, "AuthManager: PIN verification failed")
+        }
+        return result
     }
 
     fun setPin(pin: String) {
         preferences.pinHash = hashPin(pin)
         preferences.pinLength = pin.length
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: PIN set (length=${pin.length})")
     }
 
     fun removePin() {
         preferences.pinHash = null
         preferences.pinLength = 4
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: PIN removed")
     }
 
     fun getPinLength(): Int = preferences.pinLength
@@ -55,14 +65,17 @@ class AuthManager @Inject constructor(
             val executor = ContextCompat.getMainExecutor(activity)
             val callback = object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    EcosystemLogger.d(HaronConstants.TAG, "AuthManager: biometric authentication succeeded")
                     if (cont.isActive) cont.resume(Result.success(true))
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    EcosystemLogger.e(HaronConstants.TAG, "AuthManager: biometric error code=$errorCode: $errString")
                     if (cont.isActive) cont.resume(Result.failure(Exception(errString.toString())))
                 }
 
                 override fun onAuthenticationFailed() {
+                    EcosystemLogger.w(HaronConstants.TAG, "AuthManager: biometric authentication failed (retry possible)")
                     // Don't resume — user can retry
                 }
             }
@@ -80,6 +93,7 @@ class AuthManager @Inject constructor(
         AppLockMethod.entries.getOrElse(preferences.appLockMethod) { AppLockMethod.NONE }
 
     fun setAppLockMethod(method: AppLockMethod) {
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: lock method changed to $method")
         preferences.appLockMethod = method.ordinal
     }
 
@@ -88,6 +102,7 @@ class AuthManager @Inject constructor(
     fun setSecurityQuestion(question: String, answer: String) {
         preferences.securityQuestion = question
         preferences.securityAnswerHash = hashAnswer(answer)
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: security question set")
     }
 
     fun getSecurityQuestion(): String? = preferences.securityQuestion
@@ -96,13 +111,19 @@ class AuthManager @Inject constructor(
 
     fun verifySecurityAnswer(answer: String): Boolean {
         val stored = preferences.securityAnswerHash ?: return false
-        return hashAnswer(answer) == stored
+        val result = hashAnswer(answer) == stored
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: security answer verification ${if (result) "succeeded" else "failed"}")
+        return result
     }
 
     fun resetPinViaSecurityAnswer(answer: String): Boolean {
-        if (!verifySecurityAnswer(answer)) return false
+        if (!verifySecurityAnswer(answer)) {
+            EcosystemLogger.w(HaronConstants.TAG, "AuthManager: PIN reset via security answer failed")
+            return false
+        }
         removePin()
         setAppLockMethod(AppLockMethod.NONE)
+        EcosystemLogger.d(HaronConstants.TAG, "AuthManager: PIN reset via security answer succeeded")
         return true
     }
 

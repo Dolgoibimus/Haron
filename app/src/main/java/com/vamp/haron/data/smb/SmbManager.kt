@@ -16,6 +16,7 @@ import com.rapid7.client.dcerpc.mssrvs.ServerService
 import com.rapid7.client.dcerpc.mssrvs.dto.NetShareInfo0
 import com.rapid7.client.dcerpc.transport.RPCTransport
 import com.rapid7.client.dcerpc.transport.SMBTransportFactories
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -71,6 +72,7 @@ class SmbManager @Inject constructor(
             Security.removeProvider("BC")
             Security.insertProviderAt(BouncyCastleProvider(), 1)
         }
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: initialized, BouncyCastle provider configured")
     }
 
     private val connections = ConcurrentHashMap<String, SmbConnection>()
@@ -79,6 +81,7 @@ class SmbManager @Inject constructor(
     suspend fun connect(host: String, port: Int, credential: SmbCredential): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: connecting to $host:$port user=${credential.username}")
                 disconnect(host)
                 val conn = smbClient.connect(host, port)
                 val authCtx = AuthenticationContext(
@@ -88,8 +91,10 @@ class SmbManager @Inject constructor(
                 )
                 val session = conn.authenticate(authCtx)
                 connections[host] = SmbConnection(smbClient, conn, session, credential)
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: connected to $host")
                 Result.success(Unit)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: connect failed to $host: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -97,14 +102,17 @@ class SmbManager @Inject constructor(
     suspend fun connectAsGuest(host: String, port: Int): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: connecting as guest to $host:$port")
                 disconnect(host)
                 val conn = smbClient.connect(host, port)
                 // Use empty credentials (Guest) instead of anonymous() to avoid null session key
                 val guestCtx = AuthenticationContext("Guest", "".toCharArray(), "")
                 val session = conn.authenticate(guestCtx)
                 connections[host] = SmbConnection(smbClient, conn, session, null)
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: guest connected to $host")
                 Result.success(Unit)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: guest connect failed to $host: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -112,6 +120,7 @@ class SmbManager @Inject constructor(
     suspend fun listShares(host: String): Result<List<SmbShareInfo>> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: listing shares on $host")
                 val smbConn = getConnection(host)
                     ?: return@withContext Result.failure(IllegalStateException("Not connected"))
                 smbConn.lastUsed = System.currentTimeMillis()
@@ -124,8 +133,10 @@ class SmbManager @Inject constructor(
                     .map { SmbShareInfo(name = it.netName, type = 0) }
                     .filter { !it.name.endsWith("$") }
 
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: found ${filtered.size} shares on $host")
                 Result.success(filtered)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: listShares failed on $host: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -154,13 +165,16 @@ class SmbManager @Inject constructor(
                     }
                     .sortedWith(compareByDescending<SmbFileInfo> { it.isDirectory }.thenBy { it.name.lowercase() })
 
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: listed ${files.size} files in $share/$dirPath")
                 Result.success(files)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: listFiles failed in $share/$path: ${e.message}")
                 Result.failure(e)
             }
         }
 
     fun downloadFile(host: String, share: String, remotePath: String, localDest: File): Flow<SmbTransferProgress> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: download started $share/$remotePath -> ${localDest.name}")
         val diskShare = getOrOpenShare(host, share)
             ?: throw IllegalStateException("Not connected")
 
@@ -190,9 +204,11 @@ class SmbManager @Inject constructor(
             }
         }
         fileHandle.close()
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: download completed $fileName ($totalSize bytes)")
     }.flowOn(Dispatchers.IO)
 
     fun uploadFile(host: String, share: String, remotePath: String, localSrc: File): Flow<SmbTransferProgress> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: upload started ${localSrc.name} -> $share/$remotePath")
         val diskShare = getOrOpenShare(host, share)
             ?: throw IllegalStateException("Not connected")
 
@@ -221,16 +237,20 @@ class SmbManager @Inject constructor(
             }
         }
         fileHandle.close()
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: upload completed $fileName ($totalSize bytes)")
     }.flowOn(Dispatchers.IO)
 
     suspend fun createDirectory(host: String, share: String, path: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: creating directory $share/$path")
                 val diskShare = getOrOpenShare(host, share)
                     ?: return@withContext Result.failure(IllegalStateException("Not connected"))
                 diskShare.mkdir(path)
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: directory created $share/$path")
                 Result.success(Unit)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: createDirectory failed $share/$path: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -238,6 +258,7 @@ class SmbManager @Inject constructor(
     suspend fun delete(host: String, share: String, path: String, isDirectory: Boolean): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: deleting ${if (isDirectory) "dir" else "file"} $share/$path")
                 val diskShare = getOrOpenShare(host, share)
                     ?: return@withContext Result.failure(IllegalStateException("Not connected"))
                 if (isDirectory) {
@@ -245,8 +266,10 @@ class SmbManager @Inject constructor(
                 } else {
                     diskShare.rm(path)
                 }
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: deleted $share/$path")
                 Result.success(Unit)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: delete failed $share/$path: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -254,6 +277,7 @@ class SmbManager @Inject constructor(
     suspend fun rename(host: String, share: String, oldPath: String, newName: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: renaming $share/$oldPath -> $newName")
                 val diskShare = getOrOpenShare(host, share)
                     ?: return@withContext Result.failure(IllegalStateException("Not connected"))
                 val parentDir = oldPath.substringBeforeLast("\\", "")
@@ -269,13 +293,16 @@ class SmbManager @Inject constructor(
                 )
                 fileHandle.rename(newPath)
                 fileHandle.close()
+                EcosystemLogger.d(HaronConstants.TAG, "SmbManager: renamed to $newName")
                 Result.success(Unit)
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbManager: rename failed $share/$oldPath: ${e.message}")
                 Result.failure(e)
             }
         }
 
     fun disconnect(host: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnecting from $host")
         val shareKeysToRemove = openShares.keys.filter { it.startsWith("$host/") }
         shareKeysToRemove.forEach { key ->
             try { openShares.remove(key)?.close() } catch (_: Exception) {}
@@ -284,9 +311,11 @@ class SmbManager @Inject constructor(
             try { conn.session.close() } catch (_: Exception) {}
             try { conn.connection.close() } catch (_: Exception) {}
         }
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnected from $host")
     }
 
     fun disconnectAll() {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnecting all (${connections.size} connections)")
         val hosts = connections.keys.toList()
         hosts.forEach { disconnect(it) }
     }
@@ -302,6 +331,7 @@ class SmbManager @Inject constructor(
     }
 
     suspend fun autoReconnect(host: String, port: Int): Result<Unit> {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: auto-reconnecting to $host:$port")
         val conn = connections[host]
         val savedCred = conn?.credential ?: credentialStore.load(host)
         return if (savedCred != null) {

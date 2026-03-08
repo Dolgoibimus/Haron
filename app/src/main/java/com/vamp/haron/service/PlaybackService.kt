@@ -3,6 +3,8 @@ package com.vamp.haron.service
 import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.Player
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -32,6 +34,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        EcosystemLogger.d(HaronConstants.TAG, "PlaybackService: onCreate")
         instance = this
 
         libVlc = LibVLC(this, arrayListOf(
@@ -119,6 +122,7 @@ class PlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady) {
+            EcosystemLogger.d(HaronConstants.TAG, "PlaybackService: task removed, stopping service")
             stopSelf()
         }
     }
@@ -127,6 +131,7 @@ class PlaybackService : MediaSessionService() {
     fun getAdapter(): VlcPlayerAdapter? = adapter
 
     override fun onDestroy() {
+        EcosystemLogger.d(HaronConstants.TAG, "PlaybackService: onDestroy")
         instance = null
         mediaSession?.release()
         mediaSession = null

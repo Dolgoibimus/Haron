@@ -76,6 +76,7 @@ class MoveToTrashUseCaseTest {
         override suspend fun getTrashEntries() = Result.success(emptyList<TrashEntry>())
         override suspend fun restoreFromTrash(ids: List<String>) = Result.success(0)
         override suspend fun deleteFromTrash(ids: List<String>) = Result.success(0)
+        override suspend fun deleteFromTrashWithProgress(ids: List<String>, onProgress: suspend (Int, Int, String) -> Unit) = Result.success(0)
         override suspend fun emptyTrash() = Result.success(0)
         override suspend fun cleanExpired() = Result.success(0)
         override suspend fun getTrashSize() = 0L

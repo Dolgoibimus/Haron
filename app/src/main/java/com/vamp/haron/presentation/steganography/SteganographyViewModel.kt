@@ -11,6 +11,8 @@ import com.vamp.haron.domain.model.StegoPhase
 import com.vamp.haron.domain.model.StegoProgress
 import com.vamp.haron.domain.model.StegoResult
 import com.vamp.haron.domain.repository.SteganographyRepository
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -98,6 +100,7 @@ class SteganographyViewModel @Inject constructor(
         val s = _state.value
         if (s.carrierPath.isEmpty() || s.payloadPath.isEmpty()) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "StegoVM: hide payload carrier=${s.carrierName} payload=${s.payloadName}")
         _state.update { it.copy(isProcessing = true) }
 
         viewModelScope.launch {
@@ -108,21 +111,28 @@ class SteganographyViewModel @Inject constructor(
                 ?: Environment.getExternalStorageDirectory().absolutePath
             val outputPath = File(outputDir, outputName).absolutePath
 
-            stegoRepository.hidePayload(s.carrierPath, s.payloadPath, outputPath)
-                .collect { progress ->
-                    _state.update { it.copy(progress = progress) }
-                }
+            try {
+                stegoRepository.hidePayload(s.carrierPath, s.payloadPath, outputPath)
+                    .collect { progress ->
+                        _state.update { it.copy(progress = progress) }
+                    }
 
-            val finalState = _state.value.progress
-            _state.update { it.copy(isProcessing = false) }
+                val finalState = _state.value.progress
+                _state.update { it.copy(isProcessing = false) }
 
-            if (finalState.phase == StegoPhase.DONE) {
-                _toastMessage.tryEmit(appContext.getString(R.string.stego_hidden_success))
-                _state.update {
-                    it.copy(resultMessage = appContext.getString(R.string.stego_output_file, outputPath))
+                if (finalState.phase == StegoPhase.DONE) {
+                    EcosystemLogger.d(HaronConstants.TAG, "StegoVM: hide complete output=$outputPath")
+                    _toastMessage.tryEmit(appContext.getString(R.string.stego_hidden_success))
+                    _state.update {
+                        it.copy(resultMessage = appContext.getString(R.string.stego_output_file, outputPath))
+                    }
+                } else if (finalState.phase == StegoPhase.ERROR) {
+                    EcosystemLogger.e(HaronConstants.TAG, "StegoVM: hide error: ${finalState.message}")
+                    _toastMessage.tryEmit(appContext.getString(R.string.stego_error, finalState.message))
                 }
-            } else if (finalState.phase == StegoPhase.ERROR) {
-                _toastMessage.tryEmit(appContext.getString(R.string.stego_error, finalState.message))
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "StegoVM: hide exception: ${e.message}")
+                _state.update { it.copy(isProcessing = false) }
             }
         }
     }
@@ -131,43 +141,55 @@ class SteganographyViewModel @Inject constructor(
         val s = _state.value
         if (s.carrierPath.isEmpty()) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "StegoVM: extract payload from carrier=${s.carrierName}")
         _state.update { it.copy(isProcessing = true, progress = StegoProgress(StegoPhase.EXTRACTING)) }
 
         viewModelScope.launch {
             val outputDir = File(s.carrierPath).parent
                 ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
 
-            when (val result = stegoRepository.extractPayload(s.carrierPath, outputDir)) {
-                is StegoResult.Extracted -> {
-                    _toastMessage.tryEmit(appContext.getString(R.string.stego_extracted_success, result.payloadName))
-                    _state.update {
-                        it.copy(
-                            isProcessing = false,
-                            progress = StegoProgress(StegoPhase.DONE),
-                            resultMessage = appContext.getString(R.string.stego_output_file, result.outputPath)
-                        )
+            try {
+                when (val result = stegoRepository.extractPayload(s.carrierPath, outputDir)) {
+                    is StegoResult.Extracted -> {
+                        EcosystemLogger.d(HaronConstants.TAG, "StegoVM: extract success file=${result.payloadName}")
+                        _toastMessage.tryEmit(appContext.getString(R.string.stego_extracted_success, result.payloadName))
+                        _state.update {
+                            it.copy(
+                                isProcessing = false,
+                                progress = StegoProgress(StegoPhase.DONE),
+                                resultMessage = appContext.getString(R.string.stego_output_file, result.outputPath)
+                            )
+                        }
+                    }
+                    is StegoResult.Error -> {
+                        EcosystemLogger.e(HaronConstants.TAG, "StegoVM: extract error: ${result.message}")
+                        _toastMessage.tryEmit(appContext.getString(R.string.stego_error, result.message))
+                        _state.update {
+                            it.copy(
+                                isProcessing = false,
+                                progress = StegoProgress(StegoPhase.ERROR, message = result.message)
+                            )
+                        }
+                    }
+                    else -> {
+                        _state.update { it.copy(isProcessing = false) }
                     }
                 }
-                is StegoResult.Error -> {
-                    _toastMessage.tryEmit(appContext.getString(R.string.stego_error, result.message))
-                    _state.update {
-                        it.copy(
-                            isProcessing = false,
-                            progress = StegoProgress(StegoPhase.ERROR, message = result.message)
-                        )
-                    }
-                }
-                else -> {
-                    _state.update { it.copy(isProcessing = false) }
-                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "StegoVM: extract exception: ${e.message}")
+                _state.update { it.copy(isProcessing = false) }
             }
         }
     }
 
     private fun detectHidden(path: String) {
         viewModelScope.launch {
-            val result = stegoRepository.detectHiddenData(path)
-            _state.update { it.copy(detectResult = result) }
+            try {
+                val result = stegoRepository.detectHiddenData(path)
+                _state.update { it.copy(detectResult = result) }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "StegoVM: detect hidden data failed: ${e.message}")
+            }
         }
     }
 }

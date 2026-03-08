@@ -1,6 +1,8 @@
 package com.vamp.haron.presentation.voice
 
 import androidx.lifecycle.ViewModel
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.voice.VoiceCommandManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,10 +34,12 @@ class VoiceFabViewModel @Inject constructor(
     }
 
     fun startListening() {
+        EcosystemLogger.d(HaronConstants.TAG, "VoiceFabVM: startListening")
         voiceCommandManager.startListening()
     }
 
     fun stopListening() {
+        EcosystemLogger.d(HaronConstants.TAG, "VoiceFabVM: stopListening")
         voiceCommandManager.stop()
     }
 
@@ -47,6 +51,7 @@ class VoiceFabViewModel @Inject constructor(
     }
 
     fun setWakeWordEnabled(enabled: Boolean) {
+        EcosystemLogger.d(HaronConstants.TAG, "VoiceFabVM: setWakeWordEnabled=$enabled")
         prefs.wakeWordEnabled = enabled
         voiceCommandManager.setWakeWordEnabled(enabled)
     }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.R
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.data.network.NetworkDeviceScanner
@@ -147,15 +149,18 @@ class SmbViewModel @Inject constructor(
     }
 
     fun onConnectAsGuest(host: String, port: Int) {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: guest connect to $host:$port")
         _state.update { it.copy(isConnecting = true, showAuthDialog = false, error = null) }
         viewModelScope.launch {
             val result = smbManager.connectAsGuest(host, port)
             if (result.isSuccess) {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbVM: guest connected to $host")
                 _state.update { it.copy(isConnecting = false, connectedHost = host, connectedPort = port) }
                 loadShares(host)
                 loadLocalFiles()
             } else {
                 val msg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: guest connect failed to $host: $msg")
                 _state.update {
                     it.copy(
                         isConnecting = false,
@@ -196,6 +201,7 @@ class SmbViewModel @Inject constructor(
 
     fun onShareTap(share: SmbShareInfo) {
         val host = _state.value.connectedHost ?: return
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: open share ${share.name} on $host")
         _state.update {
             it.copy(
                 currentShare = share.name,
@@ -302,18 +308,21 @@ class SmbViewModel @Inject constructor(
         val selected = s.selectedFiles.toList()
         val destDir = File(destPath)
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: download ${selected.size} files from $host/$share to $destPath")
         transferJob = viewModelScope.launch {
             for (remotePath in selected) {
                 val fileName = remotePath.substringAfterLast("\\")
                 val localDest = File(destDir, fileName)
                 smbManager.downloadFile(host, share, remotePath, localDest)
                     .catch { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "SmbVM: download error $fileName: ${e.message}")
                         _toastMessage.emit(e.localizedMessage ?: "Download error")
                     }
                     .collect { progress ->
                         _state.update { it.copy(transferProgress = progress) }
                     }
             }
+            EcosystemLogger.d(HaronConstants.TAG, "SmbVM: download complete ${selected.size} files")
             _state.update { it.copy(transferProgress = null, selectedFiles = emptySet()) }
             _toastMessage.emit(appContext.getString(R.string.smb_download) + ": ${selected.size}")
         }
@@ -325,18 +334,21 @@ class SmbViewModel @Inject constructor(
         val share = s.currentShare ?: return
         val remoteDirPath = s.currentPath
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: upload ${localFiles.size} files to $host/$share/$remoteDirPath")
         transferJob = viewModelScope.launch {
             for (file in localFiles) {
                 val remotePath = if (remoteDirPath.isEmpty()) file.name
                 else "$remoteDirPath\\${file.name}"
                 smbManager.uploadFile(host, share, remotePath, file)
                     .catch { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "SmbVM: upload error ${file.name}: ${e.message}")
                         _toastMessage.emit(e.localizedMessage ?: "Upload error")
                     }
                     .collect { progress ->
                         _state.update { it.copy(transferProgress = progress) }
                     }
             }
+            EcosystemLogger.d(HaronConstants.TAG, "SmbVM: upload complete ${localFiles.size} files")
             _state.update { it.copy(transferProgress = null) }
             _toastMessage.emit(appContext.getString(R.string.smb_upload) + ": ${localFiles.size}")
             refreshFiles()
@@ -349,6 +361,7 @@ class SmbViewModel @Inject constructor(
         val share = s.currentShare ?: return
         val folderPath = if (s.currentPath.isEmpty()) name else "${s.currentPath}\\$name"
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: create folder $folderPath on $host/$share")
         _state.update { it.copy(showCreateFolderDialog = false) }
         viewModelScope.launch {
             val result = smbManager.createDirectory(host, share, folderPath)
@@ -356,6 +369,7 @@ class SmbViewModel @Inject constructor(
                 _toastMessage.emit(appContext.getString(R.string.folder_created))
                 refreshFiles()
             } else {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: create folder failed: ${result.exceptionOrNull()?.message}")
                 _toastMessage.emit(result.exceptionOrNull()?.localizedMessage ?: "Error")
             }
         }
@@ -368,6 +382,7 @@ class SmbViewModel @Inject constructor(
         val selected = s.selectedFiles.toList()
         val filesList = s.files
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: delete ${selected.size} items on $host/$share")
         viewModelScope.launch {
             var deletedCount = 0
             for (path in selected) {
@@ -376,6 +391,7 @@ class SmbViewModel @Inject constructor(
                 val result = smbManager.delete(host, share, path, isDir)
                 if (result.isSuccess) deletedCount++
             }
+            EcosystemLogger.d(HaronConstants.TAG, "SmbVM: deleted $deletedCount/${selected.size} items")
             _state.update { it.copy(selectedFiles = emptySet()) }
             _toastMessage.emit(appContext.getString(R.string.deleted_count, deletedCount))
             refreshFiles()
@@ -418,6 +434,7 @@ class SmbViewModel @Inject constructor(
     fun onDisconnect() {
         val host = _state.value.connectedHost
         if (host != null) {
+            EcosystemLogger.d(HaronConstants.TAG, "SmbVM: disconnect from $host")
             smbManager.disconnect(host)
         }
         _state.update {
@@ -500,6 +517,7 @@ class SmbViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: load local files failed: ${e.message}")
                 _state.update {
                     it.copy(
                         localPanel = it.localPanel.copy(
@@ -599,6 +617,7 @@ class SmbViewModel @Inject constructor(
         val selected = s.selectedFiles.toList()
         val destDir = File(s.localPanel.currentPath)
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: download to local panel ${selected.size} files")
         transferJob = viewModelScope.launch {
             for (remotePath in selected) {
                 val fileName = remotePath.substringAfterLast("\\")
@@ -624,6 +643,7 @@ class SmbViewModel @Inject constructor(
         val remoteDirPath = s.currentPath
         val selected = s.localPanel.selectedPaths.toList()
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: upload from local panel ${selected.size} files")
         transferJob = viewModelScope.launch {
             for (path in selected) {
                 val file = File(path)
@@ -731,10 +751,12 @@ class SmbViewModel @Inject constructor(
     }
 
     private fun connectWithCredential(host: String, port: Int, credential: SmbCredential, save: Boolean) {
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: connect to $host:$port user=${credential.username}")
         _state.update { it.copy(isConnecting = true, showAuthDialog = false, error = null) }
         viewModelScope.launch {
             val result = smbManager.connect(host, port, credential)
             if (result.isSuccess) {
+                EcosystemLogger.d(HaronConstants.TAG, "SmbVM: connected to $host")
                 if (save) {
                     credentialStore.save(host, credential)
                     loadSavedServers()
@@ -744,6 +766,7 @@ class SmbViewModel @Inject constructor(
                 loadLocalFiles()
             } else {
                 val msg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: connect failed to $host: $msg")
                 _state.update {
                     it.copy(
                         isConnecting = false,
@@ -763,10 +786,12 @@ class SmbViewModel @Inject constructor(
         viewModelScope.launch {
             val result = smbManager.listShares(host)
             if (result.isSuccess) {
+                val shares = result.getOrDefault(emptyList())
+                EcosystemLogger.d(HaronConstants.TAG, "SmbVM: loaded ${shares.size} shares from $host")
                 _state.update {
                     it.copy(
                         isLoading = false,
-                        shares = result.getOrDefault(emptyList()),
+                        shares = shares,
                         currentShare = null,
                         currentPath = "",
                         files = emptyList()
@@ -774,6 +799,7 @@ class SmbViewModel @Inject constructor(
                 }
             } else {
                 val msg = result.exceptionOrNull()?.localizedMessage ?: "Error"
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: load shares failed from $host: $msg")
                 _state.update { it.copy(isLoading = false, error = msg) }
             }
         }
@@ -793,6 +819,7 @@ class SmbViewModel @Inject constructor(
                 }
             } else {
                 val msg = result.exceptionOrNull()?.localizedMessage ?: "Error"
+                EcosystemLogger.e(HaronConstants.TAG, "SmbVM: list files failed $host/$share/$path: $msg")
                 _state.update { it.copy(isLoading = false, error = msg) }
             }
         }
@@ -814,9 +841,11 @@ class SmbViewModel @Inject constructor(
         val destDir = File(getDownloadDir())
         val localDest = File(destDir, file.name)
 
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: download file ${file.name} from $host/$share")
         transferJob = viewModelScope.launch {
             smbManager.downloadFile(host, share, file.path, localDest)
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "SmbVM: download error ${file.name}: ${e.message}")
                     _toastMessage.emit(e.localizedMessage ?: "Download error")
                     _state.update { it.copy(transferProgress = null) }
                 }

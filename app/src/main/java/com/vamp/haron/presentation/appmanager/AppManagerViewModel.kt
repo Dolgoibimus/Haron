@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.vamp.haron.domain.model.InstalledAppInfo
 import com.vamp.haron.domain.usecase.ExtractApkUseCase
 import com.vamp.haron.domain.usecase.GetInstalledAppsUseCase
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -58,12 +60,19 @@ class AppManagerViewModel @Inject constructor(
     }
 
     fun loadApps() {
+        EcosystemLogger.d(HaronConstants.TAG, "AppManagerVM: loading installed apps")
         _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
-            getInstalledAppsUseCase().collect { apps ->
-                allApps = apps
+            try {
+                getInstalledAppsUseCase().collect { apps ->
+                    allApps = apps
+                    EcosystemLogger.d(HaronConstants.TAG, "AppManagerVM: loaded ${apps.size} apps")
+                    _uiState.update { it.copy(isLoading = false) }
+                    applyFilters()
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "AppManagerVM: load apps failed: ${e.message}")
                 _uiState.update { it.copy(isLoading = false) }
-                applyFilters()
             }
         }
     }
@@ -88,13 +97,16 @@ class AppManagerViewModel @Inject constructor(
     }
 
     fun extractApk(app: InstalledAppInfo) {
+        EcosystemLogger.d(HaronConstants.TAG, "AppManagerVM: extract APK ${app.packageName}")
         viewModelScope.launch {
             extractApkUseCase(app)
                 .onSuccess { path ->
                     val fileName = path.substringAfterLast('/')
+                    EcosystemLogger.d(HaronConstants.TAG, "AppManagerVM: APK extracted to $fileName")
                     _toastMessage.tryEmit(appContext.getString(R.string.apk_extracted_format, fileName))
                 }
                 .onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "AppManagerVM: APK extract failed: ${e.message}")
                     _toastMessage.tryEmit(appContext.getString(R.string.extraction_error_format, e.message ?: ""))
                 }
         }
@@ -102,6 +114,7 @@ class AppManagerViewModel @Inject constructor(
     }
 
     fun markUninstalling(app: InstalledAppInfo) {
+        EcosystemLogger.d(HaronConstants.TAG, "AppManagerVM: uninstall requested for ${app.packageName}")
         _uiState.update { it.copy(selectedApp = null, uninstallingPackage = app.packageName) }
     }
 
@@ -135,7 +148,8 @@ class AppManagerViewModel @Inject constructor(
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             appContext.startActivity(intent)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "AppManagerVM: open settings failed for ${app.packageName}: ${e.message}")
             _toastMessage.tryEmit(appContext.getString(R.string.settings_open_failed))
         }
         _uiState.update { it.copy(selectedApp = null) }

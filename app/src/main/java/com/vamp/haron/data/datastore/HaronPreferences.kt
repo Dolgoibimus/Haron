@@ -600,6 +600,12 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
         set(value) = prefs.edit().putString(KEY_HOTSPOT_PASSWORD, value).apply()
 
+    // --- Transcode cache ---
+
+    var transcodeCacheTtlHours: Int
+        get() = prefs.getInt(KEY_TRANSCODE_CACHE_TTL_HOURS, 24)
+        set(value) = prefs.edit().putInt(KEY_TRANSCODE_CACHE_TTL_HOURS, value).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -647,6 +653,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_CONTENT_INDEXED_FOLDERS = "content_indexed_folders"
         const val KEY_HOTSPOT_SSID = "hotspot_ssid"
         const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
+        const val KEY_TRANSCODE_CACHE_TTL_HOURS = "transcode_cache_ttl_hours"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

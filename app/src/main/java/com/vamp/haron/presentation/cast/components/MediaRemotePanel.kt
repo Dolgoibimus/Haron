@@ -63,30 +63,8 @@ fun MediaRemotePanel(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(Modifier.width(32.dp))
-                Text(
-                    stringResource(R.string.cast_now_playing, deviceName),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                IconButton(onClick = onDisconnect, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.cast_disconnect),
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Transcode progress
+            // Transcode progress — above "now playing" text
             if (transcodePercent != null) {
-                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -131,6 +109,28 @@ fun MediaRemotePanel(
                             .padding(top = 4.dp)
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp)),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(Modifier.width(32.dp))
+                Text(
+                    stringResource(R.string.cast_now_playing, deviceName),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                IconButton(onClick = onDisconnect, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.cast_disconnect),
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

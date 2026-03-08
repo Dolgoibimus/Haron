@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.applock
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.security.AuthManager
 import com.vamp.haron.domain.model.AppLockMethod
@@ -49,9 +51,11 @@ class AppLockViewModel @Inject constructor(
 
     fun onPinEntered(pin: String): Boolean {
         return if (authManager.verifyPin(pin)) {
+            EcosystemLogger.d(HaronConstants.TAG, "AppLockVM: PIN unlock success")
             unlockApp()
             true
         } else {
+            EcosystemLogger.w(HaronConstants.TAG, "AppLockVM: PIN unlock failed")
             _state.update { it.copy(pinError = true) }
             false
         }
@@ -60,6 +64,7 @@ class AppLockViewModel @Inject constructor(
     fun getPinLength(): Int = authManager.getPinLength()
 
     fun onBiometricSuccess() {
+        EcosystemLogger.d(HaronConstants.TAG, "AppLockVM: biometric unlock success")
         unlockApp()
     }
 
@@ -71,6 +76,7 @@ class AppLockViewModel @Inject constructor(
     fun lockApp() {
         val method = authManager.getAppLockMethod()
         if (method == AppLockMethod.NONE) return
+        EcosystemLogger.d(HaronConstants.TAG, "AppLockVM: lockApp method=$method")
         _state.update { it.copy(isLocked = true, lockMethod = method, pinError = false) }
     }
 
@@ -123,7 +129,10 @@ class AppLockViewModel @Inject constructor(
     fun resetPinViaAnswer(answer: String): Boolean {
         val ok = authManager.resetPinViaSecurityAnswer(answer)
         if (ok) {
+            EcosystemLogger.d(HaronConstants.TAG, "AppLockVM: PIN reset via security answer success")
             unlockApp()
+        } else {
+            EcosystemLogger.w(HaronConstants.TAG, "AppLockVM: PIN reset via security answer failed")
         }
         return ok
     }

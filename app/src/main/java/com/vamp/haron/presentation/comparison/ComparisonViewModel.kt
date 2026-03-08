@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.comparison
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.ComparisonHolder
 import com.vamp.haron.domain.model.FileMetadataComparison
 import com.vamp.haron.domain.model.FolderComparisonEntry
@@ -57,6 +59,8 @@ class ComparisonViewModel @Inject constructor(
         val leftFile = File(leftPath)
         val rightFile = File(rightPath)
 
+        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: start compare left=${leftFile.name} right=${rightFile.name}")
+
         _state.value = _state.value.copy(
             leftName = leftFile.name,
             rightName = rightFile.name,
@@ -67,6 +71,7 @@ class ComparisonViewModel @Inject constructor(
             try {
                 when {
                     leftFile.isDirectory && rightFile.isDirectory -> {
+                        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: folder comparison")
                         val entries = compareFolders(leftPath, rightPath) { current, total ->
                             _state.value = _state.value.copy(
                                 progressCurrent = current,
@@ -75,12 +80,14 @@ class ComparisonViewModel @Inject constructor(
                         }
                         folderLeftName = leftFile.name
                         folderRightName = rightFile.name
+                        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: folder comparison done, ${entries.size} entries")
                         _state.value = _state.value.copy(
                             mode = ComparisonMode.FOLDER,
                             folderEntries = entries
                         )
                     }
                     leftFile.isFile && rightFile.isFile && isTextFile(leftFile) && isTextFile(rightFile) -> {
+                        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: text comparison")
                         val diff = compareTextFiles(leftPath, rightPath)
                         _state.value = _state.value.copy(
                             mode = ComparisonMode.TEXT,
@@ -88,6 +95,7 @@ class ComparisonViewModel @Inject constructor(
                         )
                     }
                     leftFile.isFile && rightFile.isFile -> {
+                        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: binary comparison")
                         val sameContent = if (leftFile.length() == rightFile.length()) {
                             md5(leftFile) == md5(rightFile)
                         } else false
@@ -105,12 +113,14 @@ class ComparisonViewModel @Inject constructor(
                         )
                     }
                     else -> {
+                        EcosystemLogger.w(HaronConstants.TAG, "ComparisonVM: incompatible types for comparison")
                         _state.value = _state.value.copy(
                             error = "Cannot compare: incompatible types"
                         )
                     }
                 }
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "ComparisonVM: comparison failed: ${e.message}")
                 _state.value = _state.value.copy(error = e.message)
             }
         }
@@ -127,6 +137,7 @@ class ComparisonViewModel @Inject constructor(
         val rightFile = File("$rightPath/$relativePath")
         if (!leftFile.isFile || !rightFile.isFile) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: open file diff $relativePath")
         viewModelScope.launch {
             try {
                 val diff = compareTextFiles(leftFile.absolutePath, rightFile.absolutePath)
@@ -137,7 +148,9 @@ class ComparisonViewModel @Inject constructor(
                     rightName = rightFile.name,
                     isViewingFileDiff = true
                 )
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "ComparisonVM: file diff failed for $relativePath: ${e.message}")
+            }
         }
     }
 

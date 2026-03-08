@@ -3,6 +3,8 @@ package com.vamp.haron.presentation.storage
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.R
 import com.vamp.haron.domain.usecase.AnalyzeStorageUseCase
 import com.vamp.haron.domain.usecase.StorageAnalysis
@@ -39,10 +41,19 @@ class StorageAnalysisViewModel @Inject constructor(
     val toastMessage = _toastMessage.asSharedFlow()
 
     fun startScan() {
+        EcosystemLogger.d(HaronConstants.TAG, "StorageVM: starting storage analysis")
         _state.update { it.copy(isLoading = true, selectedFiles = emptySet(), expandedCategory = null, categoryFilesExpanded = false, largeFilesExpanded = false) }
         viewModelScope.launch {
-            analyzeStorageUseCase().collect { analysis ->
-                _state.update { it.copy(analysis = analysis, isLoading = analysis.isScanning) }
+            try {
+                analyzeStorageUseCase().collect { analysis ->
+                    _state.update { it.copy(analysis = analysis, isLoading = analysis.isScanning) }
+                    if (!analysis.isScanning) {
+                        EcosystemLogger.d(HaronConstants.TAG, "StorageVM: analysis complete, ${analysis.categories.size} categories")
+                    }
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "StorageVM: analysis failed: ${e.message}")
+                _state.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -80,14 +91,18 @@ class StorageAnalysisViewModel @Inject constructor(
         val paths = _state.value.selectedFiles.toList()
         if (paths.isEmpty()) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "StorageVM: delete ${paths.size} selected files")
         viewModelScope.launch {
             var deleted = 0
             paths.forEach { path ->
                 try {
                     val file = File(path)
                     if (file.exists() && file.delete()) deleted++
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "StorageVM: delete failed $path: ${e.message}")
+                }
             }
+            EcosystemLogger.d(HaronConstants.TAG, "StorageVM: deleted $deleted/${paths.size} files")
             _state.update { it.copy(selectedFiles = emptySet()) }
             _toastMessage.tryEmit(appContext.getString(R.string.storage_deleted_format, deleted))
             // Rescan

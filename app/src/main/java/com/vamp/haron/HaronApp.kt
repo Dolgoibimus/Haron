@@ -1,8 +1,8 @@
 package com.vamp.haron
 
 import android.app.Application
-import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.vamp.haron.di.HaronWorkerFactory
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.vamp.core.db.EcosystemDatabase
 import com.vamp.core.db.EcosystemPreferences
@@ -20,7 +20,7 @@ import javax.inject.Inject
 class HaronApp : Application(), Configuration.Provider {
 
     @Inject
-    lateinit var workerFactory: HiltWorkerFactory
+    lateinit var workerFactory: HaronWorkerFactory
 
     @Inject
     lateinit var castManager: GoogleCastManager

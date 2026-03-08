@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
@@ -394,6 +395,51 @@ fun SettingsScreen(
             )
             Text(
                 stringResource(R.string.trash_info),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Cast ---
+            SectionHeader(
+                icon = Icons.Filled.Cast,
+                title = stringResource(R.string.cast_section)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.transcode_cache_ttl_label),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(4.dp))
+
+            val ttlOptions = listOf(1, 6, 12, 24)
+            val ttlLabels = listOf(
+                stringResource(R.string.transcode_cache_ttl_1h),
+                stringResource(R.string.transcode_cache_ttl_6h),
+                stringResource(R.string.transcode_cache_ttl_12h),
+                stringResource(R.string.transcode_cache_ttl_24h)
+            )
+            ttlOptions.forEachIndexed { index, hours ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = state.transcodeCacheTtlHours == hours,
+                        onClick = { viewModel.setTranscodeCacheTtlHours(hours) }
+                    )
+                    Text(
+                        text = ttlLabels[index],
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.transcode_cache_ttl_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -124,9 +124,20 @@ class GoogleCastManager @Inject constructor(
         }
     }
 
-    fun castMedia(url: String, mimeType: String, title: String = "") {
-        val session = currentSession ?: return
-        val remoteMediaClient = session.remoteMediaClient ?: return
+    fun castMedia(
+        url: String,
+        mimeType: String,
+        title: String = "",
+        streamType: Int = MediaInfo.STREAM_TYPE_BUFFERED
+    ) {
+        val session = currentSession ?: run {
+            EcosystemLogger.e(HaronConstants.TAG, "castMedia: no session!")
+            return
+        }
+        val remoteMediaClient = session.remoteMediaClient ?: run {
+            EcosystemLogger.e(HaronConstants.TAG, "castMedia: no remoteMediaClient!")
+            return
+        }
 
         val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC).apply {
             putString(MediaMetadata.KEY_TITLE, title)
@@ -134,7 +145,7 @@ class GoogleCastManager @Inject constructor(
 
         val mediaInfo = MediaInfo.Builder(url)
             .setContentType(mimeType)
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+            .setStreamType(streamType)
             .setMetadata(metadata)
             .build()
 
@@ -144,7 +155,7 @@ class GoogleCastManager @Inject constructor(
             .build()
 
         remoteMediaClient.load(loadRequest)
-        EcosystemLogger.d(HaronConstants.TAG, "Cast media: $url")
+        EcosystemLogger.d(HaronConstants.TAG, "Cast media: url=$url, mime=$mimeType, streamType=$streamType")
     }
 
     fun sendRemoteInput(event: RemoteInputEvent) {

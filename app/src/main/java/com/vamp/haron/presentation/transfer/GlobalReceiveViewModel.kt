@@ -3,6 +3,8 @@ package com.vamp.haron.presentation.transfer
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.transfer.QuickSendPending
 import com.vamp.haron.domain.repository.TransferRepository
 import com.vamp.haron.service.TransferService
@@ -43,6 +45,7 @@ class GlobalReceiveViewModel @Inject constructor(
         // Regular transfer requests (TYPE_REQUEST)
         viewModelScope.launch {
             transferRepository.incomingRequests.collect { request ->
+                EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: incoming request from ${request.deviceName}, files=${request.files.size}")
                 pendingQuickSend = null
                 _incoming.value = IncomingInfo(
                     deviceName = request.deviceName,
@@ -54,6 +57,7 @@ class GlobalReceiveViewModel @Inject constructor(
         // Quick Send from untrusted devices — socket stays on IO thread
         viewModelScope.launch {
             transferRepository.quickSendPending.collect { pending ->
+                EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: quickSend pending from ${pending.senderName}, files=${pending.fileCount}")
                 pendingQuickSend = pending
                 _incoming.value = IncomingInfo(
                     deviceName = pending.senderName,
@@ -66,6 +70,7 @@ class GlobalReceiveViewModel @Inject constructor(
     fun accept() {
         val qs = pendingQuickSend
         if (qs != null) {
+            EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: accept quickSend from ${qs.senderName}")
             // Quick Send: just complete the deferred — file receive happens on IO thread
             qs.response.complete(true)
             pendingQuickSend = null
@@ -73,6 +78,7 @@ class GlobalReceiveViewModel @Inject constructor(
             return
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: accept regular transfer")
         // Regular transfer: accept via flow
         _incoming.value = null
         _receiving.value = true
@@ -81,6 +87,7 @@ class GlobalReceiveViewModel @Inject constructor(
         viewModelScope.launch {
             transferRepository.acceptTransfer()
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "GlobalReceiveVM: transfer error — ${e.message}")
                     _receiving.value = false
                     TransferService.stopServer(appContext)
                 }
@@ -97,6 +104,7 @@ class GlobalReceiveViewModel @Inject constructor(
     fun decline() {
         val qs = pendingQuickSend
         if (qs != null) {
+            EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: decline quickSend from ${qs.senderName}")
             // Quick Send: complete with false — decline happens on IO thread
             qs.response.complete(false)
             pendingQuickSend = null
@@ -104,6 +112,7 @@ class GlobalReceiveViewModel @Inject constructor(
             return
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "GlobalReceiveVM: decline regular transfer")
         _incoming.value = null
         transferRepository.declineTransfer()
     }

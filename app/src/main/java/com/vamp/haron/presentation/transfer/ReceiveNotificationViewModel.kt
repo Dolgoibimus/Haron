@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.transfer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.repository.TransferRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,12 +26,14 @@ class ReceiveNotificationViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             transferRepository.friendReceived.collect { name ->
+                EcosystemLogger.d(HaronConstants.TAG, "ReceiveNotificationVM: friend received from $name")
                 _senderName.value = name
             }
         }
     }
 
     fun dismiss() {
+        EcosystemLogger.d(HaronConstants.TAG, "ReceiveNotificationVM: dismiss notification")
         _senderName.value = null
     }
 }

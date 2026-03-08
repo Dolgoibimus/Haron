@@ -2,6 +2,8 @@ package com.vamp.haron.domain.usecase
 
 import com.github.difflib.DiffUtils
 import com.github.difflib.patch.DeltaType
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.DiffLine
 import com.vamp.haron.domain.model.DiffLineType
 import com.vamp.haron.domain.model.TextDiffResult
@@ -14,6 +16,7 @@ class CompareTextFilesUseCase @Inject constructor() {
 
     suspend operator fun invoke(leftPath: String, rightPath: String): TextDiffResult =
         withContext(Dispatchers.IO) {
+            EcosystemLogger.d(HaronConstants.TAG, "CompareTextFilesUseCase: comparing left=$leftPath, right=$rightPath")
             val leftLines = File(leftPath).readLines()
             val rightLines = File(rightPath).readLines()
 
@@ -90,6 +93,7 @@ class CompareTextFilesUseCase @Inject constructor() {
                 rightIdx++
             }
 
+            EcosystemLogger.d(HaronConstants.TAG, "CompareTextFilesUseCase: complete, added=$addedCount, removed=$removedCount, modified=$modifiedCount")
             TextDiffResult(
                 leftLines = left,
                 rightLines = right,

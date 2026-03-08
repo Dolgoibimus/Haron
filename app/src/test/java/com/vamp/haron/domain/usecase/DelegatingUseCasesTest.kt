@@ -96,6 +96,7 @@ class DelegatingUseCasesTest {
             return restoreResult
         }
         override suspend fun deleteFromTrash(ids: List<String>): Result<Int> = Result.success(0)
+        override suspend fun deleteFromTrashWithProgress(ids: List<String>, onProgress: suspend (Int, Int, String) -> Unit): Result<Int> = Result.success(0)
         override suspend fun emptyTrash(): Result<Int> = emptyResult
         override suspend fun cleanExpired(): Result<Int> = cleanResult
         override suspend fun getTrashSize(): Long = 0L

@@ -3,6 +3,8 @@ package com.vamp.haron.presentation.transfer
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.R
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.transfer.HotspotManager
@@ -130,6 +132,7 @@ class TransferViewModel @Inject constructor(
     }
 
     fun startDiscovery() {
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: starting device discovery")
         discoveryJob?.cancel()
         discoveryTimeoutJob?.cancel()
         _state.update { it.copy(isScanning = true) }
@@ -137,6 +140,7 @@ class TransferViewModel @Inject constructor(
         discoveryJob = viewModelScope.launch {
             discoverDevicesUseCase()
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM: discovery error: ${e.message}")
                     _state.update { it.copy(isScanning = false) }
                     _toastMessage.emit(e.message ?: "Discovery error")
                 }
@@ -172,6 +176,7 @@ class TransferViewModel @Inject constructor(
         if (files.isEmpty()) return
 
         val protocol = chooseBestProtocol(device)
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: send ${files.size} files to ${device.name} via $protocol")
         _state.update {
             it.copy(
                 transferState = TransferState.CONNECTING,
@@ -189,6 +194,7 @@ class TransferViewModel @Inject constructor(
 
             sendFilesUseCase(files, device, protocol)
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM: send failed: ${e.message}")
                     _state.update {
                         it.copy(
                             transferState = TransferState.FAILED,
@@ -201,6 +207,7 @@ class TransferViewModel @Inject constructor(
                     TransferService.updateProgress(progress)
 
                     if (progress.bytesTransferred >= progress.totalBytes && progress.totalBytes > 0) {
+                        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: send complete to ${device.name}")
                         _state.update { it.copy(transferState = TransferState.COMPLETED) }
                         TransferService.stopServer(appContext)
                     }
@@ -212,6 +219,7 @@ class TransferViewModel @Inject constructor(
         val files = _state.value.files
         if (files.isEmpty()) return
 
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: starting HTTP server for ${files.size} files")
         viewModelScope.launch {
             // Check if we have a usable local network (not CGNAT/VPN)
             val detectedIp = httpFileServer.getLocalIpAddress()
@@ -292,6 +300,7 @@ class TransferViewModel @Inject constructor(
     }
 
     fun stopHttpServer() {
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: stopping HTTP server")
         httpFileServer.stop()
         hotspotManager.stop()
         TransferService.stopServer(appContext)
@@ -315,6 +324,7 @@ class TransferViewModel @Inject constructor(
     }
 
     fun cancelTransfer() {
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: cancel transfer")
         transferJob?.cancel()
         sendFilesUseCase.cancel()
         TransferService.stopServer(appContext)
@@ -338,11 +348,13 @@ class TransferViewModel @Inject constructor(
 
     fun startReceiving() {
         if (receiveJob?.isActive == true) return
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: start receiving")
         _state.update { it.copy(isReceiving = true) }
 
         receiveJob = viewModelScope.launch {
             transferRepository.startReceiving()
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM: receive error: ${e.message}")
                     _state.update { it.copy(isReceiving = false) }
                 }
                 .collect { request ->
@@ -369,6 +381,7 @@ class TransferViewModel @Inject constructor(
     fun acceptIncoming() {
         val qs = pendingQuickSend
         if (qs != null) {
+            EcosystemLogger.d(HaronConstants.TAG, "TransferVM: accept quick send from ${qs.senderName}")
             // Quick Send: complete the deferred — file receive happens on IO thread
             qs.response.complete(true)
             pendingQuickSend = null
@@ -376,6 +389,7 @@ class TransferViewModel @Inject constructor(
             return
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: accept incoming transfer from ${_state.value.incomingDeviceName}")
         _state.update {
             it.copy(
                 showReceiveDialog = false,
@@ -388,6 +402,7 @@ class TransferViewModel @Inject constructor(
         transferJob = viewModelScope.launch {
             transferRepository.acceptTransfer()
                 .catch { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM: accept transfer failed: ${e.message}")
                     _state.update {
                         it.copy(
                             transferState = TransferState.FAILED,
@@ -401,6 +416,7 @@ class TransferViewModel @Inject constructor(
                     TransferService.updateProgress(progress)
 
                     if (progress.bytesTransferred >= progress.totalBytes && progress.totalBytes > 0) {
+                        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: receive complete")
                         _state.update { it.copy(transferState = TransferState.COMPLETED) }
                         TransferService.stopServer(appContext)
                     }
@@ -433,6 +449,7 @@ class TransferViewModel @Inject constructor(
      * Download files from another Haron's HTTP server (scanned via QR).
      */
     fun downloadFromQr(baseUrl: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: download from QR url=$baseUrl")
         _state.update {
             it.copy(
                 transferState = TransferState.TRANSFERRING,
@@ -529,6 +546,7 @@ class TransferViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TransferVM: QR download failed: ${e.message}")
                 _state.update {
                     it.copy(
                         transferState = TransferState.FAILED,

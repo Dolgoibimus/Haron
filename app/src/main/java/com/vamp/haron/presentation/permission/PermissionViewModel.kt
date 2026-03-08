@@ -2,6 +2,8 @@ package com.vamp.haron.presentation.permission
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.hasStoragePermission
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +20,8 @@ class PermissionViewModel @Inject constructor(
     val isGranted: StateFlow<Boolean> = _isGranted.asStateFlow()
 
     fun recheckPermission() {
-        _isGranted.value = hasStoragePermission(getApplication())
+        val granted = hasStoragePermission(getApplication())
+        EcosystemLogger.d(HaronConstants.TAG, "PermissionVM: recheckPermission storage=$granted")
+        _isGranted.value = granted
     }
 }

@@ -52,6 +52,9 @@ class HttpFileServer @Inject constructor(
     private var pdfFile: File? = null
     private var fileInfoHtml: String? = null
 
+    // HLS (progressive transcode → Chromecast)
+    @Volatile private var hlsDir: File? = null
+
     suspend fun start(files: List<File>): Int {
         stop()
         sharedFiles = files
@@ -119,6 +122,40 @@ class HttpFileServer @Inject constructor(
                         """{"index":$index,"name":"${escapeJson(file.name)}","size":${file.length()}}"""
                     }.joinToString(",", "[", "]")
                     call.respondText(json, ContentType.Application.Json)
+                }
+
+                // --- HLS (progressive transcode → Chromecast) ---
+                get("/hls/{filename}") {
+                    val dir = hlsDir
+                    val name = call.parameters["filename"]
+                    EcosystemLogger.d(HaronConstants.TAG, "HLS request: /$name, hlsDir=${dir?.absolutePath}")
+                    if (dir == null || name == null) {
+                        EcosystemLogger.e(HaronConstants.TAG, "HLS 404: dir=$dir, name=$name")
+                        call.respondText("Not found", status = HttpStatusCode.NotFound)
+                        return@get
+                    }
+                    val file = File(dir, name)
+                    if (!file.exists()) {
+                        EcosystemLogger.e(HaronConstants.TAG, "HLS 404: file not found: ${file.absolutePath}")
+                        call.respondText("Not found", status = HttpStatusCode.NotFound)
+                        return@get
+                    }
+                    val ct = when (file.extension.lowercase()) {
+                        "m3u8" -> ContentType.parse("application/vnd.apple.mpegurl")
+                        "ts" -> ContentType.parse("video/mp2t")
+                        else -> ContentType.Application.OctetStream
+                    }
+                    // CORS for Chromecast JS-based HLS player
+                    call.response.header(HttpHeaders.AccessControlAllowOrigin, "*")
+                    // Disable caching so Chromecast re-fetches playlist for new segments
+                    call.response.header(HttpHeaders.CacheControl, "no-cache, no-store")
+                    call.response.header(HttpHeaders.ContentLength, file.length().toString())
+                    EcosystemLogger.d(HaronConstants.TAG, "HLS serving: $name (${file.length()} bytes, ct=$ct)")
+                    call.respondOutputStream(contentType = ct, status = HttpStatusCode.OK) {
+                        withContext(Dispatchers.IO) {
+                            file.inputStream().use { it.copyTo(this@respondOutputStream, 8192) }
+                        }
+                    }
                 }
 
                 // --- Extended Cast endpoints ---
@@ -189,6 +226,7 @@ class HttpFileServer @Inject constructor(
         engine?.stop(1000, 2000)
         engine = null
         sharedFiles = emptyList()
+        hlsDir = null
         EcosystemLogger.d(HaronConstants.TAG, "HTTP server stopped")
     }
 
@@ -399,6 +437,15 @@ function dl(url, name) {
     fun getFileInfoUrl(): String? {
         val ip = getLocalIpAddress() ?: return null
         return "http://$ip:$actualPort/fileinfo"
+    }
+
+    fun setupHls(dir: File) {
+        hlsDir = dir
+    }
+
+    fun getHlsUrl(): String? {
+        val ip = getLocalIpAddress() ?: return null
+        return "http://$ip:$actualPort/hls/playlist.m3u8"
     }
 
     private fun buildSlideshowHtml(): String {

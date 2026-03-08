@@ -8,6 +8,8 @@ import com.vamp.haron.domain.model.ArchiveEntry
 import com.vamp.haron.domain.usecase.BrowseArchiveUseCase
 import com.vamp.haron.domain.usecase.ExtractArchiveUseCase
 import com.vamp.haron.domain.usecase.ExtractProgress
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,6 +53,7 @@ class ArchiveViewerViewModel @Inject constructor(
     val closeEvent = _closeEvent.asSharedFlow()
 
     fun init(archivePath: String, archiveName: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: open archive=$archiveName")
         _state.update { it.copy(archivePath = archivePath, archiveName = archiveName) }
         loadEntries("")
     }
@@ -94,6 +97,7 @@ class ArchiveViewerViewModel @Inject constructor(
     }
 
     fun onPasswordSubmit(password: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: password submitted for ${_state.value.archiveName}")
         _state.update { it.copy(password = password, showPasswordDialog = false, passwordError = null) }
         loadEntries(_state.value.virtualPath)
     }
@@ -115,17 +119,25 @@ class ArchiveViewerViewModel @Inject constructor(
     private fun extract(destinationDir: String, selectedEntries: Set<String>?) {
         val archivePath = _state.value.archivePath
         val password = _state.value.password
+        EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: extract archive=${_state.value.archiveName} dest=$destinationDir selected=${selectedEntries?.size ?: "all"}")
         viewModelScope.launch {
-            extractArchiveUseCase(archivePath, destinationDir, selectedEntries, password).collect { progress ->
-                _state.update { it.copy(extractProgress = progress) }
-                if (progress.isComplete) {
-                    _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
-                    clearSelection()
-                    _closeEvent.tryEmit(Unit)
+            try {
+                extractArchiveUseCase(archivePath, destinationDir, selectedEntries, password).collect { progress ->
+                    _state.update { it.copy(extractProgress = progress) }
+                    if (progress.isComplete) {
+                        EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: extract complete to $destinationDir")
+                        _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
+                        clearSelection()
+                        _closeEvent.tryEmit(Unit)
+                    }
+                    if (progress.error != null) {
+                        EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: extract error: ${progress.error}")
+                        _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
+                    }
                 }
-                if (progress.error != null) {
-                    _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
-                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: extract exception: ${e.message}")
+                _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
             }
             _state.update { it.copy(extractProgress = null) }
         }
@@ -149,6 +161,7 @@ class ArchiveViewerViewModel @Inject constructor(
                         e.javaClass.simpleName.contains("Encrypt", ignoreCase = true) ||
                         causeName.contains("Encrypt", ignoreCase = true)
                     if (isPasswordError) {
+                        EcosystemLogger.w(HaronConstants.TAG, "ArchiveVM: password required for ${_state.value.archiveName}")
                         _state.update {
                             it.copy(
                                 isLoading = false,
@@ -158,6 +171,7 @@ class ArchiveViewerViewModel @Inject constructor(
                             )
                         }
                     } else {
+                        EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: load entries failed: ${e.message}")
                         _state.update {
                             it.copy(
                                 isLoading = false,

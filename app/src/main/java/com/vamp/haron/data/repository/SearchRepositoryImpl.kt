@@ -1,9 +1,10 @@
 package com.vamp.haron.data.repository
 
 import android.os.Environment
-import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.ContentExtractor
 import com.vamp.haron.common.util.ImageLabeler
 import com.vamp.haron.data.db.HaronDatabase
@@ -52,6 +53,7 @@ class SearchRepositoryImpl @Inject constructor(
 
     override fun startIndexByMode(mode: IndexMode) {
         if (_indexProgress.value.isRunning) return
+        EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: startIndexByMode mode=$mode")
         _indexCompleted.value = false
         appScope.launch {
             indexByMode(mode)
@@ -73,6 +75,7 @@ class SearchRepositoryImpl @Inject constructor(
         if (query.isBlank()) return emptyMap()
         return withContext(Dispatchers.IO) {
             try {
+                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: searchContentInFolder query='$query' in $folderPath")
                 val paths = fileContentDao.searchInFolder(folderPath, query.lowercase())
                 if (paths.isEmpty()) return@withContext emptyMap()
                 val entities = fileContentDao.getByPaths(paths)
@@ -91,7 +94,8 @@ class SearchRepositoryImpl @Inject constructor(
                     }
                     entity.path to snippet
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SearchRepo: searchContentInFolder failed: ${e.message}")
                 emptyMap()
             }
         }
@@ -144,7 +148,7 @@ class SearchRepositoryImpl @Inject constructor(
                 val indexBatch = mutableListOf<FileIndexEntity>()
                 val startTime = System.currentTimeMillis()
 
-                Log.d("SearchRepo", "indexFolderContent: $total files to index in $folderPath")
+                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexFolderContent: $total files to index in $folderPath")
 
                 toIndex.forEachIndexed { idx, file ->
                     if (!coroutineContext.isActive) return@forEachIndexed
@@ -158,13 +162,13 @@ class SearchRepositoryImpl @Inject constructor(
                                 contentExtractor.extractArchiveEntries(file)
                             imageLabeler.isImageFile(file) -> {
                                 // OCR + labels + EXIF for images
-                                Log.d("SearchRepo", "OCR+labels for: ${file.name}")
+                                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: OCR+labels for: ${file.name}")
                                 val meta = contentExtractor.extractImageMeta(file)
                                 val labels = imageLabeler.labelImage(file)
                                 val ocr = if (file.length() < 10 * 1024 * 1024) {
                                     imageLabeler.recognizeText(file)
                                 } else ""
-                                Log.d("SearchRepo", "  labels=${labels.take(100)}, ocr=${ocr.take(100)}")
+                                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: labels=${labels.take(100)}, ocr=${ocr.take(100)}")
                                 listOf(meta, labels, ocr)
                                     .filter { it.isNotBlank() }
                                     .joinToString("\n")
@@ -212,15 +216,16 @@ class SearchRepositoryImpl @Inject constructor(
                 if (indexBatch.isNotEmpty()) {
                     fileIndexDao.upsertAll(indexBatch)
                 }
-                Log.d("SearchRepo", "indexFolderContent done: ${contentBatch.size} content, ${indexBatch.size} index")
+                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexFolderContent done: ${contentBatch.size} content, ${indexBatch.size} index")
                 onProgress(total, total)
             } catch (e: Exception) {
-                Log.w("SearchRepo", "indexFolderContent failed", e)
+                EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: indexFolderContent failed: ${e.message}")
             }
         }
     }
 
     override suspend fun searchFiles(filter: SearchFilter): List<FileIndexEntity> {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: searchFiles query='${filter.query}' category=${filter.category} inContent=${filter.searchInContent}")
         if (filter.query.isBlank() && filter.category == FileCategory.ALL
             && filter.sizeFilter == SizeFilter.ALL && filter.dateFilter == DateFilter.ALL
         ) {
@@ -351,6 +356,7 @@ class SearchRepositoryImpl @Inject constructor(
 
     override suspend fun indexAllFiles(onProgress: (IndexProgress) -> Unit) {
         withContext(Dispatchers.IO) {
+            EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexAllFiles started")
             val startTime = System.currentTimeMillis()
             // Background structural index — does NOT update _indexProgress
             // to avoid blocking mode-specific indexing buttons in Search UI.
@@ -380,12 +386,14 @@ class SearchRepositoryImpl @Inject constructor(
 
                 fileIndexDao.deleteStaleEntries(startTime)
                 rebuildFts()
+                EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexAllFiles completed, $processed files processed")
                 onProgress(IndexProgress(
                     totalFiles = processed,
                     processedFiles = processed,
                     isRunning = false
                 ))
             } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SearchRepo: indexAllFiles failed: ${e.message}")
                 onProgress(IndexProgress(isRunning = false))
             }
         }
@@ -662,8 +670,10 @@ class SearchRepositoryImpl @Inject constructor(
     }
 
     override suspend fun clearIndex() {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: clearing index")
         fileIndexDao.clearAll()
         fileContentDao.clearAll()
+        EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: index cleared")
     }
 
     /**
@@ -676,9 +686,9 @@ class SearchRepositoryImpl @Inject constructor(
             val db = database.openHelper.writableDatabase
             db.execSQL("INSERT INTO file_content_fts(file_content_fts) VALUES('rebuild')")
             db.execSQL("INSERT INTO file_index_fts(file_index_fts) VALUES('rebuild')")
-            Log.d("SearchRepo", "FTS rebuild completed")
+            EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: FTS rebuild completed")
         } catch (e: Exception) {
-            Log.w("SearchRepo", "FTS rebuild failed", e)
+            EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: FTS rebuild failed: ${e.message}")
         }
     }
 
@@ -746,9 +756,9 @@ class SearchRepositoryImpl @Inject constructor(
             END""")
 
             db.setTransactionSuccessful()
-            Log.d("SearchRepo", "safeReplaceContent: ${batch.size} entries saved + FTS rebuilt")
+            EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: safeReplaceContent: ${batch.size} entries saved + FTS rebuilt")
         } catch (e: Exception) {
-            Log.w("SearchRepo", "safeReplaceContent failed", e)
+            EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: safeReplaceContent failed: ${e.message}")
         } finally {
             db.endTransaction()
         }

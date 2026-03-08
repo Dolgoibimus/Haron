@@ -197,6 +197,10 @@
             android:name=".service.ScreenMirrorService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <service
+            android:name=".service.CastMediaService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Google Cast framework -->
         <meta-data

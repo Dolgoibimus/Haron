@@ -3,6 +3,8 @@ package com.vamp.haron.domain.usecase
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.media.MediaMetadataRetriever
@@ -61,6 +63,7 @@ class LoadPreviewUseCase @Inject constructor(
             }
             Result.success(result)
         } catch (e: Throwable) {
+            EcosystemLogger.e(HaronConstants.TAG, "LoadPreviewUseCase: error for ${entry.name} — ${e.message}")
             Result.failure(Exception(e.message ?: context.getString(R.string.preview_error_generic), e))
         }
     }
