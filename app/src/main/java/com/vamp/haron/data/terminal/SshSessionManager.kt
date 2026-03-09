@@ -56,7 +56,7 @@ class SshSessionManager {
             session = sess
             channel = ch
             EcosystemLogger.d(HaronConstants.TAG, "SshSessionManager: connected to ${params.host}, shell channel opened")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "SshSessionManager: connect failed to ${params.host}: ${e.message}")
             throw e
         }
@@ -86,7 +86,7 @@ class SshSessionManager {
                     Thread.sleep(50)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "SshSessionManager: reading error: ${e.message}")
             if (isConnected) {
                 _outputFlow.tryEmit("\n[Connection lost]")
@@ -100,7 +100,7 @@ class SshSessionManager {
                 os.write("$command\r".toByteArray(Charsets.UTF_8))
                 os.flush()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "SshSessionManager: sendCommand failed: ${e.message}")
             _outputFlow.tryEmit("\n[Failed to send command]")
         }
@@ -112,7 +112,7 @@ class SshSessionManager {
                 os.write(data.toByteArray(Charsets.UTF_8))
                 os.flush()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "SshSessionManager: sendRaw failed: ${e.message}")
             _outputFlow.tryEmit("\n[Failed to send data]")
         }

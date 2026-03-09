@@ -390,7 +390,7 @@ class ExplorerViewModel @Inject constructor(
 
     // --- Quick Send ---
 
-    fun startQuickSend(filePath: String, fileName: String, offset: Offset) {
+    fun startQuickSend(filePath: String, fileName: String, offset: Offset, fromTopPanel: Boolean) {
         val haronDevices = _uiState.value.networkDevices.filter { it.type == NetworkDeviceType.HARON }
         if (haronDevices.isEmpty()) {
             _toastMessage.tryEmit(appContext.getString(R.string.quick_send_no_devices))
@@ -403,7 +403,8 @@ class ExplorerViewModel @Inject constructor(
                     fileName = fileName,
                     anchorOffset = offset,
                     dragOffset = offset,
-                    haronDevices = haronDevices
+                    haronDevices = haronDevices,
+                    fromTopPanel = fromTopPanel
                 )
             )
         }
@@ -424,57 +425,45 @@ class ExplorerViewModel @Inject constructor(
             cancelQuickSend()
             return
         }
-        // Find nearest device circle using same arc layout as QuickSendOverlay
+        // Hit-test: vertical list of rows, mirrors QuickSendOverlay Column layout
         val devices = current.haronDevices
-        val count = devices.size
         val dm = appContext.resources.displayMetrics
         val density = dm.density
-        val screenWidthPx = dm.widthPixels.toFloat()
         val screenHeightPx = dm.heightPixels.toFloat()
-        val circleRadiusPx = 30f * density // 30.dp
-        val circleDiameterPx = circleRadiusPx * 2
-        val nearThresholdPx = 60f * density // 60.dp
+        val rowHeightPx = 48f * density
+        val rowSpacingPx = 4f * density
+        val paddingPx = 8f * density // vertical padding
+        val horizontalPaddingPx = 12f * density
+        val statusBarPx = 40f * density // approximate status bar
 
-        // Arc radius — same formula as QuickSendOverlay
-        val arcAngle = Math.PI * 2 / 3 // 120 degrees
-        val minArcRadius = if (count > 1) {
-            (count * circleDiameterPx * 1.3f / arcAngle).toFloat()
-        } else {
-            circleDiameterPx * 2f
-        }
-        val arcRadiusPx = minArcRadius.coerceIn(circleDiameterPx * 2f, screenWidthPx * 0.4f)
+        val showAtBottom = current.fromTopPanel
+        val count = devices.size
+        val totalContentHeight = count * rowHeightPx + (count - 1) * rowSpacingPx
 
-        // Above anchor by default, below if no space above — same as QuickSendOverlay
-        val spaceNeededAbove = arcRadiusPx + circleDiameterPx
-        val placeAbove = current.anchorOffset.y > spaceNeededAbove
-        // Shift anchor 50dp up or down for better visibility
-        val extraOffsetPx = 50f * density
-        val shiftedAnchorY = if (placeAbove) current.anchorOffset.y - extraOffsetPx else current.anchorOffset.y + extraOffsetPx
-
-        val startAngle = if (placeAbove) (Math.PI + Math.PI / 6) else (Math.PI / 6)
-        val endAngle = if (placeAbove) (2 * Math.PI - Math.PI / 6) else (Math.PI - Math.PI / 6)
-        val step = if (count > 1) (endAngle - startAngle) / (count - 1) else 0.0
-
-        var nearest: NetworkDevice? = null
-        var nearestDist = Float.MAX_VALUE
+        var matched: NetworkDevice? = null
 
         devices.forEachIndexed { index, device ->
-            val angle = if (count > 1) startAngle + step * index else (startAngle + endAngle) / 2
-            val cx = (current.anchorOffset.x + (arcRadiusPx * kotlin.math.cos(angle)).toFloat())
-                .coerceIn(circleRadiusPx, screenWidthPx - circleRadiusPx)
-            val cy = (shiftedAnchorY + (arcRadiusPx * kotlin.math.sin(angle)).toFloat())
-                .coerceIn(circleRadiusPx, screenHeightPx - circleRadiusPx)
-            val dx = finalOffset.x - cx
-            val dy = finalOffset.y - cy
-            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (dist < nearestDist) {
-                nearestDist = dist
-                nearest = device
+            val rowTop: Float
+            if (showAtBottom) {
+                // Column aligned to bottom: items top-to-bottom within bottom-aligned Column
+                val columnTop = screenHeightPx - paddingPx - totalContentHeight
+                rowTop = columnTop + index * (rowHeightPx + rowSpacingPx)
+            } else {
+                // Column aligned to top with status bar inset
+                rowTop = statusBarPx + paddingPx + index * (rowHeightPx + rowSpacingPx)
+            }
+            val rowBottom = rowTop + rowHeightPx
+
+            if (finalOffset.y in rowTop..rowBottom &&
+                finalOffset.x >= horizontalPaddingPx &&
+                finalOffset.x <= dm.widthPixels - horizontalPaddingPx
+            ) {
+                matched = device
             }
         }
 
-        if (nearest != null && nearestDist < nearThresholdPx) {
-            performQuickSend(current.filePath, nearest!!.displayName, nearest!!.address, nearest!!.port)
+        if (matched != null) {
+            performQuickSend(current.filePath, matched!!.displayName, matched!!.address, matched!!.port)
         } else {
             cancelQuickSend()
         }

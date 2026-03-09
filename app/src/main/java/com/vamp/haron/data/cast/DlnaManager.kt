@@ -277,15 +277,22 @@ class DlnaManager @Inject constructor(
     private fun startPolling(renderer: DlnaRenderer) {
         pollingJob?.cancel()
         pollingJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            var consecutiveErrors = 0
             while (isActive) {
-                delay(1000)
+                delay(2000)
                 try {
                     pollTransportInfo(renderer)
                     pollPositionInfo(renderer)
+                    consecutiveErrors = 0
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    // Network hiccup — continue polling
+                    consecutiveErrors++
+                    if (consecutiveErrors >= 10) {
+                        EcosystemLogger.d(HaronConstants.TAG, "DLNA polling stopped: 10 consecutive errors")
+                        clearState()
+                        break
+                    }
                 }
             }
         }

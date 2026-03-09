@@ -72,6 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.presentation.applock.AppLockViewModel
@@ -219,28 +220,31 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // Night mode schedule check every 60 seconds
-            LaunchedEffect(Unit) {
-                while (true) {
-                    val enabled = haronPrefs.getBoolean("night_mode_enabled", false)
-                    if (enabled) {
-                        val startH = haronPrefs.getInt("night_mode_start_hour", 22)
-                        val startM = haronPrefs.getInt("night_mode_start_minute", 0)
-                        val endH = haronPrefs.getInt("night_mode_end_hour", 7)
-                        val endM = haronPrefs.getInt("night_mode_end_minute", 0)
-                        val cal = Calendar.getInstance()
-                        val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-                        val startMinutes = startH * 60 + startM
-                        val endMinutes = endH * 60 + endM
-                        nightModeForced = if (startMinutes < endMinutes) {
-                            nowMinutes in startMinutes until endMinutes
+            // Night mode schedule check — only while app is in foreground
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    while (true) {
+                        val enabled = haronPrefs.getBoolean("night_mode_enabled", false)
+                        if (enabled) {
+                            val startH = haronPrefs.getInt("night_mode_start_hour", 22)
+                            val startM = haronPrefs.getInt("night_mode_start_minute", 0)
+                            val endH = haronPrefs.getInt("night_mode_end_hour", 7)
+                            val endM = haronPrefs.getInt("night_mode_end_minute", 0)
+                            val cal = Calendar.getInstance()
+                            val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+                            val startMinutes = startH * 60 + startM
+                            val endMinutes = endH * 60 + endM
+                            nightModeForced = if (startMinutes < endMinutes) {
+                                nowMinutes in startMinutes until endMinutes
+                            } else {
+                                nowMinutes >= startMinutes || nowMinutes < endMinutes
+                            }
                         } else {
-                            nowMinutes >= startMinutes || nowMinutes < endMinutes
+                            nightModeForced = false
                         }
-                    } else {
-                        nightModeForced = false
+                        delay(60_000)
                     }
-                    delay(60_000)
                 }
             }
 

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -29,12 +31,12 @@ android {
 
     signingConfigs {
         create("release") {
-            val props = project.rootProject.file("local.properties")
-            val localProps = java.util.Properties().apply { props.inputStream().use { load(it) } }
-            storeFile = file(localProps["STORE_FILE"] as String)
-            storePassword = localProps["STORE_PASSWORD"] as String
-            keyAlias = localProps["KEY_ALIAS"] as String
-            keyPassword = localProps["KEY_PASSWORD"] as String
+            val localProps = Properties()
+            project.rootProject.file("local.properties").reader(Charsets.UTF_8).use { localProps.load(it) }
+            storeFile = file(localProps.getProperty("STORE_FILE"))
+            storePassword = localProps.getProperty("STORE_PASSWORD")
+            keyAlias = localProps.getProperty("KEY_ALIAS")
+            keyPassword = localProps.getProperty("KEY_PASSWORD")
         }
     }
 

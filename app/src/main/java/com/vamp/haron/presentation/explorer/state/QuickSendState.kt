@@ -7,15 +7,17 @@ import com.vamp.haron.domain.model.TransferProgressInfo
 sealed interface QuickSendState {
     data object Idle : QuickSendState
 
-    /** Sender is dragging a file towards device circles */
+    /** Sender is dragging a file towards device list */
     data class DraggingToDevice(
         val filePath: String,
         val fileName: String,
-        /** Initial long-press position — circles are anchored here */
+        /** Initial long-press position */
         val anchorOffset: Offset,
         /** Current finger position — file preview follows this */
         val dragOffset: Offset,
-        val haronDevices: List<NetworkDevice>
+        val haronDevices: List<NetworkDevice>,
+        /** true = drag started from top panel → show list at bottom; false = bottom panel → show at top */
+        val fromTopPanel: Boolean
     ) : QuickSendState
 
     /** File is being sent — with live progress */

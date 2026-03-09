@@ -353,13 +353,18 @@ class ContentExtractor @Inject constructor(
     }
 
     private fun extractDocFull(file: File): String {
-        file.inputStream().use { input ->
-            val doc = HWPFDocument(input)
-            val extractor = WordExtractor(doc)
-            val text = extractor.text ?: ""
-            extractor.close()
-            doc.close()
-            return text.take(MAX_FULL_TEXT)
+        return try {
+            file.inputStream().use { input ->
+                val doc = HWPFDocument(input)
+                val extractor = WordExtractor(doc)
+                val text = extractor.text ?: ""
+                extractor.close()
+                doc.close()
+                text.take(MAX_FULL_TEXT)
+            }
+        } catch (e: Throwable) {
+            // NoClassDefFoundError / ExceptionInInitializerError if R8 strips POI deps
+            ""
         }
     }
 

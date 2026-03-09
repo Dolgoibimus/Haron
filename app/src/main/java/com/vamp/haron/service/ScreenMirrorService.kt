@@ -220,7 +220,7 @@ refresh();
                                 writeFully("\r\n".toByteArray())
                                 flush()
                             }
-                            delay(150)
+                            delay(500)
                         }
                     }
                 }

@@ -166,7 +166,7 @@ class TransferService : Service() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "haron:transfer"
             ).apply {
-                acquire(60 * 60 * 1000L) // 1 hour max
+                acquire(30 * 60 * 1000L) // 30 min max
             }
         }
     }

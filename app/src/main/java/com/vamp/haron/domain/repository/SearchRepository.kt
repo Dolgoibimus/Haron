@@ -44,6 +44,7 @@ interface SearchRepository {
     suspend fun indexAllFiles(onProgress: (IndexProgress) -> Unit = {})
     suspend fun indexByMode(mode: IndexMode, onProgress: (IndexProgress) -> Unit = {})
     fun startIndexByMode(mode: IndexMode)
+    fun cancelGlobalIndexing()
     suspend fun getIndexedCount(): Int
     suspend fun getLastIndexedTime(): Long?
     suspend fun getContentIndexSize(): Long

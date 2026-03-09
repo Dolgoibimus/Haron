@@ -54,9 +54,9 @@
 -keep class com.tom_roush.pdfbox.** { *; }
 -dontwarn com.tom_roush.pdfbox.**
 
-# ---------- Apache Commons Compress (archives) ----------
--keep class org.apache.commons.compress.** { *; }
--dontwarn org.apache.commons.compress.**
+# ---------- Apache Commons (all — compress, io, codec, collections, math; POI depends on them) ----------
+-keep class org.apache.commons.** { *; }
+-dontwarn org.apache.commons.**
 
 # ---------- junrar ----------
 -keep class com.github.junrar.** { *; }
@@ -123,6 +123,8 @@
 -dontwarn javax.el.FunctionMapper
 -dontwarn javax.el.ValueExpression
 -dontwarn javax.el.VariableMapper
+# mbassador event bus (used by smbj internally — reflection for handler constructors)
+-keep class net.engio.mbassy.** { *; }
 -dontwarn net.engio.mbassy.**
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.ietf.jgss.GSSContext

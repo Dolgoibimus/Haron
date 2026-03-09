@@ -1,16 +1,25 @@
 package com.vamp.haron.presentation.explorer.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,13 +32,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -38,12 +54,7 @@ import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.domain.model.TransferProgressInfo
 import com.vamp.haron.presentation.explorer.state.QuickSendState
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.sqrt
-import androidx.compose.ui.platform.LocalConfiguration
 
 @Composable
 fun QuickSendOverlay(
@@ -53,10 +64,9 @@ fun QuickSendOverlay(
     when (state) {
         is QuickSendState.DraggingToDevice -> {
             DraggingToDeviceOverlay(
-                fileName = state.fileName,
-                anchorOffset = state.anchorOffset,
                 dragOffset = state.dragOffset,
                 devices = state.haronDevices,
+                showAtBottom = state.fromTopPanel,
                 modifier = modifier
             )
         }
@@ -73,94 +83,44 @@ fun QuickSendOverlay(
 
 @Composable
 private fun DraggingToDeviceOverlay(
-    fileName: String,
-    anchorOffset: Offset,
     dragOffset: Offset,
     devices: List<NetworkDevice>,
+    showAtBottom: Boolean,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val circleRadiusDp = 30.dp
-    val circleDiameterPx = with(density) { (circleRadiusDp * 2).toPx() }
-    val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    val circleRadiusPx = with(density) { circleRadiusDp.toPx() }
-
-    // Arc radius: one circle diameter above the tap point
-    val count = devices.size
-    val arcAngle = PI * 2 / 3  // 120 degrees arc
-    val minArcRadius = if (count > 1) {
-        (count * circleDiameterPx * 1.3f / arcAngle).toFloat()
-    } else {
-        circleDiameterPx * 2f
-    }
-    val arcRadiusPx = minArcRadius.coerceIn(circleDiameterPx * 2f, screenWidthPx * 0.4f)
-
-    // Check if there's enough space above the anchor for circles
-    val spaceNeededAbove = arcRadiusPx + circleDiameterPx
-    val placeAbove = anchorOffset.y > spaceNeededAbove
-
-    // Shift anchor 50dp up (above) or down (below) for better visibility
-    val extraOffsetPx = with(density) { 50.dp.toPx() }
-    val shiftedAnchorY = if (placeAbove) anchorOffset.y - extraOffsetPx else anchorOffset.y + extraOffsetPx
-
-    // Arc above the anchor (210° to 330°) or below if no space above (30° to 150°)
-    val startAngle = if (placeAbove) (PI + PI / 6) else (PI / 6)
-    val endAngle = if (placeAbove) (2 * PI - PI / 6) else (PI - PI / 6)
-    val step = if (count > 1) (endAngle - startAngle) / (count - 1) else 0.0
+    // Track each row's bounds in window coordinates for hit-test
+    val rowBounds = remember { mutableStateMapOf<Int, Rect>() }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Device circles
-        devices.forEachIndexed { index, device ->
-            val angle = if (count > 1) startAngle + step * index else (startAngle + endAngle) / 2
-            val cx = (anchorOffset.x + (arcRadiusPx * cos(angle)).toFloat())
-                .coerceIn(circleRadiusPx, screenWidthPx - circleRadiusPx)
-            val cy = (shiftedAnchorY + (arcRadiusPx * sin(angle)).toFloat())
-                .coerceIn(circleRadiusPx, screenHeightPx - circleRadiusPx)
+        // Device list — at top or bottom depending on which panel initiated drag
+        Column(
+            modifier = Modifier
+                .align(if (showAtBottom) Alignment.BottomCenter else Alignment.TopCenter)
+                .fillMaxWidth()
+                .then(
+                    if (!showAtBottom) Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                    else Modifier
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            devices.forEachIndexed { index, device ->
+                if (index > 0) Spacer(Modifier.height(4.dp))
 
-            // Highlight based on current finger position (dragOffset)
-            val dx = dragOffset.x - cx
-            val dy = dragOffset.y - cy
-            val dist = sqrt(dx * dx + dy * dy)
-            val isNear = dist < with(density) { 60.dp.toPx() }
+                val bounds = rowBounds[index]
+                val isHighlighted = bounds != null && bounds.contains(dragOffset)
 
-            val offsetX = with(density) { cx.toDp() - circleRadiusDp }
-            val offsetY = with(density) { cy.toDp() - circleRadiusDp }
-
-            Surface(
-                modifier = Modifier
-                    .offset(x = offsetX, y = offsetY)
-                    .size(circleRadiusDp * 2),
-                shape = CircleShape,
-                color = if (isNear) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.primaryContainer,
-                shadowElevation = 8.dp,
-                tonalElevation = if (isNear) 4.dp else 1.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Filled.PhoneAndroid, null,
-                        Modifier.size(20.dp),
-                        tint = if (isNear) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        device.displayName,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        color = if (isNear) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
+                DeviceRow(
+                    device = device,
+                    isHighlighted = isHighlighted,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        rowBounds[index] = coords.boundsInWindow()
+                    }
+                )
             }
         }
 
-        // File preview follows finger (dragOffset)
+        // File preview follows finger
         Surface(
             modifier = Modifier
                 .offset {
@@ -181,6 +141,81 @@ private fun DraggingToDeviceOverlay(
                     tint = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(
+    device: NetworkDevice,
+    isHighlighted: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "marquee")
+    val marqueeOffset by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = -1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "marquee"
+    )
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = if (isHighlighted) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 4.dp,
+        tonalElevation = if (isHighlighted) 4.dp else 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.PhoneAndroid, null,
+                Modifier.size(24.dp),
+                tint = if (isHighlighted) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clipToBounds()
+            ) {
+                Text(
+                    device.displayName,
+                    modifier = Modifier.marqueeOffset(marqueeOffset),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    softWrap = false,
+                    color = if (isHighlighted) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+}
+
+/** Shifts text left by a fraction of (textWidth - containerWidth) for marquee effect */
+private fun Modifier.marqueeOffset(fraction: Float): Modifier = layout { measurable, constraints ->
+    // Measure with unbounded width to get full text width
+    val placeable = measurable.measure(
+        constraints.copy(maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
+    )
+    val containerWidth = constraints.maxWidth
+    val overflow = (placeable.width - containerWidth).coerceAtLeast(0)
+    layout(containerWidth, placeable.height) {
+        if (overflow > 0) {
+            val offsetX = (fraction * overflow).roundToInt()
+            placeable.placeRelative(offsetX, 0)
+        } else {
+            placeable.placeRelative(0, 0)
         }
     }
 }

@@ -20,14 +20,14 @@ class FileContentObserver(
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
         val now = System.currentTimeMillis()
-        // Debounce: at most once per 5 seconds
-        if (now - lastTriggerTime < 5_000) return
+        // Debounce: at most once per 30 seconds to avoid constant re-indexing
+        if (now - lastTriggerTime < 30_000) return
         lastTriggerTime = now
 
         val request = OneTimeWorkRequestBuilder<FileIndexWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             FileIndexWorker.WORK_NAME_ONE_TIME,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request
         )
     }

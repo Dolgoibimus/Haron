@@ -140,11 +140,13 @@ class UsbStorageManager @Inject constructor(
         registered = true
         scheduleRefresh()
 
-        // Periodic poll every 10s as fallback
+        // Periodic poll only when USB volumes are present (avoids battery drain when no USB)
         pollJob = scope.launch {
             while (registered) {
-                delay(10_000)
-                doRefresh()
+                delay(30_000)
+                if (_usbVolumes.value.isNotEmpty()) {
+                    doRefresh()
+                }
             }
         }
     }

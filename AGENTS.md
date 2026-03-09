@@ -619,6 +619,53 @@
 
 > Выполненные задачи с описанием как решили.
 
+### QuickSend — редизайн оверлея ⚠️ не проверено
+
+**Было:** круглые иконки устройств, расположенные дугой.
+**Стало:** вертикальный список горизонтальных элементов с полным именем устройства + marquee-анимация для длинных имён.
+- Позиционирование: если drag из нижней панели → оверлей вверху, из верхней → внизу
+- Hit-test через `onGloballyPositioned` + `boundsInWindow()` (без ручного расчёта координат)
+- Marquee: custom `Modifier.layout` с `Constraints.Infinity` для unbounded измерения
+
+**Файлы:** `QuickSendOverlay.kt` (полная перезапись), `QuickSendState.kt` (+fromTopPanel), `ExplorerViewModel.kt` (startQuickSend + endQuickSendAtPosition), `ExplorerScreen.kt` (fromTopPanel=true/false)
+
+### R8 crash-аудит — Exception→Throwable ⚠️ не проверено
+
+**Проблема:** R8 стрипает зависимости библиотек → `NoClassDefFoundError` (extends Error, не Exception). `catch (Exception)` не ловит Error-подклассы → краш.
+- Apache POI: R8 убрал Apache Commons → `NoClassDefFoundError: HWPFDocument`
+- Потенциально: FFmpegKit, 7-Zip-JBinding, JSch, smbj, junrar
+
+**Решение:**
+- ProGuard: `-keep class org.apache.commons.** { *; }` (все Apache Commons, не только compress)
+- 16 файлов: `catch (Exception)` → `catch (Throwable)` вокруг вызовов внешних библиотек
+- FTS triggers: `dropFtsTriggers()` перемещён в начало try-блока в `indexAllFiles`, `indexByMode`, `indexFolderContent`
+
+**Файлы:** `proguard-rules.pro`, `SearchRepositoryImpl.kt`, `ContentExtractor.kt`, `DocumentParser.kt`, `LoadPreviewUseCase.kt`, `ThumbnailCache.kt`, `PdfReaderScreen.kt`, `TranscodeVideoUseCase.kt`, `BrowseArchiveUseCase.kt`, `ExtractArchiveUseCase.kt`, `SshSessionManager.kt`, `SmbManager.kt`
+
+### OOM fix — mutex для индексации ⚠️ не проверено
+
+**Проблема:** глобальная индексация (`indexByMode`) и поиск по содержимому папки (`indexFolderContent`) работали одновременно → OOM (253MB/256MB heap).
+
+**Решение:**
+- `Mutex` (`indexingMutex`) — все три метода индексации (`indexAllFiles`, `indexByMode`, `indexFolderContent`) эксклюзивны
+- `cancelGlobalIndexing()` — при запуске `indexFolderContent` автоматически отменяется глобальная индексация (сохранённый `Job`)
+- Лимит контента: 256 KB текста на файл (`MAX_CONTENT_LENGTH`)
+- Периодический flush батчей (каждые 50 файлов) + GC (каждые 20 файлов) в `indexFolderContent`
+
+**Файлы:** `SearchRepository.kt` (+cancelGlobalIndexing), `SearchRepositoryImpl.kt` (mutex, job, content limit, GC)
+
+### SMB — утечка IPC$ соединений + фильтр подсетей ⚠️ не проверено
+
+**Проблема 1:** `listShares()` вызывал `SMBTransportFactories.SRVSVC.getTransport(session)`, который каждый раз открывал новый `IPC$` share через `session.connectShare("IPC$")`. Share никогда не закрывался → накопление соединений.
+
+**Решение:** ручное создание транспорта (`PipeShare` + `NamedPipe` + `SMBTransport` + `bind`) с закрытием `IPC$` share в `finally`.
+
+**Проблема 2:** subnet scan по порту 445 заполнял список SMB-серверов десятками IP-адресов из подсети.
+
+**Решение:** в `SmbViewModel` отфильтрованы устройства с `id.startsWith("SMB_SCAN_")` — показываются только NSD-обнаруженные серверы.
+
+**Файлы:** `SmbManager.kt` (ручной транспорт, close IPC$, close stale shares, логирование), `SmbViewModel.kt` (фильтр SMB_SCAN_)
+
 ### R8/ProGuard + Release signing ⚠️ не проверено
 
 **Что сделано:**

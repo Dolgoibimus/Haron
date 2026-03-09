@@ -280,7 +280,7 @@ object ThumbnailCache {
                 doc.close()
                 text
             }
-        } catch (_: Exception) { null }
+        } catch (_: Throwable) { null }
     }
 
     private fun extractRtfText(context: Context, path: String, isContentUri: Boolean): String? {

@@ -42,7 +42,7 @@ class BrowseArchiveUseCase @Inject constructor(
             }
             EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: found ${entries.size} entries")
             Result.success(entries)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val className = e.javaClass.simpleName
             val causeClass = e.cause?.javaClass?.simpleName ?: ""
             val msg = e.message ?: ""
@@ -149,7 +149,7 @@ class BrowseArchiveUseCase @Inject constructor(
                     }
                     filterDirectChildren(all, prefix)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
                 if (e is IllegalStateException && e.message == "encrypted") throw e
                 browseRarWith7Zip(file, virtualPath, password)

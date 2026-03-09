@@ -652,7 +652,7 @@ object DocumentParser {
         // Layer 1: Range-based with full formatting
         try { return parseDocWithRange(file) }
         catch (_: org.apache.poi.poifs.filesystem.OfficeXmlFileException) { return parseDocx(file) }
-        catch (_: Exception) { /* continue to fallbacks */ }
+        catch (_: Throwable) { /* continue to fallbacks (Throwable: NoClassDefFoundError from R8) */ }
 
         // Layer 2: HWPFDocument.getText() — raw text from pieces, bypasses Range
         try {
@@ -664,7 +664,7 @@ object DocumentParser {
                 if (result.isNotEmpty()) return result
             }
         } catch (_: org.apache.poi.poifs.filesystem.OfficeXmlFileException) { return parseDocx(file) }
-        catch (_: Exception) { /* continue */ }
+        catch (_: Throwable) { /* continue */ }
 
         // Layer 3: WordExtractor.getTextFromPieces() — another path to text pieces
         try {
@@ -677,7 +677,7 @@ object DocumentParser {
                 if (result.isNotEmpty()) return result
             }
         } catch (_: org.apache.poi.poifs.filesystem.OfficeXmlFileException) { return parseDocx(file) }
-        catch (_: Exception) { /* continue */ }
+        catch (_: Throwable) { /* continue */ }
 
         // Layer 4: HWPFOldDocument — Word 6/95 format
         try {
@@ -688,7 +688,7 @@ object DocumentParser {
                 val result = textToParagraphs(text)
                 if (result.isNotEmpty()) return result
             }
-        } catch (_: Exception) { /* continue */ }
+        } catch (_: Throwable) { /* continue */ }
 
         // Layer 5: Maybe it's RTF saved as .doc
         try {
@@ -917,7 +917,7 @@ object DocumentParser {
                     doc.close()
                     pics
                 }
-            } catch (_: Exception) { emptyList() }
+            } catch (_: Throwable) { emptyList() }
 
             // ---- Build formatted DocParagraphs ----
             val text = fullText.toString()
@@ -1837,6 +1837,8 @@ object DocumentParser {
             }
         } catch (_: org.apache.poi.poifs.filesystem.OfficeXmlFileException) {
             return parseXlsx(file)
+        } catch (_: Throwable) {
+            return emptyList()
         }
     }
 

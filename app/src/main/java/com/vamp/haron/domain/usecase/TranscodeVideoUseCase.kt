@@ -84,7 +84,7 @@ class TranscodeVideoUseCase @Inject constructor(
             EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: FFprobe duration=$durationStr")
             if (durationStr == null) return 0L
             (durationStr.toDouble() * 1000).toLong()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: getDurationMs CRASH: ${e.javaClass.simpleName}: ${e.message}")
             0L
         }
@@ -108,7 +108,7 @@ class TranscodeVideoUseCase @Inject constructor(
             }
             EcosystemLogger.d(HaronConstants.TAG, "TranscodeVideoUseCase: bestEncoder=$result")
             result
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "TranscodeVideoUseCase: encoder detection CRASH: ${e.javaClass.simpleName}: ${e.message}")
             VideoEncoder.MPEG4
         }

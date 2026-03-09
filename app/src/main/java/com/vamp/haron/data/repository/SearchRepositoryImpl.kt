@@ -3,6 +3,7 @@ package com.vamp.haron.data.repository
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import androidx.sqlite.db.SimpleSQLiteQuery
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.ContentExtractor
@@ -23,11 +24,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -47,6 +51,14 @@ class SearchRepositoryImpl @Inject constructor(
     private val _indexProgress = MutableStateFlow(IndexProgress())
     private val _indexCompleted = MutableStateFlow(false)
 
+    /** Mutex prevents concurrent heavy indexing (global + folder content) */
+    private val indexingMutex = Mutex()
+    /** Job reference for global indexing — allows cancellation when folder search starts */
+    private var globalIndexJob: Job? = null
+
+    /** Max text content per file to prevent OOM (256 KB) */
+    private val MAX_CONTENT_LENGTH = 256 * 1024
+
     override val indexCompleted: StateFlow<Boolean> = _indexCompleted.asStateFlow()
 
     override fun indexProgressFlow(): Flow<IndexProgress> = _indexProgress
@@ -55,10 +67,20 @@ class SearchRepositoryImpl @Inject constructor(
         if (_indexProgress.value.isRunning) return
         EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: startIndexByMode mode=$mode")
         _indexCompleted.value = false
-        appScope.launch {
+        globalIndexJob = appScope.launch {
             indexByMode(mode)
             _indexCompleted.value = true
         }
+    }
+
+    override fun cancelGlobalIndexing() {
+        val job = globalIndexJob ?: return
+        if (job.isActive) {
+            EcosystemLogger.i(HaronConstants.TAG, "SearchRepo: cancelling global indexing (folder search requested)")
+            job.cancel()
+            _indexProgress.value = IndexProgress(isRunning = false)
+        }
+        globalIndexJob = null
     }
 
     override fun dismissIndexCompleted() {
@@ -102,6 +124,10 @@ class SearchRepositoryImpl @Inject constructor(
     }
 
     override suspend fun indexFolderContent(folderPath: String, force: Boolean, onProgress: (Int, Int) -> Unit) {
+        // Cancel global indexing if running — user explicitly wants folder search
+        cancelGlobalIndexing()
+
+        indexingMutex.withLock {
         withContext(Dispatchers.IO) {
             try {
                 val dir = File(folderPath)
@@ -148,6 +174,9 @@ class SearchRepositoryImpl @Inject constructor(
                 val indexBatch = mutableListOf<FileIndexEntity>()
                 val startTime = System.currentTimeMillis()
 
+                // Drop FTS triggers before any upsert to avoid crash on corrupted FTS
+                dropFtsTriggers()
+
                 EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexFolderContent: $total files to index in $folderPath")
 
                 toIndex.forEachIndexed { idx, file ->
@@ -178,11 +207,14 @@ class SearchRepositoryImpl @Inject constructor(
                             else -> ""
                         }
 
-                        if (contentText.isNotBlank()) {
+                        val trimmedText = if (contentText.length > MAX_CONTENT_LENGTH)
+                            contentText.take(MAX_CONTENT_LENGTH) else contentText
+
+                        if (trimmedText.isNotBlank()) {
                             contentBatch.add(
                                 FileContentEntity(
                                     path = file.absolutePath,
-                                    fullText = contentText,
+                                    fullText = trimmedText,
                                     indexedAt = startTime
                                 )
                             )
@@ -200,14 +232,26 @@ class SearchRepositoryImpl @Inject constructor(
                                     parentPath = file.parent ?: "",
                                     isDirectory = false,
                                     isHidden = file.isHidden,
-                                    contentSnippet = contentText.take(500),
+                                    contentSnippet = trimmedText.take(500),
                                     indexedAt = startTime
                                 )
                             )
                         }
                     } catch (_: OutOfMemoryError) {
+                        EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: OOM on ${file.name}, skipping")
                         System.gc()
-                    } catch (_: Exception) { }
+                    } catch (_: Throwable) { }
+
+                    // Periodic GC + flush to prevent memory pressure
+                    if ((idx + 1) % 20 == 0) System.gc()
+                    if (contentBatch.size >= 50) {
+                        safeReplaceContent(contentBatch)
+                        contentBatch.clear()
+                        if (indexBatch.isNotEmpty()) {
+                            fileIndexDao.upsertAll(indexBatch)
+                            indexBatch.clear()
+                        }
+                    }
                 }
 
                 if (contentBatch.isNotEmpty()) {
@@ -222,6 +266,7 @@ class SearchRepositoryImpl @Inject constructor(
                 EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: indexFolderContent failed: ${e.message}")
             }
         }
+        } // indexingMutex
     }
 
     override suspend fun searchFiles(filter: SearchFilter): List<FileIndexEntity> {
@@ -355,6 +400,7 @@ class SearchRepositoryImpl @Inject constructor(
     // --- indexAllFiles: file structure only (for ContentObserver / ScreenOnReceiver) ---
 
     override suspend fun indexAllFiles(onProgress: (IndexProgress) -> Unit) {
+        indexingMutex.withLock {
         withContext(Dispatchers.IO) {
             EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: indexAllFiles started")
             val startTime = System.currentTimeMillis()
@@ -364,6 +410,9 @@ class SearchRepositoryImpl @Inject constructor(
             onProgress(bgProgress)
 
             try {
+                // Drop FTS triggers FIRST — before ANY upsert/delete to avoid crash on corrupted FTS
+                dropFtsTriggers()
+
                 val root = Environment.getExternalStorageDirectory()
                 val batch = mutableListOf<FileIndexEntity>()
                 var processed = 0
@@ -397,17 +446,22 @@ class SearchRepositoryImpl @Inject constructor(
                 onProgress(IndexProgress(isRunning = false))
             }
         }
+        } // indexingMutex
     }
 
     // --- indexByMode: three specialized indexing modes ---
 
     override suspend fun indexByMode(mode: IndexMode, onProgress: (IndexProgress) -> Unit) {
+        indexingMutex.withLock {
         withContext(Dispatchers.IO) {
             val startTime = System.currentTimeMillis()
             _indexProgress.value = IndexProgress(isRunning = true, mode = mode)
             onProgress(_indexProgress.value)
 
             try {
+                // Drop FTS triggers before any upsert to avoid crash on corrupted FTS
+                dropFtsTriggers()
+
                 val root = Environment.getExternalStorageDirectory()
                 val files = collectFiles(root, mode)
 
@@ -461,17 +515,20 @@ class SearchRepositoryImpl @Inject constructor(
                             }
                         }
 
-                        if (contentText.isNotBlank()) {
+                        val trimmedText = if (contentText.length > MAX_CONTENT_LENGTH)
+                            contentText.take(MAX_CONTENT_LENGTH) else contentText
+
+                        if (trimmedText.isNotBlank()) {
                             contentBatch.add(
                                 FileContentEntity(
                                     path = file.absolutePath,
-                                    fullText = contentText,
+                                    fullText = trimmedText,
                                     indexedAt = startTime
                                 )
                             )
 
                             // Also update snippet in file_index
-                            val snippet = contentText.take(500)
+                            val snippet = trimmedText.take(500)
                             val ext = file.extension.lowercase()
                             val mimeType = MimeTypeMap.getSingleton()
                                 .getMimeTypeFromExtension(ext) ?: "application/octet-stream"
@@ -494,7 +551,7 @@ class SearchRepositoryImpl @Inject constructor(
                     } catch (_: OutOfMemoryError) {
                         skipped.add(file.absolutePath)
                         System.gc()
-                    } catch (_: Exception) {
+                    } catch (_: Throwable) {
                         skipped.add(file.absolutePath)
                     }
 
@@ -537,6 +594,7 @@ class SearchRepositoryImpl @Inject constructor(
                 onProgress(_indexProgress.value)
             }
         }
+        } // indexingMutex
     }
 
     private suspend fun collectFiles(root: File, mode: IndexMode): List<File> {
@@ -599,7 +657,7 @@ class SearchRepositoryImpl @Inject constructor(
             } else ""
 
             val snippet = if (file.isFile) {
-                try { contentExtractor.extractSnippet(file) } catch (_: Exception) { "" }
+                try { contentExtractor.extractSnippet(file) } catch (_: Throwable) { "" }
             } else ""
 
             val entity = FileIndexEntity(
@@ -677,19 +735,72 @@ class SearchRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Rebuild FTS4 indexes to sync with content tables.
-     * Necessary when data was inserted before FTS tables existed,
-     * or when triggers didn't fire due to crash/race condition.
+     * Drop FTS triggers so that DELETE/INSERT on content tables won't crash
+     * if FTS is out of sync. Called before bulk operations.
+     */
+    private fun dropFtsTriggers() {
+        try {
+            val db = database.openHelper.writableDatabase
+            db.execSQL("DROP TRIGGER IF EXISTS file_index_ai")
+            db.execSQL("DROP TRIGGER IF EXISTS file_index_ad")
+            db.execSQL("DROP TRIGGER IF EXISTS file_index_au")
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_ai")
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_ad")
+            db.execSQL("DROP TRIGGER IF EXISTS file_content_au")
+        } catch (e: Exception) {
+            EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: dropFtsTriggers failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Rebuild FTS4 indexes from scratch: drop corrupted tables, recreate, populate, restore triggers.
      */
     private fun rebuildFts() {
         try {
             val db = database.openHelper.writableDatabase
-            db.execSQL("INSERT INTO file_content_fts(file_content_fts) VALUES('rebuild')")
+            // Drop triggers first (already dropped by dropFtsTriggers, but ensure)
+            dropFtsTriggers()
+
+            // Drop and recreate FTS tables to fix corruption
+            db.execSQL("DROP TABLE IF EXISTS file_index_fts")
+            db.execSQL("DROP TABLE IF EXISTS file_content_fts")
+            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS file_index_fts USING fts4(name, path, content_snippet, content='file_index')")
+            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS file_content_fts USING fts4(full_text, content='file_content')")
+
+            // Populate FTS from content tables
             db.execSQL("INSERT INTO file_index_fts(file_index_fts) VALUES('rebuild')")
+            db.execSQL("INSERT INTO file_content_fts(file_content_fts) VALUES('rebuild')")
+
+            // Restore triggers
+            recreateFtsTriggers(db)
+
             EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: FTS rebuild completed")
         } catch (e: Exception) {
             EcosystemLogger.w(HaronConstants.TAG, "SearchRepo: FTS rebuild failed: ${e.message}")
         }
+    }
+
+    private fun recreateFtsTriggers(db: SupportSQLiteDatabase) {
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_index_ai AFTER INSERT ON file_index BEGIN
+            INSERT INTO file_index_fts(docid, name, path, content_snippet) VALUES (new.rowid, new.name, new.path, new.content_snippet);
+        END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_index_ad AFTER DELETE ON file_index BEGIN
+            INSERT INTO file_index_fts(file_index_fts, docid, name, path, content_snippet) VALUES ('delete', old.rowid, old.name, old.path, old.content_snippet);
+        END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_index_au AFTER UPDATE ON file_index BEGIN
+            INSERT INTO file_index_fts(file_index_fts, docid, name, path, content_snippet) VALUES ('delete', old.rowid, old.name, old.path, old.content_snippet);
+            INSERT INTO file_index_fts(docid, name, path, content_snippet) VALUES (new.rowid, new.name, new.path, new.content_snippet);
+        END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ai AFTER INSERT ON file_content BEGIN
+            INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
+        END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ad AFTER DELETE ON file_content BEGIN
+            INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
+        END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_au AFTER UPDATE ON file_content BEGIN
+            INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
+            INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
+        END""")
     }
 
     /**
@@ -741,19 +852,12 @@ class SearchRepositoryImpl @Inject constructor(
             }
 
             // Rebuild FTS from source table (no triggers needed)
+            db.execSQL("DROP TABLE IF EXISTS file_content_fts")
+            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS file_content_fts USING fts4(full_text, content='file_content')")
             db.execSQL("INSERT INTO file_content_fts(file_content_fts) VALUES('rebuild')")
 
             // Recreate triggers
-            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ai AFTER INSERT ON file_content BEGIN
-                INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
-            END""")
-            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_ad AFTER DELETE ON file_content BEGIN
-                INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
-            END""")
-            db.execSQL("""CREATE TRIGGER IF NOT EXISTS file_content_au AFTER UPDATE ON file_content BEGIN
-                INSERT INTO file_content_fts(file_content_fts, docid, full_text) VALUES ('delete', old.rowid, old.full_text);
-                INSERT INTO file_content_fts(docid, full_text) VALUES (new.rowid, new.full_text);
-            END""")
+            recreateFtsTriggers(db)
 
             db.setTransactionSuccessful()
             EcosystemLogger.d(HaronConstants.TAG, "SearchRepo: safeReplaceContent: ${batch.size} entries saved + FTS rebuilt")

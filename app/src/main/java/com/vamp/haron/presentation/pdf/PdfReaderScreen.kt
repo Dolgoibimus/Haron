@@ -485,13 +485,17 @@ private fun extractDoc(context: Context, filePath: String): String {
     } else {
         File(filePath).inputStream()
     }
-    return stream.use { input ->
-        val doc = HWPFDocument(input)
-        val extractor = WordExtractor(doc)
-        val text = extractor.text ?: ""
-        extractor.close()
-        doc.close()
-        text
+    return try {
+        stream.use { input ->
+            val doc = HWPFDocument(input)
+            val extractor = WordExtractor(doc)
+            val text = extractor.text ?: ""
+            extractor.close()
+            doc.close()
+            text
+        }
+    } catch (_: Throwable) {
+        ""
     }
 }
 

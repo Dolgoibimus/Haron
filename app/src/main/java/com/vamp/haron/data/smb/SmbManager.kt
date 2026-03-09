@@ -12,10 +12,12 @@ import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
+import com.hierynomus.smbj.share.PipeShare
+import com.rapid7.client.dcerpc.Interface
 import com.rapid7.client.dcerpc.mssrvs.ServerService
 import com.rapid7.client.dcerpc.mssrvs.dto.NetShareInfo0
-import com.rapid7.client.dcerpc.transport.RPCTransport
-import com.rapid7.client.dcerpc.transport.SMBTransportFactories
+import com.rapid7.client.dcerpc.transport.SMBTransport
+import com.rapid7.helper.smbj.share.NamedPipe
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import kotlinx.coroutines.Dispatchers
@@ -93,7 +95,7 @@ class SmbManager @Inject constructor(
                 connections[host] = SmbConnection(smbClient, conn, session, credential)
                 EcosystemLogger.d(HaronConstants.TAG, "SmbManager: connected to $host")
                 Result.success(Unit)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 EcosystemLogger.e(HaronConstants.TAG, "SmbManager: connect failed to $host: ${e.message}")
                 Result.failure(e)
             }
@@ -111,7 +113,7 @@ class SmbManager @Inject constructor(
                 connections[host] = SmbConnection(smbClient, conn, session, null)
                 EcosystemLogger.d(HaronConstants.TAG, "SmbManager: guest connected to $host")
                 Result.success(Unit)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 EcosystemLogger.e(HaronConstants.TAG, "SmbManager: guest connect failed to $host: ${e.message}")
                 Result.failure(e)
             }
@@ -125,13 +127,22 @@ class SmbManager @Inject constructor(
                     ?: return@withContext Result.failure(IllegalStateException("Not connected"))
                 smbConn.lastUsed = System.currentTimeMillis()
 
-                val transport: RPCTransport = SMBTransportFactories.SRVSVC.getTransport(smbConn.session)
-                val serverService = ServerService(transport)
-                val shares: List<NetShareInfo0> = serverService.shares0
-
-                val filtered = shares
-                    .map { SmbShareInfo(name = it.netName, type = 0) }
-                    .filter { !it.name.endsWith("$") }
+                // Open IPC$ share manually so we can close it after use (prevents connection leak)
+                val ipcShare = smbConn.session.connectShare("IPC$")
+                val filtered = try {
+                    val pipeShare = ipcShare as? PipeShare
+                        ?: return@withContext Result.failure(IllegalStateException("IPC$ is not a PipeShare"))
+                    val namedPipe = NamedPipe(smbConn.session, pipeShare, "srvsvc")
+                    val transport = SMBTransport(namedPipe)
+                    transport.bind(Interface.SRVSVC_V3_0, Interface.NDR_32BIT_V2)
+                    val serverService = ServerService(transport)
+                    val shares: List<NetShareInfo0> = serverService.shares0
+                    shares
+                        .map { SmbShareInfo(name = it.netName, type = 0) }
+                        .filter { !it.name.endsWith("$") }
+                } finally {
+                    try { ipcShare.close() } catch (_: Exception) {}
+                }
 
                 EcosystemLogger.d(HaronConstants.TAG, "SmbManager: found ${filtered.size} shares on $host")
                 Result.success(filtered)
@@ -302,8 +313,8 @@ class SmbManager @Inject constructor(
         }
 
     fun disconnect(host: String) {
-        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnecting from $host")
         val shareKeysToRemove = openShares.keys.filter { it.startsWith("$host/") }
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnecting from $host, closing ${shareKeysToRemove.size} shares")
         shareKeysToRemove.forEach { key ->
             try { openShares.remove(key)?.close() } catch (_: Exception) {}
         }
@@ -311,7 +322,7 @@ class SmbManager @Inject constructor(
             try { conn.session.close() } catch (_: Exception) {}
             try { conn.connection.close() } catch (_: Exception) {}
         }
-        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnected from $host")
+        EcosystemLogger.d(HaronConstants.TAG, "SmbManager: disconnected from $host, remaining connections=${connections.size}, shares=${openShares.size}")
     }
 
     fun disconnectAll() {
@@ -357,14 +368,18 @@ class SmbManager @Inject constructor(
             try {
                 if (existing.isConnected) return existing
             } catch (_: Exception) { }
+            // Close stale share before removing
+            try { existing.close() } catch (_: Exception) { }
             openShares.remove(key)
         }
         val conn = getConnection(host) ?: return null
         return try {
             val share = conn.session.connectShare(shareName) as DiskShare
             openShares[key] = share
+            EcosystemLogger.d(HaronConstants.TAG, "SmbManager: opened share $shareName on $host (total open: ${openShares.size})")
             share
-        } catch (_: SMBRuntimeException) {
+        } catch (e: SMBRuntimeException) {
+            EcosystemLogger.w(HaronConstants.TAG, "SmbManager: failed to open share $shareName: ${e.message}")
             null
         }
     }

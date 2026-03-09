@@ -646,7 +646,7 @@ class LoadPreviewUseCase @Inject constructor(
                 doc.close()
                 textToPreview(entry, text)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             PreviewData.UnsupportedPreview(
                 fileName = entry.name,
                 fileSize = entry.size,

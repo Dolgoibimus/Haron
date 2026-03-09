@@ -471,7 +471,7 @@ fun ExplorerScreen(
                 onExitProtected = { viewModel.exitProtectedMode(PanelId.TOP) },
                 onQuickSendStart = { path, name, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.startQuickSend(path, name, offset)
+                    viewModel.startQuickSend(path, name, offset, fromTopPanel = true)
                 },
                 onQuickSendDrag = { offset -> viewModel.updateQuickSendDrag(offset) },
                 onQuickSendEnd = {
@@ -610,7 +610,7 @@ fun ExplorerScreen(
                 onExitProtected = { viewModel.exitProtectedMode(PanelId.BOTTOM) },
                 onQuickSendStart = { path, name, offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.startQuickSend(path, name, offset)
+                    viewModel.startQuickSend(path, name, offset, fromTopPanel = false)
                 },
                 onQuickSendDrag = { offset -> viewModel.updateQuickSendDrag(offset) },
                 onQuickSendEnd = {

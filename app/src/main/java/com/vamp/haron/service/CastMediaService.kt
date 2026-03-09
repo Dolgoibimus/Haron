@@ -150,7 +150,7 @@ class CastMediaService : Service() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "haron:cast_service")
-            .apply { acquire(4 * 60 * 60 * 1000L) }
+            .apply { acquire(30 * 60 * 1000L) } // 30 min max
         EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WakeLock acquired")
     }
 

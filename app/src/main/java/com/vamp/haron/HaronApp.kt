@@ -53,6 +53,16 @@ class HaronApp : Application(), Configuration.Provider {
         // Copy Tesseract trained data (async-safe, skips if already copied)
         tesseractOcr.init()
 
+        // Catch uncaught exceptions and write to log before process dies
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val stackTrace = throwable.stackTraceToString()
+                EcosystemLogger.e("Haron/CRASH", "FATAL on ${thread.name}: ${throwable.message}\n$stackTrace")
+            } catch (_: Exception) { }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         // Register ContentObserver for media changes
         contentObserver = FileContentObserver(applicationContext).also { it.register() }
 

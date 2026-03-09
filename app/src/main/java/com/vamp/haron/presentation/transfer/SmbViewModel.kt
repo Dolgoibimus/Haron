@@ -92,7 +92,10 @@ class SmbViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             networkDeviceScanner.devices.collect { devices ->
-                val smbDevices = devices.filter { it.type == NetworkDeviceType.SMB }
+                // Only show NSD-discovered SMB servers, not subnet scan results (SMB_SCAN_*)
+                val smbDevices = devices.filter {
+                    it.type == NetworkDeviceType.SMB && !it.id.startsWith("SMB_SCAN_")
+                }
                 _state.update { it.copy(discoveredServers = smbDevices) }
             }
         }

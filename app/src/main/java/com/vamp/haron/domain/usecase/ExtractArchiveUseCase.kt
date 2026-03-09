@@ -74,7 +74,7 @@ class ExtractArchiveUseCase @Inject constructor(
                 "rar" -> extractRar(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
                 else -> emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_unsupported_format)))
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             EcosystemLogger.e(TAG, "Extract failed: ${e.javaClass.simpleName}: ${e.message}")
             emit(ExtractProgress(0, 0, "", error = e.message ?: context.getString(R.string.extract_error_generic)))
         }
@@ -216,7 +216,7 @@ class ExtractArchiveUseCase @Inject constructor(
                     }
                     emit(ExtractProgress(total, total, "", isComplete = true))
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
                 EcosystemLogger.d(TAG, "junrar failed (${e.javaClass.simpleName}), trying 7-Zip-JBinding")
                 extractRarWith7Zip(file, destinationDir, selectedEntries, password, basePrefix)
