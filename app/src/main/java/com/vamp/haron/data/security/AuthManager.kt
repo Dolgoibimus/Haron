@@ -80,10 +80,16 @@ class AuthManager @Inject constructor(
                 }
             }
             val prompt = BiometricPrompt(activity, executor, callback)
+            val method = getAppLockMethod()
+            val negText = if (method == AppLockMethod.BIOMETRIC_ONLY) {
+                context.getString(R.string.cancel)
+            } else {
+                context.getString(R.string.biometric_use_pin)
+            }
             val info = BiometricPrompt.PromptInfo.Builder()
                 .setTitle(context.getString(R.string.biometric_prompt_title))
                 .setSubtitle(context.getString(R.string.biometric_prompt_subtitle))
-                .setNegativeButtonText(context.getString(R.string.biometric_use_pin))
+                .setNegativeButtonText(negText)
                 .build()
             prompt.authenticate(info)
             cont.invokeOnCancellation { prompt.cancelAuthentication() }

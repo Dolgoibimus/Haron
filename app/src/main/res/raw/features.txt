@@ -106,6 +106,9 @@
 - Navigate folders inside archive
 - Selective extraction
 - Create ZIP with optional password (AES-256) and split
+- Conflict dialog on create: replace / rename / cancel
+- Extract options: extract here or into subfolder by archive name
+- Smart detection: if archive has single root folder — extract as-is without dialog
 
 # Text Editor
 - View and edit TXT/MD files
@@ -195,10 +198,20 @@
 - First content search indexes the folder, subsequent searches are instant
 - Debounce 300ms, auto-reset on folder change
 
+# Barcode & QR Scanner
+- Built-in scanner via camera (ML Kit)
+- Scan QR codes, barcodes (EAN, UPC, Code128, etc.)
+- How to open: side menu → Tools → Scanner, or voice command "scanner" / "scan" / "qr"
+- Scan result: open link, copy text, or search
+
 # File Transfer
 - Wi-Fi Direct + NSD (LAN)
 - Auto-select best protocol
-- HTTP server with QR code for any device
+- QR code transfer (any device, no app needed):
+  1. Select files → Transfer → "HTTP / QR code"
+  2. App creates a local Wi-Fi hotspot (or uses current network)
+  3. First QR code: Wi-Fi connection details (scan on receiving device)
+  4. Second QR code: download link — opens in browser, files download instantly
 - Progress, resume, retry on disconnect
 - Foreground Service + WakeLock
 
@@ -240,8 +253,25 @@
 - Mic stops when app is minimized, resumes on return
 - Panel targeting: add "top/upper/first" or "bottom/lower/second" to any command
   Example: "back top", "open downloads bottom", "copy in first"
-- Folder navigation: "open camera", "go to downloads" — finds folder across entire storage
-  Understands Russian names (камера→Camera, загрузки→Download, музыка→Music, etc.)
+- Folder navigation: "open [folder]", "open folder [name]" — finds folder across entire storage
+  Prefixes: открой, открыть, открой папку, перейди в, зайди в / open, open folder, go to, navigate to
+  Standard Russian aliases (all word forms supported):
+    загрузки → Download
+    документы → Documents
+    картинки, изображения → Pictures
+    фотографии → DCIM
+    камера → Camera
+    фильмы, видео → Movies
+    музыка → Music
+    телеграм → Telegram
+    ватсап, вотсап, вацап → WhatsApp
+    скриншоты → Screenshots
+    блютуз → Bluetooth
+    уведомления → Notifications
+    рингтоны → Ringtones
+    подкасты → Podcasts
+    фото → DCIM
+  Any other folder found by fuzzy search across entire storage (up to 3 levels deep)
 - Open dialog/menu/shelf auto-closes when new voice command is given
 - All commands and phrase variants:
   - Menu: меню, открой меню / menu, open menu

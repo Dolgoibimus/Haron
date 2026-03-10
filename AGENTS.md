@@ -619,6 +619,21 @@
 
 > Выполненные задачи с описанием как решили.
 
+### Диалоги создания/извлечения архивов ⚠️ не проверено
+
+**Создание архива — конфликт имён:**
+- При создании ZIP, если файл с таким именем уже существует → диалог: Заменить / Переименовать / Отмена
+- Раньше молча переименовывал (archive → archive (1).zip)
+- `findUniqueZipPath()` перенесён в companion object `CreateZipUseCase`
+
+**Извлечение — выбор места:**
+- При извлечении архива → диалог: "Извлечь сюда" / "Извлечь в папку «имя_архива»"
+- Если в архиве одна корневая папка — диалог не показывается, извлекается как есть (toast-подсказка)
+- Работает и из archive mode (просмотр архива), и из обычной папки (выделенный .zip)
+- Конфликт имён проверяется ПОСЛЕ выбора варианта (потому что destination может измениться)
+
+**Файлы:** `ExplorerUiState.kt` (+ArchiveCreateConflict, +ArchiveExtractOptions), `ExplorerViewModel.kt` (рефакторинг confirmCreateArchive/extractFromArchive/extractSelectedArchiveFiles), `ExplorerScreen.kt` (+2 диалога), `ExtractOptionsDialog.kt` (новый), `CreateZipUseCase.kt` (findUniqueZipPath → companion), `strings.xml` EN+RU
+
 ### QuickSend — редизайн оверлея ⚠️ не проверено
 
 **Было:** круглые иконки устройств, расположенные дугой.

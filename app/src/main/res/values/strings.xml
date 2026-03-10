@@ -381,6 +381,7 @@
     <string name="deleted_count">Deleted: %d</string>
     <string name="renamed_to">Renamed to %s</string>
     <string name="archive_created">Archive created: %s</string>
+    <string name="no_files_selected">No files selected</string>
     <string name="added_to_shelf">Added to shelf: %d</string>
     <string name="file_operation_progress_format">%1$s: %2$d file(s)…</string>
     <string name="file_operation_current_format">%1$s: %2$d/%3$d — %4$s</string>
@@ -963,8 +964,12 @@
     <string name="voice_cmd_properties_desc">Show file properties</string>
     <string name="voice_cmd_deselect">"Deselect"</string>
     <string name="voice_cmd_deselect_desc">Clear selection</string>
-    <string name="voice_cmd_go_to">"Open [folder] / Go to [folder]"</string>
-    <string name="voice_cmd_go_to_desc">Navigate to folder by name</string>
+    <string name="voice_cmd_go_to">"Open [folder]"</string>
+    <string name="voice_cmd_go_to_desc">Open folder by name. Prefixes: open, open folder, go to. Supports all word forms</string>
+    <string name="voice_cmd_go_to_aliases_title">Folder voice aliases</string>
+    <string name="voice_cmd_go_to_aliases">downloads → Download\ndocuments → Documents\npictures, images → Pictures\nphotos → DCIM\ncamera → Camera\nmovies, video → Movies\nmusic → Music\ntelegram → Telegram\nwhatsapp → WhatsApp\nscreenshots → Screenshots\nbluetooth → Bluetooth\nnotifications → Notifications\nringtones → Ringtones\npodcasts → Podcasts\nAny other folder — fuzzy search (3 levels deep)</string>
+    <string name="voice_panel_targeting_title">Panel targeting</string>
+    <string name="voice_panel_targeting_desc">Add to any command:\n• "top" / "upper" / "first" — top panel\n• "bottom" / "lower" / "second" — bottom panel\nExamples: "back top", "copy bottom", "open downloads first"</string>
     <string name="voice_cmd_refresh_cache">"Refresh cache"</string>
     <string name="voice_cmd_refresh_cache_desc">Refresh folder list for voice navigation</string>
     <string name="voice_cmd_secure">"Secure / Protected / Safe"</string>
@@ -1187,4 +1192,16 @@
     <string name="ssh_connect">Connect</string>
     <string name="ssh_connecting">Connecting…</string>
     <string name="ssh_disconnect">Disconnect SSH</string>
+
+    <!-- Archive create conflict -->
+    <string name="archive_file_exists_title">File already exists</string>
+    <string name="archive_file_exists_message">File \"%s\" already exists. What do you want to do?</string>
+    <string name="archive_replace">Replace</string>
+    <string name="archive_rename">Rename</string>
+
+    <!-- Archive extract options -->
+    <string name="extract_options_title">Extract</string>
+    <string name="extract_here">Extract here</string>
+    <string name="extract_to_folder">Extract to \"%s\"</string>
+    <string name="extract_single_root_hint">The archive already contains a folder — extracting as is</string>
 </resources>

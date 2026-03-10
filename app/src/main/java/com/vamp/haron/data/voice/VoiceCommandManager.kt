@@ -22,7 +22,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "VoiceCommand"
-private val WAKE_WORDS = listOf("харон", "харун", "хорон", "хару", "haron")
+private val WAKE_WORDS = listOf(
+    "харон", "харун", "хорон", "хару", "haron",
+    "арон", "хрон", "хором", "хорош"
+)
 
 enum class VoiceState {
     IDLE, LISTENING, PROCESSING, ERROR,
@@ -270,7 +273,13 @@ class VoiceCommandManager @Inject constructor(
     private fun findWakeWord(lower: String): WakeMatch? {
         for (w in WAKE_WORDS) {
             val idx = lower.indexOf(w)
-            if (idx >= 0) return WakeMatch(w, idx + w.length)
+            if (idx >= 0) {
+                // Advance past the end of the word containing the wake word
+                // e.g. "харона открой" → skip past "харона" (to the space), not just "харон"
+                var endIdx = idx + w.length
+                while (endIdx < lower.length && lower[endIdx] != ' ') endIdx++
+                return WakeMatch(w, endIdx)
+            }
         }
         return null
     }
@@ -509,12 +518,18 @@ class VoiceCommandManager @Inject constructor(
 
     private fun tryMatchNavigation(lower: String): GestureAction? {
         val navPrefixes = listOf(
-            "открой ", "перейди в ", "перейди к ", "зайди в ",
-            "go to ", "open ", "navigate to "
+            "открой папку ", "открыть папку ", "откройте папку ",
+            "открой ", "открыть ", "откройте ",
+            "перейди в ", "перейди к ", "зайди в ",
+            "go to ", "open folder ", "open ", "navigate to "
         )
         for (prefix in navPrefixes) {
-            if (!lower.startsWith(prefix)) continue
-            val query = lower.removePrefix(prefix).trim()
+            val idx = lower.indexOf(prefix)
+            if (idx < 0) continue
+            var query = lower.substring(idx + prefix.length).trim()
+            if (query.isEmpty()) continue
+            // Strip panel modifiers from query so they don't break folder matching
+            query = stripPanelWords(query)
             if (query.isEmpty()) continue
             // If the remaining query matches an existing PHRASE_MAP command — skip
             if (isExistingCommand(query)) return null
@@ -523,6 +538,18 @@ class VoiceCommandManager @Inject constructor(
             return GestureAction.NAVIGATE_TO_FOLDER
         }
         return null
+    }
+
+    /** Remove panel modifier words from text: "картинки внизу" → "картинки". */
+    private fun stripPanelWords(text: String): String {
+        val panelWords = listOf("вверху", "внизу", "верхн", "нижн", "первая", "первой",
+            "вторая", "второй", "top panel", "bottom panel", "наверху", "снизу",
+            "в верху", "во вторую", "в первую")
+        var result = text
+        for (w in panelWords) {
+            result = result.replace(w, "").trim()
+        }
+        return result
     }
 
     /** Check if query matches any phrase in PHRASE_MAP (to avoid "открой терминал" → navigation). */

@@ -2161,7 +2161,13 @@ class ExplorerViewModel @Inject constructor(
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
         val paths = panel.selectedPaths.toList()
-        if (paths.isEmpty()) return
+        EcosystemLogger.d(HaronConstants.TAG, "requestCreateArchive: panel=$activeId, selected=${paths.size}, " +
+                "isArchive=${panel.isArchiveMode}, currentPath=${panel.currentPath}")
+        if (paths.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "requestCreateArchive: no files selected, skipping")
+            _toastMessage.tryEmit(appContext.getString(R.string.no_files_selected))
+            return
+        }
         _uiState.update { it.copy(dialogState = DialogState.CreateArchive(paths)) }
     }
 
@@ -2175,17 +2181,93 @@ class ExplorerViewModel @Inject constructor(
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
         val name = if (archiveName.endsWith(".zip")) archiveName else "$archiveName.zip"
+
+        EcosystemLogger.d(HaronConstants.TAG, "confirmCreateArchive: name=$name, sources=${selectedPaths.size}, " +
+                "currentPath=${panel.currentPath}, isArchive=${panel.isArchiveMode}, split=${splitSizeMb}MB, hasPwd=${!password.isNullOrEmpty()}")
+
+        // Don't allow archive creation from within archive view mode
+        if (panel.isArchiveMode) {
+            _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, "Cannot create archive from archive view"))
+            EcosystemLogger.e(HaronConstants.TAG, "confirmCreateArchive: blocked — panel is in archive mode")
+            return
+        }
+
         val outputPath = if (panel.currentPath.startsWith("content://")) {
             File(appContext.cacheDir, name).absolutePath
         } else {
             "${panel.currentPath}/$name"
         }
 
+        // Validate output parent dir
+        val outputFile = File(outputPath)
+        val parentDir = outputFile.parentFile
+        if (parentDir == null || (!parentDir.exists() && !parentDir.mkdirs())) {
+            _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, "Output directory not accessible"))
+            EcosystemLogger.e(HaronConstants.TAG, "confirmCreateArchive: parent dir doesn't exist: ${parentDir?.absolutePath}")
+            return
+        }
+
+        // Validate source files exist
+        val missingFiles = selectedPaths.filter { !File(it).exists() }
+        if (missingFiles.isNotEmpty()) {
+            EcosystemLogger.e(HaronConstants.TAG, "confirmCreateArchive: ${missingFiles.size} source files missing: ${missingFiles.take(3)}")
+            _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, "Source files not found (${missingFiles.size})"))
+            return
+        }
+
+        EcosystemLogger.d(HaronConstants.TAG, "confirmCreateArchive: outputPath=$outputPath, all sources valid")
+
+        // Check if file already exists — show conflict dialog
+        if (File(outputPath).exists()) {
+            EcosystemLogger.d(HaronConstants.TAG, "confirmCreateArchive: file exists, showing conflict dialog")
+            _uiState.update {
+                it.copy(dialogState = DialogState.ArchiveCreateConflict(
+                    selectedPaths = selectedPaths,
+                    outputPath = outputPath,
+                    archiveName = name,
+                    password = password,
+                    splitSizeMb = splitSizeMb
+                ))
+            }
+            return
+        }
+
+        doCreateArchive(selectedPaths, outputPath, name, password, splitSizeMb)
+    }
+
+    fun confirmArchiveCreateReplace(dialog: DialogState.ArchiveCreateConflict) {
+        dismissDialog()
+        val file = File(dialog.outputPath)
+        if (file.exists()) file.delete()
+        EcosystemLogger.d(HaronConstants.TAG, "confirmArchiveCreateReplace: deleted existing ${dialog.archiveName}")
+        doCreateArchive(dialog.selectedPaths, dialog.outputPath, dialog.archiveName, dialog.password, dialog.splitSizeMb)
+    }
+
+    fun confirmArchiveCreateRename(dialog: DialogState.ArchiveCreateConflict) {
+        dismissDialog()
+        val renamedPath = CreateZipUseCase.findUniqueZipPath(dialog.outputPath)
+        val renamedName = File(renamedPath).name
+        EcosystemLogger.d(HaronConstants.TAG, "confirmArchiveCreateRename: renamed to $renamedName")
+        doCreateArchive(dialog.selectedPaths, renamedPath, renamedName, dialog.password, dialog.splitSizeMb)
+    }
+
+    private fun doCreateArchive(
+        selectedPaths: List<String>,
+        outputPath: String,
+        archiveName: String,
+        password: String?,
+        splitSizeMb: Int
+    ) {
+        val activeId = _uiState.value.activePanel
         viewModelScope.launch {
             clearSelection(activeId)
+            var actualName = archiveName
             try {
                 createZipUseCase(selectedPaths, outputPath, password, splitSizeMb)
                     .collect { progress ->
+                        if (progress.actualArchiveName != null) {
+                            actualName = progress.actualArchiveName
+                        }
                         _uiState.update {
                             it.copy(operationProgress = OperationProgress(
                                 current = progress.current,
@@ -2196,12 +2278,12 @@ class ExplorerViewModel @Inject constructor(
                         }
                     }
                 hapticManager.success()
-                _toastMessage.tryEmit(appContext.getString(R.string.archive_created, name))
+                _toastMessage.tryEmit(appContext.getString(R.string.archive_created, actualName))
                 refreshBothIfSamePath(activeId)
             } catch (e: Exception) {
                 hapticManager.error()
                 _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, e.message ?: ""))
-                EcosystemLogger.e(HaronConstants.TAG, "Ошибка ZIP: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "confirmCreateArchive: ZIP failed — ${e.javaClass.simpleName}: ${e.message}")
             }
             _uiState.update { it.copy(operationProgress = null) }
         }
@@ -2976,17 +3058,17 @@ class ExplorerViewModel @Inject constructor(
     fun onBreadcrumbClick(panelId: PanelId, segmentPath: String) {
         val panel = getPanel(panelId)
         if (panel.isArchiveMode) {
-            val archiveName = File(panel.archivePath!!).name
-            val displayPrefix = archiveName
+            // If user tapped on root "Storage" — exit archive mode
+            if (segmentPath == HaronConstants.ROOT_PATH) {
+                EcosystemLogger.d(HaronConstants.TAG, "onBreadcrumbClick: tapped root in archive mode, exiting archive")
+                val archiveParent = File(panel.archivePath!!).parent ?: HaronConstants.ROOT_PATH
+                updatePanel(panelId) { it.copy(archivePath = null, archiveVirtualPath = "", archivePassword = null, archiveExtractProgress = null, currentPath = "") }
+                navigateTo(panelId, archiveParent)
+                return
+            }
             // segmentPath is built by BreadcrumbBar as ROOT_PATH + /segments
-            // But in archive mode, displayPath = "archiveName/subfolder/..."
-            // BreadcrumbBar builds segmentPath = ROOT_PATH + "/" + segments[0..index]
-            // We need to extract the virtual path from the segment
-            // The segments from displayPath are: [archiveName, folder, subfolder, ...]
-            // Segment 0 = archiveName → click = archive root (virtualPath = "")
-            // Segment 1 = folder → virtualPath = "folder"
-            // etc.
-            // segmentPath = ROOT_PATH + "/" + segments[0..clickedIndex]
+            // In archive mode, displayPath = "archiveName/subfolder/..."
+            // Segments: [archiveName, folder, subfolder, ...]
             val afterRoot = segmentPath.removePrefix(HaronConstants.ROOT_PATH).trimStart('/')
             val parts = afterRoot.split('/').filter { it.isNotEmpty() }
             // First part = archive name → skip it, rest = virtual path
@@ -3008,7 +3090,60 @@ class ExplorerViewModel @Inject constructor(
             getPanel(activeId).currentPath
         }
 
-        // Check for conflicts: files that already exist in destination
+        val archiveName = File(archivePanel.archivePath!!).nameWithoutExtension
+
+        // Check if archive has a single root folder (only at root level)
+        val rootFiles = archivePanel.files
+        val atArchiveRoot = archivePanel.archiveVirtualPath.isEmpty()
+        val hasSingleRootFolder = atArchiveRoot && rootFiles.size == 1 && rootFiles[0].isDirectory
+        EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: archiveName=$archiveName, " +
+                "virtualPath='${archivePanel.archiveVirtualPath}', rootFiles=${rootFiles.size}, " +
+                "atRoot=$atArchiveRoot, singleRoot=$hasSingleRootFolder, selectedOnly=$selectedOnly, dest=$destinationDir")
+
+        if (hasSingleRootFolder) {
+            // Single root folder — extract directly, no dialog needed
+            EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: single root folder detected, extracting directly")
+            _toastMessage.tryEmit(appContext.getString(R.string.extract_single_root_hint))
+            checkExtractConflictsAndProceed(archivePanelId, destinationDir, selectedOnly)
+            return
+        }
+
+        EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: showing extract options dialog")
+        _uiState.update {
+            it.copy(dialogState = DialogState.ArchiveExtractOptions(
+                archivePanelId = archivePanelId,
+                destinationDir = destinationDir,
+                selectedOnly = selectedOnly,
+                archiveName = archiveName,
+                hasSingleRootFolder = false
+            ))
+        }
+    }
+
+    fun confirmExtractHere(dialog: DialogState.ArchiveExtractOptions) {
+        dismissDialog()
+        if (dialog.isFromNormalFolder) {
+            doExtractSelectedArchiveFiles(dialog.archivePanelId, dialog.archivePaths, dialog.destinationDir)
+        } else {
+            checkExtractConflictsAndProceed(dialog.archivePanelId, dialog.destinationDir, dialog.selectedOnly)
+        }
+    }
+
+    fun confirmExtractToFolder(dialog: DialogState.ArchiveExtractOptions) {
+        dismissDialog()
+        val subFolder = File(dialog.destinationDir, dialog.archiveName)
+        if (!subFolder.exists()) subFolder.mkdirs()
+        EcosystemLogger.d(HaronConstants.TAG, "confirmExtractToFolder: extracting to subfolder ${subFolder.absolutePath}")
+        if (dialog.isFromNormalFolder) {
+            doExtractSelectedArchiveFiles(dialog.archivePanelId, dialog.archivePaths, subFolder.absolutePath)
+        } else {
+            checkExtractConflictsAndProceed(dialog.archivePanelId, subFolder.absolutePath, dialog.selectedOnly)
+        }
+    }
+
+    private fun checkExtractConflictsAndProceed(archivePanelId: PanelId, destinationDir: String, selectedOnly: Boolean) {
+        val archivePanel = getPanel(archivePanelId)
+
         val archiveFileNames = if (selectedOnly && archivePanel.selectedPaths.isNotEmpty()) {
             archivePanel.files.filter { it.path in archivePanel.selectedPaths }.map { it.name }
         } else {
@@ -3103,10 +3238,49 @@ class ExplorerViewModel @Inject constructor(
         val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val destDir = getPanel(otherId).currentPath.ifEmpty { panel.currentPath }
 
+        // For single archive — check single root folder and show dialog
+        if (selectedArchives.size == 1) {
+            val archive = selectedArchives[0]
+            val archiveName = File(archive.path).nameWithoutExtension
+            viewModelScope.launch {
+                val hasSingleRoot = checkSingleRootFolder(archive.path)
+                if (hasSingleRoot) {
+                    EcosystemLogger.d(HaronConstants.TAG, "extractSelectedArchiveFiles: single root folder, extracting directly")
+                    _toastMessage.tryEmit(appContext.getString(R.string.extract_single_root_hint))
+                    doExtractSelectedArchiveFiles(panelId, listOf(archive.path), destDir)
+                } else {
+                    _uiState.update {
+                        it.copy(dialogState = DialogState.ArchiveExtractOptions(
+                            archivePanelId = panelId,
+                            destinationDir = destDir,
+                            selectedOnly = false,
+                            archiveName = archiveName,
+                            hasSingleRootFolder = false,
+                            isFromNormalFolder = true,
+                            archivePaths = listOf(archive.path)
+                        ))
+                    }
+                }
+            }
+        } else {
+            // Multiple archives — extract all directly without dialog
+            doExtractSelectedArchiveFiles(panelId, selectedArchives.map { it.path }, destDir)
+        }
+    }
+
+    private suspend fun checkSingleRootFolder(archivePath: String): Boolean {
+        val result = browseArchiveUseCase(archivePath, "")
+        return result.getOrNull()?.let { entries ->
+            entries.size == 1 && entries[0].isDirectory
+        } ?: false
+    }
+
+    private fun doExtractSelectedArchiveFiles(panelId: PanelId, archivePaths: List<String>, destDir: String) {
+        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         viewModelScope.launch {
-            for (archive in selectedArchives) {
+            for (archivePath in archivePaths) {
                 extractArchiveUseCase(
-                    archivePath = archive.path,
+                    archivePath = archivePath,
                     destinationDir = destDir
                 ).collect { progress ->
                     updatePanel(panelId) { it.copy(archiveExtractProgress = progress) }
@@ -4339,12 +4513,14 @@ class ExplorerViewModel @Inject constructor(
             }
             _toastMessage.tryEmit(appContext.getString(R.string.shield_off))
         } else {
-            // Need authentication first
-            if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
+            val method = authManager.getAppLockMethod()
+            val hasAuth = method != com.vamp.haron.domain.model.AppLockMethod.NONE &&
+                (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()))
+            if (hasAuth) {
                 _uiState.update { it.copy(showShieldAuth = true) }
             } else {
-                // No PIN — require user to set one
-                _toastMessage.tryEmit(appContext.getString(R.string.shield_requires_pin))
+                // No protection configured — show PIN setup dialog
+                _uiState.update { it.copy(showShieldPinSetup = true) }
             }
         }
     }
@@ -4365,6 +4541,24 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(showShieldAuth = false, showAllProtectedAfterAuth = false) }
     }
 
+    fun dismissShieldPinSetup() {
+        _uiState.update { it.copy(showShieldPinSetup = false) }
+    }
+
+    fun onShieldPinSetupConfirm(currentPin: String?, newPin: String, question: String?, answer: String?): Boolean {
+        if (currentPin != null && !authManager.verifyPin(currentPin)) return false
+        authManager.setPin(newPin)
+        if (question != null && answer != null) {
+            authManager.setSecurityQuestion(question, answer)
+        }
+        if (authManager.getAppLockMethod() == com.vamp.haron.domain.model.AppLockMethod.NONE) {
+            authManager.setAppLockMethod(com.vamp.haron.domain.model.AppLockMethod.PIN_ONLY)
+        }
+        _uiState.update { it.copy(showShieldPinSetup = false) }
+        _toastMessage.tryEmit(appContext.getString(R.string.pin_set_success))
+        return true
+    }
+
     fun verifyShieldPin(pin: String): Boolean = authManager.verifyPin(pin)
 
     fun getShieldLockMethod(): com.vamp.haron.domain.model.AppLockMethod = authManager.getAppLockMethod()
@@ -4376,12 +4570,14 @@ class ExplorerViewModel @Inject constructor(
     fun showAllProtectedFiles() {
         val activePanel = _uiState.value.activePanel
         if (!_uiState.value.isShieldUnlocked) {
-            // Need auth first, then show all
-            if (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled())) {
+            val method = authManager.getAppLockMethod()
+            val hasAuth = method != com.vamp.haron.domain.model.AppLockMethod.NONE &&
+                (authManager.isPinSet() || (authManager.hasBiometricHardware() && authManager.isBiometricEnrolled()))
+            if (hasAuth) {
                 _uiState.update { it.copy(showShieldAuth = true, showAllProtectedAfterAuth = true) }
             } else {
-                // No PIN — require user to set one
-                _toastMessage.tryEmit(appContext.getString(R.string.shield_requires_pin))
+                // No protection configured — show PIN setup dialog
+                _uiState.update { it.copy(showShieldPinSetup = true) }
             }
             return
         }

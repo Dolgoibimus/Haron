@@ -47,6 +47,7 @@ data class ExplorerUiState(
     val isProtecting: Boolean = false,
     val protectProgress: String? = null,
     val showShieldAuth: Boolean = false,
+    val showShieldPinSetup: Boolean = false,
     val showAllProtectedAfterAuth: Boolean = false,
     val usbVolumes: List<UsbVolume> = emptyList(),
     val networkDevices: List<com.vamp.haron.data.network.NetworkDevice> = emptyList(),
@@ -133,6 +134,22 @@ sealed interface DialogState {
         val destinationDir: String,
         val conflictNames: List<String>,
         val selectedOnly: Boolean
+    ) : DialogState
+    data class ArchiveCreateConflict(
+        val selectedPaths: List<String>,
+        val outputPath: String,
+        val archiveName: String,
+        val password: String?,
+        val splitSizeMb: Int
+    ) : DialogState
+    data class ArchiveExtractOptions(
+        val archivePanelId: PanelId,
+        val destinationDir: String,
+        val selectedOnly: Boolean,
+        val archiveName: String,
+        val hasSingleRootFolder: Boolean,
+        val isFromNormalFolder: Boolean = false,
+        val archivePaths: List<String> = emptyList()
     ) : DialogState
 }
 

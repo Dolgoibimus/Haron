@@ -381,6 +381,7 @@
     <string name="deleted_count">Удалено: %d</string>
     <string name="renamed_to">Переименовано в %s</string>
     <string name="archive_created">Архив создан: %s</string>
+    <string name="no_files_selected">Файлы не выделены</string>
     <string name="added_to_shelf">Добавлено на полку: %d</string>
     <string name="file_operation_progress_format">%1$s: %2$d файл(ов)…</string>
     <string name="file_operation_current_format">%1$s: %2$d/%3$d — %4$s</string>
@@ -964,7 +965,11 @@
     <string name="voice_cmd_deselect">"Снять выделение"</string>
     <string name="voice_cmd_deselect_desc">Отменить выделение</string>
     <string name="voice_cmd_go_to">"Открой [папку] / Перейди в [папку]"</string>
-    <string name="voice_cmd_go_to_desc">Навигация в папку по имени</string>
+    <string name="voice_cmd_go_to_desc">Навигация в папку по имени. Префиксы: открой, открой папку, перейди в, зайди в</string>
+    <string name="voice_cmd_go_to_aliases_title">Голосовые алиасы папок</string>
+    <string name="voice_cmd_go_to_aliases">загрузки → Download\nдокументы → Documents\nкартинки, изображения → Pictures\nфотографии → DCIM\nкамера → Camera\nфильмы, видео → Movies\nмузыка → Music\nтелеграм → Telegram\nватсап, вотсап → WhatsApp\nскриншоты → Screenshots\nблютуз → Bluetooth\nуведомления → Notifications\nрингтоны → Ringtones\nподкасты → Podcasts\nЛюбая другая папка — нечёткий поиск (3 уровня вглубь)</string>
+    <string name="voice_panel_targeting_title">Нацеливание на панель</string>
+    <string name="voice_panel_targeting_desc">Добавьте к любой команде:\n• «вверху» / «верхн» / «первая» — верхняя панель\n• «внизу» / «нижн» / «вторая» — нижняя панель\nПримеры: «назад вверху», «копировать внизу», «открой загрузки первая»</string>
     <string name="voice_cmd_refresh_cache">"Обнови кэш"</string>
     <string name="voice_cmd_refresh_cache_desc">Обновить список папок для голосовой навигации</string>
     <string name="voice_cmd_secure">"Защищённые / Защита / Сейф"</string>
@@ -1186,4 +1191,16 @@
     <string name="ssh_connect">Подключиться</string>
     <string name="ssh_connecting">Подключение…</string>
     <string name="ssh_disconnect">Отключить SSH</string>
+
+    <!-- Archive create conflict -->
+    <string name="archive_file_exists_title">Файл уже существует</string>
+    <string name="archive_file_exists_message">Файл \"%s\" уже существует. Что сделать?</string>
+    <string name="archive_replace">Заменить</string>
+    <string name="archive_rename">Переименовать</string>
+
+    <!-- Archive extract options -->
+    <string name="extract_options_title">Извлечь</string>
+    <string name="extract_here">Извлечь сюда</string>
+    <string name="extract_to_folder">Извлечь в \"%s\"</string>
+    <string name="extract_single_root_hint">В архиве уже есть папка — извлекается как есть</string>
 </resources>

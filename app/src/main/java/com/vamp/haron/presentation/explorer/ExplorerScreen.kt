@@ -79,6 +79,7 @@ import com.vamp.haron.presentation.explorer.components.ApkInstallDialog
 import com.vamp.haron.presentation.explorer.components.BookmarkPopup
 import com.vamp.haron.presentation.explorer.components.ToolsPopup
 import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
+import com.vamp.haron.presentation.explorer.components.ExtractOptionsDialog
 import com.vamp.haron.presentation.explorer.components.BatchRenameDialog
 import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
@@ -96,6 +97,7 @@ import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.applock.LockScreen
+import com.vamp.haron.presentation.applock.PinSetupDialog
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -290,9 +292,10 @@ fun ExplorerScreen(
     val hasSearch = state.topPanel.isSearchActive || state.bottomPanel.isSearchActive
     val showDrawerOrShelf = state.showDrawer || state.showShelf
 
-    // Back: drawer/shelf → search → rename → selection → history back → navigate up → no-op at root
+    // Back: drawer/shelf → search → rename → selection → archive up → history back → navigate up → no-op at root
     val canGoBack = viewModel.canNavigateBack(activePanel)
     val canGoUp = viewModel.canNavigateUp(activePanel)
+    val activePanelState = if (activePanel == PanelId.TOP) state.topPanel else state.bottomPanel
     BackHandler(enabled = true) {
         when {
             state.showDrawer -> viewModel.dismissDrawer()
@@ -304,6 +307,8 @@ fun ExplorerScreen(
             }
             hasRenaming -> viewModel.cancelInlineRename()
             hasSelection -> selectionPanelId?.let { viewModel.clearSelection(it) }
+            // Archive mode: use navigateUp (goes up one level or exits archive instantly)
+            activePanelState.isArchiveMode -> viewModel.navigateUp(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
             canGoUp -> viewModel.navigateUp(activePanel, pushHistory = false)
             // At root or virtual root — consume back press, do nothing
@@ -1167,6 +1172,39 @@ private fun ExplorerDialogs(
                 }
             )
         }
+        is DialogState.ArchiveCreateConflict -> {
+            AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { Text(stringResource(R.string.archive_file_exists_title)) },
+                text = {
+                    Text(stringResource(R.string.archive_file_exists_message, dialog.archiveName))
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.confirmArchiveCreateReplace(dialog) }) {
+                        Text(stringResource(R.string.archive_replace))
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = viewModel::dismissDialog) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                        TextButton(onClick = { viewModel.confirmArchiveCreateRename(dialog) }) {
+                            Text(stringResource(R.string.archive_rename))
+                        }
+                    }
+                }
+            )
+        }
+        is DialogState.ArchiveExtractOptions -> {
+            ExtractOptionsDialog(
+                archiveName = dialog.archiveName,
+                hasSingleRootFolder = dialog.hasSingleRootFolder,
+                onExtractHere = { viewModel.confirmExtractHere(dialog) },
+                onExtractToFolder = { viewModel.confirmExtractToFolder(dialog) },
+                onDismiss = viewModel::dismissDialog
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
 }
@@ -1205,10 +1243,16 @@ private fun ExplorerOverlays(
                         override fun onAuthenticationFailed() { /* retry */ }
                     }
                     val prompt = BiometricPrompt(activity, executor, callback)
+                    val shieldMethod = viewModel.getShieldLockMethod()
+                    val negText = if (shieldMethod == com.vamp.haron.domain.model.AppLockMethod.BIOMETRIC_ONLY) {
+                        context.getString(com.vamp.haron.R.string.cancel)
+                    } else {
+                        context.getString(com.vamp.haron.R.string.biometric_use_pin)
+                    }
                     val info = BiometricPrompt.PromptInfo.Builder()
                         .setTitle(context.getString(com.vamp.haron.R.string.biometric_prompt_title))
                         .setSubtitle(context.getString(com.vamp.haron.R.string.biometric_prompt_subtitle))
-                        .setNegativeButtonText(context.getString(com.vamp.haron.R.string.biometric_use_pin))
+                        .setNegativeButtonText(negText)
                         .build()
                     prompt.authenticate(info)
                 },
@@ -1217,6 +1261,17 @@ private fun ExplorerOverlays(
                 onDismiss = { viewModel.dismissShieldAuth() }
             )
         }
+    }
+
+    // Shield PIN setup dialog (first-time protection)
+    if (state.showShieldPinSetup) {
+        PinSetupDialog(
+            isChange = false,
+            onConfirm = { currentPin, newPin, question, answer ->
+                viewModel.onShieldPinSetupConfirm(currentPin, newPin, question, answer)
+            },
+            onDismiss = { viewModel.dismissShieldPinSetup() }
+        )
     }
 
     // Bookmark popup

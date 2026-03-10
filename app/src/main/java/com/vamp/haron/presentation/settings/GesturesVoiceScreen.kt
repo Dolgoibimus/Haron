@@ -226,6 +226,34 @@ private fun VoiceTab(
             Spacer(Modifier.height(8.dp))
         }
 
+        // Folder aliases section
+        Spacer(Modifier.height(16.dp))
+        Text(
+            stringResource(R.string.voice_cmd_go_to_aliases_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.voice_cmd_go_to_aliases),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Panel targeting section
+        Spacer(Modifier.height(16.dp))
+        Text(
+            stringResource(R.string.voice_panel_targeting_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.voice_panel_targeting_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         Spacer(Modifier.height(16.dp))
         Text(
             stringResource(R.string.voice_usage_hint),

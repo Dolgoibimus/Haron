@@ -486,11 +486,13 @@ class LoadPreviewUseCase @Inject constructor(
 
     private fun loadFb2(entry: FileEntry): PreviewData {
         val xml = if (entry.isContentUri) {
-            context.contentResolver.openInputStream(Uri.parse(entry.path))
-                ?.bufferedReader()?.readText()
+            val bytes = context.contentResolver.openInputStream(Uri.parse(entry.path))
+                ?.readBytes()
                 ?: throw IllegalStateException(context.getString(R.string.open_file_failed))
+            String(bytes, detectFb2Charset(bytes))
         } else {
-            File(entry.path).readText()
+            val bytes = File(entry.path).readBytes()
+            String(bytes, detectFb2Charset(bytes))
         }
         return parseFb2Xml(entry, xml)
     }
@@ -505,12 +507,30 @@ class LoadPreviewUseCase @Inject constructor(
                         fileName = entry.name, fileSize = entry.size,
                         lastModified = entry.lastModified, mimeType = "fb2.zip"
                     )
-                val xml = zip.getInputStream(fb2Entry).bufferedReader().readText()
+                val bytes = zip.getInputStream(fb2Entry).readBytes()
+                val xml = String(bytes, detectFb2Charset(bytes))
                 return parseFb2Xml(entry, xml)
             }
         } finally {
             if (entry.isContentUri) file.delete()
         }
+    }
+
+    /** Detect charset from FB2 XML declaration */
+    private fun detectFb2Charset(bytes: ByteArray): java.nio.charset.Charset {
+        // UTF-8 BOM
+        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) {
+            return Charsets.UTF_8
+        }
+        // Read first 200 bytes as ASCII to find encoding declaration
+        val header = String(bytes, 0, minOf(200, bytes.size), Charsets.ISO_8859_1)
+        val enc = Regex("""encoding=["\']([^"\']+)["\']""").find(header)?.groupValues?.get(1)?.trim()?.lowercase()
+        if (enc != null) {
+            return try {
+                java.nio.charset.Charset.forName(enc)
+            } catch (_: Exception) { Charsets.UTF_8 }
+        }
+        return Charsets.UTF_8
     }
 
     private fun parseFb2Xml(entry: FileEntry, xml: String): PreviewData {
@@ -554,7 +574,7 @@ class LoadPreviewUseCase @Inject constructor(
         val annotation = if (annotationMatch != null) {
             val body = annotationMatch.groupValues[1]
             Regex("""<p>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(body)
-                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .map { decodeFb2Entities(it.groupValues[1].replace(Regex("<[^>]+>"), "")).trim() }
                 .filter { it.isNotBlank() }
                 .joinToString("\n")
         } else ""
@@ -563,7 +583,7 @@ class LoadPreviewUseCase @Inject constructor(
         val bodyMatch = Regex("""<body[^>]*>(.*)</body>""", RegexOption.DOT_MATCHES_ALL).find(xml)
         val bodyText = bodyMatch?.groupValues?.get(1)?.let { body ->
             Regex("""<p>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL).findAll(body)
-                .map { it.groupValues[1].replace(Regex("<[^>]+>"), "").trim() }
+                .map { decodeFb2Entities(it.groupValues[1].replace(Regex("<[^>]+>"), "")).trim() }
                 .filter { it.isNotBlank() }
                 .take(MAX_TEXT_LINES)
                 .joinToString("\n")
@@ -591,6 +611,22 @@ class LoadPreviewUseCase @Inject constructor(
             annotation = fullText
         )
     }
+
+    private fun decodeFb2Entities(text: String): String = text
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#160;", " ")
+        .replace(Regex("&#x([0-9a-fA-F]+);")) { m ->
+            val c = m.groupValues[1].toIntOrNull(16)
+            if (c != null) c.toChar().toString() else ""
+        }
+        .replace(Regex("&#(\\d+);")) { m ->
+            val c = m.groupValues[1].toIntOrNull()
+            if (c != null) c.toChar().toString() else ""
+        }
 
     private fun loadDocx(entry: FileEntry): PreviewData {
         val file = if (entry.isContentUri) copyToTemp(entry) else File(entry.path)

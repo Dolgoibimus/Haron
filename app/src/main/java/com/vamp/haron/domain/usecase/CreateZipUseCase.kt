@@ -21,7 +21,8 @@ data class ZipProgress(
     val current: Int,
     val total: Int,
     val fileName: String,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val actualArchiveName: String? = null
 )
 
 class CreateZipUseCase @Inject constructor() {
@@ -33,11 +34,27 @@ class CreateZipUseCase @Inject constructor() {
         splitSizeMb: Int = 0
     ): Flow<ZipProgress> = flow {
         val sources = sourcePaths.map { File(it) }
-        val allFiles = collectFiles(sources)
-        val total = allFiles.size
-        EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: starting zip, files=$total, output=$outputPath, split=${splitSizeMb}MB")
+        val existingSources = sources.filter { it.exists() }
+        EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: sources=${sources.size}, existing=${existingSources.size}, output=$outputPath, split=${splitSizeMb}MB")
 
-        val zipFile = ZipFile(outputPath)
+        if (existingSources.isEmpty()) {
+            EcosystemLogger.e(HaronConstants.TAG, "CreateZipUseCase: no existing source files, aborting")
+            throw IllegalStateException("No source files found")
+        }
+
+        val allFiles = collectFiles(existingSources)
+        val total = allFiles.size
+        EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: collected $total files to compress")
+
+        if (total == 0) {
+            EcosystemLogger.e(HaronConstants.TAG, "CreateZipUseCase: no files collected (empty directories?)")
+            throw IllegalStateException("No files to archive (only empty directories)")
+        }
+
+        val actualOutputPath = outputPath
+        val actualName = File(actualOutputPath).name
+
+        val zipFile = ZipFile(actualOutputPath)
         if (!password.isNullOrEmpty()) {
             zipFile.setPassword(password.toCharArray())
         }
@@ -56,12 +73,12 @@ class CreateZipUseCase @Inject constructor() {
             val splitSizeBytes = splitSizeMb * 1024L * 1024L
             zipFile.isRunInThread = true
 
-            val hasDirectories = sources.any { it.isDirectory }
+            val hasDirectories = existingSources.any { it.isDirectory }
             if (!hasDirectories) {
-                zipFile.createSplitZipFile(sources, params, true, splitSizeBytes)
+                zipFile.createSplitZipFile(existingSources, params, true, splitSizeBytes)
             } else {
-                val parentDir = sources.first().parentFile!!
-                val selectedNames = sources.map { it.name }.toSet()
+                val parentDir = existingSources.first().parentFile!!
+                val selectedNames = existingSources.map { it.name }.toSet()
                 val splitParams = ZipParameters(params).apply {
                     isIncludeRootFolder = false
                     excludeFileFilter = ExcludeFileFilter { file ->
@@ -97,9 +114,9 @@ class CreateZipUseCase @Inject constructor() {
                 EcosystemLogger.e(HaronConstants.TAG, "CreateZipUseCase: split zip failed — ${ex.message}")
                 throw ex
             }
-            val outputSize = File(outputPath).length()
+            val outputSize = File(actualOutputPath).length()
             EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: split zip complete, outputSize=$outputSize")
-            emit(ZipProgress(total, total, "", isComplete = true))
+            emit(ZipProgress(total, total, "", isComplete = true, actualArchiveName = actualName))
         } else {
             // Non-split — add files one by one for exact per-file progress
             allFiles.forEachIndexed { index, (file, zipPath) ->
@@ -109,9 +126,9 @@ class CreateZipUseCase @Inject constructor() {
                 }
                 zipFile.addFile(file, fileParams)
             }
-            val outputSize = File(outputPath).length()
+            val outputSize = File(actualOutputPath).length()
             EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: zip complete, outputSize=$outputSize")
-            emit(ZipProgress(total, total, "", isComplete = true))
+            emit(ZipProgress(total, total, "", isComplete = true, actualArchiveName = actualName))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -128,5 +145,21 @@ class CreateZipUseCase @Inject constructor() {
             }
         }
         return result
+    }
+
+    companion object {
+        fun findUniqueZipPath(path: String): String {
+            val file = File(path)
+            if (!file.exists()) return path
+            val parent = file.parent ?: return path
+            val nameWithoutExt = file.nameWithoutExtension
+            val ext = file.extension
+            var counter = 1
+            while (true) {
+                val candidate = File(parent, "$nameWithoutExt ($counter).$ext")
+                if (!candidate.exists()) return candidate.absolutePath
+                counter++
+            }
+        }
     }
 }

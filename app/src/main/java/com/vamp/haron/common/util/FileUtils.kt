@@ -1,21 +1,36 @@
 package com.vamp.haron.common.util
 
 import android.webkit.MimeTypeMap
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.FileEntry
 import java.io.File
 
 fun File.toFileEntry(): FileEntry {
     val children = if (isDirectory) listFiles()?.size ?: 0 else 0
+    val displayName = if (parentFile?.name == HaronConstants.TRASH_DIR_NAME) {
+        stripTrashPrefix(name)
+    } else {
+        name
+    }
     return FileEntry(
-        name = name,
+        name = displayName,
         path = absolutePath,
         isDirectory = isDirectory,
         size = if (isDirectory) 0L else length(),
         lastModified = lastModified(),
-        extension = extension.lowercase(),
+        extension = displayName.substringAfterLast('.', "").lowercase(),
         isHidden = isHidden,
         childCount = children
     )
+}
+
+/** Strip timestamp prefix from trash file name: "1773087338091_file.txt" -> "file.txt" */
+private fun stripTrashPrefix(name: String): String {
+    val idx = name.indexOf('_')
+    if (idx > 0 && name.substring(0, idx).toLongOrNull() != null) {
+        return name.substring(idx + 1)
+    }
+    return name
 }
 
 fun FileEntry.mimeType(): String {
