@@ -1204,4 +1204,9 @@
     <string name="extract_here">Extract here</string>
     <string name="extract_to_folder">Extract to \"%s\"</string>
     <string name="extract_single_root_hint">The archive already contains a folder — extracting as is</string>
+
+    <!-- Trash overflow -->
+    <string name="trash_overflow_title">Trash is too small</string>
+    <string name="trash_overflow_message">Selected files (%1$s) exceed the trash limit (%2$s). They can only be deleted permanently.</string>
+    <string name="delete_permanently">Delete permanently</string>
 </resources>

@@ -201,7 +201,7 @@
 # Barcode & QR Scanner
 - Built-in scanner via camera (ML Kit)
 - Scan QR codes, barcodes (EAN, UPC, Code128, etc.)
-- How to open: side menu → Tools → Scanner, or voice command "scanner" / "scan" / "qr"
+- How to open: long tap the scanner button in Transfer screen, or voice command "scanner" / "scan" / "qr"
 - Scan result: open link, copy text, or search
 
 # File Transfer

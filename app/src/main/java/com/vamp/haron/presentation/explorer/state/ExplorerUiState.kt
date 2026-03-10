@@ -135,6 +135,11 @@ sealed interface DialogState {
         val conflictNames: List<String>,
         val selectedOnly: Boolean
     ) : DialogState
+    data class TrashOverflow(
+        val paths: List<String>,
+        val incomingSize: Long,
+        val maxSize: Long
+    ) : DialogState
     data class ArchiveCreateConflict(
         val selectedPaths: List<String>,
         val outputPath: String,

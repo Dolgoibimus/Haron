@@ -1203,4 +1203,9 @@
     <string name="extract_here">Извлечь сюда</string>
     <string name="extract_to_folder">Извлечь в \"%s\"</string>
     <string name="extract_single_root_hint">В архиве уже есть папка — извлекается как есть</string>
+
+    <!-- Trash overflow -->
+    <string name="trash_overflow_title">Корзина слишком мала</string>
+    <string name="trash_overflow_message">Выбранные файлы (%1$s) превышают лимит корзины (%2$s). Их можно удалить только безвозвратно.</string>
+    <string name="delete_permanently">Удалить безвозвратно</string>
 </resources>

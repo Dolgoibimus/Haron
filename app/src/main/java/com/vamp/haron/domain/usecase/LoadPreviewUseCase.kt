@@ -304,28 +304,30 @@ class LoadPreviewUseCase @Inject constructor(
     private fun loadZip(entry: FileEntry): PreviewData {
         val file = if (entry.isContentUri) copyToTemp(entry) else File(entry.path)
         try {
-            val zipFile = ZipFile(file)
-            zipFile.use { zip ->
-                val allEntries = try {
-                    zip.entries().toList()
-                } catch (_: Exception) {
-                    throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
-                }
-                val totalEntries = allEntries.size
-                val totalSize = allEntries.sumOf { it.size.coerceAtLeast(0) }
-                val entryInfos = allEntries.take(MAX_ARCHIVE_ENTRIES).map { ze ->
-                    ArchiveEntryInfo(ze.name, ze.size.coerceAtLeast(0), ze.isDirectory)
-                }
-                return PreviewData.ArchivePreview(
-                    fileName = entry.name,
-                    fileSize = entry.size,
-                    lastModified = entry.lastModified,
-                    entries = entryInfos,
-                    totalEntries = totalEntries,
-                    totalUncompressedSize = totalSize
-                )
+            // Use zip4j — supports split archives (.z01, .z02...) and passwords
+            val zip4j = net.lingala.zip4j.ZipFile(file)
+            val headers = try {
+                zip4j.fileHeaders
+            } catch (_: Exception) {
+                throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
             }
-        } catch (e: java.util.zip.ZipException) {
+            if (headers == null || headers.isEmpty()) {
+                throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
+            }
+            val totalEntries = headers.size
+            val totalSize = headers.sumOf { it.uncompressedSize.coerceAtLeast(0) }
+            val entryInfos = headers.take(MAX_ARCHIVE_ENTRIES).map { h ->
+                ArchiveEntryInfo(h.fileName, h.uncompressedSize.coerceAtLeast(0), h.isDirectory)
+            }
+            return PreviewData.ArchivePreview(
+                fileName = entry.name,
+                fileSize = entry.size,
+                lastModified = entry.lastModified,
+                entries = entryInfos,
+                totalEntries = totalEntries,
+                totalUncompressedSize = totalSize
+            )
+        } catch (e: net.lingala.zip4j.exception.ZipException) {
             throw IllegalStateException(context.getString(R.string.archive_password_or_corrupt))
         } finally {
             if (entry.isContentUri) file.delete()

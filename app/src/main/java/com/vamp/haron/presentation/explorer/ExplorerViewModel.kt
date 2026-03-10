@@ -1753,8 +1753,22 @@ class ExplorerViewModel @Inject constructor(
                         if (f.isDirectory) f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                         else f.length()
                     }
-                    val currentTrashSize = trashRepository.getTrashSize()
                     val maxBytes = maxMb.toLong() * 1024 * 1024
+                    // If incoming files exceed trash limit — ask user to delete permanently
+                    if (incomingSize > maxBytes) {
+                        _uiState.update {
+                            it.copy(
+                                operationProgress = null,
+                                dialogState = DialogState.TrashOverflow(
+                                    paths = paths,
+                                    incomingSize = incomingSize,
+                                    maxSize = maxBytes
+                                )
+                            )
+                        }
+                        return@launch
+                    }
+                    val currentTrashSize = trashRepository.getTrashSize()
                     val needed = (currentTrashSize + incomingSize) - maxBytes
                     if (needed > 0) {
                         totalEvicted = trashRepository.evictToFitSize(maxBytes - incomingSize)
@@ -3092,23 +3106,10 @@ class ExplorerViewModel @Inject constructor(
 
         val archiveName = File(archivePanel.archivePath!!).nameWithoutExtension
 
-        // Check if archive has a single root folder (only at root level)
-        val rootFiles = archivePanel.files
-        val atArchiveRoot = archivePanel.archiveVirtualPath.isEmpty()
-        val hasSingleRootFolder = atArchiveRoot && rootFiles.size == 1 && rootFiles[0].isDirectory
         EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: archiveName=$archiveName, " +
-                "virtualPath='${archivePanel.archiveVirtualPath}', rootFiles=${rootFiles.size}, " +
-                "atRoot=$atArchiveRoot, singleRoot=$hasSingleRootFolder, selectedOnly=$selectedOnly, dest=$destinationDir")
+                "virtualPath='${archivePanel.archiveVirtualPath}', files=${archivePanel.files.size}, " +
+                "selectedOnly=$selectedOnly, dest=$destinationDir")
 
-        if (hasSingleRootFolder) {
-            // Single root folder — extract directly, no dialog needed
-            EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: single root folder detected, extracting directly")
-            _toastMessage.tryEmit(appContext.getString(R.string.extract_single_root_hint))
-            checkExtractConflictsAndProceed(archivePanelId, destinationDir, selectedOnly)
-            return
-        }
-
-        EcosystemLogger.d(HaronConstants.TAG, "extractFromArchive: showing extract options dialog")
         _uiState.update {
             it.copy(dialogState = DialogState.ArchiveExtractOptions(
                 archivePanelId = archivePanelId,
@@ -3238,29 +3239,20 @@ class ExplorerViewModel @Inject constructor(
         val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val destDir = getPanel(otherId).currentPath.ifEmpty { panel.currentPath }
 
-        // For single archive — check single root folder and show dialog
+        // For single archive — always show extract options dialog
         if (selectedArchives.size == 1) {
             val archive = selectedArchives[0]
             val archiveName = File(archive.path).nameWithoutExtension
-            viewModelScope.launch {
-                val hasSingleRoot = checkSingleRootFolder(archive.path)
-                if (hasSingleRoot) {
-                    EcosystemLogger.d(HaronConstants.TAG, "extractSelectedArchiveFiles: single root folder, extracting directly")
-                    _toastMessage.tryEmit(appContext.getString(R.string.extract_single_root_hint))
-                    doExtractSelectedArchiveFiles(panelId, listOf(archive.path), destDir)
-                } else {
-                    _uiState.update {
-                        it.copy(dialogState = DialogState.ArchiveExtractOptions(
-                            archivePanelId = panelId,
-                            destinationDir = destDir,
-                            selectedOnly = false,
-                            archiveName = archiveName,
-                            hasSingleRootFolder = false,
-                            isFromNormalFolder = true,
-                            archivePaths = listOf(archive.path)
-                        ))
-                    }
-                }
+            _uiState.update {
+                it.copy(dialogState = DialogState.ArchiveExtractOptions(
+                    archivePanelId = panelId,
+                    destinationDir = destDir,
+                    selectedOnly = false,
+                    archiveName = archiveName,
+                    hasSingleRootFolder = false,
+                    isFromNormalFolder = true,
+                    archivePaths = listOf(archive.path)
+                ))
             }
         } else {
             // Multiple archives — extract all directly without dialog
@@ -3995,6 +3987,11 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update {
             it.copy(dialogState = DialogState.ForceDeleteConfirm(selected, names))
         }
+    }
+
+    fun confirmTrashOverflowDelete(paths: List<String>) {
+        dismissDialog()
+        confirmForceDelete(paths)
     }
 
     fun confirmForceDelete(paths: List<String>) {

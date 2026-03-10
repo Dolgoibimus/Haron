@@ -36,12 +36,13 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
                     for (path in paths) {
                         val src = File(path)
                         if (!src.exists()) continue
+                        val isDir = src.isDirectory
                         val timestamp = System.currentTimeMillis()
                         val id = "${timestamp}_${src.name}"
                         val dest = File(trashDir, id)
                         val moved = src.renameTo(dest)
                         if (!moved) {
-                            if (src.isDirectory) {
+                            if (isDir) {
                                 src.copyRecursively(dest, overwrite = false)
                             } else {
                                 src.copyTo(dest, overwrite = false)
@@ -53,8 +54,8 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
                                 id = id,
                                 originalPath = path,
                                 trashedAt = timestamp,
-                                size = if (src.isDirectory) dirSize(dest) else dest.length(),
-                                isDirectory = src.isDirectory
+                                size = if (isDir) dirSize(dest) else dest.length(),
+                                isDirectory = isDir
                             )
                         )
                         count++
@@ -73,7 +74,19 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
         withContext(Dispatchers.IO) {
             try {
                 mutex.withLock {
-                    Result.success(readMeta())
+                    val entries = readMeta()
+                    // Recalculate sizes from real files (meta.size may be stale for directories)
+                    val fixed = entries.map { entry ->
+                        val file = File(trashDir, entry.id)
+                        if (file.exists() && file.isDirectory) {
+                            entry.copy(size = dirSize(file), isDirectory = true)
+                        } else if (file.exists()) {
+                            entry.copy(size = file.length())
+                        } else {
+                            entry
+                        }
+                    }
+                    Result.success(fixed)
                 }
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка чтения корзины: ${e.message}")
@@ -242,8 +255,11 @@ class TrashRepositoryImpl @Inject constructor() : TrashRepository {
     override suspend fun getTrashSize(): Long =
         withContext(Dispatchers.IO) {
             try {
-                val entries = mutex.withLock { readMeta() }
-                entries.sumOf { it.size }
+                // Calculate real size from files on disk (meta.size may be stale)
+                if (!trashDir.exists()) return@withContext 0L
+                trashDir.walkTopDown()
+                    .filter { it.isFile && it.name != "meta.json" }
+                    .sumOf { it.length() }
             } catch (_: Exception) {
                 0L
             }

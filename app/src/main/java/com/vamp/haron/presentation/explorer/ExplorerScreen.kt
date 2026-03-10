@@ -1205,6 +1205,29 @@ private fun ExplorerDialogs(
                 onDismiss = viewModel::dismissDialog
             )
         }
+        is DialogState.TrashOverflow -> {
+            AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { Text(stringResource(R.string.trash_overflow_title)) },
+                text = {
+                    Text(stringResource(
+                        R.string.trash_overflow_message,
+                        dialog.incomingSize.toFileSize(),
+                        dialog.maxSize.toFileSize()
+                    ))
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.confirmTrashOverflowDelete(dialog.paths) }) {
+                        Text(stringResource(R.string.delete_permanently))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissDialog) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
 }
