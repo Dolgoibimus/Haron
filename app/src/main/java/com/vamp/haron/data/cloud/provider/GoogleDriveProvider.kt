@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Date
@@ -134,22 +135,28 @@ class GoogleDriveProvider(
                 pageToken = result.nextPageToken
             } while (pageToken != null)
 
+            val currentToken = tokenStore.load(CloudProvider.GOOGLE_DRIVE)?.accessToken
             val entries = allFiles.map { file ->
                 val isDir = file.mimeType == "application/vnd.google-apps.folder"
+                val rawThumbUrl = file.thumbnailLink?.replace(Regex("=s\\d+"), "=s800")
+                    ?: if (!isDir && (file.mimeType?.startsWith("image/") == true || file.mimeType?.startsWith("video/") == true)) {
+                        "https://www.googleapis.com/drive/v3/files/${file.id}?alt=media"
+                    } else null
+                // Append access_token for authenticated thumbnail download in grid
+                val authThumbUrl = if (rawThumbUrl != null && currentToken != null) {
+                    val sep = if ('?' in rawThumbUrl) "&" else "?"
+                    "$rawThumbUrl${sep}access_token=$currentToken"
+                } else rawThumbUrl
                 CloudFileEntry(
                     id = file.id,
                     name = file.name,
-                    path = file.id, // GDrive uses IDs, not paths
+                    path = file.id,
                     isDirectory = isDir,
                     size = file.getSize()?.toLong() ?: 0L,
                     lastModified = file.modifiedTime?.value ?: 0L,
                     mimeType = file.mimeType,
                     provider = CloudProvider.GOOGLE_DRIVE,
-                    thumbnailUrl = file.thumbnailLink?.replace(Regex("=s\\d+"), "=s800")
-                        ?: if (!isDir && (file.mimeType?.startsWith("image/") == true || file.mimeType?.startsWith("video/") == true)) {
-                            // Fallback: authenticated content download for files without thumbnailLink
-                            "https://www.googleapis.com/drive/v3/files/${file.id}?alt=media"
-                        } else null
+                    thumbnailUrl = authThumbUrl
                 )
             } ?: emptyList()
 
@@ -195,8 +202,8 @@ class GoogleDriveProvider(
 
             // Stream download with manual progress tracking
             val inputStream = service.files().get(cloudFileId).executeMediaAsInputStream()
-            FileOutputStream(outputFile).use { fos ->
-                val buffer = ByteArray(8192)
+            BufferedOutputStream(FileOutputStream(outputFile), 262144).use { fos ->
+                val buffer = ByteArray(262144)
                 var totalRead = 0L
                 var lastEmitPercent = -1
                 while (true) {

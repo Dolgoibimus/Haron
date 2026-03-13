@@ -206,9 +206,9 @@ class YandexDiskProvider(
                 val totalSize = conn.contentLengthLong.let { if (it < 0) 0L else it }
                 emit(CloudTransferProgress(fileName, 0, totalSize))
 
-                conn.inputStream.use { input ->
-                    FileOutputStream(File(localPath)).use { fos ->
-                        val buffer = ByteArray(8192)
+                java.io.BufferedInputStream(conn.inputStream, 262144).use { input ->
+                    java.io.BufferedOutputStream(FileOutputStream(File(localPath)), 262144).use { fos ->
+                        val buffer = ByteArray(262144)
                         var bytesRead: Int
                         var totalRead = 0L
                         var lastEmitPercent = -1
@@ -273,8 +273,8 @@ class YandexDiskProvider(
 
             try {
                 FileInputStream(file).use { fis ->
-                    conn.outputStream.use { out ->
-                        val buffer = ByteArray(8192)
+                    java.io.BufferedOutputStream(conn.outputStream, 262144).use { out ->
+                        val buffer = ByteArray(262144)
                         var bytesRead: Int
                         var totalWritten = 0L
                         var lastEmitPercent = -1
@@ -285,6 +285,9 @@ class YandexDiskProvider(
                             if (percent != lastEmitPercent) {
                                 emit(CloudTransferProgress(fileName, totalWritten, totalSize))
                                 lastEmitPercent = percent
+                                if (percent % 10 == 0) {
+                                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                                }
                             }
                         }
                     }
@@ -465,8 +468,8 @@ class YandexDiskProvider(
 
             try {
                 FileInputStream(file).use { fis ->
-                    conn.outputStream.use { out ->
-                        val buffer = ByteArray(8192)
+                    java.io.BufferedOutputStream(conn.outputStream, 262144).use { out ->
+                        val buffer = ByteArray(262144)
                         var bytesRead: Int
                         var totalWritten = 0L
                         var lastEmitPercent = -1
@@ -477,6 +480,9 @@ class YandexDiskProvider(
                             if (percent != lastEmitPercent) {
                                 emit(CloudTransferProgress(fileName, totalWritten, totalSize))
                                 lastEmitPercent = percent
+                                if (percent % 10 == 0) {
+                                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                                }
                             }
                         }
                     }
