@@ -159,6 +159,12 @@ class YandexDiskProvider(
                             provider = CloudProvider.YANDEX_DISK,
                             childCount = childCount,
                             thumbnailUrl = item.optString("preview", "").ifEmpty { null }
+                                ?.let { url ->
+                                    // Request larger preview: replace size=S with size=XL (800px)
+                                    if ("size=" in url) url.replace(Regex("size=\\w+"), "size=XL")
+                                    else if ("?" in url) "$url&size=XL"
+                                    else "$url?size=XL"
+                                }
                         )
                     )
                 }

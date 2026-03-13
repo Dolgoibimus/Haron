@@ -3587,9 +3587,13 @@ class ExplorerViewModel @Inject constructor(
                 return entry
             }
             // Dropbox non-images: thumbnailUrl is a direct file link (not a thumbnail image)
-            // → download with proper extension, not as .jpg
-            // GDrive & Yandex: thumbnailUrl is always a thumbnail image
+            // GDrive & Yandex: thumbnailUrl is always a thumbnail image (JPEG)
+            // For text/code: thumbnail useless (can't read text from image) — download full file
+            // For Dropbox non-images: download full file (thumbnailUrl = direct link, not thumbnail)
             if (isDropbox && type != "image") {
+                return resolveCloudArchiveForPreview(entry)
+            }
+            if (type in listOf("text", "code") && (isGDrive || isYandex)) {
                 return resolveCloudArchiveForPreview(entry)
             }
             // Google Drive: thumbnailUrl is always a thumbnail image (for any file type)
@@ -3600,7 +3604,8 @@ class ExplorerViewModel @Inject constructor(
             cacheDir.mkdirs()
             // Stable cache key from cloud path
             val cacheKey = entry.path.hashCode().toUInt().toString(16)
-            val ext = if (needsAuth) entry.extension.ifEmpty { "jpg" } else "jpg"
+            // Thumbnails are always images (JPEG) regardless of original file type
+            val ext = "jpg"
             val thumbFile = File(cacheDir, "thumb_${cacheKey}.$ext")
             val tempThumbFile = File(cacheDir, "thumb_${cacheKey}.tmp")
             // Reuse cached thumbnail (only if no active download)
@@ -3609,7 +3614,11 @@ class ExplorerViewModel @Inject constructor(
             }
             try {
                 withContext(Dispatchers.IO) {
-                    val url = java.net.URL(thumbUrl)
+                    // For QuickPreview: request largest available thumbnail (XXXL = 1280px)
+                    val previewUrl = if (isYandex && "size=" in thumbUrl) {
+                        thumbUrl.replace(Regex("size=\\w+"), "size=XXXL")
+                    } else thumbUrl
+                    val url = java.net.URL(previewUrl)
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.connectTimeout = 15_000
                     conn.readTimeout = 30_000
