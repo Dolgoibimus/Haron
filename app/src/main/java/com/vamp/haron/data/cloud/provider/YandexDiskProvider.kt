@@ -9,6 +9,9 @@ import com.vamp.haron.domain.model.CloudFileEntry
 import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.model.CloudTransferProgress
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
@@ -144,9 +147,7 @@ class YandexDiskProvider(
                     val itemPath = item.optString("path", "")
                     val relativePath = itemPath.removePrefix("disk:/")
 
-                    val childCount = if (isDir) {
-                        item.optJSONObject("_embedded")?.optInt("total", -1) ?: -1
-                    } else -1
+                    val childCount = -1 // populated below via parallel requests
 
                     allEntries.add(
                         CloudFileEntry(
@@ -173,6 +174,31 @@ class YandexDiskProvider(
                 val total = embedded.optInt("total", 0)
                 offset += items.length()
                 if (offset >= total) break
+            }
+
+            // Fetch childCount for folders in parallel (limit=0 → only metadata)
+            val folders = allEntries.filter { it.isDirectory }
+            if (folders.isNotEmpty()) {
+                val counts = coroutineScope {
+                    folders.map { folder ->
+                        async(Dispatchers.IO) {
+                            try {
+                                val ep = URLEncoder.encode("disk:/${folder.path}", "UTF-8")
+                                val meta = apiGet("/resources?path=$ep&limit=0")
+                                val cnt = meta?.optJSONObject("_embedded")?.optInt("total", 0) ?: 0
+                                folder.path to cnt
+                            } catch (_: Exception) {
+                                folder.path to 0
+                            }
+                        }
+                    }.awaitAll()
+                }.toMap()
+                for (i in allEntries.indices) {
+                    val e = allEntries[i]
+                    if (e.isDirectory && e.path in counts) {
+                        allEntries[i] = e.copy(childCount = counts[e.path] ?: 0)
+                    }
+                }
             }
 
             EcosystemLogger.d(HaronConstants.TAG, "YandexDisk listFiles: total ${allEntries.size} items")
