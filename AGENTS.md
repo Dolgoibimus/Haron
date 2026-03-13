@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.60 (Phase 4, Batch 60)
+**Текущая версия:** 0.63 (Phase 4, Batch 63)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,33 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 63 — Яндекс: upload reliability + childCount + HttpFileServer streaming ⚠️ не проверено
+
+**Что сделано:**
+- **Upload pre-refresh**: `refreshToken()` перед каждым upload (как Google Drive) — исключает 401 при протухшем токене
+- **Retry wrapper**: 2 попытки с 1с паузой + повторный refreshToken между попытками — устойчивость к транзиентным ошибкам
+- **Chunked upload**: `setChunkedStreamingMode(4MB)` для файлов >100MB (иначе `setFixedLengthStreamingMode`) — partial writes для больших файлов
+- **`uploadFileAttempt()` helper**: общий код для `uploadFile` и `updateFileContent` — один паттерн retry+chunked
+- **childCount для папок**: параллельные `GET /resources?path=...&limit=0` запросы для получения `_embedded.total` — раньше все папки показывали "0 элементов"
+- **HttpFileServer Yandex streaming**: добавлен case `"yandex"` в `when(config.provider)` — двухшаговая загрузка (temp URL), правильный auth prefix `"OAuth"` вместо `"Bearer"`, `needsAuth` исключает Yandex (temp URL self-authenticated)
+- **downloadCloudThumbnail auth**: добавлена авторизация для Yandex (`OAuth` prefix), увеличение размера thumbnail (`size=XXXL`)
+- **adaptCloudPreview**: конвертация `ImagePreview` → `VideoPreview`/`AudioPreview` для облачных медиа-файлов (thumbnail всегда JPEG)
+
+---
+
+### Batch 62 — Скорость облачных трансферов + превью фиксы ⚠️ не проверено
+
+**Что сделано:**
+- **channelFlow вместо flow**: `downloadFile/uploadFile/updateFileContent` в `YandexDiskProvider` переведены с `flow { emit() }` на `channelFlow { trySend() }` — `trySend()` не блокирует write-loop (upload глох на 6-7% из-за `emit()` приостанавливающего запись)
+- **Буферы 8KB→256KB** во всех 4 облачных провайдерах (Yandex, OneDrive, Dropbox, GDrive) — ~32x меньше syscalls
+- **readTimeout 120s→300s** для больших файлов в Yandex
+- **CancellationException re-throw**: добавлен `if (e is CancellationException) throw e` в 8 catch-блоках облачных операций — фантомный прогресс-бар после отмены
+- **Превью фикс расширений**: thumbnail всегда сохраняется с `.jpg` (раньше с оригинальным расширением `.pdf`/`.docx` → LoadPreviewUseCase пытался парсить JPEG как PDF)
+- **Яндекс thumbnail размер**: `size=S` (150px) → `size=XL` (800px) в списке, `size=XXXL` (1280px) в QuickPreview
+- **Текст/код на GDrive/Yandex**: полная загрузка файла вместо бесполезного thumbnail
 
 ---
 
