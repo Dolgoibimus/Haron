@@ -10,6 +10,13 @@ sealed interface NavigationEvent {
         val fileName: String
     ) : NavigationEvent
 
+    data class OpenTextEditorCloud(
+        val localCachePath: String,
+        val fileName: String,
+        val cloudUri: String, // cloud://gdrive/fileId
+        val otherPanelPath: String = "" // local path of the other panel for "save locally"
+    ) : NavigationEvent
+
     data class OpenGallery(
         val startIndex: Int = 0 // index in GalleryHolder.items
     ) : NavigationEvent
@@ -58,4 +65,12 @@ sealed interface NavigationEvent {
     data object OpenSteganography : NavigationEvent
 
     data object OpenScanner : NavigationEvent
+
+    data class RequestSafAccess(
+        val panelId: PanelId,
+        val filePath: String,
+        val initialSafUri: android.net.Uri
+    ) : NavigationEvent
+
+    data object OpenCloudAuth : NavigationEvent
 }

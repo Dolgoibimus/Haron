@@ -62,9 +62,13 @@ fun FeaturesScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 items.forEach { item ->
+                    val isNew = item.endsWith("[NEW]")
+                    val displayText = if (isNew) item.removeSuffix("[NEW]").trim() else item
                     Text(
-                        text = "• $item",
+                        text = "• $displayText",
                         style = MaterialTheme.typography.bodySmall,
+                        color = if (isNew) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
                     )
                 }

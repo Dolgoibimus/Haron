@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -93,6 +94,8 @@ private const val UNDO_DEBOUNCE_MS = 500L
 fun TextEditorScreen(
     filePath: String,
     fileName: String,
+    cloudUri: String? = null,
+    otherPanelPath: String? = null,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -115,6 +118,14 @@ fun TextEditorScreen(
     }
     DisposableEffect(Unit) { onDispose { TransferHolder.voiceFabVisible.value = true } }
 
+    // Diagnostic logging for cloud text editing
+    LaunchedEffect(Unit) {
+        com.vamp.core.logger.EcosystemLogger.d(
+            com.vamp.haron.common.constants.HaronConstants.TAG,
+            "TextEditorScreen: filePath=$filePath, fileName=$fileName, cloudUri=$cloudUri"
+        )
+    }
+
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var savedText by remember { mutableStateOf("") }
     var isModified by remember { mutableStateOf(false) }
@@ -122,6 +133,7 @@ fun TextEditorScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var isTruncated by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
+    var showCloudSaveDialog by remember { mutableStateOf(false) }
     var savedScrollTarget by remember { mutableIntStateOf(0) }
 
     // Search match navigation
@@ -236,7 +248,16 @@ fun TextEditorScreen(
                 }
                 savedText = content
                 isModified = false
-            } catch (_: Exception) { }
+                com.vamp.core.logger.EcosystemLogger.d(
+                    com.vamp.haron.common.constants.HaronConstants.TAG,
+                    "TextEditor saveFile: saved ${content.length} chars to $filePath"
+                )
+            } catch (e: Exception) {
+                com.vamp.core.logger.EcosystemLogger.e(
+                    com.vamp.haron.common.constants.HaronConstants.TAG,
+                    "TextEditor saveFile error: ${e.message}"
+                )
+            }
         }
     }
 
@@ -351,8 +372,13 @@ fun TextEditorScreen(
                         }
                         IconButton(
                             onClick = {
-                                saveFile()
-                                isEditMode = false
+                                if (cloudUri != null) {
+                                    saveFile()
+                                    showCloudSaveDialog = true
+                                } else {
+                                    saveFile()
+                                    isEditMode = false
+                                }
                             }
                         ) {
                             Icon(
@@ -554,40 +580,232 @@ fun TextEditorScreen(
         }
     }
 
-    // Exit dialog
-    if (showExitDialog) {
+    // Cloud helpers (shared between save button dialog and exit dialog)
+    val uploadToCloud: () -> Unit = {
+        if (cloudUri != null) {
+            scope.launch {
+                try {
+                    val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                        context.applicationContext,
+                        CloudManagerEntryPoint::class.java
+                    )
+                    val cm = entryPoint.cloudManager()
+                    com.vamp.core.logger.EcosystemLogger.d(
+                        com.vamp.haron.common.constants.HaronConstants.TAG,
+                        "TextEditor cloud save: cloudUri=$cloudUri, filePath=$filePath"
+                    )
+                    val parsed = cm.parseCloudUri(cloudUri)
+                    if (parsed != null) {
+                        val (provider, cloudFileId) = parsed
+                        cm.updateFileContent(provider, cloudFileId, filePath).collect { progress ->
+                            if (progress.isComplete) {
+                                if (progress.error != null) {
+                                    com.vamp.core.logger.EcosystemLogger.e(
+                                        com.vamp.haron.common.constants.HaronConstants.TAG,
+                                        "TextEditor cloud save error: ${progress.error}"
+                                    )
+                                    android.widget.Toast.makeText(context, progress.error, android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, context.getString(com.vamp.haron.R.string.cloud_save_success), android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    } else {
+                        com.vamp.core.logger.EcosystemLogger.e(
+                            com.vamp.haron.common.constants.HaronConstants.TAG,
+                            "TextEditor cloud save: parseCloudUri returned null for '$cloudUri'"
+                        )
+                    }
+                } catch (e: Exception) {
+                    com.vamp.core.logger.EcosystemLogger.e(
+                        com.vamp.haron.common.constants.HaronConstants.TAG,
+                        "TextEditor cloud save exception: ${e.message}"
+                    )
+                    android.widget.Toast.makeText(context, "Save error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    val saveToLocal: () -> Unit = {
+        if (!otherPanelPath.isNullOrBlank()) {
+            try {
+                val targetDir = java.io.File(otherPanelPath)
+                if (!targetDir.exists()) targetDir.mkdirs()
+                val targetFile = java.io.File(targetDir, fileName)
+                java.io.File(filePath).copyTo(targetFile, overwrite = true)
+                android.widget.Toast.makeText(
+                    context,
+                    context.getString(com.vamp.haron.R.string.cloud_save_local_success, targetFile.absolutePath),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                com.vamp.core.logger.EcosystemLogger.d(
+                    com.vamp.haron.common.constants.HaronConstants.TAG,
+                    "TextEditor saveToLocal: copied to ${targetFile.absolutePath}"
+                )
+            } catch (e: Exception) {
+                com.vamp.core.logger.EcosystemLogger.e(
+                    com.vamp.haron.common.constants.HaronConstants.TAG,
+                    "TextEditor saveToLocal error: ${e.message}"
+                )
+                android.widget.Toast.makeText(context, "Save error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            android.widget.Toast.makeText(
+                context,
+                context.getString(com.vamp.haron.R.string.cloud_save_no_local_panel),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // Cloud save dialog (from save button)
+    if (showCloudSaveDialog) {
         AlertDialog(
-            onDismissRequest = { showExitDialog = false },
-            title = { Text(stringResource(R.string.unsaved_changes_title)) },
-            text = { Text(stringResource(R.string.save_before_exit)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    saveFile()
-                    showExitDialog = false
-                    isEditMode = false
-                }) {
-                    Text(stringResource(R.string.save))
+            onDismissRequest = { showCloudSaveDialog = false },
+            title = { Text(stringResource(R.string.cloud_save_title)) },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = {
+                            uploadToCloud()
+                            showCloudSaveDialog = false
+                            isEditMode = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.cloud_save_to_cloud))
+                    }
+                    TextButton(
+                        onClick = {
+                            saveToLocal()
+                            showCloudSaveDialog = false
+                            isEditMode = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.cloud_save_to_local))
+                    }
+                    TextButton(
+                        onClick = {
+                            uploadToCloud()
+                            saveToLocal()
+                            showCloudSaveDialog = false
+                            isEditMode = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.cloud_save_to_both))
+                    }
                 }
             },
+            confirmButton = { },
             dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        showExitDialog = false
-                    }) {
-                        Text(stringResource(R.string.stay))
+                TextButton(onClick = { showCloudSaveDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Exit dialog — different for cloud vs local files
+    if (showExitDialog) {
+        if (cloudUri != null) {
+            // Cloud file: offer cloud save, local save, both, or discard
+            AlertDialog(
+                onDismissRequest = { showExitDialog = false },
+                title = { Text(stringResource(R.string.cloud_save_title)) },
+                text = {
+                    Column {
+                        Text(stringResource(R.string.save_before_exit))
+                        Spacer(Modifier.height(16.dp))
+                        TextButton(
+                            onClick = {
+                                saveFile()
+                                uploadToCloud()
+                                showExitDialog = false
+                                isEditMode = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.cloud_save_to_cloud))
+                        }
+                        TextButton(
+                            onClick = {
+                                saveFile()
+                                saveToLocal()
+                                showExitDialog = false
+                                isEditMode = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.cloud_save_to_local))
+                        }
+                        TextButton(
+                            onClick = {
+                                saveFile()
+                                uploadToCloud()
+                                saveToLocal()
+                                showExitDialog = false
+                                isEditMode = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.cloud_save_to_both))
+                        }
                     }
+                },
+                confirmButton = { },
+                dismissButton = {
                     TextButton(onClick = {
                         showExitDialog = false
                         isEditMode = false
                         isModified = false
                         textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
                     }) {
-                        Text(stringResource(R.string.dont_save))
+                        Text(stringResource(R.string.cloud_save_discard))
                     }
                 }
-            }
-        )
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showExitDialog = false },
+                title = { Text(stringResource(R.string.unsaved_changes_title)) },
+                text = { Text(stringResource(R.string.save_before_exit)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        saveFile()
+                        showExitDialog = false
+                        isEditMode = false
+                    }) {
+                        Text(stringResource(R.string.save))
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            showExitDialog = false
+                        }) {
+                            Text(stringResource(R.string.stay))
+                        }
+                        TextButton(onClick = {
+                            showExitDialog = false
+                            isEditMode = false
+                            isModified = false
+                            textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                        }) {
+                            Text(stringResource(R.string.dont_save))
+                        }
+                    }
+                }
+            )
+        }
     }
+}
+
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface CloudManagerEntryPoint {
+    fun cloudManager(): com.vamp.haron.data.cloud.CloudManager
 }
 
 private class SearchHighlightTransformation(

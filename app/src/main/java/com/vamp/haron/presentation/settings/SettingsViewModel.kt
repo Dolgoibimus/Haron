@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.security.AuthManager
+import com.vamp.haron.data.shizuku.ShizukuManager
+import com.vamp.haron.data.shizuku.ShizukuState
 import com.vamp.haron.domain.model.AppLockMethod
 import com.vamp.haron.domain.model.GestureAction
 import com.vamp.haron.domain.model.GestureType
@@ -45,7 +47,8 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val preferences: HaronPreferences,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    val shizukuManager: ShizukuManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -203,5 +206,23 @@ class SettingsViewModel @Inject constructor(
         _state.update {
             it.copy(gestureMappings = GestureType.entries.associateWith { t -> t.defaultAction })
         }
+    }
+
+    // --- Shizuku ---
+
+    fun refreshShizukuState() {
+        shizukuManager.refreshState()
+    }
+
+    fun requestShizukuPermission() {
+        shizukuManager.requestPermission()
+    }
+
+    fun openShizukuApp() {
+        com.vamp.haron.presentation.explorer.components.openShizukuApp(appContext)
+    }
+
+    fun openShizukuPlayStore() {
+        com.vamp.haron.presentation.explorer.components.openShizukuPlayStore(appContext)
     }
 }

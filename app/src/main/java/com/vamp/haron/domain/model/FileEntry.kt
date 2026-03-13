@@ -10,5 +10,6 @@ data class FileEntry(
     val isHidden: Boolean,
     val childCount: Int,
     val isContentUri: Boolean = false,
-    val isProtected: Boolean = false
+    val isProtected: Boolean = false,
+    val thumbnailUrl: String? = null
 )

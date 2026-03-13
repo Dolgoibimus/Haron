@@ -57,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        aidl = true
     }
     packaging {
         jniLibs {
@@ -65,6 +66,9 @@ android {
             excludes += listOf("**/libusb-lib.so", "**/liberrno-lib.so")
             // VLC and ffmpeg-kit both ship libc++_shared.so — pick first to avoid conflict
             pickFirsts += "**/libc++_shared.so"
+        }
+        resources {
+            excludes += listOf("META-INF/INDEX.LIST", "META-INF/DEPENDENCIES")
         }
     }
 }
@@ -77,6 +81,10 @@ configurations.all {
 dependencies {
     // Ecosystem Core
     implementation("com.vamp:core:1.0.0")
+
+    // Shizuku (access to Android/data and Android/obb on Android 11+)
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Document support (.doc)
     implementation("org.apache.poi:poi:5.2.5")
@@ -129,11 +137,20 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
-    // HTTP server (Ktor CIO — file transfer)
+    // HTTP server (Ktor CIO — file transfer + WebSocket for TV remote)
     implementation("io.ktor:ktor-server-core:2.3.12")
     implementation("io.ktor:ktor-server-cio:2.3.12")
     implementation("io.ktor:ktor-server-partial-content:2.3.12")
     implementation("io.ktor:ktor-server-auto-head-response:2.3.12")
+    implementation("io.ktor:ktor-server-websockets:2.3.12")
+
+    // Cloud storage
+    implementation("com.google.apis:google-api-services-drive:v3-rev20240914-2.0.0")
+    implementation("com.google.api-client:google-api-client-android:2.7.0")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.30.0")
+    implementation("com.dropbox.core:dropbox-core-sdk:7.0.0")
+    // OneDrive uses direct HTTP calls to Graph REST API (no SDK needed)
+    implementation("androidx.browser:browser:1.8.0")
 
     // Diff utils (file comparison)
     implementation("io.github.java-diff-utils:java-diff-utils:4.12")

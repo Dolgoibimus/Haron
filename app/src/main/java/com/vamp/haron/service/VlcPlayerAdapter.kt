@@ -124,10 +124,10 @@ class VlcPlayerAdapter(
         currentIndex = index
         val item = playlist.getOrNull(index) ?: return
         EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: playing item [$index] ${item.fileName}")
-        val uri = if (item.filePath.startsWith("content://")) {
-            Uri.parse(item.filePath)
-        } else {
-            Uri.fromFile(java.io.File(item.filePath))
+        val uri = when {
+            item.filePath.startsWith("http://") || item.filePath.startsWith("https://") -> Uri.parse(item.filePath)
+            item.filePath.startsWith("content://") -> Uri.parse(item.filePath)
+            else -> Uri.fromFile(java.io.File(item.filePath))
         }
         val media = Media(libVlc, uri)
         media.setHWDecoderEnabled(true, false)

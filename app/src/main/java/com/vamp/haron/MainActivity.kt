@@ -378,6 +378,23 @@ class MainActivity : FragmentActivity() {
 
     private fun processExternalIntent(intent: Intent?) {
         if (intent == null) return
+
+        // Handle Cloud OAuth callback (haron://oauth/{provider}?code=XXX)
+        val data = intent.data
+        if (data != null && data.scheme == "haron" && data.host == "oauth") {
+            val providerScheme = data.pathSegments?.firstOrNull()
+            val code = data.getQueryParameter("code")
+            if (providerScheme != null && code != null) {
+                com.vamp.core.logger.EcosystemLogger.d(
+                    HaronConstants.TAG,
+                    "OAuth callback: provider=$providerScheme, code=${code.take(10)}..."
+                )
+                com.vamp.haron.data.cloud.CloudOAuthHelper.pendingAuth.value =
+                    com.vamp.haron.data.cloud.CloudOAuthHelper.PendingAuth(providerScheme, code)
+            }
+            return
+        }
+
         val action = intent.action
         if (action == Intent.ACTION_VIEW || action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE) {
             val files = IntentHandler.handleIntent(intent, this)

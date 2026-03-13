@@ -246,6 +246,12 @@ class DlnaManager @Inject constructor(
             is RemoteInputEvent.Next, is RemoteInputEvent.Prev -> {
                 // DLNA has no queue concept — ignore
             }
+            // TV remote events handled via WebSocket, not DLNA
+            is RemoteInputEvent.MouseMove,
+            is RemoteInputEvent.MouseClick,
+            is RemoteInputEvent.Scroll,
+            is RemoteInputEvent.KeyPress,
+            is RemoteInputEvent.TextInput -> { /* no-op */ }
         }
     }
 

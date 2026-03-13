@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
@@ -395,6 +396,64 @@ fun SettingsScreen(
             )
             Text(
                 stringResource(R.string.trash_info),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Shizuku ---
+            SectionHeader(
+                icon = Icons.Filled.Security,
+                title = stringResource(R.string.shizuku_section)
+            )
+            Spacer(Modifier.height(8.dp))
+
+            val shizukuState by viewModel.shizukuManager.state.collectAsState()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val (statusText, statusColor) = when (shizukuState) {
+                    com.vamp.haron.data.shizuku.ShizukuState.NOT_INSTALLED ->
+                        stringResource(R.string.shizuku_not_installed) to MaterialTheme.colorScheme.error
+                    com.vamp.haron.data.shizuku.ShizukuState.NOT_RUNNING ->
+                        stringResource(R.string.shizuku_not_running) to MaterialTheme.colorScheme.error
+                    com.vamp.haron.data.shizuku.ShizukuState.NO_PERMISSION ->
+                        stringResource(R.string.shizuku_no_permission) to MaterialTheme.colorScheme.tertiary
+                    com.vamp.haron.data.shizuku.ShizukuState.READY,
+                    com.vamp.haron.data.shizuku.ShizukuState.BOUND ->
+                        stringResource(R.string.shizuku_ready) to MaterialTheme.colorScheme.primary
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = statusColor,
+                    modifier = Modifier.weight(1f)
+                )
+                when (shizukuState) {
+                    com.vamp.haron.data.shizuku.ShizukuState.NOT_INSTALLED -> {
+                        OutlinedButton(onClick = { viewModel.openShizukuPlayStore() }) {
+                            Text(stringResource(R.string.shizuku_install), fontSize = 12.sp)
+                        }
+                    }
+                    com.vamp.haron.data.shizuku.ShizukuState.NOT_RUNNING -> {
+                        OutlinedButton(onClick = { viewModel.openShizukuApp() }) {
+                            Text(stringResource(R.string.shizuku_open_app), fontSize = 12.sp)
+                        }
+                    }
+                    com.vamp.haron.data.shizuku.ShizukuState.NO_PERMISSION -> {
+                        OutlinedButton(onClick = { viewModel.requestShizukuPermission() }) {
+                            Text(stringResource(R.string.shizuku_request_permission), fontSize = 12.sp)
+                        }
+                    }
+                    else -> { /* connected — no action needed */ }
+                }
+            }
+            Text(
+                stringResource(R.string.shizuku_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

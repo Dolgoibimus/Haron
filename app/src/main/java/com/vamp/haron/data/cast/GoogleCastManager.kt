@@ -178,6 +178,12 @@ class GoogleCastManager @Inject constructor(
             is RemoteInputEvent.Prev -> {
                 client.queuePrev(null)
             }
+            // TV remote events handled via WebSocket, not Cast SDK
+            is RemoteInputEvent.MouseMove,
+            is RemoteInputEvent.MouseClick,
+            is RemoteInputEvent.Scroll,
+            is RemoteInputEvent.KeyPress,
+            is RemoteInputEvent.TextInput -> { /* no-op */ }
         }
     }
 

@@ -656,7 +656,10 @@ class SearchRepositoryImpl @Inject constructor(
                 MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
             } else ""
 
-            val snippet = if (file.isFile) {
+            // Skip heavy formats (doc/pdf/etc.) during indexing to prevent OOM
+            val ext2 = file.extension.lowercase()
+            val heavyFormats = setOf("doc", "pdf", "docx", "odt", "rtf", "xls", "xlsx", "ppt", "pptx")
+            val snippet = if (file.isFile && ext2 !in heavyFormats) {
                 try { contentExtractor.extractSnippet(file) } catch (_: Throwable) { "" }
             } else ""
 

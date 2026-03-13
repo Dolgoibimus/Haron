@@ -75,6 +75,11 @@
 # ---------- SLF4J (logging facade) ----------
 -dontwarn org.slf4j.**
 
+# ---------- Shizuku ----------
+-keep class rikka.shizuku.** { *; }
+-dontwarn rikka.shizuku.**
+-keep class com.vamp.haron.data.shizuku.** { *; }
+
 # ---------- Google Cast SDK ----------
 -keep class com.google.android.gms.cast.** { *; }
 
@@ -83,6 +88,23 @@
 
 # ---------- ZXing (QR) ----------
 -keep class com.google.zxing.** { *; }
+
+# ---------- Google Drive API ----------
+-keep class com.google.api.** { *; }
+-keep class com.google.auth.** { *; }
+-dontwarn com.google.api.**
+-dontwarn com.google.auth.**
+
+# ---------- Dropbox SDK ----------
+-keep class com.dropbox.core.** { *; }
+-dontwarn com.dropbox.core.**
+
+# ---------- OneDrive (direct HTTP, no SDK) ----------
+# No keep rules needed — uses standard HttpURLConnection + org.json
+
+# ---------- OkHttp (used by cloud SDKs) ----------
+-dontwarn okhttp3.**
+-dontwarn okio.**
 
 # ---------- Glance (AppWidget) ----------
 -keep class com.vamp.haron.presentation.widget.** { *; }

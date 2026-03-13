@@ -73,6 +73,8 @@ import com.vamp.haron.presentation.transfer.components.QrScannerDialog
 import com.vamp.haron.presentation.transfer.components.ReceiveDialog
 import com.vamp.haron.presentation.transfer.components.SmbBrowserTab
 import com.vamp.haron.presentation.transfer.components.TransferProgressCard
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -316,10 +318,12 @@ fun TransferScreen(
         QrScannerDialog(
             onResult = { result ->
                 showScanner = false
+                EcosystemLogger.d(HaronConstants.TAG, "QR scanned: result='$result', isLocalNetwork=${isLocalNetworkUrl(result)}")
                 when {
                     // Local network URL → Haron-to-Haron transfer download
                     (result.startsWith("http://") || result.startsWith("https://")) &&
                         isLocalNetworkUrl(result) -> {
+                        EcosystemLogger.d(HaronConstants.TAG, "QR: local network URL detected, starting download from $result")
                         viewModel.downloadFromQr(result)
                     }
                     // Regular URL → open in browser
@@ -572,7 +576,8 @@ private fun TransferTabContent(
 /** Check if URL points to a local/private network address (for Haron-to-Haron transfers). */
 private fun isLocalNetworkUrl(url: String): Boolean {
     val host = Uri.parse(url).host ?: return false
-    return host.startsWith("192.168.") ||
+    val isLocal = host.startsWith("192.168.") ||
         host.startsWith("10.") ||
         host.matches(Regex("172\\.(1[6-9]|2[0-9]|3[01])\\..*"))
+    return isLocal
 }

@@ -107,6 +107,14 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
 
+            <!-- Cloud OAuth callback (PKCE redirect) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="haron" android:host="oauth" />
+            </intent-filter>
+
             <!-- Show Haron in "Open USB drive" chooser -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -206,6 +214,15 @@
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
             android:value="com.vamp.haron.data.cast.CastOptionsProvider" />
+
+        <!-- Shizuku (access to Android/data and Android/obb) -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Disable default WorkManager initializer (we use Hilt) -->
         <provider

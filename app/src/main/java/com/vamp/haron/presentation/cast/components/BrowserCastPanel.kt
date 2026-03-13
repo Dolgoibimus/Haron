@@ -43,7 +43,6 @@ fun BrowserCastPanel(
 
     val title = when (castMode) {
         CastMode.SCREEN_MIRROR -> stringResource(R.string.cast_mode_mirror)
-        CastMode.FILE_INFO -> stringResource(R.string.cast_mode_info)
         else -> ""
     }
 

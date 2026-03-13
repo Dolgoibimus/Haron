@@ -219,11 +219,12 @@ class TransferViewModel @Inject constructor(
         val files = _state.value.files
         if (files.isEmpty()) return
 
-        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: starting HTTP server for ${files.size} files")
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: ${files.size} files, names=${files.take(3).map { it.name }}")
         viewModelScope.launch {
             // Check if we have a usable local network (not CGNAT/VPN)
             val detectedIp = httpFileServer.getLocalIpAddress()
             val isUsableLocalIp = detectedIp != null && !isCgnatAddress(detectedIp)
+            EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: detectedIp=$detectedIp, isUsableLocal=$isUsableLocalIp")
 
             var serverIp: String?
             var hotspotSsid: String? = null
@@ -232,11 +233,15 @@ class TransferViewModel @Inject constructor(
             if (isUsableLocalIp) {
                 // Good local Wi-Fi (home network etc.)
                 serverIp = detectedIp
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: using local Wi-Fi IP=$serverIp")
             } else {
                 // No usable local network — try to start a local-only hotspot
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: no usable local IP, trying hotspot...")
                 val hotspotInfo = hotspotManager.start()
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: hotspotInfo=$hotspotInfo")
                 if (hotspotInfo == null || hotspotInfo.ip.isEmpty()) {
                     hotspotManager.stop()
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM.startHttpServer: hotspot failed, showing WiFi dialog")
                     // Hotspot API failed — ask user to enable system hotspot
                     _state.update { it.copy(showWifiOffDialog = true) }
                     return@launch
@@ -244,6 +249,7 @@ class TransferViewModel @Inject constructor(
                     serverIp = hotspotInfo.ip
                     hotspotSsid = hotspotInfo.ssid
                     hotspotPassword = hotspotInfo.password.ifEmpty { null }
+                    EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: hotspot IP=$serverIp, SSID=$hotspotSsid")
                 }
             }
 
@@ -251,6 +257,7 @@ class TransferViewModel @Inject constructor(
             httpFileServer.start(files)
             // Build URL using known IP (don't rely on getLocalIpAddress() again — hotspot may not be detected)
             val url = "http://$serverIp:${httpFileServer.actualPort}"
+            EcosystemLogger.d(HaronConstants.TAG, "TransferVM.startHttpServer: server URL=$url")
             val totalBytes = files.sumOf { it.length() }
             _state.update {
                 it.copy(
@@ -449,7 +456,7 @@ class TransferViewModel @Inject constructor(
      * Download files from another Haron's HTTP server (scanned via QR).
      */
     fun downloadFromQr(baseUrl: String) {
-        EcosystemLogger.d(HaronConstants.TAG, "TransferVM: download from QR url=$baseUrl")
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: url=$baseUrl")
         _state.update {
             it.copy(
                 transferState = TransferState.TRANSFERRING,
@@ -463,16 +470,38 @@ class TransferViewModel @Inject constructor(
                 // Normalize URL
                 val url = baseUrl.trimEnd('/')
 
+                // Log own IP for diagnostics
+                val ownIp = httpFileServer.getLocalIpAddress()
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: ownIp=$ownIp, targetUrl=$url")
+
                 // Fetch file list from /api/files
                 val apiUrl = java.net.URL("$url/api/files")
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: connecting to $apiUrl ...")
                 val apiConn = apiUrl.openConnection() as java.net.HttpURLConnection
                 apiConn.connectTimeout = 10_000
                 apiConn.readTimeout = 10_000
+                val responseCode = apiConn.responseCode
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: /api/files responseCode=$responseCode")
+                if (responseCode != 200) {
+                    val errorBody = try { apiConn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM.downloadFromQr: /api/files failed: HTTP $responseCode, error=$errorBody")
+                    apiConn.disconnect()
+                    _state.update {
+                        it.copy(
+                            transferState = TransferState.FAILED,
+                            errorMessage = "Server returned HTTP $responseCode"
+                        )
+                    }
+                    TransferService.stopServer(appContext)
+                    return@launch
+                }
                 val jsonStr = apiConn.inputStream.bufferedReader().readText()
                 apiConn.disconnect()
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: /api/files response=${jsonStr.take(200)}")
 
                 // Simple JSON parsing: [{"index":0,"name":"file.txt","size":123},...]
                 val fileEntries = parseFileList(jsonStr)
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: parsed ${fileEntries.size} files")
                 if (fileEntries.isEmpty()) {
                     _state.update {
                         it.copy(
@@ -497,6 +526,7 @@ class TransferViewModel @Inject constructor(
 
                 fileEntries.forEachIndexed { index, entry ->
                     val streamUrl = java.net.URL("$url/stream/${entry.index}")
+                    EcosystemLogger.d(HaronConstants.TAG, "TransferVM.downloadFromQr: downloading file ${index+1}/${fileEntries.size}: ${entry.name} (${entry.size} bytes) from $streamUrl")
                     val conn = streamUrl.openConnection() as java.net.HttpURLConnection
                     conn.connectTimeout = 15_000
                     conn.readTimeout = 30_000
@@ -546,7 +576,8 @@ class TransferViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "TransferVM: QR download failed: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "TransferVM.downloadFromQr FAILED: ${e::class.simpleName}: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "TransferVM.downloadFromQr stacktrace: ${e.stackTraceToString().take(500)}")
                 _state.update {
                     it.copy(
                         transferState = TransferState.FAILED,

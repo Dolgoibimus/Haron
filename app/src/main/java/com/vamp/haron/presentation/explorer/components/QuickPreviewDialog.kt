@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Fullscreen
@@ -89,9 +90,6 @@ import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.service.PlaybackService
 import androidx.compose.foundation.layout.fillMaxSize
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
-import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -118,6 +116,7 @@ fun QuickPreviewDialog(
     onOpenDocument: (() -> Unit)? = null,
     onOpenArchive: (() -> Unit)? = null,
     onInstallApk: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     adjacentFiles: List<FileEntry> = emptyList(),
     currentFileIndex: Int = 0,
     onFileChanged: (Int) -> Unit = {},
@@ -340,7 +339,8 @@ fun QuickPreviewDialog(
                 }
 
                 // Action buttons (fullscreen / edit / open)
-                val isImage = previewData is PreviewData.ImagePreview
+                val isImage = previewData is PreviewData.ImagePreview ||
+                    (isLoading && entry.iconRes() == "image")
                 val isPdf = previewData is PreviewData.PdfPreview
                 val isArchive = previewData is PreviewData.ArchivePreview
                 val isText = previewData is PreviewData.TextPreview
@@ -366,13 +366,30 @@ fun QuickPreviewDialog(
                             }
                         }
                         isImage && onOpenGallery != null -> {
-                            Button(
-                                onClick = onOpenGallery,
-                                modifier = Modifier.fillMaxWidth()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.open_in_gallery))
+                                Button(
+                                    onClick = onOpenGallery,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Filled.Fullscreen, null, Modifier.size(20.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.open_in_gallery))
+                                }
+                                if (onDelete != null) {
+                                    IconButton(
+                                        onClick = onDelete,
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.DeleteOutline,
+                                            contentDescription = stringResource(R.string.delete),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
                             }
                         }
                         isPdf && onOpenPdf != null -> {
@@ -849,75 +866,27 @@ private fun TextPreviewContent(data: PreviewData.TextPreview) {
 
 @Composable
 private fun PdfPreviewContent(data: PreviewData.PdfPreview) {
-    if (data.pageCount <= 1 || data.filePath.isEmpty()) {
-        // Single page or no path — just show first page
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Image(
-                bitmap = data.firstPage.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 300.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.pages_count, data.pageCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        return
-    }
-
-    val pageCache = remember(data.filePath) { mutableMapOf(0 to data.firstPage) }
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { data.pageCount })
-
+    // Always show only first page — no inner HorizontalPager to avoid
+    // swipe conflict with the outer file pager. Full navigation in reader.
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HorizontalPager(
-            state = pagerState,
+        Image(
+            bitmap = data.firstPage.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 300.dp),
-            beyondViewportPageCount = 1
-        ) { page ->
-            val pageBitmap = remember(data.filePath, page) {
-                pageCache.getOrPut(page) {
-                    renderPdfPage(data.filePath, page)
-                }
-            }
-            Image(
-                bitmap = pageBitmap.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 300.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-        }
+                .heightIn(max = 300.dp)
+                .clip(RoundedCornerShape(8.dp))
+        )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "${pagerState.currentPage + 1} / ${data.pageCount}",
+            text = stringResource(R.string.pages_count, data.pageCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-
-    DisposableEffect(data.filePath) {
-        onDispose {
-            pageCache.values.forEach { bmp ->
-                if (bmp !== data.firstPage && !bmp.isRecycled) bmp.recycle()
-            }
-            pageCache.clear()
-        }
     }
 }
 
@@ -1204,28 +1173,3 @@ private fun buildSubtitle(entry: FileEntry): String {
     return parts.joinToString(" \u00B7 ")
 }
 
-private fun renderPdfPage(filePath: String, pageIndex: Int): Bitmap {
-    return try {
-        val pfd = ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
-        pfd.use { descriptor ->
-            val renderer = PdfRenderer(descriptor)
-            renderer.use { pdf ->
-                if (pageIndex >= pdf.pageCount) {
-                    return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-                }
-                val page = pdf.openPage(pageIndex)
-                val maxSize = 1024
-                val scale = maxSize.toFloat() / maxOf(page.width, page.height).coerceAtLeast(1)
-                val w = (page.width * scale).toInt().coerceAtLeast(1)
-                val h = (page.height * scale).toInt().coerceAtLeast(1)
-                val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(android.graphics.Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
-                bitmap
-            }
-        }
-    } catch (_: Exception) {
-        Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-    }
-}

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -103,18 +105,49 @@ fun QrCodeDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // --- Wi-Fi QR section ---
-                if (hasTwoQr) {
-                    Text(
-                        stringResource(R.string.qr_step1_wifi),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (activeStep == 1) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
+                if (hasTwoQr && !showManualSetup) {
+                    // --- Wi-Fi QR with inline edit ---
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            stringResource(R.string.qr_step1_wifi),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (activeStep == 1) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        if (!autoHotspot) {
+                            IconButton(
+                                onClick = {
+                                    editingSsid = savedSsid
+                                    editingPassword = savedPassword
+                                    showManualSetup = true
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = stringResource(R.string.qr_hotspot_setup),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         wifiSsid!!,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        stringResource(R.string.qr_wifi_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(8.dp))
 
@@ -145,15 +178,6 @@ fun QrCodeDialog(
                         }
                     }
 
-                    if (!autoHotspot) {
-                        TextButton(onClick = { showManualSetup = true }) {
-                            Text(
-                                stringResource(R.string.qr_hotspot_setup),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-
                     Spacer(Modifier.height(4.dp))
 
                     // Toggle button
@@ -176,63 +200,63 @@ fun QrCodeDialog(
                     }
 
                     Spacer(Modifier.height(4.dp))
-                } else if (!autoHotspot) {
-                    // Manual setup form
-                    if (showManualSetup || wifiQrContent == null) {
-                        Text(
-                            stringResource(R.string.qr_hotspot_setup),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(8.dp))
+                }
 
-                        OutlinedTextField(
-                            value = editingSsid,
-                            onValueChange = { editingSsid = it },
-                            label = { Text(stringResource(R.string.qr_hotspot_ssid)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
+                // --- Manual setup form (shown when no Wi-Fi QR or editing) ---
+                if (showManualSetup || (!autoHotspot && wifiQrContent == null)) {
+                    Text(
+                        stringResource(R.string.qr_hotspot_setup),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
 
-                        OutlinedTextField(
-                            value = editingPassword,
-                            onValueChange = { editingPassword = it },
-                            label = { Text(stringResource(R.string.qr_hotspot_password)) },
-                            singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None
-                                else PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            trailingIcon = {
-                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        if (passwordVisible) Icons.Filled.Visibility
-                                        else Icons.Filled.VisibilityOff,
-                                        contentDescription = null
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editingSsid,
+                        onValueChange = { editingSsid = it },
+                        label = { Text(stringResource(R.string.qr_hotspot_ssid)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
 
-                        TextButton(
-                            onClick = {
-                                prefs.hotspotSsid = editingSsid
-                                prefs.hotspotPassword = editingPassword
-                                savedSsid = editingSsid
-                                savedPassword = editingPassword
-                                showManualSetup = false
-                            },
-                            enabled = editingSsid.isNotBlank()
-                        ) {
-                            Text(stringResource(R.string.qr_hotspot_save))
-                        }
+                    OutlinedTextField(
+                        value = editingPassword,
+                        onValueChange = { editingPassword = it },
+                        label = { Text(stringResource(R.string.qr_hotspot_password)) },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    if (passwordVisible) Icons.Filled.Visibility
+                                    else Icons.Filled.VisibilityOff,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
 
-                        Spacer(Modifier.height(4.dp))
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                        Spacer(Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            prefs.hotspotSsid = editingSsid
+                            prefs.hotspotPassword = editingPassword
+                            savedSsid = editingSsid
+                            savedPassword = editingPassword
+                            showManualSetup = false
+                        },
+                        enabled = editingSsid.isNotBlank()
+                    ) {
+                        Text(stringResource(R.string.qr_hotspot_save))
                     }
+
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    Spacer(Modifier.height(8.dp))
                 }
 
                 // --- Download QR section ---

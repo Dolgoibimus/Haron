@@ -62,12 +62,14 @@
 # Storage (SAF)
 - SD-card and external storage support
 - All file operations work with content:// URI
+- Access to Android/data and Android/obb via Shizuku (Android 11+) [NEW]
 
 # Quick Preview
 - Tap file icon → preview dialog
 - Images, video, audio, text, PDF, archives, APK, documents, FB2
 - Play media in preview
 - Open in gallery / reader / archive buttons
+- Delete images directly from preview (trash button) — moves to next photo [NEW]
 
 # Media Player
 - Built-in VLC engine (LibVLC)
@@ -143,6 +145,7 @@
 - Security: PIN, biometric, security question
 - Require PIN on launch toggle
 - Trash size limit
+- Shizuku status and control (install, start, grant permission) [NEW]
 
 # Tags (Labels)
 - Colored labels with text names (8 colors)
@@ -219,6 +222,8 @@
 - Chromecast, Miracast, DLNA support
 - Media, slideshow, PDF presentation, file info, screen mirror (via browser) modes
 - Remote control: play/pause, seek, volume
+- Touchpad mode: move cursor on TV, tap, long press, scroll [NEW]
+- Virtual keyboard: type text on TV screen [NEW]
 - Transcoding: AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 for Chromecast
 - Transcode caching — instant replay of previously transcoded files
 - Automatic audio fallback for unsupported codecs (AC3/DTS)
@@ -331,6 +336,23 @@
 - Color coding: green/red/yellow
 - Folder comparison
 - Auto mode detection
+
+# Cloud Storage [NEW]
+- Google Drive, Dropbox, OneDrive [NEW]
+- Secure OAuth2 authentication with PKCE [NEW]
+- Browse cloud files in dual-panel mode (just like local files) [NEW]
+- Clickable breadcrumbs for cloud folder navigation [NEW]
+- Folder item count displayed for cloud directories [NEW]
+- Quick Preview for cloud images with high-res thumbnails [NEW]
+- Cloud gallery: fullscreen viewing with swipe between photos [NEW]
+- Video and audio streaming from cloud (plays instantly, no full download) [NEW]
+- Open and edit text files from cloud [NEW]
+- Save edited files back to cloud, to local storage, or both [NEW]
+- Download cloud files to local storage [NEW]
+- Upload local files to cloud [NEW]
+- Rename files and folders in cloud [NEW]
+- Delete files from cloud (including from Quick Preview) [NEW]
+- Create folders in cloud [NEW]
 
 # Appearance
 - Theme: system / light / dark

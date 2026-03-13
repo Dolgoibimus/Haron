@@ -91,6 +91,8 @@ object HaronRoutes {
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
     const val LOGS = "logs"
+    const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
+    const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
     const val DOCUMENT_VIEWER = "document_viewer"
     const val DOCUMENT_VIEWER_ROUTE = "document_viewer?filePath={filePath}&fileName={fileName}"
 
@@ -100,6 +102,10 @@ object HaronRoutes {
 
     fun textEditor(filePath: String, fileName: String): String {
         return "text_editor?filePath=${Uri.encode(filePath)}&fileName=${Uri.encode(fileName)}"
+    }
+
+    fun textEditorCloud(filePath: String, fileName: String, cloudUri: String, otherPanelPath: String = ""): String {
+        return "text_editor_cloud?filePath=${Uri.encode(filePath)}&fileName=${Uri.encode(fileName)}&cloudUri=${Uri.encode(cloudUri)}&otherPanelPath=${Uri.encode(otherPanelPath)}"
     }
 
     fun gallery(startIndex: Int): String {
@@ -288,19 +294,6 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                     }
                 }
             }
-            CastMode.FILE_INFO -> {
-                if (filePaths.isNotEmpty()) {
-                    val file = File(filePaths.first())
-                    val name = file.name
-                    val path = file.absolutePath
-                    val size = file.length().toFileSize(context)
-                    val modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                        .format(java.util.Date(file.lastModified()))
-                    val mimeType = guessMimeTypeFromFile(file)
-                    com.vamp.core.logger.EcosystemLogger.d("CastFlow", "FILE_INFO: browser mode")
-                    castViewModel.castFileInfo(name, path, size, modified, mimeType)
-                }
-            }
             CastMode.SCREEN_MIRROR -> {
                 com.vamp.core.logger.EcosystemLogger.d("CastFlow", "SCREEN_MIRROR: browser mode, launching MediaProjection")
                 val activity = context as? com.vamp.haron.MainActivity ?: return@LaunchedEffect
@@ -422,6 +415,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 },
                 onOpenDocumentViewer = { filePath, fileName ->
                     navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
+                },
+                onOpenTextEditorCloud = { localCachePath, fileName, cloudUri, otherPanelPath ->
+                    navController.navigate(HaronRoutes.textEditorCloud(localCachePath, fileName, cloudUri, otherPanelPath))
                 },
                 onCastModeSelected = { mode, filePaths ->
                     handleCastModeSelected(mode, filePaths, context)
@@ -577,6 +573,27 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             TextEditorScreen(
                 filePath = filePath,
                 fileName = fileName,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = HaronRoutes.TEXT_EDITOR_CLOUD_ROUTE,
+            arguments = listOf(
+                navArgument("filePath") { type = NavType.StringType; defaultValue = "" },
+                navArgument("fileName") { type = NavType.StringType; defaultValue = "" },
+                navArgument("cloudUri") { type = NavType.StringType; defaultValue = "" },
+                navArgument("otherPanelPath") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+            val fileName = backStackEntry.arguments?.getString("fileName") ?: ""
+            val cloudUri = backStackEntry.arguments?.getString("cloudUri") ?: ""
+            val otherPanelPath = backStackEntry.arguments?.getString("otherPanelPath") ?: ""
+            TextEditorScreen(
+                filePath = filePath,
+                fileName = fileName,
+                cloudUri = cloudUri.ifEmpty { null },
+                otherPanelPath = otherPanelPath.ifEmpty { null },
                 onBack = { navController.popBackStack() }
             )
         }

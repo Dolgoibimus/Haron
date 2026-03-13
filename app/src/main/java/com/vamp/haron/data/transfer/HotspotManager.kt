@@ -137,13 +137,16 @@ class HotspotManager @Inject constructor(
                     for (addr in iface.inetAddresses) {
                         if (addr is Inet4Address && !addr.isLoopbackAddress) {
                             val ip = addr.hostAddress ?: continue
+                            EcosystemLogger.d(TAG, "getHotspotIp: iface=$name, ip=$ip")
                             if (ip.startsWith("192.168.")) return ip
                         }
                     }
                 }
             }
+            EcosystemLogger.w(TAG, "getHotspotIp: no 192.168.x.x found on hotspot interfaces")
             null
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(TAG, "getHotspotIp error: ${e.message}")
             null
         }
     }

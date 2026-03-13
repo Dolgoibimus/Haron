@@ -33,7 +33,9 @@ data class PanelUiState(
     val archivePath: String? = null,
     val archiveVirtualPath: String = "",
     val archivePassword: String? = null,
-    val archiveExtractProgress: ExtractProgress? = null
+    val archiveExtractProgress: ExtractProgress? = null,
+    // Cloud breadcrumb stack: list of (displayName, cloudPath) from root to current
+    val cloudBreadcrumbs: List<Pair<String, String>> = emptyList()
 ) {
     val isArchiveMode: Boolean get() = archivePath != null
 }

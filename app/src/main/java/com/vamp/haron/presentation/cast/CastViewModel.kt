@@ -7,13 +7,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
+import android.bluetooth.BluetoothDevice
+import com.vamp.haron.data.cast.BluetoothHidManager
 import com.vamp.haron.data.cast.DlnaManager
 import com.vamp.haron.data.cast.GoogleCastManager
 import com.vamp.haron.data.cast.MiracastManager
+import com.vamp.haron.data.cast.RemoteInputChannel
 import com.vamp.haron.data.transfer.HttpFileServer
 import com.vamp.haron.domain.model.CastDevice
+import com.vamp.haron.domain.model.CastImageInfo
 import com.vamp.haron.domain.model.CastMode
 import com.vamp.haron.domain.model.CastType
+import com.vamp.haron.domain.model.HidConnectionState
 import com.vamp.haron.domain.model.PresentationState
 import com.vamp.haron.domain.model.RemoteInputEvent
 import com.vamp.haron.domain.model.SlideshowConfig
@@ -24,9 +29,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -44,7 +52,9 @@ class CastViewModel @Inject constructor(
     private val miracastManager: MiracastManager,
     private val dlnaManager: DlnaManager,
     private val httpFileServer: HttpFileServer,
-    private val transcodeVideoUseCase: TranscodeVideoUseCase
+    private val transcodeVideoUseCase: TranscodeVideoUseCase,
+    private val remoteInputChannel: RemoteInputChannel,
+    private val bluetoothHidManager: BluetoothHidManager
 ) : ViewModel() {
 
     val isAvailable = castManager.isAvailable
@@ -98,6 +108,37 @@ class CastViewModel @Inject constructor(
 
     private val _transcodeProgress = MutableStateFlow<TranscodeProgress?>(null)
     val transcodeProgress: StateFlow<TranscodeProgress?> = _transcodeProgress.asStateFlow()
+
+    // TV Remote touchpad state
+    private val _showTouchpad = MutableStateFlow(false)
+    val showTouchpad: StateFlow<Boolean> = _showTouchpad.asStateFlow()
+
+    private val _showKeyboard = MutableStateFlow(false)
+    val showKeyboard: StateFlow<Boolean> = _showKeyboard.asStateFlow()
+
+    // Image navigation during cast
+    private var castImageFiles: List<String> = emptyList()
+    private var castImageIndex: Int = 0
+    private val _castImageInfo = MutableStateFlow<CastImageInfo?>(null)
+    val castImageInfo: StateFlow<CastImageInfo?> = _castImageInfo.asStateFlow()
+
+    // Bluetooth HID
+    val hidConnectionState: StateFlow<HidConnectionState> = bluetoothHidManager.connectionState
+    val btPairedDevices: StateFlow<List<BluetoothDevice>> = bluetoothHidManager.pairedDevices
+
+    private val _showBtDevicePicker = MutableStateFlow(false)
+    val showBtDevicePicker: StateFlow<Boolean> = _showBtDevicePicker.asStateFlow()
+
+    private val _isBluetoothHidMode = MutableStateFlow(false)
+    val isBluetoothHidMode: StateFlow<Boolean> = _isBluetoothHidMode.asStateFlow()
+
+    /** One-shot event: UI should launch ACTION_REQUEST_DISCOVERABLE */
+    private val _requestDiscoverable = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val requestDiscoverable: SharedFlow<Int> = _requestDiscoverable.asSharedFlow()
+
+    /** Whether we're waiting for TV to connect to us */
+    private val _btHidWaitingForTv = MutableStateFlow(false)
+    val btHidWaitingForTv: StateFlow<Boolean> = _btHidWaitingForTv.asStateFlow()
 
     val isTranscoding: StateFlow<Boolean> = _transcodeProgress
         .map { it != null && !it.isComplete }
@@ -166,6 +207,33 @@ class CastViewModel @Inject constructor(
                     castManager.updateMediaPosition()
                 }
                 delay(1000)
+            }
+        }
+
+        // Observe BT HID connection state (single observer, not per-call)
+        viewModelScope.launch {
+            bluetoothHidManager.connectionState.collect { state ->
+                when (state) {
+                    is HidConnectionState.Connected -> {
+                        _showBtDevicePicker.value = false
+                        _btHidWaitingForTv.value = false
+                        _isBluetoothHidMode.value = true
+                        _showTouchpad.value = true
+                        EcosystemLogger.d(HaronConstants.TAG, "BT HID: connected to ${state.deviceName}, showing touchpad")
+                    }
+                    is HidConnectionState.Error -> {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: error: ${state.message}")
+                    }
+                    is HidConnectionState.Disconnected -> {
+                        if (_isBluetoothHidMode.value) {
+                            _isBluetoothHidMode.value = false
+                            _showTouchpad.value = false
+                            _showKeyboard.value = false
+                            EcosystemLogger.d(HaronConstants.TAG, "BT HID: disconnected, hiding touchpad")
+                        }
+                    }
+                    else -> {}
+                }
             }
         }
     }
@@ -282,15 +350,50 @@ class CastViewModel @Inject constructor(
                 val needsT = transcodeVideoUseCase.needsTranscode(filePath)
                 EcosystemLogger.d(HaronConstants.TAG, "castMedia: ext=$ext, isChromecast=$isChromecast, dlnaDevice=$dlnaDeviceId, needsTranscode=${isChromecast && needsT}")
 
+                // Images — always cast directly (no transcoding)
+                val isImage = ext in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
+
+                // Collect adjacent images for navigation
+                if (isImage) {
+                    val parentDir = file.parentFile
+                    if (parentDir != null && parentDir.isDirectory) {
+                        val imageExts = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
+                        val images = parentDir.listFiles()
+                            ?.filter { it.isFile && it.extension.lowercase() in imageExts }
+                            ?.sortedBy { it.name.lowercase() }
+                            ?.map { it.absolutePath }
+                            ?: emptyList()
+                        castImageFiles = images
+                        castImageIndex = images.indexOf(filePath).coerceAtLeast(0)
+                        _castImageInfo.value = CastImageInfo(
+                            currentIndex = castImageIndex,
+                            totalCount = images.size,
+                            fileName = file.name
+                        )
+                        EcosystemLogger.d(HaronConstants.TAG, "castMedia: image nav initialized, ${castImageIndex + 1}/${images.size}")
+                    }
+                } else {
+                    // Not an image — clear image navigation
+                    castImageFiles = emptyList()
+                    castImageIndex = 0
+                    _castImageInfo.value = null
+                }
+
                 // DLNA — cast as-is (most Smart TVs support more formats)
-                // Chromecast — transcode if needed
-                if (isChromecast && needsT) {
+                // Chromecast — transcode video if needed, images always direct
+                if (isChromecast && needsT && !isImage) {
                     EcosystemLogger.d(HaronConstants.TAG, "castMedia: calling startTranscodedCast")
                     startTranscodedCast(filePath, title)
                 } else {
-                    httpFileServer.start(listOf(file))
+                    // For images: start server with ALL image files so each has a unique URL index
+                    if (isImage && castImageFiles.isNotEmpty()) {
+                        httpFileServer.start(castImageFiles.map { File(it) })
+                    } else {
+                        httpFileServer.start(listOf(file))
+                    }
                     startCastService(title.ifEmpty { file.name })
-                    val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
+                    val streamIndex = if (isImage) castImageIndex else 0
+                    val streamUrl = httpFileServer.getStreamUrl(streamIndex) ?: return@launch
                     val mimeType = guessMimeType(file.extension)
                     if (dlnaDeviceId != null) {
                         dlnaManager.castMedia(dlnaDeviceId, streamUrl, mimeType, title.ifEmpty { file.name })
@@ -400,12 +503,136 @@ class CastViewModel @Inject constructor(
         transcodeVideoUseCase.cleanupTempFiles()
     }
 
-    fun sendRemoteInput(event: RemoteInputEvent) {
-        if (dlnaManager.isConnected.value) {
-            dlnaManager.sendRemoteInput(event)
-        } else {
-            castManager.sendRemoteInput(event)
+    fun castNextImage() {
+        if (castImageFiles.isEmpty()) return
+        val newIndex = (castImageIndex + 1).coerceAtMost(castImageFiles.size - 1)
+        if (newIndex == castImageIndex) return
+        castImageIndex = newIndex
+        val path = castImageFiles[newIndex]
+        val name = File(path).name
+        _castImageInfo.value = CastImageInfo(newIndex, castImageFiles.size, name)
+        EcosystemLogger.d(HaronConstants.TAG, "castNextImage: ${newIndex + 1}/${castImageFiles.size} $name")
+        castCurrentImage()
+    }
+
+    fun castPrevImage() {
+        if (castImageFiles.isEmpty()) return
+        val newIndex = (castImageIndex - 1).coerceAtLeast(0)
+        if (newIndex == castImageIndex) return
+        castImageIndex = newIndex
+        val path = castImageFiles[newIndex]
+        val name = File(path).name
+        _castImageInfo.value = CastImageInfo(newIndex, castImageFiles.size, name)
+        EcosystemLogger.d(HaronConstants.TAG, "castPrevImage: ${newIndex + 1}/${castImageFiles.size} $name")
+        castCurrentImage()
+    }
+
+    private fun castCurrentImage() {
+        val path = castImageFiles.getOrNull(castImageIndex) ?: return
+        val file = File(path)
+        if (!file.exists()) return
+        viewModelScope.launch {
+            // Server already started with all images — just use the index for unique URL
+            val streamUrl = httpFileServer.getStreamUrl(castImageIndex) ?: return@launch
+            val mimeType = guessMimeType(file.extension)
+            val dlnaDeviceId = dlnaManager.connectedDeviceId
+            if (dlnaDeviceId != null) {
+                dlnaManager.castMedia(dlnaDeviceId, streamUrl, mimeType, file.name)
+            } else {
+                castManager.castMedia(streamUrl, mimeType, file.name)
+            }
         }
+    }
+
+    fun sendRemoteInput(event: RemoteInputEvent) {
+        // Intercept Next/Prev for image navigation
+        if (castImageFiles.isNotEmpty()) {
+            when (event) {
+                is RemoteInputEvent.Next -> { castNextImage(); return }
+                is RemoteInputEvent.Prev -> { castPrevImage(); return }
+                else -> { /* fall through */ }
+            }
+        }
+
+        // Bluetooth HID mode — route input events through BT
+        if (_isBluetoothHidMode.value) {
+            bluetoothHidManager.sendRemoteInput(event)
+            return
+        }
+
+        when (event) {
+            is RemoteInputEvent.MouseMove,
+            is RemoteInputEvent.MouseClick,
+            is RemoteInputEvent.Scroll,
+            is RemoteInputEvent.KeyPress,
+            is RemoteInputEvent.TextInput -> {
+                // TV remote events → WebSocket → browser JS on TV
+                remoteInputChannel.send(event)
+            }
+            else -> {
+                // Media events → Cast SDK / DLNA
+                if (dlnaManager.isConnected.value) {
+                    dlnaManager.sendRemoteInput(event)
+                } else {
+                    castManager.sendRemoteInput(event)
+                }
+            }
+        }
+    }
+
+    fun toggleTouchpad() {
+        _showTouchpad.value = !_showTouchpad.value
+        _showKeyboard.value = false
+    }
+
+    fun showTouchpadPanel() {
+        _showTouchpad.value = true
+        _showKeyboard.value = false
+    }
+
+    fun showKeyboardPanel() {
+        _showKeyboard.value = true
+        _showTouchpad.value = false
+    }
+
+    fun hideRemoteInput() {
+        _showTouchpad.value = false
+        _showKeyboard.value = false
+    }
+
+    // --- Bluetooth HID Remote ---
+
+    fun connectForBluetoothRemote() {
+        if (!bluetoothHidManager.isSupported()) {
+            _showBtDevicePicker.value = true
+            return
+        }
+        bluetoothHidManager.init()
+        _btHidWaitingForTv.value = false
+        _showBtDevicePicker.value = true
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: showing setup dialog")
+    }
+
+    /** Request discoverable mode — TV must initiate HID connection to us */
+    fun requestBtDiscoverable() {
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: requesting discoverable mode")
+        _btHidWaitingForTv.value = true
+        // Emit event for UI to launch ACTION_REQUEST_DISCOVERABLE
+        _requestDiscoverable.tryEmit(300) // 300 seconds
+    }
+
+    fun dismissBtDevicePicker() {
+        _showBtDevicePicker.value = false
+        _btHidWaitingForTv.value = false
+    }
+
+    fun disconnectBtHid() {
+        bluetoothHidManager.disconnect()
+        _isBluetoothHidMode.value = false
+        _btHidWaitingForTv.value = false
+        _showTouchpad.value = false
+        _showKeyboard.value = false
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: disconnected by user")
     }
 
     // --- Extended Cast modes ---
@@ -484,6 +711,16 @@ class CastViewModel @Inject constructor(
         }
     }
 
+    /** Open device sheet for remote-only connection (no file casting) */
+    fun connectForRemote() {
+        EcosystemLogger.d("CastFlow", "connectForRemote: opening device sheet")
+        setPendingAction {
+            _showTouchpad.value = true
+            _castMode.value = CastMode.SINGLE_MEDIA // reuse, no media will play
+        }
+        showSheet()
+    }
+
     /** Set a pending action to execute after device connection */
     fun setPendingAction(action: () -> Unit) {
         EcosystemLogger.d("CastFlow", "setPendingAction: action set")
@@ -516,18 +753,7 @@ class CastViewModel @Inject constructor(
         _browserUrl.value = url
     }
 
-    fun castFileInfo(name: String, path: String, size: String, modified: String, mimeType: String) {
-        _castMode.value = CastMode.FILE_INFO
-        viewModelScope.launch {
-            httpFileServer.start(emptyList())
-            httpFileServer.setupFileInfo(name, path, size, modified, mimeType)
-            val url = httpFileServer.getFileInfoUrl() ?: return@launch
-            _browserUrl.value = url
-            EcosystemLogger.d("CastFlow", "castFileInfo (browser): $url")
-        }
-    }
-
-    /** Close browser-based cast (mirror / file info) */
+    /** Close browser-based cast (mirror) */
     fun closeBrowserCast() {
         val mode = _castMode.value
         _browserUrl.value = null
@@ -537,8 +763,6 @@ class CastViewModel @Inject constructor(
                 action = ScreenMirrorService.ACTION_STOP
             }
             appContext.startService(intent)
-        } else if (mode == CastMode.FILE_INFO) {
-            httpFileServer.stop()
         }
         EcosystemLogger.d("CastFlow", "closeBrowserCast: mode was $mode")
     }
@@ -555,6 +779,9 @@ class CastViewModel @Inject constructor(
         _browserUrl.value = null
         _castMode.value = CastMode.SINGLE_MEDIA
         _presentationState.value = PresentationState()
+        castImageFiles = emptyList()
+        castImageIndex = 0
+        _castImageInfo.value = null
         pendingDlnaDeviceId = null
         castManager.disconnect()
         dlnaManager.disconnect()

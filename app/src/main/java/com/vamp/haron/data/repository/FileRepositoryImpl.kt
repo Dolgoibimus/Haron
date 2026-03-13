@@ -7,11 +7,13 @@ import com.vamp.haron.common.util.toFileEntry
 import com.vamp.haron.data.saf.SafFileOperations
 import com.vamp.haron.data.saf.SafUriManager
 import com.vamp.haron.data.saf.StorageVolumeHelper
+import com.vamp.haron.data.shizuku.ShizukuManager
 import com.vamp.haron.domain.model.ConflictResolution
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.R
 import com.vamp.haron.domain.repository.FileRepository
 import com.vamp.core.logger.EcosystemLogger
+import android.provider.DocumentsContract
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,7 +26,8 @@ class FileRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val safFileOperations: SafFileOperations,
     private val safUriManager: SafUriManager,
-    private val storageVolumeHelper: StorageVolumeHelper
+    private val storageVolumeHelper: StorageVolumeHelper,
+    private val shizukuManager: ShizukuManager
 ) : FileRepository {
 
     private fun isContentUri(path: String): Boolean = path.startsWith("content://")
@@ -36,18 +39,54 @@ class FileRepositoryImpl @Inject constructor(
             }
             try {
                 val dir = File(path)
-                if (!dir.exists()) {
+                val restricted = isRestrictedAndroidPath(path)
+                // On Android 11+, File.exists() returns false for subfolders of Android/data and Android/obb
+                // due to FUSE restrictions — skip existence check for restricted paths, let Shizuku handle it
+                if (!dir.exists() && !restricted) {
                     return@withContext Result.failure(
                         IllegalArgumentException(context.getString(R.string.error_path_not_exists, path))
                     )
                 }
-                if (!dir.isDirectory) {
+                if (dir.exists() && !dir.isDirectory) {
                     return@withContext Result.failure(
                         IllegalArgumentException(context.getString(R.string.error_not_a_folder, path))
                     )
                 }
-                val files = dir.listFiles()?.map { it.toFileEntry() } ?: emptyList()
-                Result.success(files)
+                val rawFiles = dir.listFiles()
+                if (rawFiles != null) {
+                    val entries = rawFiles.map { it.toFileEntry() }
+                    // Enrich childCount for restricted subdirectories via Shizuku
+                    // (e.g., listing /Android/ — data and obb dirs have childCount=0 from File API)
+                    val hasRestrictedChildren = entries.any { it.isDirectory && isRestrictedAndroidPath(it.path) && it.childCount == 0 }
+                    if (hasRestrictedChildren && shizukuManager.ensureServiceBound()) {
+                        val enriched = entries.map { entry ->
+                            if (entry.isDirectory && isRestrictedAndroidPath(entry.path) && entry.childCount == 0) {
+                                val count = shizukuManager.listFiles(entry.path)
+                                    ?.count { !it.isHidden } ?: 0
+                                entry.copy(childCount = count)
+                            } else entry
+                        }
+                        return@withContext Result.success(enriched)
+                    }
+                    return@withContext Result.success(entries)
+                }
+                // listFiles() null or dir not visible — try SAF/Shizuku fallback for restricted paths
+                if (restricted) {
+                    val safUri = findSafUriForPath(path)
+                    if (safUri != null) {
+                        EcosystemLogger.d(HaronConstants.TAG, "getFiles: SAF fallback for $path")
+                        return@withContext getSafFiles(safUri.toString())
+                    }
+                    // 2nd fallback: Shizuku
+                    if (shizukuManager.ensureServiceBound()) {
+                        val shizukuFiles = shizukuManager.listFiles(path)
+                        if (shizukuFiles != null) {
+                            EcosystemLogger.d(HaronConstants.TAG, "getFiles: Shizuku fallback for $path (${shizukuFiles.size} files)")
+                            return@withContext Result.success(shizukuFiles)
+                        }
+                    }
+                }
+                Result.success(emptyList())
             } catch (e: SecurityException) {
                 EcosystemLogger.e(HaronConstants.TAG, "Нет доступа к $path: ${e.message}")
                 Result.failure(e)
@@ -56,6 +95,34 @@ class FileRepositoryImpl @Inject constructor(
                 Result.failure(e)
             }
         }
+
+    fun isRestrictedAndroidPath(path: String): Boolean =
+        path.contains("/Android/data") || path.contains("/Android/obb")
+
+    fun filePathToDocId(filePath: String): String? {
+        val internalPrefix = "/storage/emulated/0/"
+        if (filePath.startsWith(internalPrefix)) {
+            return "primary:" + filePath.removePrefix(internalPrefix)
+        }
+        val match = Regex("^/storage/([^/]+)/(.+)$").matchEntire(filePath)
+        if (match != null) return "${match.groupValues[1]}:${match.groupValues[2]}"
+        return null
+    }
+
+    fun hasSafAccessForPath(filePath: String): Boolean = findSafUriForPath(filePath) != null
+
+    private fun findSafUriForPath(filePath: String): Uri? {
+        val targetDocId = filePathToDocId(filePath) ?: return null
+        for (uri in safUriManager.getPersistedUris()) {
+            try {
+                val treeDocId = DocumentsContract.getTreeDocumentId(uri)
+                if (targetDocId == treeDocId || targetDocId.startsWith("$treeDocId/")) {
+                    return DocumentsContract.buildDocumentUriUsingTree(uri, targetDocId)
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
 
     private fun getSafFiles(path: String): Result<List<FileEntry>> {
         val uri = Uri.parse(path)

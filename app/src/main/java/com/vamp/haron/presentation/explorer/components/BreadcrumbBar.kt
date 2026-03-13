@@ -27,6 +27,7 @@ fun BreadcrumbBar(
     safVolumeLabel: String = "",
     folderSize: Long = 0L,
     onSegmentClick: (String) -> Unit = {},
+    cloudBreadcrumbs: List<Pair<String, String>> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -36,6 +37,7 @@ fun BreadcrumbBar(
     }
 
     val isSaf = currentPath.startsWith("content://")
+    val isCloud = currentPath.startsWith("cloud://")
 
     // Разбиваем displayPath на сегменты
     val segments = displayPath.trim('/').split('/').filter { it.isNotEmpty() }
@@ -95,6 +97,49 @@ fun BreadcrumbBar(
                             Modifier
                         }
                     )
+                }
+            } else if (isCloud && cloudBreadcrumbs.isNotEmpty()) {
+                // Cloud path with breadcrumb stack — all segments are clickable
+                cloudBreadcrumbs.forEachIndexed { index, (name, cloudPath) ->
+                    if (index > 0) {
+                        Text(
+                            text = " › ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    val isLast = index == cloudBreadcrumbs.lastIndex
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isLast) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = if (!isLast) {
+                            Modifier.clickable { onSegmentClick(cloudPath) }
+                        } else {
+                            Modifier
+                        }
+                    )
+                }
+            } else if (isCloud) {
+                // Cloud path without breadcrumb stack — fallback: root only clickable
+                val cloudScheme = currentPath.removePrefix("cloud://").substringBefore('/')
+                val cloudRoot = "cloud://$cloudScheme/root"
+                val providerLabel = segments.firstOrNull() ?: ""
+                val cloudSegments = segments.drop(1)
+
+                Text(
+                    text = providerLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (cloudSegments.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { onSegmentClick(cloudRoot) }
+                )
+                cloudSegments.forEachIndexed { index, segment ->
+                    Text(" › ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(segment, style = MaterialTheme.typography.labelMedium, color = if (index == cloudSegments.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 // Regular file system — original logic

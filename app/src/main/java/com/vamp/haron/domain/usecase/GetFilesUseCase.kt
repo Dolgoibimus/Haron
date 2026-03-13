@@ -139,6 +139,7 @@ class GetFilesUseCase @Inject constructor(
 
         return dirs.sortedWith(effectiveComparator) + regularFiles.sortedWith(effectiveComparator)
     }
+
 }
 
 private fun SecureFileEntry.toFileEntry(allEntries: List<SecureFileEntry>? = null): FileEntry {

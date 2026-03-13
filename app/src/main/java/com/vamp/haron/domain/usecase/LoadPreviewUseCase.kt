@@ -377,39 +377,82 @@ class LoadPreviewUseCase @Inject constructor(
     private fun loadRar(entry: FileEntry): PreviewData {
         val file = if (entry.isContentUri) copyToTemp(entry) else File(entry.path)
         try {
-            val archive = try {
-                Archive(file)
-            } catch (e: Throwable) {
-                throw IllegalStateException(context.getString(R.string.rar_open_error))
-            }
-            archive.use { rar ->
-                val allEntries = mutableListOf<ArchiveEntryInfo>()
-                var totalSize = 0L
-                val headers = rar.fileHeaders ?: emptyList()
-                for (h in headers) {
-                    val size = h.fullUnpackSize.coerceAtLeast(0)
-                    totalSize += size
-                    if (allEntries.size < MAX_ARCHIVE_ENTRIES) {
-                        allEntries.add(
-                            ArchiveEntryInfo(
-                                name = h.fileName ?: "?",
-                                size = size,
-                                isDirectory = h.isDirectory
+            // Try junrar first (RAR4)
+            return try {
+                val archive = Archive(file)
+                archive.use { rar ->
+                    val allEntries = mutableListOf<ArchiveEntryInfo>()
+                    var totalSize = 0L
+                    val headers = rar.fileHeaders ?: emptyList()
+                    for (h in headers) {
+                        val size = h.fullUnpackSize.coerceAtLeast(0)
+                        totalSize += size
+                        if (allEntries.size < MAX_ARCHIVE_ENTRIES) {
+                            allEntries.add(
+                                ArchiveEntryInfo(
+                                    name = h.fileName ?: "?",
+                                    size = size,
+                                    isDirectory = h.isDirectory
+                                )
                             )
-                        )
+                        }
                     }
+                    PreviewData.ArchivePreview(
+                        fileName = entry.name,
+                        fileSize = entry.size,
+                        lastModified = entry.lastModified,
+                        entries = allEntries,
+                        totalEntries = allEntries.size,
+                        totalUncompressedSize = totalSize
+                    )
                 }
-                return PreviewData.ArchivePreview(
-                    fileName = entry.name,
-                    fileSize = entry.size,
-                    lastModified = entry.lastModified,
-                    entries = allEntries,
-                    totalEntries = allEntries.size,
-                    totalUncompressedSize = totalSize
-                )
+            } catch (e: Throwable) {
+                // RAR5 or other junrar failure — fallback to 7-Zip-JBinding
+                EcosystemLogger.d(HaronConstants.TAG, "loadRar: junrar failed (${e.javaClass.simpleName}), trying 7-Zip-JBinding")
+                loadRarWith7Zip(file, entry)
             }
         } finally {
             if (entry.isContentUri) file.delete()
+        }
+    }
+
+    /** Load RAR preview (including RAR5) using 7-Zip-JBinding native engine */
+    private fun loadRarWith7Zip(file: File, entry: FileEntry): PreviewData {
+        net.sf.sevenzipjbinding.SevenZip.initSevenZipFromPlatformJAR()
+        val raf = java.io.RandomAccessFile(file, "r")
+        val stream = net.sf.sevenzipjbinding.impl.RandomAccessFileInStream(raf)
+        val archive = net.sf.sevenzipjbinding.SevenZip.openInArchive(null, stream)
+        try {
+            val count = archive.numberOfItems
+            val allEntries = mutableListOf<ArchiveEntryInfo>()
+            var totalSize = 0L
+            for (i in 0 until count) {
+                val path = (archive.getProperty(i, net.sf.sevenzipjbinding.PropID.PATH) as? String ?: "").replace('\\', '/')
+                val isDir = archive.getProperty(i, net.sf.sevenzipjbinding.PropID.IS_FOLDER) as? Boolean ?: false
+                val size = (archive.getProperty(i, net.sf.sevenzipjbinding.PropID.SIZE) as? Long) ?: 0L
+                totalSize += size
+                if (allEntries.size < MAX_ARCHIVE_ENTRIES) {
+                    allEntries.add(
+                        ArchiveEntryInfo(
+                            name = path.trimEnd('/').substringAfterLast('/'),
+                            size = size,
+                            isDirectory = isDir
+                        )
+                    )
+                }
+            }
+            return PreviewData.ArchivePreview(
+                fileName = entry.name,
+                fileSize = entry.size,
+                lastModified = entry.lastModified,
+                entries = allEntries,
+                totalEntries = allEntries.size,
+                totalUncompressedSize = totalSize
+            )
+        } finally {
+            archive.close()
+            stream.close()
+            raf.close()
         }
     }
 

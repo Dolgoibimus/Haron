@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.ScreenShare
@@ -104,7 +102,6 @@ private fun CastMode.icon(): ImageVector = when (this) {
     CastMode.SINGLE_MEDIA -> Icons.Filled.PlayCircle
     CastMode.SLIDESHOW -> Icons.Filled.Slideshow
     CastMode.PDF_PRESENTATION -> Icons.Filled.PictureAsPdf
-    CastMode.FILE_INFO -> Icons.Filled.Info
     CastMode.SCREEN_MIRROR -> Icons.Filled.ScreenShare
 }
 
@@ -112,7 +109,6 @@ private fun CastMode.titleRes(): Int = when (this) {
     CastMode.SINGLE_MEDIA -> R.string.cast_mode_single
     CastMode.SLIDESHOW -> R.string.cast_mode_slideshow
     CastMode.PDF_PRESENTATION -> R.string.cast_mode_pdf
-    CastMode.FILE_INFO -> R.string.cast_mode_info
     CastMode.SCREEN_MIRROR -> R.string.cast_mode_mirror
 }
 
@@ -120,6 +116,5 @@ private fun CastMode.subtitleRes(): Int = when (this) {
     CastMode.SINGLE_MEDIA -> R.string.cast_mode_single_desc
     CastMode.SLIDESHOW -> R.string.cast_mode_slideshow_desc
     CastMode.PDF_PRESENTATION -> R.string.cast_mode_pdf_desc
-    CastMode.FILE_INFO -> R.string.cast_mode_info_desc
     CastMode.SCREEN_MIRROR -> R.string.cast_mode_mirror_desc
 }
