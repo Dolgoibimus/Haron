@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -124,10 +125,44 @@ fun ExplorerScreen(
     onOpenSteganography: () -> Unit = { },
     onOpenScanner: () -> Unit = { },
     onOpenDocumentViewer: (filePath: String, fileName: String) -> Unit = { _, _ -> },
+    onOpenTextEditorCloud: (localCachePath: String, fileName: String, cloudUri: String, otherPanelPath: String) -> Unit = { _, _, _, _ -> },
     onCastModeSelected: (com.vamp.haron.domain.model.CastMode, List<String>) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
+    val cloudAccounts by viewModel.cloudAccounts.collectAsState()
     val context = LocalContext.current
+
+    // SAF launcher state for restricted Android/data and Android/obb paths
+    var pendingSafPanelId by remember { mutableStateOf(state.activePanel) }
+    var pendingSafPath by remember { mutableStateOf("") }
+    var showCloudAuthDialog by remember { mutableStateOf(false) }
+
+    // BT HID discoverable launcher
+    val castVmOwner = context as? androidx.activity.ComponentActivity
+    val castVmForBt: com.vamp.haron.presentation.cast.CastViewModel? = remember(castVmOwner) {
+        castVmOwner?.let {
+            androidx.lifecycle.ViewModelProvider(it)[com.vamp.haron.presentation.cast.CastViewModel::class.java]
+        }
+    }
+    val btDiscoverableLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { /* result ignored — we observe connectionState instead */ }
+    LaunchedEffect(castVmForBt) {
+        castVmForBt?.requestDiscoverable?.collect { durationSec ->
+            val intent = android.content.Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+            intent.putExtra(android.bluetooth.BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, durationSec)
+            btDiscoverableLauncher.launch(intent)
+        }
+    }
+
+    val restrictedSafLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.onSafAccessGrantedForRestrictedPath(uri, pendingSafPanelId, pendingSafPath)
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -141,6 +176,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenTextEditor -> {
                     onOpenTextEditor(event.filePath, event.fileName)
+                }
+                is NavigationEvent.OpenTextEditorCloud -> {
+                    onOpenTextEditorCloud(event.localCachePath, event.fileName, event.cloudUri, event.otherPanelPath)
                 }
                 is NavigationEvent.OpenGallery -> {
                     onOpenGallery(event.startIndex)
@@ -192,6 +230,14 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.HandleExternalFile -> {
                     // Handled at navigation level
+                }
+                is NavigationEvent.RequestSafAccess -> {
+                    pendingSafPanelId = event.panelId
+                    pendingSafPath = event.filePath
+                    restrictedSafLauncher.launch(event.initialSafUri)
+                }
+                is NavigationEvent.OpenCloudAuth -> {
+                    showCloudAuthDialog = true
                 }
             }
         }
@@ -828,22 +874,39 @@ fun ExplorerScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         val typeLabel = stringResource(p.type.labelRes)
+                        val hasFilePercent = p.filePercent in 0..100
                         val progressText = when {
+                            p.currentFileName.isNotEmpty() ->
+                                "$typeLabel: ${p.currentFileName} (${p.current}/${p.total})"
                             p.current == 0 && p.currentFileName.isEmpty() ->
                                 stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
-                            p.currentFileName.isNotEmpty() ->
-                                stringResource(R.string.file_operation_current_format, typeLabel, p.current, p.total, p.currentFileName)
                             else ->
                                 stringResource(R.string.file_operation_count_format, typeLabel, p.current, p.total)
                         }
-                        Text(
-                            text = progressText,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        val percentText = if (hasFilePercent) "${p.filePercent}%" else ""
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = progressText,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (percentText.isNotEmpty()) {
+                                Text(
+                                    text = percentText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
+                        }
                         Spacer(modifier = Modifier.height(6.dp))
-                        val isIndeterminate = p.current == 0 && p.total > 0
+                        val isIndeterminate = p.current == 0 && p.total > 0 && !hasFilePercent
                         if (isIndeterminate) {
                             LinearProgressIndicator(
                                 modifier = Modifier
@@ -852,8 +915,13 @@ fun ExplorerScreen(
                                     .clip(RoundedCornerShape(3.dp))
                             )
                         } else {
+                            val barProgress = if (hasFilePercent) {
+                                p.filePercent / 100f
+                            } else {
+                                if (p.total > 0) p.current.toFloat() / p.total else 0f
+                            }
                             LinearProgressIndicator(
-                                progress = { if (p.total > 0) p.current.toFloat() / p.total else 0f },
+                                progress = { barProgress },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
@@ -924,7 +992,12 @@ fun ExplorerScreen(
         viewModel = viewModel,
         context = context,
         showDrawerOrShelf = showDrawerOrShelf,
-        safLauncher = safLauncher
+        safLauncher = safLauncher,
+        cloudAccounts = cloudAccounts,
+        showCloudAuthDialog = showCloudAuthDialog,
+        onShowCloudAuthDialogChange = { showCloudAuthDialog = it },
+        onOpenTvRemote = { castVmForBt?.connectForRemote() },
+        onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() }
     )
 }
 
@@ -990,6 +1063,8 @@ private fun ExplorerDialogs(
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
+                    } else if (viewModel.isCloudPath(dialog.entry.path)) {
+                        viewModel.cloudStreamAndPlay(dialog.entry)
                     } else {
                         val idx = viewModel.buildPlaylistFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
                         onOpenMediaPlayer(idx)
@@ -999,6 +1074,8 @@ private fun ExplorerDialogs(
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
+                    } else if (viewModel.isCloudPath(dialog.entry.path)) {
+                        viewModel.cloudDownloadAndOpenText(dialog.entry)
                     } else {
                         onOpenTextEditor(dialog.entry.path, dialog.entry.name)
                     }
@@ -1007,6 +1084,8 @@ private fun ExplorerDialogs(
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
+                    } else if (viewModel.isCloudPath(dialog.entry.path)) {
+                        viewModel.openCloudGallery(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
                     } else {
                         val idx = viewModel.buildGalleryFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
                         onOpenGallery(idx)
@@ -1038,6 +1117,9 @@ private fun ExplorerDialogs(
                 },
                 onInstallApk = {
                     viewModel.installApk(dialog.entry)
+                },
+                onDelete = {
+                    viewModel.deleteFromPreview()
                 },
                 adjacentFiles = dialog.adjacentFiles,
                 currentFileIndex = dialog.currentFileIndex,
@@ -1228,6 +1310,45 @@ private fun ExplorerDialogs(
                 }
             )
         }
+        is DialogState.ShizukuNotInstalled -> {
+            com.vamp.haron.presentation.explorer.components.ShizukuNotInstalledDialog(
+                onDismiss = viewModel::dismissShizukuDialog,
+                onOpenPlayStore = {
+                    viewModel.dismissShizukuDialog()
+                    com.vamp.haron.presentation.explorer.components.openShizukuPlayStore(context)
+                },
+                onOpenGitHub = {
+                    viewModel.dismissShizukuDialog()
+                    com.vamp.haron.presentation.explorer.components.openShizukuGitHub(context)
+                }
+            )
+        }
+        is DialogState.ShizukuNotRunning -> {
+            com.vamp.haron.presentation.explorer.components.ShizukuNotRunningDialog(
+                onDismiss = viewModel::dismissShizukuDialog,
+                onOpenApp = {
+                    viewModel.dismissShizukuDialog()
+                    com.vamp.haron.presentation.explorer.components.openShizukuApp(context)
+                },
+                onRetry = {
+                    viewModel.onShizukuReady(dialog.panelId, dialog.path)
+                }
+            )
+        }
+        is DialogState.CloudTransfer -> {
+            com.vamp.haron.presentation.cloud.CloudTransferDialog(
+                fileName = dialog.fileName,
+                percent = dialog.percent,
+                isUpload = dialog.isUpload,
+                onCancel = { viewModel.cancelCloudTransfer() }
+            )
+        }
+        is DialogState.CloudCreateFolder -> {
+            com.vamp.haron.presentation.cloud.CloudCreateFolderDialog(
+                onConfirm = { name -> viewModel.cloudCreateFolder(name) },
+                onDismiss = { viewModel.dismissDialog() }
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
 }
@@ -1238,7 +1359,12 @@ private fun ExplorerOverlays(
     viewModel: ExplorerViewModel,
     context: Context,
     showDrawerOrShelf: Boolean,
-    safLauncher: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>
+    safLauncher: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>,
+    cloudAccounts: List<com.vamp.haron.domain.model.CloudAccount>,
+    showCloudAuthDialog: Boolean,
+    onShowCloudAuthDialogChange: (Boolean) -> Unit,
+    onOpenTvRemote: () -> Unit = {},
+    onOpenBtRemote: () -> Unit = {}
 ) {
     // Shield auth overlay
     if (state.showShieldAuth) {
@@ -1370,6 +1496,14 @@ private fun ExplorerOverlays(
                     onManageTags = { viewModel.showTagManager() },
                     onOpenTransfer = { viewModel.openTransfer() },
                     onOpenTerminal = { viewModel.openTerminal() },
+                    onOpenTvRemote = onOpenTvRemote,
+                    onOpenBtRemote = onOpenBtRemote,
+                    cloudAccounts = cloudAccounts,
+                    onOpenCloudAuth = { viewModel.openCloudAuth() },
+                    onNavigateToCloud = { provider ->
+                        viewModel.dismissDrawer()
+                        viewModel.navigateToCloud(provider)
+                    },
                     isListeningForTransfer = state.isListeningForTransfer,
                     usbVolumes = state.usbVolumes,
                     onNavigateUsb = { path ->
@@ -1405,6 +1539,28 @@ private fun ExplorerOverlays(
                     onDismiss = viewModel::dismissShelf
                 )
             }
+        }
+
+        // Cloud Auth Dialog
+        if (showCloudAuthDialog) {
+            com.vamp.haron.presentation.cloud.CloudAuthDialog(
+                connectedAccounts = cloudAccounts,
+                onSignIn = { provider ->
+                    val url = viewModel.getCloudAuthUrl(provider)
+                    if (url != null) {
+                        val intent = androidx.browser.customtabs.CustomTabsIntent.Builder().build()
+                        intent.launchUrl(context, android.net.Uri.parse(url))
+                    }
+                },
+                onSignOut = { provider ->
+                    viewModel.cloudSignOut(provider)
+                },
+                onNavigateToCloud = { provider ->
+                    onShowCloudAuthDialogChange(false)
+                    viewModel.navigateToCloud(provider)
+                },
+                onDismiss = { onShowCloudAuthDialogChange(false) }
+            )
         }
     }
 }

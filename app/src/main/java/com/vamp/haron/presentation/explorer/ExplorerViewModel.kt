@@ -16,6 +16,7 @@ import com.vamp.haron.data.saf.StorageVolumeHelper
 import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.model.PlaylistHolder
+import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.domain.model.ShelfItem
@@ -63,7 +64,11 @@ import com.vamp.haron.presentation.explorer.state.QuickSendState
 import com.vamp.haron.data.voice.VoiceCommandManager
 import com.vamp.haron.data.voice.VoiceState
 import com.vamp.haron.data.security.AuthManager
+import com.vamp.haron.data.cloud.CloudManager
+import com.vamp.haron.data.cloud.CloudOAuthHelper
+import com.vamp.haron.data.shizuku.ShizukuManager
 import com.vamp.haron.data.usb.UsbStorageManager
+import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.repository.SecureFolderRepository
 import com.vamp.haron.domain.usecase.BatchRenameUseCase
 import com.vamp.haron.domain.usecase.ForceDeleteUseCase
@@ -84,9 +89,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.Intent
+import android.provider.DocumentsContract
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.common.util.toFileSize
@@ -133,7 +142,10 @@ class ExplorerViewModel @Inject constructor(
     private val transferRepository: TransferRepository,
     private val receiveFileManager: ReceiveFileManager,
     private val browseArchiveUseCase: BrowseArchiveUseCase,
-    private val extractArchiveUseCase: ExtractArchiveUseCase
+    private val extractArchiveUseCase: ExtractArchiveUseCase,
+    val shizukuManager: ShizukuManager,
+    private val cloudManager: CloudManager,
+    private val httpFileServer: com.vamp.haron.data.transfer.HttpFileServer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -144,6 +156,490 @@ class ExplorerViewModel @Inject constructor(
 
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 1)
     val navigationEvent = _navigationEvent.asSharedFlow()
+
+    // Cloud accounts state
+    private val _cloudAccounts = MutableStateFlow(cloudManager.getConnectedAccounts())
+    val cloudAccounts: StateFlow<List<com.vamp.haron.domain.model.CloudAccount>> = _cloudAccounts.asStateFlow()
+
+    fun refreshCloudAccounts() {
+        _cloudAccounts.value = cloudManager.getConnectedAccounts()
+    }
+
+    fun openCloudAuth() {
+        // Start HTTP server for Google OAuth loopback callback
+        viewModelScope.launch {
+            if (!httpFileServer.isRunning()) {
+                httpFileServer.start(emptyList())
+            }
+            CloudOAuthHelper.setGdriveLoopbackPort(httpFileServer.actualPort)
+            EcosystemLogger.d(HaronConstants.TAG, "openCloudAuth: server running on port ${httpFileServer.actualPort}")
+        }
+        _navigationEvent.tryEmit(NavigationEvent.OpenCloudAuth)
+    }
+
+    fun navigateToCloud(provider: CloudProvider) {
+        val panelId = _uiState.value.activePanel
+        navigateTo(panelId, "cloud://${provider.scheme}/")
+    }
+
+    fun cloudSignIn(provider: CloudProvider, code: String) {
+        viewModelScope.launch {
+            cloudManager.handleAuthCode(provider, code).onSuccess {
+                refreshCloudAccounts()
+                navigateToCloud(provider)
+            }.onFailure { e ->
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_auth, e.message ?: ""))
+            }
+        }
+    }
+
+    fun getCloudAuthUrl(provider: CloudProvider): String? {
+        return cloudManager.getAuthUrl(provider)
+    }
+
+    fun cloudSignOut(provider: CloudProvider) {
+        viewModelScope.launch {
+            cloudManager.signOut(provider)
+            refreshCloudAccounts()
+        }
+    }
+
+    /** Current cloud transfer job for cancellation */
+    private var cloudTransferJob: kotlinx.coroutines.Job? = null
+
+    fun isCloudPath(path: String): Boolean = path.startsWith("cloud://")
+
+    /**
+     * Download a cloud file to cache, then open with appropriate viewer.
+     */
+    fun cloudDownloadAndOpen(entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, cloudFileId) = parsed
+
+        cloudTransferJob = viewModelScope.launch {
+            _uiState.update { it.copy(dialogState = DialogState.CloudTransfer(entry.name)) }
+            try {
+                val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+                cacheDir.mkdirs()
+                val localFile = File(cacheDir, entry.name)
+
+                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    .collect { progress ->
+                        _uiState.update {
+                            it.copy(dialogState = DialogState.CloudTransfer(
+                                fileName = progress.fileName.ifEmpty { entry.name },
+                                percent = progress.percent,
+                                isUpload = false
+                            ))
+                        }
+                        if (progress.isComplete) {
+                            _uiState.update { it.copy(dialogState = DialogState.None) }
+                            if (progress.error != null) {
+                                _toastMessage.tryEmit(progress.error)
+                            } else {
+                                // Open downloaded file with local viewer
+                                val localEntry = entry.copy(path = localFile.absolutePath)
+                                onFileClick(_uiState.value.activePanel, localEntry)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(dialogState = DialogState.None) }
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
+            }
+        }
+    }
+
+    /**
+     * Download cloud text file, then open in editor with cloud save-back support.
+     */
+    fun cloudDownloadAndOpenText(entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, cloudFileId) = parsed
+
+        cloudTransferJob = viewModelScope.launch {
+            _uiState.update { it.copy(dialogState = DialogState.CloudTransfer(entry.name)) }
+            try {
+                val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+                cacheDir.mkdirs()
+                val localFile = File(cacheDir, entry.name)
+
+                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    .collect { progress ->
+                        _uiState.update {
+                            it.copy(dialogState = DialogState.CloudTransfer(
+                                fileName = progress.fileName.ifEmpty { entry.name },
+                                percent = progress.percent,
+                                isUpload = false
+                            ))
+                        }
+                        if (progress.isComplete) {
+                            _uiState.update { it.copy(dialogState = DialogState.None) }
+                            if (progress.error != null) {
+                                _toastMessage.tryEmit(progress.error)
+                            } else {
+                                _navigationEvent.tryEmit(
+                                    NavigationEvent.OpenTextEditorCloud(
+                                        localCachePath = localFile.absolutePath,
+                                        fileName = entry.name,
+                                        cloudUri = entry.path,
+                                        otherPanelPath = getOtherPanelPath()
+                                    )
+                                )
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(dialogState = DialogState.None) }
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
+            }
+        }
+    }
+
+    /**
+     * Upload a local file back to cloud, replacing the original.
+     */
+    fun cloudSaveBack(cloudUri: String, localPath: String) {
+        val parsed = cloudManager.parseCloudUri(cloudUri) ?: return
+        val (provider, cloudFileId) = parsed
+
+        viewModelScope.launch {
+            cloudManager.updateFileContent(provider, cloudFileId, localPath)
+                .collect { progress ->
+                    if (progress.isComplete) {
+                        if (progress.error != null) {
+                            _toastMessage.tryEmit(progress.error)
+                        } else {
+                            _toastMessage.tryEmit(appContext.getString(R.string.cloud_save_success))
+                        }
+                    }
+                }
+        }
+    }
+
+    /**
+     * Get the other panel's current path (for "save locally" in cloud text editor).
+     */
+    fun getOtherPanelPath(): String {
+        val activeId = _uiState.value.activePanel
+        val otherId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        return getPanel(otherId).currentPath
+    }
+
+    /**
+     * Build cloud breadcrumbs for the current navigation.
+     * If navigating to root → single entry. If going deeper → append. If jumping to a breadcrumb → truncate.
+     */
+    private fun buildCloudBreadcrumbs(
+        current: List<Pair<String, String>>,
+        cloudFullPath: String,
+        providerDisplayName: String,
+        cloudPath: String
+    ): List<Pair<String, String>> {
+        // Check if we're navigating to an already-existing breadcrumb (going back)
+        val existingIndex = current.indexOfFirst { it.second == cloudFullPath }
+        if (existingIndex >= 0) {
+            return current.take(existingIndex + 1)
+        }
+        // Root navigation
+        if (cloudPath == "root" || cloudPath.isEmpty()) {
+            return listOf("$providerDisplayName:" to cloudFullPath)
+        }
+        // If current breadcrumbs are empty or from a different provider → start fresh
+        if (current.isEmpty() || !current.first().second.startsWith(cloudFullPath.substringBefore("/", cloudFullPath).take(15))) {
+            // Extract folder name from displayPath segments
+            return listOf("$providerDisplayName:" to "cloud://${cloudFullPath.removePrefix("cloud://").substringBefore('/')}/root") +
+                listOf(cloudPath.substringAfterLast('/').ifEmpty { cloudPath } to cloudFullPath)
+        }
+        // Going deeper — find the folder name from the file entries of the parent
+        val parentPanel = current.lastOrNull()
+        val parentPath = parentPanel?.second ?: ""
+        // The folder name = name of the entry we clicked (cloudPath is fileId, not name)
+        // We need to find it from parent's files
+        val parentFiles = try {
+            val panelId = _uiState.value.activePanel
+            getPanel(panelId).files
+        } catch (_: Exception) { emptyList() }
+        val folderName = parentFiles.firstOrNull { it.path == cloudFullPath }?.name
+            ?: cloudPath.substringAfterLast('/')
+        return current + (folderName to cloudFullPath)
+    }
+
+    /**
+     * Stream cloud media (video/audio) through local HTTP proxy without full download.
+     */
+    fun cloudStreamAndPlay(entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, _) = parsed
+
+        viewModelScope.launch {
+            EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: entry=${entry.name}, path=${entry.path}")
+
+            // Pre-refresh token before streaming (Google tokens expire after 1 hour)
+            val freshToken = cloudManager.getFreshAccessToken(provider)
+            if (freshToken == null) {
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_auth, "No token"))
+                EcosystemLogger.e(HaronConstants.TAG, "cloudStreamAndPlay: no fresh token for ${provider.scheme}")
+                return@launch
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: got fresh token (${freshToken.take(10)}...)")
+
+            // Ensure HTTP server is running
+            if (!httpFileServer.isRunning()) {
+                httpFileServer.start(emptyList())
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: server port=${httpFileServer.actualPort}")
+            httpFileServer.clearCloudStreams()
+            // Set up token provider so proxy gets fresh token on each request
+            httpFileServer.cloudTokenProvider = { providerScheme ->
+                val cp = com.vamp.haron.domain.model.CloudProvider.entries.firstOrNull { it.scheme == providerScheme }
+                cp?.let { cloudManager.getAccessToken(it) }
+            }
+
+            // Build playlist from all media files in the current panel
+            val panel = getPanel(_uiState.value.activePanel)
+            val mediaFiles = panel.files.filter { f ->
+                !f.isDirectory && f.iconRes() in listOf("video", "audio")
+            }
+
+            mediaFiles.forEach { f ->
+                val p = cloudManager.parseCloudUri(f.path) ?: return@forEach
+                val streamId = f.path.hashCode().toUInt().toString(16)
+                httpFileServer.setupCloudStream(
+                    streamId,
+                    com.vamp.haron.data.transfer.HttpFileServer.CloudStreamConfig(
+                        fileId = p.second,
+                        provider = p.first.scheme,
+                        fileName = f.name,
+                        fileSize = f.size
+                    )
+                )
+            }
+
+            PlaylistHolder.items = mediaFiles.map { f ->
+                val streamId = f.path.hashCode().toUInt().toString(16)
+                val streamUrl = httpFileServer.getCloudStreamUrl(streamId) ?: f.path
+                PlaylistHolder.PlaylistItem(
+                    filePath = streamUrl,
+                    fileName = f.name,
+                    fileType = f.iconRes()
+                )
+            }
+            val startIndex = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+            PlaylistHolder.startIndex = startIndex
+            PlaylistHolder.items.forEachIndexed { i, item ->
+                EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: [$i] ${item.fileName} → ${item.filePath}")
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: ${mediaFiles.size} tracks, starting at $startIndex, navigating to player")
+            _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(startIndex))
+        }
+    }
+
+    /**
+     * Download selected cloud files to the other panel's local directory.
+     */
+    fun cloudDownloadToLocal() {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+        val targetPanel = getPanel(targetId)
+        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
+        if (selected.isEmpty()) return
+
+        val targetDir = targetPanel.currentPath
+        if (isCloudPath(targetDir) || targetDir.startsWith("content://")) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_local_only))
+            return
+        }
+
+        clearSelection(activeId)
+        val total = selected.size
+        val totalBytes = selected.sumOf { it.size }
+        var completedBytes = 0L
+
+        cloudTransferJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
+            }
+
+            var downloaded = 0
+            for ((idx, entry) in selected.withIndex()) {
+                val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
+                val (provider, cloudFileId) = parsed
+                val localFile = File(targetDir, entry.name)
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += entry.size
+                    downloaded++
+                    refreshPanel(targetId)
+                } catch (e: Exception) {
+                    completedBytes += entry.size
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${entry.name}: ${e.message}")
+                }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    downloaded, total, "", OperationType.DOWNLOAD, isComplete = true
+                ))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    /**
+     * Upload selected local files to the cloud panel's current directory.
+     */
+    fun cloudUploadFromLocal() {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+        val targetPanel = getPanel(targetId)
+        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths && !it.isDirectory }
+        if (selected.isEmpty()) return
+
+        val targetCloudPath = targetPanel.currentPath
+        val parsed = cloudManager.parseCloudUri(targetCloudPath) ?: return
+        val (provider, cloudDir) = parsed
+
+        clearSelection(activeId)
+        val total = selected.size
+        val totalBytes = selected.sumOf { it.size }
+        var completedBytes = 0L
+
+        cloudTransferJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
+            }
+
+            var uploaded = 0
+            for ((idx, entry) in selected.withIndex()) {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, entry.name, OperationType.UPLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, entry.name, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += entry.size
+                    uploaded++
+                    refreshPanel(targetId)
+                } catch (e: Exception) {
+                    completedBytes += entry.size
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud upload failed: ${entry.name}: ${e.message}")
+                }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    uploaded, total, "", OperationType.UPLOAD, isComplete = true
+                ))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    /**
+     * Delete selected files from cloud storage.
+     */
+    fun cloudDeleteSelected() {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val panel = getPanel(activeId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        if (selected.isEmpty()) return
+
+        clearSelection(activeId)
+        viewModelScope.launch {
+            var deleted = 0
+            for (entry in selected) {
+                val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
+                val (provider, cloudFileId) = parsed
+                cloudManager.delete(provider, cloudFileId).onSuccess { deleted++ }
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
+            refreshPanel(activeId)
+        }
+    }
+
+    /**
+     * Create a folder in the current cloud directory.
+     */
+    fun cloudCreateFolder(name: String) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.CloudCreateFolder) return
+        val parsed = cloudManager.parseCloudUri(dialog.cloudPath) ?: return
+        val (provider, parentPath) = parsed
+
+        _uiState.update { it.copy(dialogState = DialogState.None) }
+        viewModelScope.launch {
+            cloudManager.createFolder(provider, parentPath, name)
+                .onSuccess {
+                    refreshPanel(dialog.panelId)
+                }
+                .onFailure { e ->
+                    _toastMessage.tryEmit(e.message ?: "Error")
+                }
+        }
+    }
+
+    fun showCloudCreateFolder() {
+        val state = _uiState.value
+        val panel = getPanel(state.activePanel)
+        if (isCloudPath(panel.currentPath)) {
+            _uiState.update {
+                it.copy(dialogState = DialogState.CloudCreateFolder(state.activePanel, panel.currentPath))
+            }
+        }
+    }
+
+    fun cancelCloudTransfer() {
+        cloudTransferJob?.cancel()
+        cloudTransferJob = null
+        _uiState.update { it.copy(dialogState = DialogState.None, operationProgress = null) }
+    }
 
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
     private var dragBaseSelection: Set<String> = emptySet()
@@ -223,6 +719,45 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             cleanExpiredTrashUseCase()
             updateTrashSizeInfo()
+        }
+
+        // Очистка облачного кэша thumbnails:
+        // - Одноразовая инвалидация cloud_thumbs (миграция с =s220 на =s800)
+        // - TTL 7 дней для cloud_gallery
+        viewModelScope.launch(Dispatchers.IO) {
+            val prefs = appContext.getSharedPreferences("haron_cache", android.content.Context.MODE_PRIVATE)
+            val thumbsCacheVersion = 2 // bump to invalidate
+            if (prefs.getInt("cloud_thumbs_version", 0) < thumbsCacheVersion) {
+                val dir = File(appContext.cacheDir, "cloud_thumbs")
+                if (dir.exists()) dir.deleteRecursively()
+                prefs.edit().putInt("cloud_thumbs_version", thumbsCacheVersion).apply()
+                EcosystemLogger.d(HaronConstants.TAG, "Cloud thumbs cache invalidated (v$thumbsCacheVersion)")
+            }
+            val maxAge = 7L * 24 * 60 * 60 * 1000 // 7 days
+            val now = System.currentTimeMillis()
+            listOf("cloud_thumbs", "cloud_gallery").forEach { dirName ->
+                val dir = File(appContext.cacheDir, dirName)
+                if (dir.exists()) {
+                    dir.listFiles()?.forEach { f ->
+                        if (now - f.lastModified() > maxAge) f.delete()
+                    }
+                }
+            }
+        }
+
+        // Подписка на OAuth callback из deep link
+        viewModelScope.launch {
+            CloudOAuthHelper.pendingAuth.collect { auth ->
+                if (auth != null) {
+                    CloudOAuthHelper.pendingAuth.value = null
+                    val provider = com.vamp.haron.domain.model.CloudProvider.entries
+                        .find { it.scheme == auth.providerScheme }
+                    if (provider != null) {
+                        EcosystemLogger.d(HaronConstants.TAG, "OAuth callback: provider=${provider.scheme}")
+                        cloudSignIn(provider, auth.code)
+                    }
+                }
+            }
         }
 
         // Подписка на прогресс файловых операций из foreground service
@@ -654,8 +1189,52 @@ class ExplorerViewModel @Inject constructor(
             val panel = getPanel(panelId)
             val displayPath = when {
                 path == HaronConstants.VIRTUAL_SECURE_PATH -> appContext.getString(R.string.all_secure_files)
+                path.startsWith("cloud://") -> {
+                    val parsed = cloudManager.parseCloudUri(path)
+                    if (parsed != null) "${parsed.first.displayName}: /${parsed.second}" else path
+                }
                 path.startsWith("content://") -> buildSafDisplayPath(path)
                 else -> path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
+            }
+
+            // Cloud path — use CloudManager instead of filesystem
+            if (path.startsWith("cloud://")) {
+                val parsed = cloudManager.parseCloudUri(path)
+                if (parsed == null) {
+                    updatePanel(panelId) { it.copy(isLoading = false, error = "Invalid cloud path") }
+                    return@launch
+                }
+                val (provider, cloudPath) = parsed
+                cloudManager.listFiles(provider, cloudPath).onSuccess { cloudFiles ->
+                    val fileEntries = cloudFiles.map { it.toFileEntry() }
+                    updatePanel(panelId) {
+                        var history = it.navigationHistory
+                        var index = it.historyIndex
+                        if (pushHistory) {
+                            history = history.take(index + 1) + path
+                            if (history.size > MAX_HISTORY_SIZE) {
+                                history = history.takeLast(MAX_HISTORY_SIZE)
+                            }
+                            index = history.lastIndex
+                        }
+                        // Build cloud breadcrumbs
+                        val newBreadcrumbs = buildCloudBreadcrumbs(it.cloudBreadcrumbs, path, provider.displayName, cloudPath)
+                        it.copy(
+                            currentPath = path,
+                            displayPath = displayPath,
+                            files = fileEntries,
+                            isLoading = false,
+                            error = null,
+                            navigationHistory = history,
+                            historyIndex = index,
+                            selectedPaths = emptySet(),
+                            cloudBreadcrumbs = newBreadcrumbs
+                        )
+                    }
+                }.onFailure { e ->
+                    updatePanel(panelId) { it.copy(isLoading = false, error = e.message) }
+                }
+                return@launch
             }
 
             val t0 = System.nanoTime()
@@ -724,13 +1303,59 @@ class ExplorerViewModel @Inject constructor(
                     }
                 }
                 EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Открыта папка: $path (${files.size} файлов)")
-                // Calculate current folder size for breadcrumb
-                if (!path.startsWith("content://") && path != HaronConstants.VIRTUAL_SECURE_PATH &&
+                // Restricted path fallback chain: SAF → Shizuku → dialog
+                if (files.isEmpty() && !path.startsWith("content://") && isRestrictedAndroidDir(path)) {
+                    when (shizukuManager.state.value) {
+                        com.vamp.haron.data.shizuku.ShizukuState.BOUND -> {
+                            // Shizuku already tried in FileRepositoryImpl — folder is genuinely empty
+                            EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Restricted path, Shizuku bound but folder empty: $path")
+                        }
+                        com.vamp.haron.data.shizuku.ShizukuState.READY -> {
+                            // Shizuku ready but not bound yet — bind and re-navigate
+                            EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Restricted path, binding Shizuku: $path")
+                            shizukuManager.bindService()
+                            viewModelScope.launch {
+                                if (shizukuManager.ensureServiceBound()) {
+                                    navigateTo(panelId, path, pushHistory = false)
+                                }
+                            }
+                        }
+                        com.vamp.haron.data.shizuku.ShizukuState.NO_PERMISSION -> {
+                            EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Restricted path, requesting Shizuku permission")
+                            shizukuManager.requestPermission()
+                        }
+                        com.vamp.haron.data.shizuku.ShizukuState.NOT_RUNNING -> {
+                            _uiState.update { it.copy(dialogState = DialogState.ShizukuNotRunning(panelId, path)) }
+                        }
+                        com.vamp.haron.data.shizuku.ShizukuState.NOT_INSTALLED -> {
+                            // Try SAF as last resort (works on some devices with rolled-back DocumentsUI)
+                            if (!hasRestrictedPathSafAccess(path)) {
+                                val docId = filePathToDocId(path)
+                                if (docId != null) {
+                                    val initialUri = DocumentsContract.buildDocumentUri(
+                                        "com.android.externalstorage.documents", docId
+                                    )
+                                    EcosystemLogger.d(HaronConstants.TAG, "[$panelId] Restricted path, trying SAF: $path")
+                                    _navigationEvent.tryEmit(
+                                        NavigationEvent.RequestSafAccess(panelId, path, initialUri)
+                                    )
+                                } else {
+                                    _uiState.update { it.copy(dialogState = DialogState.ShizukuNotInstalled(panelId, path)) }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Calculate current folder size for breadcrumb (skip restricted paths — walkTopDown causes GC storm)
+                val skipSizeCalc = path.startsWith("content://") ||
+                    path == HaronConstants.VIRTUAL_SECURE_PATH ||
+                    isRestrictedAndroidDir(path)
+                if (!skipSizeCalc &&
                     _uiState.value.folderSizeCache[path] == null && !folderSizeJobs.containsKey(path)) {
                     calculateFolderSize(path)
                 }
                 // Calculate sizes for subdirectories (for display in file list)
-                if (!path.startsWith("content://") && path != HaronConstants.VIRTUAL_SECURE_PATH) {
+                if (!skipSizeCalc) {
                     files.filter { it.isDirectory }.forEach { dir ->
                         if (_uiState.value.folderSizeCache[dir.path] == null && !folderSizeJobs.containsKey(dir.path)) {
                             calculateFolderSize(dir.path)
@@ -886,6 +1511,21 @@ class ExplorerViewModel @Inject constructor(
             return
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
+        } else if (isCloudPath(entry.path)) {
+            // Cloud media — stream without full download
+            val type = entry.iconRes()
+            if (type in listOf("video", "audio")) {
+                cloudStreamAndPlay(entry)
+                return
+            }
+            // Cloud text — download to cache and open in text editor with cloud save
+            if (type in listOf("text", "code")) {
+                cloudDownloadAndOpenText(entry)
+                return
+            }
+            // Other cloud files — download to cache first, then open
+            cloudDownloadAndOpen(entry)
+            return
         } else if (entry.name.lowercase().endsWith(".fb2.zip")) {
             preferences.lastDocumentFile = entry.path
             _navigationEvent.tryEmit(NavigationEvent.OpenDocumentViewer(entry.path, entry.name))
@@ -993,6 +1633,91 @@ class ExplorerViewModel @Inject constructor(
         val idx = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
         GalleryHolder.startIndex = idx
         return idx
+    }
+
+    /**
+     * Download a cloud thumbnail at high resolution for gallery viewing.
+     * Returns local cached file path or null on failure.
+     */
+    private suspend fun downloadCloudThumbnail(entry: FileEntry, size: Int = 1600): String? {
+        val thumbUrl = entry.thumbnailUrl?.replace(Regex("=s\\d+"), "=s$size")
+            ?: return null
+        val needsAuth = thumbUrl.contains("googleapis.com")
+        val cacheDir = File(appContext.cacheDir, "cloud_gallery")
+        cacheDir.mkdirs()
+        val cacheKey = entry.path.hashCode().toUInt().toString(16)
+        val ext = if (needsAuth) entry.extension.ifEmpty { "jpg" } else "jpg"
+        val thumbFile = File(cacheDir, "gallery_${cacheKey}.$ext")
+        if (thumbFile.exists() && thumbFile.length() > 0) return thumbFile.absolutePath
+        return try {
+            withContext(Dispatchers.IO) {
+                val url = java.net.URL(thumbUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 30_000
+                conn.instanceFollowRedirects = true
+                // Authenticated content download (fallback for files without thumbnailLink)
+                if (needsAuth) {
+                    val parsed = cloudManager.parseCloudUri(entry.path)
+                    if (parsed != null) {
+                        val token = cloudManager.getFreshAccessToken(parsed.first)
+                        if (token != null) {
+                            conn.setRequestProperty("Authorization", "Bearer $token")
+                        }
+                    }
+                }
+                try {
+                    conn.inputStream.use { input ->
+                        java.io.FileOutputStream(thumbFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            }
+            if (thumbFile.exists() && thumbFile.length() > 0) thumbFile.absolutePath else null
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "downloadCloudThumbnail failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Open gallery from cloud panel: download high-res thumbnails for all images, then navigate.
+     */
+    fun openCloudGallery(entry: FileEntry, adjacentFiles: List<FileEntry>, currentIndex: Int) {
+        viewModelScope.launch {
+            val imageFiles = adjacentFiles.filter { f ->
+                !f.isDirectory && f.iconRes() == "image"
+            }
+            if (imageFiles.isEmpty()) return@launch
+
+            _uiState.update { it.copy(dialogState = DialogState.CloudTransfer(entry.name)) }
+
+            // Download thumbnails in parallel
+            val items = withContext(Dispatchers.IO) {
+                coroutineScope {
+                    imageFiles.map { f ->
+                        async {
+                            val localPath = downloadCloudThumbnail(f)
+                            GalleryHolder.GalleryItem(
+                                filePath = localPath ?: f.path,
+                                fileName = f.name,
+                                fileSize = f.size
+                            )
+                        }
+                    }.awaitAll()
+                }
+            }
+
+            GalleryHolder.items = items
+            val startIdx = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+            GalleryHolder.startIndex = startIdx
+
+            _uiState.update { it.copy(dialogState = DialogState.None) }
+            _navigationEvent.tryEmit(NavigationEvent.OpenGallery(startIdx))
+        }
     }
 
     fun onFileLongClick(panelId: PanelId, entry: FileEntry) {
@@ -1167,6 +1892,52 @@ class ExplorerViewModel @Inject constructor(
         safUriManager.persistUri(uri)
         refreshSafRoots()
         navigateTo(_uiState.value.activePanel, uri.toString())
+    }
+
+    /** Called after SAF picker grants access to Android/data or Android/obb */
+    fun onSafAccessGrantedForRestrictedPath(uri: Uri, panelId: PanelId, filePath: String) {
+        safUriManager.persistUri(uri)
+        EcosystemLogger.d(HaronConstants.TAG, "SAF access granted for restricted path: $filePath, uri=$uri")
+        // Re-navigate to the same file path — FileRepositoryImpl will now find the SAF URI and use it
+        navigateTo(panelId, filePath, pushHistory = false)
+    }
+
+    // --- Shizuku ---
+
+    fun dismissShizukuDialog() {
+        _uiState.update { it.copy(dialogState = DialogState.None) }
+    }
+
+    fun onShizukuReady(panelId: PanelId, path: String) {
+        _uiState.update { it.copy(dialogState = DialogState.None) }
+        viewModelScope.launch {
+            shizukuManager.refreshState()
+            if (shizukuManager.ensureServiceBound()) {
+                navigateTo(panelId, path, pushHistory = false)
+            }
+        }
+    }
+
+    private fun isRestrictedAndroidDir(path: String): Boolean =
+        path.contains("/Android/data") || path.contains("/Android/obb")
+
+    private fun hasRestrictedPathSafAccess(path: String): Boolean {
+        val docId = filePathToDocId(path) ?: return false
+        return safUriManager.getPersistedUris().any { uri ->
+            try {
+                val treeDocId = DocumentsContract.getTreeDocumentId(uri)
+                docId == treeDocId || docId.startsWith("$treeDocId/")
+            } catch (_: Exception) { false }
+        }
+    }
+
+    private fun filePathToDocId(path: String): String? {
+        val internalPrefix = "/storage/emulated/0/"
+        if (path.startsWith(internalPrefix)) {
+            return "primary:" + path.removePrefix(internalPrefix)
+        }
+        val match = Regex("^/storage/([^/]+)/(.+)$").matchEntire(path) ?: return null
+        return "${match.groupValues[1]}:${match.groupValues[2]}"
     }
 
     fun hasRemovableStorage(): Boolean {
@@ -1467,6 +2238,17 @@ class ExplorerViewModel @Inject constructor(
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
 
+        // Cloud → local: download
+        if (paths.any { isCloudPath(it) }) {
+            cloudDownloadToLocal()
+            return
+        }
+        // Local → cloud: upload
+        if (isCloudPath(targetPanel.currentPath)) {
+            cloudUploadFromLocal()
+            return
+        }
+
         // Block copy TO virtual secure view (only when target panel is in protected context)
         if (targetPanel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH ||
             (targetPanel.showProtected && secureFolderRepository.isFileProtected(targetPanel.currentPath))) {
@@ -1593,6 +2375,12 @@ class ExplorerViewModel @Inject constructor(
         val targetPanel = getPanel(targetId)
         val paths = sourcePanel.selectedPaths.toList()
         if (paths.isEmpty()) return
+
+        // Cloud: move not supported (use copy + manual delete)
+        if (paths.any { isCloudPath(it) } || isCloudPath(targetPanel.currentPath)) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_local_only))
+            return
+        }
 
         // Block move TO virtual secure view (only when target panel is in protected context)
         if (targetPanel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH ||
@@ -1727,6 +2515,20 @@ class ExplorerViewModel @Inject constructor(
         dismissDialog()
         val activeId = _uiState.value.activePanel
         clearSelection(activeId)
+
+        // Cloud files — delete from cloud storage
+        if (paths.any { isCloudPath(it) }) {
+            viewModelScope.launch {
+                var deleted = 0
+                for (p in paths) {
+                    val parsed = cloudManager.parseCloudUri(p) ?: continue
+                    cloudManager.delete(parsed.first, parsed.second).onSuccess { deleted++ }
+                }
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
+                refreshPanel(activeId)
+            }
+            return
+        }
 
         // Protected files — delete permanently from secure storage (only for entries marked isProtected)
         val activePanel = getPanel(activeId)
@@ -1885,16 +2687,16 @@ class ExplorerViewModel @Inject constructor(
         // Cancel inline operation
         inlineOperationJob?.cancel()
         inlineOperationJob = null
+        // Cancel cloud transfer
+        cloudTransferJob?.cancel()
+        cloudTransferJob = null
         _uiState.update { state ->
             val p = state.operationProgress
             if (p != null && !p.isComplete) {
-                state.copy(operationProgress = p.copy(isComplete = true, error = appContext.getString(R.string.operation_cancelled_label)))
+                state.copy(operationProgress = null)
             } else state
         }
-        viewModelScope.launch {
-            delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
-        }
+        _toastMessage.tryEmit(appContext.getString(R.string.operation_cancelled))
     }
 
     // --- Inline rename ---
@@ -1919,20 +2721,38 @@ class ExplorerViewModel @Inject constructor(
         updatePanel(activeId) { it.copy(renamingPath = null) }
 
         viewModelScope.launch {
-            renameFileUseCase(path, newName)
-                .onSuccess {
-                    hapticManager.success()
-                    val parentDir = path.substringBeforeLast('/')
-                    val newPath = "$parentDir/$newName"
-                    preferences.migrateFileTags(path, newPath)
-                    refreshTags()
-                    refreshBothIfSamePath(activeId)
+            if (isCloudPath(path)) {
+                val parsed = cloudManager.parseCloudUri(path)
+                if (parsed != null) {
+                    val (provider, cloudFileId) = parsed
+                    cloudManager.rename(provider, cloudFileId, newName)
+                        .onSuccess {
+                            hapticManager.success()
+                            _toastMessage.tryEmit(appContext.getString(R.string.cloud_rename_success))
+                            refreshBothIfSamePath(activeId)
+                        }
+                        .onFailure { e ->
+                            hapticManager.error()
+                            _toastMessage.tryEmit(e.message ?: appContext.getString(R.string.error_rename))
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud rename error: ${e.message}")
+                        }
                 }
-                .onFailure { e ->
-                    hapticManager.error()
-                    _toastMessage.tryEmit(e.message ?: appContext.getString(R.string.error_rename))
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
-                }
+            } else {
+                renameFileUseCase(path, newName)
+                    .onSuccess {
+                        hapticManager.success()
+                        val parentDir = path.substringBeforeLast('/')
+                        val newPath = "$parentDir/$newName"
+                        preferences.migrateFileTags(path, newPath)
+                        refreshTags()
+                        refreshBothIfSamePath(activeId)
+                    }
+                    .onFailure { e ->
+                        hapticManager.error()
+                        _toastMessage.tryEmit(e.message ?: appContext.getString(R.string.error_rename))
+                        EcosystemLogger.e(HaronConstants.TAG, "Ошибка переименования: ${e.message}")
+                    }
+            }
         }
     }
 
@@ -2082,6 +2902,10 @@ class ExplorerViewModel @Inject constructor(
     fun requestCreateFromTemplate() {
         val activeId = _uiState.value.activePanel
         val panel = getPanel(activeId)
+        if (isCloudPath(panel.currentPath)) {
+            showCloudCreateFolder()
+            return
+        }
         if (panel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
             _toastMessage.tryEmit(appContext.getString(R.string.cannot_create_in_virtual))
             return
@@ -2369,14 +3193,210 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
-    /** Resolve a FileEntry for preview: if protected, decrypt to cache and return entry with temp path. */
+    /**
+     * Delete current file from preview and navigate to next/previous.
+     * Closes preview only if it was the last file.
+     */
+    fun deleteFromPreview() {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.QuickPreview) return
+        val path = dialog.entry.path
+        val files = dialog.adjacentFiles
+        val idx = dialog.currentFileIndex
+        val activeId = _uiState.value.activePanel
+
+        if (files.size <= 1) {
+            // Last file — close preview and delete
+            dismissDialog()
+            silentDelete(path, activeId)
+            return
+        }
+
+        // Remove from list, fix index, rebuild cache
+        val newFiles = files.toMutableList().apply { removeAt(idx) }
+        val newIdx = if (idx >= newFiles.size) newFiles.size - 1 else idx
+        val newEntry = newFiles[newIdx]
+
+        // Shift cache indices
+        val newCache = mutableMapOf<Int, PreviewData>()
+        for ((k, v) in dialog.previewCache) {
+            val newKey = when {
+                k < idx -> k
+                k == idx -> continue
+                else -> k - 1
+            }
+            if (newKey in newFiles.indices) newCache[newKey] = v
+        }
+
+        val cached = newCache[newIdx]
+        _uiState.update {
+            it.copy(dialogState = dialog.copy(
+                entry = newEntry,
+                previewData = cached,
+                isLoading = cached == null,
+                error = null,
+                adjacentFiles = newFiles,
+                currentFileIndex = newIdx,
+                previewCache = newCache
+            ))
+        }
+
+        // Load preview if not cached, always preload neighbors
+        if (cached == null) {
+            viewModelScope.launch {
+                val resolved = resolvePreviewEntry(newEntry)
+                loadPreviewUseCase(resolved)
+                    .onSuccess { data ->
+                        val current = _uiState.value.dialogState
+                        if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
+                            _uiState.update {
+                                it.copy(dialogState = current.copy(
+                                    previewData = data,
+                                    isLoading = false,
+                                    previewCache = current.previewCache + (newIdx to data)
+                                ))
+                            }
+                            preloadPreview(newIdx - 1, newFiles)
+                            preloadPreview(newIdx + 1, newFiles)
+                        }
+                    }
+                    .onFailure { e ->
+                        val current = _uiState.value.dialogState
+                        if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
+                            _uiState.update {
+                                it.copy(dialogState = current.copy(
+                                    isLoading = false,
+                                    error = e.message
+                                ))
+                            }
+                        }
+                    }
+            }
+        } else {
+            preloadPreview(newIdx - 1, newFiles)
+            preloadPreview(newIdx + 1, newFiles)
+        }
+
+        // Delete file in background without closing preview
+        silentDelete(path, activeId)
+    }
+
+    /** Delete a single file to trash without dismissing dialogs or showing progress. */
+    private fun silentDelete(path: String, panelId: PanelId) {
+        viewModelScope.launch {
+            try {
+                if (isCloudPath(path)) {
+                    val parsed = cloudManager.parseCloudUri(path)
+                    if (parsed != null) {
+                        val (provider, cloudFileId) = parsed
+                        cloudManager.delete(provider, cloudFileId)
+                    }
+                } else if (path.startsWith("content://")) {
+                    fileRepository.deleteFiles(listOf(path))
+                } else {
+                    trashRepository.moveToTrash(listOf(path))
+                }
+                removeTagsForPaths(listOf(path))
+                updateTrashSizeInfo()
+            } catch (_: Exception) { }
+            refreshBothIfSamePath(panelId)
+        }
+    }
+
+    /** Resolve a FileEntry for preview: download cloud thumbnail / decrypt protected → return entry with local path. */
     private suspend fun resolvePreviewEntry(entry: FileEntry): FileEntry {
+        // Cloud files: download full file for archives, thumbnail for images
+        if (isCloudPath(entry.path)) {
+            val type = entry.iconRes()
+            // Archives need full file download for preview (list contents)
+            if (type == "archive") {
+                return resolveCloudArchiveForPreview(entry)
+            }
+            val thumbUrl = entry.thumbnailUrl
+            if (thumbUrl.isNullOrEmpty()) {
+                // No thumbnail available — show as unsupported preview
+                return entry
+            }
+            val needsAuth = thumbUrl.contains("googleapis.com")
+            val cacheDir = File(appContext.cacheDir, "cloud_thumbs")
+            cacheDir.mkdirs()
+            // Stable cache key from cloud path
+            val cacheKey = entry.path.hashCode().toUInt().toString(16)
+            val ext = if (needsAuth) entry.extension.ifEmpty { "jpg" } else "jpg"
+            val thumbFile = File(cacheDir, "thumb_${cacheKey}.$ext")
+            // Reuse cached thumbnail
+            if (thumbFile.exists() && thumbFile.length() > 0) {
+                return entry.copy(path = thumbFile.absolutePath, extension = ext)
+            }
+            try {
+                withContext(Dispatchers.IO) {
+                    val url = java.net.URL(thumbUrl)
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 30_000
+                    conn.instanceFollowRedirects = true
+                    // Authenticated content download (fallback for files without thumbnailLink)
+                    if (needsAuth) {
+                        val parsed = cloudManager.parseCloudUri(entry.path)
+                        if (parsed != null) {
+                            val token = cloudManager.getFreshAccessToken(parsed.first)
+                            if (token != null) {
+                                conn.setRequestProperty("Authorization", "Bearer $token")
+                            }
+                        }
+                    }
+                    try {
+                        conn.inputStream.use { input ->
+                            java.io.FileOutputStream(thumbFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+                if (thumbFile.exists() && thumbFile.length() > 0) {
+                    return entry.copy(path = thumbFile.absolutePath, extension = ext)
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "resolvePreviewEntry thumbnail download failed: ${e.message}")
+            }
+            return entry
+        }
+
         if (!entry.isProtected) return entry
         val allEntries = secureFolderRepository.getAllProtectedEntries()
         val secEntry = allEntries.find { it.originalPath == entry.path } ?: return entry
         return secureFolderRepository.decryptToCache(secEntry.id).getOrNull()?.let { tempFile ->
             entry.copy(path = tempFile.absolutePath)
         } ?: entry
+    }
+
+    /** Download cloud archive to cache for preview (list contents). */
+    private suspend fun resolveCloudArchiveForPreview(entry: FileEntry): FileEntry {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return entry
+        val (provider, cloudFileId) = parsed
+        val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+        cacheDir.mkdirs()
+        val localFile = File(cacheDir, entry.name)
+        // Reuse cached file if recent (< 10 min)
+        if (localFile.exists() && localFile.length() > 0 &&
+            System.currentTimeMillis() - localFile.lastModified() < 10 * 60 * 1000) {
+            return entry.copy(path = localFile.absolutePath)
+        }
+        return try {
+            var resultEntry = entry
+            cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                .collect { progress ->
+                    if (progress.isComplete && progress.error == null) {
+                        resultEntry = entry.copy(path = localFile.absolutePath)
+                    }
+                }
+            resultEntry
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "resolveCloudArchiveForPreview failed: ${e.message}")
+            entry
+        }
     }
 
     private fun preloadPreview(index: Int, files: List<FileEntry>) {
@@ -2662,44 +3682,113 @@ class ExplorerViewModel @Inject constructor(
         if (current !is DragState.Dragging) return
 
         val hoveredFolder = current.hoveredFolderPath
+        EcosystemLogger.d(HaronConstants.TAG, "endDrag: targetPanel=$targetPanelId, source=${current.sourcePanelId}, hoveredFolder=$hoveredFolder, paths=${current.draggedPaths.size}")
         _uiState.update { it.copy(dragState = DragState.Idle) }
 
         // Drop into a specific folder (same or other panel)
         if (hoveredFolder != null) {
             val paths = current.draggedPaths
             // Don't move a folder into itself
-            if (paths.any { hoveredFolder.startsWith(it) }) return
+            if (paths.any { hoveredFolder.startsWith(it) } || paths.contains(hoveredFolder)) {
+                EcosystemLogger.d(HaronConstants.TAG, "endDrag: abort — folder into itself")
+                return
+            }
             // Don't move files into their own parent directory (no-op)
             val sourceDir = getPanel(current.sourcePanelId).currentPath
-            if (hoveredFolder == sourceDir) return
+            if (hoveredFolder == sourceDir) {
+                EcosystemLogger.d(HaronConstants.TAG, "endDrag: abort — same parent dir")
+                return
+            }
             clearSelection(current.sourcePanelId)
             val destPanelId = targetPanelId ?: current.sourcePanelId
+
+            // Check for conflicts in the target folder (local files only)
+            if (!isCloudPath(hoveredFolder) && !hoveredFolder.startsWith("content://")) {
+                val destFolder = File(hoveredFolder)
+                val existingNames = destFolder.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+                val sourcePanel = getPanel(current.sourcePanelId)
+                val sourceFiles = sourcePanel.files.associateBy { it.path }
+                val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
+                val conflictPairs = mutableListOf<ConflictPair>()
+                for (path in paths) {
+                    val srcEntry = sourceFiles[path]
+                    val name = srcEntry?.name ?: File(path).name
+                    if (name in existingNames) {
+                        val srcFile = File(path)
+                        val destFile = File(hoveredFolder, name)
+                        val srcExt = name.substringAfterLast('.', "").lowercase()
+                        val dstExt = srcExt
+                        conflictPairs.add(ConflictPair(
+                            source = ConflictFileInfo(
+                                name = name,
+                                path = path,
+                                size = srcEntry?.size ?: srcFile.length(),
+                                lastModified = srcEntry?.lastModified ?: srcFile.lastModified(),
+                                isImage = srcExt in imageExtensions
+                            ),
+                            destination = ConflictFileInfo(
+                                name = name,
+                                path = destFile.absolutePath,
+                                size = destFile.length(),
+                                lastModified = destFile.lastModified(),
+                                isImage = dstExt in imageExtensions
+                            )
+                        ))
+                    }
+                }
+                if (conflictPairs.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(dialogState = DialogState.ConfirmConflict(
+                            conflictPairs = conflictPairs,
+                            allPaths = paths,
+                            destinationDir = hoveredFolder,
+                            operationType = OperationType.MOVE,
+                            sourcePanelId = current.sourcePanelId,
+                            targetPanelId = destPanelId
+                        ))
+                    }
+                    return
+                }
+            }
+
             executeDragMove(paths, hoveredFolder, current.sourcePanelId, destPanelId, current.fileCount, ConflictResolution.RENAME)
             return
         }
 
-        if (targetPanelId == null || targetPanelId == current.sourcePanelId) return
+        if (targetPanelId == null || targetPanelId == current.sourcePanelId) {
+            EcosystemLogger.d(HaronConstants.TAG, "endDrag: abort — no target panel or same panel (targetPanelId=$targetPanelId)")
+            return
+        }
 
         val sourcePanel = getPanel(current.sourcePanelId)
         val targetPanel = getPanel(targetPanelId)
+        EcosystemLogger.d(HaronConstants.TAG, "endDrag: cross-panel, src=${sourcePanel.currentPath}, dst=${targetPanel.currentPath}")
         if (sourcePanel.currentPath == targetPanel.currentPath) return
 
         val paths = current.draggedPaths
         clearSelection(current.sourcePanelId)
 
-        val conflictPairs = buildConflictPairs(paths, targetPanel)
-        if (conflictPairs.isNotEmpty()) {
-            _uiState.update {
-                it.copy(dialogState = DialogState.ConfirmConflict(
-                    conflictPairs = conflictPairs,
-                    allPaths = paths,
-                    destinationDir = targetPanel.currentPath,
-                    operationType = OperationType.MOVE
-                ))
+        // Conflict check — works for both local and cloud destinations (name-based comparison)
+        try {
+            val conflictPairs = buildConflictPairs(paths, targetPanel)
+            if (conflictPairs.isNotEmpty()) {
+                _uiState.update {
+                    it.copy(dialogState = DialogState.ConfirmConflict(
+                        conflictPairs = conflictPairs,
+                        allPaths = paths,
+                        destinationDir = targetPanel.currentPath,
+                        operationType = OperationType.MOVE,
+                        sourcePanelId = current.sourcePanelId,
+                        targetPanelId = targetPanelId
+                    ))
+                }
+                return
             }
-            return
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "endDrag: buildConflictPairs failed: ${e.message}")
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "endDrag: calling executeDragMove, paths=$paths, dest=${targetPanel.currentPath}")
         executeDragMove(paths, targetPanel.currentPath, current.sourcePanelId, targetPanelId, current.fileCount, ConflictResolution.RENAME)
     }
 
@@ -2711,42 +3800,54 @@ class ExplorerViewModel @Inject constructor(
         fileCount: Int,
         resolution: ConflictResolution
     ) {
-        val total = paths.size
-        val dirs = paths.count { p ->
-            if (p.startsWith("content://")) false else File(p).isDirectory
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragMove: ${paths.size} paths, dest=$destinationDir, isCloud=${isCloudPath(destinationDir)}")
+        // Cloud → cloud: use cloud API
+        if (paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeCloudDragMove(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
         }
-        val files = total - dirs
+        // Cloud → local: download
+        if (paths.any { isCloudPath(it) } && !isCloudPath(destinationDir)) {
+            executeDragCloudDownload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+        // Local → cloud: upload
+        if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeDragCloudUpload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+
+        val total = paths.size
         viewModelScope.launch {
+            var completed = 0
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
             }
 
-            moveFilesUseCase(paths, destinationDir, resolution)
-                .onSuccess {
-                    _uiState.update {
-                        it.copy(
-                            operationProgress = OperationProgress(
-                                total, total, "", OperationType.MOVE, isComplete = true
-                            )
-                        )
-                    }
-                    showStatusMessage(targetPanelId, appContext.getString(R.string.moved_format, formatFileCount(dirs, files)))
-                    refreshPanel(sourcePanelId)
-                    refreshPanel(targetPanelId)
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.MOVE))
                 }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(
-                            operationProgress = OperationProgress(
-                                0, total, "", OperationType.MOVE, isComplete = true, error = e.message
-                            )
-                        )
+                fileRepository.moveFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+                    .onFailure { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "DnD move error: $fileName: ${e.message}")
                     }
-                    EcosystemLogger.e(HaronConstants.TAG, "Ошибка DnD перемещения: ${e.message}")
-                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.MOVE, isComplete = true))
+            }
+            refreshPanel(sourcePanelId)
+            refreshPanel(targetPanelId)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
 
             delay(2000)
-            _uiState.update { it.copy(operationProgress = null) }
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
         }
     }
 
@@ -2754,20 +3855,235 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(dragState = DragState.Idle) }
     }
 
+    private fun executeCloudDragMove(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId
+    ) {
+        viewModelScope.launch {
+            val total = paths.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE))
+            }
+
+            val destParsed = cloudManager.parseCloudUri(destinationDir)
+            if (destParsed == null) {
+                EcosystemLogger.e(HaronConstants.TAG, "Cloud DnD: invalid destination URI: $destinationDir")
+                _uiState.update { it.copy(operationProgress = null) }
+                return@launch
+            }
+            val (destProvider, destFolderId) = destParsed
+
+            // Source parent folder ID from panel's current path
+            val sourcePanel = getPanel(sourcePanelId)
+            val sourceParsed = cloudManager.parseCloudUri(sourcePanel.currentPath)
+            val sourceParentId = sourceParsed?.second ?: "root"
+
+            var moved = 0
+            for (path in paths) {
+                val parsed = cloudManager.parseCloudUri(path) ?: continue
+                val (provider, fileId) = parsed
+                if (provider != destProvider) {
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud DnD: cross-provider move not supported")
+                    continue
+                }
+                cloudManager.moveFile(provider, fileId, sourceParentId, destFolderId)
+                    .onSuccess { moved++ }
+                    .onFailure { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "Cloud DnD move error for $fileId: ${e.message}")
+                    }
+            }
+
+            _uiState.update {
+                it.copy(
+                    operationProgress = OperationProgress(
+                        total, total, "", OperationType.MOVE, isComplete = true
+                    )
+                )
+            }
+            showStatusMessage(targetPanelId, appContext.getString(R.string.cloud_moved, moved))
+            refreshPanel(sourcePanelId)
+            if (sourcePanelId != targetPanelId) refreshPanel(targetPanelId)
+
+            delay(2000)
+            _uiState.update { it.copy(operationProgress = null) }
+        }
+    }
+
+    /**
+     * DnD: cloud → local — download dragged cloud files into local destination folder.
+     */
+    private fun executeDragCloudDownload(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId
+    ) {
+        cloudTransferJob = viewModelScope.launch {
+            val total = paths.size
+            val sourcePanel = getPanel(sourcePanelId)
+            val nameMap = sourcePanel.files.associateBy { it.path }
+            // Total bytes for overall progress
+            val totalBytes = paths.sumOf { nameMap[it]?.size ?: 0L }
+            var completedBytes = 0L
+
+            EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudDownload: $total files → $destinationDir, totalBytes=$totalBytes")
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
+            }
+
+            var downloaded = 0
+            for ((idx, path) in paths.withIndex()) {
+                val parsed = cloudManager.parseCloudUri(path) ?: continue
+                val (provider, cloudFileId) = parsed
+                val entry = nameMap[path]
+                val fileName = entry?.name ?: cloudFileId
+                val fileSize = entry?.size ?: 0L
+                val localFile = File(destinationDir, fileName)
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, fileName, OperationType.DOWNLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, fileName, OperationType.DOWNLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += fileSize
+                    downloaded++
+                    refreshPanel(targetPanelId)
+                } catch (e: Exception) {
+                    completedBytes += fileSize
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD cloud download failed: $fileName: ${e.message}")
+                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    downloaded, total, "", OperationType.DOWNLOAD, isComplete = true
+                ))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    /**
+     * DnD: local → cloud — upload dragged local files into cloud destination folder.
+     */
+    private fun executeDragCloudUpload(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId
+    ) {
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: called with ${paths.size} paths, dest=$destinationDir")
+        val destParsed = cloudManager.parseCloudUri(destinationDir)
+        if (destParsed == null) {
+            EcosystemLogger.e(HaronConstants.TAG, "executeDragCloudUpload: invalid cloud URI: $destinationDir")
+            return
+        }
+        val (provider, cloudDir) = destParsed
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: provider=$provider, cloudDir=$cloudDir")
+
+        // Pre-filter valid files and calculate total bytes
+        val validFiles = paths.mapNotNull { path ->
+            val file = File(path)
+            if (file.exists() && !file.isDirectory) file else null
+        }
+        val totalBytes = validFiles.sumOf { it.length() }
+        var completedBytes = 0L
+
+        cloudTransferJob = viewModelScope.launch {
+            val total = validFiles.size
+            EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: launching upload of $total files, totalBytes=$totalBytes")
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
+            }
+
+            var uploaded = 0
+            for ((idx, file) in validFiles.withIndex()) {
+                val fileName = file.name
+                val fileSize = file.length()
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, fileName, OperationType.UPLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.uploadFile(provider, file.absolutePath, cloudDir, fileName)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, fileName, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += fileSize
+                    uploaded++
+                    refreshPanel(targetPanelId)
+                } catch (e: Exception) {
+                    completedBytes += fileSize
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload failed: $fileName: ${e.message}")
+                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    uploaded, total, "", OperationType.UPLOAD, isComplete = true
+                ))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
     // --- Conflict resolution (per-file card) ---
 
     private fun buildConflictPairs(paths: List<String>, targetPanel: PanelUiState): List<ConflictPair> {
         val destFiles = targetPanel.files.associateBy { it.name }
-        val sourcePanel = getPanel(_uiState.value.activePanel)
-        val sourceFiles = sourcePanel.files.associateBy { it.path }
+        // Try both panels to find source entries (activePanel may not match drag source)
+        val topFiles = getPanel(PanelId.TOP).files.associateBy { it.path }
+        val bottomFiles = getPanel(PanelId.BOTTOM).files.associateBy { it.path }
         val pairs = mutableListOf<ConflictPair>()
 
         for (path in paths) {
-            val srcEntry = sourceFiles[path]
-            val name = srcEntry?.name ?: if (path.startsWith("content://")) {
-                Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: continue
-            } else {
-                File(path).name
+            val srcEntry = topFiles[path] ?: bottomFiles[path]
+            val name = srcEntry?.name ?: when {
+                path.startsWith("content://") ->
+                    Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: continue
+                path.startsWith("cloud://") -> continue // cloud source without entry — can't resolve name
+                else -> File(path).name
             }
             val destEntry = destFiles[name] ?: continue
 
@@ -2844,15 +4160,23 @@ class ExplorerViewModel @Inject constructor(
         when (dialog.operationType) {
             OperationType.COPY -> executeCopyWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
             OperationType.MOVE -> {
-                val state = _uiState.value
-                val activeId = state.activePanel
-                val sourcePanel = getPanel(activeId)
-                if (sourcePanel.selectedPaths.isNotEmpty()) {
-                    executeMoveWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
+                if (dialog.sourcePanelId != null && dialog.targetPanelId != null) {
+                    // DnD case — panel IDs saved in dialog
+                    executeDragMoveWithDecisions(
+                        dialog.allPaths, dialog.destinationDir,
+                        dialog.sourcePanelId, dialog.targetPanelId, decisions
+                    )
                 } else {
-                    // DnD case
-                    val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-                    executeDragMoveWithDecisions(dialog.allPaths, dialog.destinationDir, activeId, targetId, decisions)
+                    val state = _uiState.value
+                    val activeId = state.activePanel
+                    val sourcePanel = getPanel(activeId)
+                    if (sourcePanel.selectedPaths.isNotEmpty()) {
+                        executeMoveWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
+                    } else {
+                        // Fallback DnD case
+                        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                        executeDragMoveWithDecisions(dialog.allPaths, dialog.destinationDir, activeId, targetId, decisions)
+                    }
                 }
             }
             else -> {}
@@ -3672,7 +4996,6 @@ class ExplorerViewModel @Inject constructor(
         if (hasMedia || hasImages) modes.add(com.vamp.haron.domain.model.CastMode.SINGLE_MEDIA)
         if (hasImages && selected.size > 1) modes.add(com.vamp.haron.domain.model.CastMode.SLIDESHOW)
         if (hasPdf && selected.size == 1) modes.add(com.vamp.haron.domain.model.CastMode.PDF_PRESENTATION)
-        modes.add(com.vamp.haron.domain.model.CastMode.FILE_INFO)
         modes.add(com.vamp.haron.domain.model.CastMode.SCREEN_MIRROR)
 
         val paths = selected.map { it.path }
