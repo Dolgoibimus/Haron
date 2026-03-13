@@ -4,6 +4,7 @@ import android.content.Context
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.vamp.haron.data.cast.RemoteInputChannel
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
@@ -12,6 +13,9 @@ import io.ktor.server.plugins.autohead.*
 import io.ktor.server.plugins.partialcontent.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.websocket.*
+import io.ktor.websocket.*
+import java.time.Duration
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -36,7 +40,8 @@ data class HttpDownloadEvent(
 
 @Singleton
 class HttpFileServer @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val remoteInputChannel: RemoteInputChannel
 ) {
     private var engine: ApplicationEngine? = null
     private var sharedFiles: List<File> = emptyList()
@@ -50,7 +55,19 @@ class HttpFileServer @Inject constructor(
     private var slideshowFiles: List<File> = emptyList()
     private var slideshowIntervalSec: Int = 5
     private var pdfFile: File? = null
+    @Suppress("unused") // kept for potential future use
     private var fileInfoHtml: String? = null
+
+    // Cloud streaming proxy
+    data class CloudStreamConfig(
+        val fileId: String,
+        val provider: String, // "gdrive", "onedrive", "dropbox"
+        val fileName: String,
+        val fileSize: Long
+    )
+    private val cloudStreams = mutableMapOf<String, CloudStreamConfig>()
+    /** Callback to get fresh access token by provider scheme (e.g. "gdrive") */
+    var cloudTokenProvider: ((String) -> String?)? = null
 
     // HLS (progressive transcode → Chromecast)
     @Volatile private var hlsDir: File? = null
@@ -61,15 +78,38 @@ class HttpFileServer @Inject constructor(
 
         val port = findAvailablePort()
         actualPort = port
+        EcosystemLogger.d(HaronConstants.TAG, "HttpFileServer.start: port=$port, files=${files.size}, " +
+                "fileNames=${files.take(3).map { it.name }}")
+
+        // Log all network interfaces for diagnostics
+        logAllNetworkInterfaces()
 
         engine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
             install(PartialContent)
             install(AutoHeadResponse)
+            install(WebSockets) {
+                pingPeriod = Duration.ofSeconds(15)
+                timeout = Duration.ofSeconds(30)
+                maxFrameSize = Long.MAX_VALUE
+            }
             routing {
+                // --- WebSocket for TV remote ---
+                webSocket("/ws/remote") {
+                    EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket connected")
+                    try {
+                        remoteInputChannel.events.collect { json ->
+                            send(Frame.Text(json))
+                        }
+                    } catch (e: Exception) {
+                        EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket disconnected: ${e.message}")
+                    }
+                }
                 get("/") {
+                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET / from ${call.request.local.remoteAddress}")
                     call.respondText(buildHtmlPage(sharedFiles), ContentType.Text.Html)
                 }
                 get("/download/{index}") {
+                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /download/${call.parameters["index"]} from ${call.request.local.remoteAddress}")
                     val idx = call.parameters["index"]?.toIntOrNull()
                     if (idx == null || idx !in sharedFiles.indices) {
                         call.respondText("File not found", status = HttpStatusCode.NotFound)
@@ -100,6 +140,7 @@ class HttpFileServer @Inject constructor(
                     _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, fileSize))
                 }
                 get("/stream/{index}") {
+                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /stream/${call.parameters["index"]} from ${call.request.local.remoteAddress}")
                     val idx = call.parameters["index"]?.toIntOrNull()
                     if (idx == null || idx !in sharedFiles.indices) {
                         call.respondText("File not found", status = HttpStatusCode.NotFound)
@@ -118,10 +159,127 @@ class HttpFileServer @Inject constructor(
 
                 // JSON API for Haron-to-Haron QR download
                 get("/api/files") {
+                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /api/files from ${call.request.local.remoteAddress}, files=${sharedFiles.size}")
                     val json = sharedFiles.mapIndexed { index, file ->
                         """{"index":$index,"name":"${escapeJson(file.name)}","size":${file.length()}}"""
                     }.joinToString(",", "[", "]")
                     call.respondText(json, ContentType.Application.Json)
+                }
+
+                // --- Cloud streaming proxy ---
+                get("/cloud/stream/{streamId}") {
+                    val streamId = call.parameters["streamId"]
+                    val config = streamId?.let { cloudStreams[it] }
+                    if (config == null) {
+                        call.respondText("Stream not found", status = HttpStatusCode.NotFound)
+                        return@get
+                    }
+
+                    try {
+                        // Get fresh token on each request (tokens expire after 1 hour)
+                        val freshToken = cloudTokenProvider?.invoke(config.provider)
+                        if (freshToken == null) {
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): no token for ${config.provider}")
+                            call.respondText("No access token", status = HttpStatusCode.Unauthorized)
+                            return@get
+                        }
+                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): using token ${freshToken.take(15)}...")
+
+                        // Resolve download URL (provider-specific)
+                        val downloadUrl = when (config.provider) {
+                            "gdrive" -> "https://www.googleapis.com/drive/v3/files/${config.fileId}?alt=media"
+                            "onedrive" -> "https://graph.microsoft.com/v1.0/me/drive/items/${config.fileId}/content"
+                            "yandex" -> {
+                                // Two-step: get temporary download URL, then stream from it
+                                val tempUrl = withContext(Dispatchers.IO) {
+                                    getYandexDownloadUrl(config.fileId, freshToken)
+                                }
+                                if (tempUrl == null) {
+                                    call.respondText("Failed to get Yandex download URL", status = HttpStatusCode.BadGateway)
+                                    return@get
+                                }
+                                tempUrl
+                            }
+                            "dropbox" -> {
+                                // Get temporary direct link (supports GET + Range)
+                                val tempLink = withContext(Dispatchers.IO) {
+                                    getDropboxTemporaryLink(config.fileId, freshToken)
+                                }
+                                if (tempLink == null) {
+                                    call.respondText("Failed to get Dropbox temp link", status = HttpStatusCode.BadGateway)
+                                    return@get
+                                }
+                                tempLink
+                            }
+                            else -> {
+                                call.respondText("Unsupported provider", status = HttpStatusCode.BadRequest)
+                                return@get
+                            }
+                        }
+                        // Yandex temp URL and Dropbox temp link are self-authenticated
+                        val needsAuth = config.provider !in listOf("dropbox", "yandex")
+
+                        val url = java.net.URL(downloadUrl)
+                        val conn = withContext(Dispatchers.IO) {
+                            (url.openConnection() as java.net.HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                if (needsAuth) {
+                                    val authPrefix = if (config.provider == "yandex") "OAuth" else "Bearer"
+                                    setRequestProperty("Authorization", "$authPrefix $freshToken")
+                                }
+                                instanceFollowRedirects = true
+                                connectTimeout = 15_000
+                                readTimeout = 60_000
+                                // Forward Range header for seeking
+                                call.request.headers[HttpHeaders.Range]?.let {
+                                    setRequestProperty("Range", it)
+                                }
+                            }
+                        }
+
+                        val responseCode = withContext(Dispatchers.IO) { conn.responseCode }
+                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode from ${config.provider}")
+
+                        if (responseCode !in 200..299 && responseCode != 206) {
+                            val errorBody = try { withContext(Dispatchers.IO) { conn.errorStream?.bufferedReader()?.readText() } } catch (_: Exception) { null }
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode, error=$errorBody")
+                            conn.disconnect()
+                            call.respondText("Stream error: HTTP $responseCode", status = HttpStatusCode.fromValue(responseCode))
+                            return@get
+                        }
+
+                        val contentType = conn.getHeaderField("Content-Type") ?: "application/octet-stream"
+                        val contentLength = conn.getHeaderField("Content-Length")
+                        val contentRange = conn.getHeaderField("Content-Range")
+
+                        val status = if (responseCode == 206) HttpStatusCode.PartialContent else HttpStatusCode.OK
+                        call.response.header(HttpHeaders.AcceptRanges, "bytes")
+                        call.response.header(HttpHeaders.AccessControlAllowOrigin, "*")
+                        contentLength?.let { call.response.header(HttpHeaders.ContentLength, it) }
+                        contentRange?.let { call.response.header(HttpHeaders.ContentRange, it) }
+
+                        call.respondOutputStream(
+                            contentType = ContentType.parse(contentType),
+                            status = status
+                        ) {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    conn.inputStream.use { input ->
+                                        val buffer = ByteArray(65536)
+                                        var bytesRead: Int
+                                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                                            write(buffer, 0, bytesRead)
+                                        }
+                                    }
+                                } finally {
+                                    conn.disconnect()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "Cloud stream error ($streamId): ${e::class.simpleName}: ${e.message}")
+                        call.respondText("Stream error: ${e.message}", status = HttpStatusCode.InternalServerError)
+                    }
                 }
 
                 // --- HLS (progressive transcode → Chromecast) ---
@@ -205,30 +363,52 @@ class HttpFileServer @Inject constructor(
                     }
                 }
 
-                get("/fileinfo") {
-                    val html = fileInfoHtml
-                    if (html != null) {
-                        call.respondText(html, ContentType.Text.Html)
+                // --- OAuth loopback callback (Google Drive) ---
+                get("/oauth/callback") {
+                    val code = call.request.queryParameters["code"]
+                    if (code != null) {
+                        com.vamp.haron.data.cloud.CloudOAuthHelper.pendingAuth.value =
+                            com.vamp.haron.data.cloud.CloudOAuthHelper.PendingAuth("gdrive", code)
+                        call.respondText(
+                            "<html><body><h2>Authorization successful</h2><p>You can close this tab and return to Haron.</p></body></html>",
+                            ContentType.Text.Html
+                        )
+                        EcosystemLogger.d(HaronConstants.TAG, "OAuth callback received for gdrive")
                     } else {
-                        call.respondText("No info", status = HttpStatusCode.NotFound)
+                        val error = call.request.queryParameters["error"] ?: "unknown"
+                        call.respondText(
+                            "<html><body><h2>Authorization failed</h2><p>Error: $error</p></body></html>",
+                            ContentType.Text.Html
+                        )
+                        EcosystemLogger.e(HaronConstants.TAG, "OAuth callback error: $error")
                     }
                 }
 
             }
         }
 
-        engine?.start(wait = false)
-        EcosystemLogger.d(HaronConstants.TAG, "HTTP server started on port $port")
+        try {
+            engine?.start(wait = false)
+            val serverUrl = getServerUrl()
+            EcosystemLogger.d(HaronConstants.TAG, "HTTP server started on port $port, url=$serverUrl")
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "HTTP server FAILED to start on port $port: ${e::class.simpleName}: ${e.message}")
+            throw e
+        }
         return port
     }
 
     fun stop() {
+        val wasPort = actualPort
         engine?.stop(1000, 2000)
         engine = null
+        actualPort = 0
         sharedFiles = emptyList()
         hlsDir = null
-        EcosystemLogger.d(HaronConstants.TAG, "HTTP server stopped")
+        EcosystemLogger.d(HaronConstants.TAG, "HTTP server stopped (was on port $wasPort)")
     }
+
+    fun isRunning(): Boolean = engine != null
 
     fun getServerUrl(): String? {
         val ip = getLocalIpAddress() ?: return null
@@ -242,76 +422,125 @@ class HttpFileServer @Inject constructor(
 
     fun getLocalIpAddress(): String? {
         try {
-            // 1) ConnectivityManager — find specifically WiFi network (not mobile data!)
+            EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: starting IP detection...")
+
+            // 1) Scan ALL NetworkInterfaces first — build a map of iface→IP
+            val ifaceIps = mutableMapOf<String, String>() // iface name → IPv4
+            val hotspotCandidates = mutableListOf<Pair<String, String>>() // (iface, ip)
+            val niInterfaces = NetworkInterface.getNetworkInterfaces()
+            if (niInterfaces != null) {
+                for (intf in niInterfaces) {
+                    if (!intf.isUp || intf.isLoopback) continue
+                    val name = intf.name.lowercase()
+                    for (addr in intf.inetAddresses) {
+                        if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                            val ip = addr.hostAddress ?: continue
+                            if (ip == "0.0.0.0") continue
+                            ifaceIps[name] = ip
+                            EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: iface=$name, ip=$ip")
+                            // Hotspot AP interfaces typically have 192.168.x.x on wlan0/ap/swlan/softap
+                            val isWlanLike = name.startsWith("wlan") || name.startsWith("ap") ||
+                                    name.startsWith("swlan") || name.contains("softap")
+                            if (isWlanLike && ip.startsWith("192.168.")) {
+                                hotspotCandidates.add(name to ip)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2) ConnectivityManager — find WiFi client network
+            var cmWifiIp: String? = null
+            var cmWifiIface: String? = null
             var cmCgnatIp: String? = null
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
                     as? android.net.ConnectivityManager
             if (cm != null) {
-                for (network in cm.allNetworks) {
-                    val caps = cm.getNetworkCapabilities(network) ?: continue
-                    if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) continue
-                    // Skip VPN networks (Tailscale etc. report both TRANSPORT_VPN and TRANSPORT_WIFI)
-                    if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue
-                    val linkProps = cm.getLinkProperties(network) ?: continue
+                val allNets = cm.allNetworks
+                EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: CM found ${allNets.size} networks")
+                for (network in allNets) {
+                    val caps = cm.getNetworkCapabilities(network)
+                    val linkProps = cm.getLinkProperties(network)
+                    val hasWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                    val hasVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+                    val hasCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                    val ifaceName = linkProps?.interfaceName
+                    val addrs = linkProps?.linkAddresses?.map { it.address?.hostAddress }
+                    EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: network=$network, iface=$ifaceName, wifi=$hasWifi, vpn=$hasVpn, cellular=$hasCellular, addrs=$addrs")
+                    if (caps == null || !hasWifi || hasVpn) continue
+                    if (linkProps == null) continue
                     for (la in linkProps.linkAddresses) {
                         val addr = la.address
                         if (addr is Inet4Address && !addr.isLoopbackAddress) {
                             val ip = addr.hostAddress
                             if (ip != null && ip != "0.0.0.0") {
                                 if (isCgnatIp(ip)) {
-                                    // CGNAT — remember but keep looking for better
                                     if (cmCgnatIp == null) cmCgnatIp = ip
                                 } else {
-                                    EcosystemLogger.d(HaronConstants.TAG, "IP from WiFi network: $ip")
-                                    return ip
+                                    cmWifiIp = ip
+                                    cmWifiIface = ifaceName
                                 }
                             }
                         }
                     }
                 }
-                if (cmCgnatIp != null) {
-                    EcosystemLogger.w(HaronConstants.TAG, "WiFi has CGNAT IP: $cmCgnatIp, checking interfaces for hotspot...")
-                } else {
-                    EcosystemLogger.w(HaronConstants.TAG, "No WiFi network found via ConnectivityManager")
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: cmWifiIp=$cmWifiIp (iface=$cmWifiIface), cmCgnat=$cmCgnatIp, hotspotCandidates=$hotspotCandidates")
+
+            // 3) If hotspot is active on a DIFFERENT interface than CM WiFi → prefer hotspot IP
+            //    (concurrent STA+AP: clients connect to hotspot subnet, not to upstream WiFi)
+            if (hotspotCandidates.isNotEmpty() && cmWifiIp != null) {
+                val hotspotOnDifferentIface = hotspotCandidates.firstOrNull { (iface, ip) ->
+                    iface != cmWifiIface && ip != cmWifiIp
+                }
+                if (hotspotOnDifferentIface != null) {
+                    EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: hotspot detected on ${hotspotOnDifferentIface.first}=${hotspotOnDifferentIface.second}, CM WiFi on $cmWifiIface=$cmWifiIp → using hotspot IP")
+                    return hotspotOnDifferentIface.second
                 }
             }
 
-            // 2) Fallback: NetworkInterface — prefer non-CGNAT on wlan/ap/swlan
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return cmCgnatIp
-            var bestWlanIp: String? = null
-            var cgnatWlanIp: String? = null
-            var otherFallback: String? = null
-            for (intf in interfaces) {
-                if (!intf.isUp || intf.isLoopback) continue
-                val name = intf.name.lowercase()
-                for (addr in intf.inetAddresses) {
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
-                        val ip = addr.hostAddress ?: continue
-                        val cgnat = isCgnatIp(ip)
-                        if (name.startsWith("wlan") || name.startsWith("ap") ||
-                            name.startsWith("swlan") || name.contains("softap")) {
-                            if (!cgnat) {
-                                bestWlanIp = ip
-                            } else if (cgnatWlanIp == null) {
-                                cgnatWlanIp = ip
-                            }
-                        } else if (!cgnat && !name.startsWith("rmnet") &&
-                            !name.startsWith("ccmni") && !name.startsWith("pdp")) {
-                            if (otherFallback == null) otherFallback = ip
-                        }
-                    }
-                }
+            // 4) Also check: if NO CM WiFi but hotspot exists → use hotspot IP
+            if (cmWifiIp == null && hotspotCandidates.isNotEmpty()) {
+                val hp = hotspotCandidates.first()
+                EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: no CM WiFi, using hotspot IP ${hp.first}=${hp.second}")
+                return hp.second
             }
+
+            // 5) Regular case: use CM WiFi IP
+            if (cmWifiIp != null) {
+                EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: using CM WiFi IP=$cmWifiIp (iface=$cmWifiIface)")
+                return cmWifiIp
+            }
+
+            // 6) Fallback: best wlan IP from NetworkInterface scan
+            val bestWlanIp = ifaceIps.entries.firstOrNull { (name, ip) ->
+                val isWlanLike = name.startsWith("wlan") || name.startsWith("ap") ||
+                        name.startsWith("swlan") || name.contains("softap")
+                isWlanLike && !isCgnatIp(ip)
+            }?.value
+
+            val otherFallback = ifaceIps.entries.firstOrNull { (name, ip) ->
+                !isCgnatIp(ip) && !name.startsWith("rmnet") &&
+                        !name.startsWith("ccmni") && !name.startsWith("pdp") &&
+                        !name.startsWith("wlan") && !name.startsWith("ap") &&
+                        !name.startsWith("swlan") && !name.contains("softap")
+            }?.value
+
+            val cgnatWlanIp = ifaceIps.entries.firstOrNull { (name, ip) ->
+                val isWlanLike = name.startsWith("wlan") || name.startsWith("ap") ||
+                        name.startsWith("swlan") || name.contains("softap")
+                isWlanLike && isCgnatIp(ip)
+            }?.value
 
             val result = bestWlanIp ?: otherFallback ?: cmCgnatIp ?: cgnatWlanIp
             if (result != null) {
-                EcosystemLogger.d(HaronConstants.TAG, "IP selected: $result (wlan=${bestWlanIp}, other=${otherFallback}, cmCgnat=${cmCgnatIp}, wlanCgnat=${cgnatWlanIp})")
+                EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: fallback selected=$result (wlan=$bestWlanIp, other=$otherFallback, cmCgnat=$cmCgnatIp, wlanCgnat=$cgnatWlanIp)")
             } else {
-                EcosystemLogger.e(HaronConstants.TAG, "No suitable IP found. Connect to WiFi.")
+                EcosystemLogger.e(HaronConstants.TAG, "getLocalIpAddress: no suitable IP found")
             }
             return result
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "Failed to get IP: ${e.message}")
+            EcosystemLogger.e(HaronConstants.TAG, "getLocalIpAddress failed: ${e.message}")
         }
         return null
     }
@@ -320,6 +549,26 @@ class HttpFileServer @Inject constructor(
     private fun isCgnatIp(ip: String): Boolean {
         val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] == 100 && parts[1] in 64..127
+    }
+
+    private fun logAllNetworkInterfaces() {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return
+            val sb = StringBuilder("=== Network Interfaces ===\n")
+            for (intf in interfaces) {
+                if (!intf.isUp) continue
+                val addrs = intf.inetAddresses.toList()
+                    .filterIsInstance<Inet4Address>()
+                    .filter { !it.isLoopbackAddress }
+                if (addrs.isEmpty()) continue
+                sb.append("  ${intf.name} (up=${intf.isUp}, loopback=${intf.isLoopback}): ")
+                sb.append(addrs.joinToString(", ") { it.hostAddress ?: "null" })
+                sb.append("\n")
+            }
+            EcosystemLogger.d(HaronConstants.TAG, sb.toString().trimEnd())
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "logAllNetworkInterfaces error: ${e.message}")
+        }
     }
 
     private fun findAvailablePort(): Int {
@@ -335,11 +584,11 @@ class HttpFileServer @Inject constructor(
         val rows = files.mapIndexed { index, file ->
             val size = formatSize(file.length())
             val icon = if (file.isDirectory) "\uD83D\uDCC1" else "\uD83D\uDCC4"
-            val jsName = escapeHtml(file.name).replace("'", "\\'")
-            """<div class="file-card" onclick="dl('/stream/$index','$jsName')">
+            val encodedName = URLEncoder.encode(file.name, "UTF-8").replace("+", "%20")
+            """<a class="file-card" href="/download/$index" download="$encodedName">
                 <span class="file-name">$icon ${escapeHtml(file.name)}</span>
                 <span class="file-size">$size</span>
-            </div>"""
+            </a>"""
         }.joinToString("\n")
 
         return """<!DOCTYPE html>
@@ -354,13 +603,13 @@ class HttpFileServer @Inject constructor(
          max-width: 800px; margin: 0 auto; padding: 16px; background: #121212; color: #e0e0e0; }
   h1 { color: #bb86fc; font-size: 22px; margin: 0 0 4px 0; }
   .info { color: #888; font-size: 14px; margin: 0 0 16px 0; }
-  .file-card { display: flex; justify-content: space-between; align-items: center;
+  a.file-card { display: flex; justify-content: space-between; align-items: center;
                padding: 14px 16px; margin-bottom: 8px; background: #1e1e1e;
                border-radius: 12px; cursor: pointer; color: #e0e0e0;
+               text-decoration: none;
                -webkit-user-select: none; user-select: none;
                -webkit-tap-highlight-color: rgba(187,134,252,0.2); }
-  .file-card:active { background: #2a2a2a; }
-  .file-card.loading { opacity: 0.5; pointer-events: none; }
+  a.file-card:active { background: #2a2a2a; }
   .file-name { font-size: 15px; word-break: break-word; margin-right: 12px; flex: 1; }
   .file-size { font-size: 13px; color: #888; white-space: nowrap; }
 </style>
@@ -369,24 +618,6 @@ class HttpFileServer @Inject constructor(
 <h1>Haron</h1>
 <p class="info">${'$'}{files.size} file(s)</p>
 $rows
-<script>
-function dl(url, name) {
-  event.currentTarget.classList.add('loading');
-  fetch(url).then(function(r){return r.blob()}).then(function(b){
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
-    document.querySelector('.loading')&&document.querySelector('.loading').classList.remove('loading');
-  }).catch(function(){
-    document.querySelector('.loading')&&document.querySelector('.loading').classList.remove('loading');
-    alert('Download failed');
-  });
-}
-</script>
 </body>
 </html>"""
     }
@@ -439,6 +670,77 @@ function dl(url, name) {
         return "http://$ip:$actualPort/fileinfo"
     }
 
+    fun setupCloudStream(streamId: String, config: CloudStreamConfig) {
+        cloudStreams[streamId] = config
+    }
+
+    fun clearCloudStreams() {
+        cloudStreams.clear()
+    }
+
+    fun getCloudStreamUrl(streamId: String): String? {
+        return "http://127.0.0.1:$actualPort/cloud/stream/$streamId"
+    }
+
+    /** Get Dropbox temporary direct link (4 hours TTL, supports GET + Range) */
+    private fun getDropboxTemporaryLink(path: String, token: String): String? {
+        return try {
+            val url = java.net.URL("https://api.dropboxapi.com/2/files/get_temporary_link")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                connectTimeout = 15_000
+                readTimeout = 15_000
+            }
+            conn.outputStream.use { it.write("""{"path":"$path"}""".toByteArray()) }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+                val json = org.json.JSONObject(body)
+                json.getString("link")
+            } else {
+                val error = conn.errorStream?.bufferedReader()?.readText()
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox temp link failed: ${conn.responseCode}, $error")
+                conn.disconnect()
+                null
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "Dropbox temp link error: ${e.message}")
+            null
+        }
+    }
+
+    /** Yandex Disk two-step download: GET /resources/download?path=... → href (temp URL) */
+    private fun getYandexDownloadUrl(path: String, token: String): String? {
+        return try {
+            val diskPath = if (path.startsWith("disk:")) path else "disk:/$path"
+            val encodedPath = java.net.URLEncoder.encode(diskPath, "UTF-8")
+            val url = java.net.URL("https://cloud-api.yandex.net/v1/disk/resources/download?path=$encodedPath")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Authorization", "OAuth $token")
+                connectTimeout = 15_000
+                readTimeout = 15_000
+            }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+                val json = org.json.JSONObject(body)
+                json.getString("href")
+            } else {
+                val error = conn.errorStream?.bufferedReader()?.readText()
+                EcosystemLogger.e(HaronConstants.TAG, "Yandex download URL failed: ${conn.responseCode}, $error")
+                conn.disconnect()
+                null
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "Yandex download URL error: ${e.message}")
+            null
+        }
+    }
+
     fun setupHls(dir: File) {
         hlsDir = dir
     }
@@ -476,6 +778,7 @@ function show() {
 show();
 setInterval(show, ${slideshowIntervalSec * 1000});
 </script>
+${buildRemoteCursorJs()}
 </body></html>"""
     }
 
@@ -535,7 +838,53 @@ h1 { color: #bb86fc; font-size: 24px; margin: 0 0 24px 0; word-break: break-all;
   <div class="row"><span class="label">Modified</span><span class="value">${escapeHtml(modified)}</span></div>
   <div class="row"><span class="label">Type</span><span class="value">${escapeHtml(mimeType)}</span></div>
 </div>
+${buildRemoteCursorJs()}
 </body></html>"""
+    }
+
+    private fun buildRemoteCursorJs(): String {
+        val wsHost = getLocalIpAddress() ?: "localhost"
+        return """<div id="haron-cursor" style="position:fixed;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.85);border:2px solid rgba(187,134,252,0.8);pointer-events:none;z-index:99999;display:none;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(187,134,252,0.5);transition:box-shadow 0.1s;"></div>
+<script>
+(function(){
+  var cursor = document.getElementById('haron-cursor');
+  var cx = window.innerWidth/2, cy = window.innerHeight/2;
+  var ws = null;
+  function connect() {
+    ws = new WebSocket('ws://$wsHost:$actualPort/ws/remote');
+    ws.onopen = function(){ cursor.style.display='block'; cx=window.innerWidth/2; cy=window.innerHeight/2; cursor.style.left=cx+'px'; cursor.style.top=cy+'px'; };
+    ws.onmessage = function(e){
+      try {
+        var d = JSON.parse(e.data);
+        if(d.type==='move'){
+          cx=Math.max(0,Math.min(window.innerWidth,cx+d.dx));
+          cy=Math.max(0,Math.min(window.innerHeight,cy+d.dy));
+          cursor.style.left=cx+'px'; cursor.style.top=cy+'px';
+        } else if(d.type==='click'){
+          cursor.style.boxShadow='0 0 16px rgba(187,134,252,1)';
+          setTimeout(function(){cursor.style.boxShadow='0 0 8px rgba(187,134,252,0.5)';},150);
+          var el=document.elementFromPoint(cx,cy);
+          if(el){el.click();}
+        } else if(d.type==='scroll'){
+          window.scrollBy(d.dx,d.dy);
+        } else if(d.type==='key'){
+          var evt=new KeyboardEvent('keydown',{keyCode:d.keyCode,bubbles:true});
+          document.dispatchEvent(evt);
+        } else if(d.type==='text'){
+          var el=document.activeElement;
+          if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)){
+            el.value=(el.value||'')+d.text;
+            el.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+        }
+      }catch(ex){}
+    };
+    ws.onclose = function(){ cursor.style.display='none'; setTimeout(connect,2000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+})();
+</script>"""
     }
 
     private fun guessMimeType(ext: String): String {
