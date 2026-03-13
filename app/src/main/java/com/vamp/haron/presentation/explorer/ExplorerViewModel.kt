@@ -593,10 +593,12 @@ class ExplorerViewModel @Inject constructor(
 
         clearSelection(activeId)
         val total = selected.size
+        EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: $total files")
         cloudTransferJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
             }
+            delay(300) // let progress bar animation play
 
             var deleted = 0
             for ((idx, entry) in selected.withIndex()) {
@@ -608,6 +610,7 @@ class ExplorerViewModel @Inject constructor(
                 }
                 val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
                 val (provider, cloudFileId) = parsed
+                EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: deleting ${entry.name} (${idx + 1}/$total)")
                 cloudManager.delete(provider, cloudFileId)
                     .onSuccess {
                         deleted++
@@ -618,9 +621,11 @@ class ExplorerViewModel @Inject constructor(
                     }
             }
 
+            // Show completion for at least 1 second
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(
-                    deleted, total, "", OperationType.DELETE, isComplete = true
+                    deleted, total, "", OperationType.DELETE, isComplete = true,
+                    filePercent = 100
                 ))
             }
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
@@ -2544,16 +2549,49 @@ class ExplorerViewModel @Inject constructor(
         val activeId = _uiState.value.activePanel
         clearSelection(activeId)
 
-        // Cloud files — delete from cloud storage
+        // Cloud files — delete from cloud storage with progress bar
         if (paths.any { isCloudPath(it) }) {
-            viewModelScope.launch {
+            val cloudPaths = paths.filter { isCloudPath(it) }
+            val panel = getPanel(activeId)
+            val selected = panel.files.filter { it.path in cloudPaths }
+            val total = selected.size
+            EcosystemLogger.d(HaronConstants.TAG, "confirmDelete: cloud delete $total files")
+            cloudTransferJob = viewModelScope.launch {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
+                }
+                delay(300)
+
                 var deleted = 0
-                for (p in paths) {
-                    val parsed = cloudManager.parseCloudUri(p) ?: continue
-                    cloudManager.delete(parsed.first, parsed.second).onSuccess { deleted++ }
+                for ((idx, entry) in selected.withIndex()) {
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(
+                            idx + 1, total, entry.name, OperationType.DELETE,
+                            filePercent = if (total > 0) ((idx * 100) / total) else 0
+                        ))
+                    }
+                    val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
+                    EcosystemLogger.d(HaronConstants.TAG, "confirmDelete: deleting ${entry.name} (${idx + 1}/$total)")
+                    cloudManager.delete(parsed.first, parsed.second)
+                        .onSuccess {
+                            deleted++
+                            refreshPanel(activeId)
+                        }
+                        .onFailure { e ->
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud delete failed: ${entry.name}: ${e.message}")
+                        }
+                }
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        deleted, total, "", OperationType.DELETE, isComplete = true, filePercent = 100
+                    ))
                 }
                 _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
-                refreshPanel(activeId)
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
             }
             return
         }

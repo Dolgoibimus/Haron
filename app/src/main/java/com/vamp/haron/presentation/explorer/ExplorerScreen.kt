@@ -855,7 +855,7 @@ fun ExplorerScreen(
         // File operation progress bar
         val progress = state.operationProgress
         AnimatedVisibility(
-            visible = progress != null && !progress.isComplete,
+            visible = progress != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
