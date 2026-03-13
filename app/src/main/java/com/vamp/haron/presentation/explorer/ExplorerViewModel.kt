@@ -1864,14 +1864,21 @@ class ExplorerViewModel @Inject constructor(
      * Returns local cached file path or null on failure.
      */
     private suspend fun downloadCloudThumbnail(entry: FileEntry, size: Int = 1600): String? {
-        val thumbUrl = entry.thumbnailUrl?.replace(Regex("=s\\d+"), "=s$size")
-            ?: return null
-        val needsAuth = thumbUrl.contains("googleapis.com")
+        val rawThumbUrl = entry.thumbnailUrl ?: return null
+        val isYandex = entry.path.startsWith("cloud://yandex/")
+        val isGDrive = entry.path.startsWith("cloud://gdrive/")
+        // Resize URL: Google Drive (=s150→=s1600), Yandex (size=XL→size=XXXL)
+        val thumbUrl = when {
+            isGDrive -> rawThumbUrl.replace(Regex("=s\\d+"), "=s$size")
+            isYandex && "size=" in rawThumbUrl -> rawThumbUrl.replace(Regex("size=\\w+"), "size=XXXL")
+            else -> rawThumbUrl
+        }
+        val needsAuth = thumbUrl.contains("googleapis.com") ||
+            thumbUrl.contains("yandex.ru") || thumbUrl.contains("yandex.net")
         val cacheDir = File(appContext.cacheDir, "cloud_gallery")
         cacheDir.mkdirs()
         val cacheKey = entry.path.hashCode().toUInt().toString(16)
-        val ext = if (needsAuth) entry.extension.ifEmpty { "jpg" } else "jpg"
-        val thumbFile = File(cacheDir, "gallery_${cacheKey}.$ext")
+        val thumbFile = File(cacheDir, "gallery_${cacheKey}.jpg")
         if (thumbFile.exists() && thumbFile.length() > 0) return thumbFile.absolutePath
         return try {
             withContext(Dispatchers.IO) {
@@ -1880,13 +1887,13 @@ class ExplorerViewModel @Inject constructor(
                 conn.connectTimeout = 15_000
                 conn.readTimeout = 30_000
                 conn.instanceFollowRedirects = true
-                // Authenticated content download (fallback for files without thumbnailLink)
                 if (needsAuth) {
                     val parsed = cloudManager.parseCloudUri(entry.path)
                     if (parsed != null) {
                         val token = cloudManager.getFreshAccessToken(parsed.first)
                         if (token != null) {
-                            conn.setRequestProperty("Authorization", "Bearer $token")
+                            val authPrefix = if (isYandex) "OAuth" else "Bearer"
+                            conn.setRequestProperty("Authorization", "$authPrefix $token")
                         }
                     }
                 }
@@ -1979,7 +1986,8 @@ class ExplorerViewModel @Inject constructor(
                 viewModelScope.launch {
                     val previewEntry = resolvePreviewEntry(entry)
                     loadPreviewUseCase(previewEntry)
-                        .onSuccess { data ->
+                        .onSuccess { rawData ->
+                            val data = adaptCloudPreview(entry, rawData)
                             val current = _uiState.value.dialogState
                             if (current is DialogState.QuickPreview && current.entry.path == entry.path) {
                                 _uiState.update {
@@ -3427,7 +3435,8 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             val resolved = resolvePreviewEntry(newEntry)
             loadPreviewUseCase(resolved)
-                .onSuccess { data ->
+                .onSuccess { rawData ->
+                    val data = adaptCloudPreview(newEntry, rawData)
                     val current = _uiState.value.dialogState
                     if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
                         _uiState.update {
@@ -3509,7 +3518,8 @@ class ExplorerViewModel @Inject constructor(
             viewModelScope.launch {
                 val resolved = resolvePreviewEntry(newEntry)
                 loadPreviewUseCase(resolved)
-                    .onSuccess { data ->
+                    .onSuccess { rawData ->
+                        val data = adaptCloudPreview(newEntry, rawData)
                         val current = _uiState.value.dialogState
                         if (current is DialogState.QuickPreview && current.entry.path == newEntry.path) {
                             _uiState.update {
@@ -3563,6 +3573,25 @@ class ExplorerViewModel @Inject constructor(
                 updateTrashSizeInfo()
             } catch (_: Exception) { }
             refreshBothIfSamePath(panelId)
+        }
+    }
+
+    /**
+     * Cloud video/audio thumbnails are loaded as ImagePreview (JPEG file).
+     * Convert to VideoPreview/AudioPreview so QuickPreview shows correct play button.
+     */
+    private fun adaptCloudPreview(entry: FileEntry, data: PreviewData): PreviewData {
+        if (!isCloudPath(entry.path) || data !is PreviewData.ImagePreview) return data
+        return when (entry.iconRes()) {
+            "video" -> PreviewData.VideoPreview(
+                fileName = entry.name, fileSize = entry.size, lastModified = entry.lastModified,
+                thumbnail = data.bitmap, durationMs = 0L
+            )
+            "audio" -> PreviewData.AudioPreview(
+                fileName = entry.name, fileSize = entry.size, lastModified = entry.lastModified,
+                albumArt = data.bitmap, title = null, artist = null, album = null, durationMs = 0L
+            )
+            else -> data
         }
     }
 
@@ -3701,9 +3730,11 @@ class ExplorerViewModel @Inject constructor(
 
         val job = viewModelScope.launch {
             try {
-                val resolved = resolvePreviewEntry(files[index])
+                val fileEntry = files[index]
+                val resolved = resolvePreviewEntry(fileEntry)
                 loadPreviewUseCase(resolved)
-                    .onSuccess { data ->
+                    .onSuccess { rawData ->
+                        val data = adaptCloudPreview(fileEntry, rawData)
                         val dialog = _uiState.value.dialogState
                         if (dialog is DialogState.QuickPreview) {
                             _uiState.update {
