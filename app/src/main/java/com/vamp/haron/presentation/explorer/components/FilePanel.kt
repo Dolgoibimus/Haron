@@ -71,6 +71,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -186,6 +187,7 @@ fun FilePanel(
     marqueeEnabled: Boolean = true,
     folderSizeCache: Map<String, Long> = emptyMap(),
     hasSelectionBar: Boolean = false,
+    cloudAuthHeader: String? = null,
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -942,7 +944,8 @@ fun FilePanel(
                     currentPath = state.currentPath,
                     safVolumeLabel = safVolumeLabel,
                     folderSize = currentFolderSize ?: state.files.filter { !it.isDirectory }.sumOf { it.size },
-                    onSegmentClick = onBreadcrumbClick
+                    onSegmentClick = onBreadcrumbClick,
+                    cloudBreadcrumbs = state.cloudBreadcrumbs
                 )
             }
         }
@@ -1024,6 +1027,9 @@ fun FilePanel(
                 var dragStartIndex by remember { mutableIntStateOf(-1) }
                 var isCrossPanelDrag by remember { mutableStateOf(false) }
                 var isQuickSendDrag by remember { mutableStateOf(false) }
+                var isSamePanelDrag by remember { mutableStateOf(false) }
+                var samePanelDragActivated by remember { mutableStateOf(false) }
+                var lastHoveredFolderPath by remember { mutableStateOf<String?>(null) }
 
                 // Stable references for gesture handler
                 val currentFilteredFiles by rememberUpdatedState(filteredFiles)
@@ -1041,6 +1047,7 @@ fun FilePanel(
                 val currentOnGridColumnsChanged by rememberUpdatedState(onGridColumnsChanged)
                 val currentOnFileClick by rememberUpdatedState(onFileClick)
                 val currentOnIconClick by rememberUpdatedState(onIconClick)
+                val currentOnDragHoverFolder by rememberUpdatedState(onDragHoverFolder)
 
                 // Track list position in root for global offset calc
                 var listRootOffset by remember { mutableStateOf(Offset.Zero) }
@@ -1082,6 +1089,7 @@ fun FilePanel(
 
                 // Pinch-to-zoom accumulated scale
                 val haptic = LocalHapticFeedback.current
+                val currentHaptic = haptic
                 var accumulatedScale by remember { mutableFloatStateOf(1f) }
 
                 LazyVerticalGrid(
@@ -1179,16 +1187,35 @@ fun FilePanel(
                                         } else false
 
                                         if (isOnIconArea) {
-                                            // Icon area in grid → selection only
+                                            // Icon area in grid → DnD zone
+                                            isSamePanelDrag = true
                                             isQuickSendDrag = false
                                             isCrossPanelDrag = false
-                                            dragStartIndex = index
-                                            currentOnLongPressItem(entry)
+                                            dragStartIndex = -1
+                                            if (entry.path in currentSelectedPaths) {
+                                                // Already selected → DnD all selected immediately
+                                                samePanelDragActivated = true
+                                                currentHaptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                val globalOffset = Offset(
+                                                    listRootOffset.x + offset.x,
+                                                    listRootOffset.y + offset.y
+                                                )
+                                                currentOnDragStarted?.invoke(
+                                                    currentSelectedPaths.toList(),
+                                                    globalOffset
+                                                )
+                                            } else {
+                                                // Not selected → select + range selection on drag
+                                                isSamePanelDrag = false
+                                                dragStartIndex = index
+                                                currentOnLongPressItem(entry)
+                                            }
                                         } else if (currentGridColumns >= 2) {
-                                            // Name area in grid → QuickSend / cross-panel DnD
+                                            // Name area in grid → original behavior: QuickSend / cross-panel DnD / select
                                             if (!entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
                                                 isQuickSendDrag = true
                                                 isCrossPanelDrag = false
+                                                isSamePanelDrag = false
                                                 dragStartIndex = -1
                                                 val globalOffset = Offset(
                                                     listRootOffset.x + offset.x,
@@ -1198,6 +1225,7 @@ fun FilePanel(
                                             } else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
                                                 isQuickSendDrag = false
                                                 isCrossPanelDrag = true
+                                                isSamePanelDrag = false
                                                 dragStartIndex = -1
                                                 val globalOffset = Offset(
                                                     listRootOffset.x + offset.x,
@@ -1210,38 +1238,84 @@ fun FilePanel(
                                             } else {
                                                 isQuickSendDrag = false
                                                 isCrossPanelDrag = false
+                                                isSamePanelDrag = false
                                                 dragStartIndex = index
                                                 currentOnLongPressItem(entry)
                                             }
                                         } else {
-                                            // List mode (1 column) — original logic
-                                            val isRightHalf = offset.x > size.width / 2f
-                                            if (isRightHalf && !entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
-                                                isQuickSendDrag = true
-                                                isCrossPanelDrag = false
-                                                dragStartIndex = -1
-                                                val globalOffset = Offset(
-                                                    listRootOffset.x + offset.x,
-                                                    listRootOffset.y + offset.y
-                                                )
-                                                currentOnQuickSendStart?.invoke(entry.path, entry.name, globalOffset)
-                                            } else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
-                                                isQuickSendDrag = false
-                                                isCrossPanelDrag = true
-                                                dragStartIndex = -1
-                                                val globalOffset = Offset(
-                                                    listRootOffset.x + offset.x,
-                                                    listRootOffset.y + offset.y
-                                                )
-                                                currentOnDragStarted?.invoke(
-                                                    currentSelectedPaths.toList(),
-                                                    globalOffset
-                                                )
-                                            } else {
-                                                isQuickSendDrag = false
-                                                isCrossPanelDrag = false
-                                                dragStartIndex = index
-                                                currentOnLongPressItem(entry)
+                                            // List mode (1 column) — 3 zones: left / middle / right
+                                            val zoneWidth = size.width / 3f
+                                            val zone = when {
+                                                offset.x < zoneWidth -> 0       // left third
+                                                offset.x < zoneWidth * 2f -> 1  // middle third
+                                                else -> 2                        // right third
+                                            }
+                                            when (zone) {
+                                                0 -> {
+                                                    // LEFT zone: range selection
+                                                    isQuickSendDrag = false
+                                                    isCrossPanelDrag = false
+                                                    isSamePanelDrag = false
+                                                    dragStartIndex = index
+                                                    currentOnLongPressItem(entry)
+                                                }
+                                                1 -> {
+                                                    // MIDDLE zone: DnD zone
+                                                    isSamePanelDrag = true
+                                                    isQuickSendDrag = false
+                                                    isCrossPanelDrag = false
+                                                    dragStartIndex = -1
+                                                    if (entry.path in currentSelectedPaths) {
+                                                        // Already selected → DnD all selected immediately
+                                                        samePanelDragActivated = true
+                                                        currentHaptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        val globalOffset = Offset(
+                                                            listRootOffset.x + offset.x,
+                                                            listRootOffset.y + offset.y
+                                                        )
+                                                        currentOnDragStarted?.invoke(
+                                                            currentSelectedPaths.toList(),
+                                                            globalOffset
+                                                        )
+                                                    } else {
+                                                        // Not selected → select, DnD activates on first movement
+                                                        samePanelDragActivated = false
+                                                        currentOnLongPressItem(entry)
+                                                    }
+                                                }
+                                                else -> {
+                                                    // RIGHT zone: QuickSend / cross-panel DnD / fallback select
+                                                    if (!entry.isDirectory && entry.path !in currentSelectedPaths && currentOnQuickSendStart != null) {
+                                                        isQuickSendDrag = true
+                                                        isCrossPanelDrag = false
+                                                        isSamePanelDrag = false
+                                                        dragStartIndex = -1
+                                                        val globalOffset = Offset(
+                                                            listRootOffset.x + offset.x,
+                                                            listRootOffset.y + offset.y
+                                                        )
+                                                        currentOnQuickSendStart?.invoke(entry.path, entry.name, globalOffset)
+                                                    } else if (entry.path in currentSelectedPaths && currentOnDragStarted != null) {
+                                                        isQuickSendDrag = false
+                                                        isCrossPanelDrag = true
+                                                        isSamePanelDrag = false
+                                                        dragStartIndex = -1
+                                                        val globalOffset = Offset(
+                                                            listRootOffset.x + offset.x,
+                                                            listRootOffset.y + offset.y
+                                                        )
+                                                        currentOnDragStarted?.invoke(
+                                                            currentSelectedPaths.toList(),
+                                                            globalOffset
+                                                        )
+                                                    } else {
+                                                        isQuickSendDrag = false
+                                                        isCrossPanelDrag = false
+                                                        isSamePanelDrag = false
+                                                        dragStartIndex = index
+                                                        currentOnLongPressItem(entry)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1260,6 +1334,39 @@ fun FilePanel(
                                             listRootOffset.y + change.position.y
                                         )
                                         currentOnDragMoved?.invoke(globalOffset)
+                                    } else if (isSamePanelDrag) {
+                                        val globalOffset = Offset(
+                                            listRootOffset.x + change.position.x,
+                                            listRootOffset.y + change.position.y
+                                        )
+                                        if (!samePanelDragActivated) {
+                                            // Single file: first movement activates DnD
+                                            samePanelDragActivated = true
+                                            currentHaptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            currentOnDragStarted?.invoke(
+                                                if (currentSelectedPaths.isNotEmpty()) currentSelectedPaths.toList()
+                                                else emptyList(),
+                                                globalOffset
+                                            )
+                                        }
+                                        // DnD active — update overlay position
+                                        currentOnDragMoved?.invoke(globalOffset)
+                                        // Local folder hover detection (same panel) with hysteresis
+                                        val hitIndex = findItemIndexAtPosition(
+                                            gridState.layoutInfo, change.position, currentGridColumns
+                                        )
+                                        if (hitIndex >= 0 && hitIndex < currentFilteredFiles.size) {
+                                            val hoverEntry = currentFilteredFiles[hitIndex]
+                                            if (hoverEntry.isDirectory && hoverEntry.path !in currentSelectedPaths) {
+                                                lastHoveredFolderPath = hoverEntry.path
+                                                currentOnDragHoverFolder?.invoke(hoverEntry.path)
+                                            } else if (hoverEntry.path != lastHoveredFolderPath) {
+                                                // Only clear when hovering over a different non-folder item
+                                                lastHoveredFolderPath = null
+                                                currentOnDragHoverFolder?.invoke(null)
+                                            }
+                                        }
+                                        // Don't clear hover on gaps — keep last hovered folder
                                     } else if (dragStartIndex >= 0) {
                                         val currentIndex = findItemIndexAtPosition(
                                             gridState.layoutInfo, change.position, currentGridColumns
@@ -1274,20 +1381,30 @@ fun FilePanel(
                                         currentOnQuickSendEnd?.invoke()
                                     } else if (isCrossPanelDrag) {
                                         currentOnDragEnded?.invoke()
+                                    } else if (isSamePanelDrag && samePanelDragActivated) {
+                                        currentOnDragEnded?.invoke()
                                     }
                                     dragStartIndex = -1
                                     isCrossPanelDrag = false
                                     isQuickSendDrag = false
+                                    isSamePanelDrag = false
+                                    samePanelDragActivated = false
+                                    lastHoveredFolderPath = null
                                 },
                                 onDragCancel = {
                                     if (isQuickSendDrag) {
                                         currentOnQuickSendEnd?.invoke()
                                     } else if (isCrossPanelDrag) {
                                         currentOnDragEnded?.invoke()
+                                    } else if (isSamePanelDrag && samePanelDragActivated) {
+                                        currentOnDragEnded?.invoke()
                                     }
                                     dragStartIndex = -1
                                     isCrossPanelDrag = false
                                     isQuickSendDrag = false
+                                    isSamePanelDrag = false
+                                    samePanelDragActivated = false
+                                    lastHoveredFolderPath = null
                                 }
                             )
                         }
@@ -1320,7 +1437,8 @@ fun FilePanel(
                             searchQuery = if (state.searchInContent) state.searchQuery else "",
                             isDragHovered = hoveredFolderPath == entry.path && entry.isDirectory,
                             marqueeEnabled = marqueeEnabled,
-                            folderSize = if (entry.isDirectory) folderSizeCache[entry.path] else null
+                            folderSize = if (entry.isDirectory) folderSizeCache[entry.path] else null,
+                            cloudAuthHeader = cloudAuthHeader
                         )
                     }
                 }
@@ -1332,14 +1450,15 @@ fun FilePanel(
 private fun findItemIndexAtPosition(
     layoutInfo: androidx.compose.foundation.lazy.grid.LazyGridLayoutInfo,
     position: Offset,
-    gridColumns: Int
+    gridColumns: Int,
+    expandPx: Float = 12f
 ): Int {
-    // Try to find the item directly under the touch point
+    // Try to find the item under the touch point with expanded hit area
     for (item in layoutInfo.visibleItemsInfo) {
-        val left = item.offset.x.toFloat()
-        val top = item.offset.y.toFloat()
-        val right = left + item.size.width.toFloat()
-        val bottom = top + item.size.height.toFloat()
+        val left = item.offset.x.toFloat() - expandPx
+        val top = item.offset.y.toFloat() - expandPx
+        val right = left + item.size.width.toFloat() + expandPx * 2
+        val bottom = top + item.size.height.toFloat() + expandPx * 2
         if (position.x in left..right && position.y in top..bottom) {
             return item.index
         }

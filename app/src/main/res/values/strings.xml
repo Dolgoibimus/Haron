@@ -86,6 +86,7 @@
 
     <!-- Create template -->
     <string name="template_folder">Folder</string>
+    <string name="template_folder_name_hint">Folder name</string>
     <string name="template_text_file">Text file (.txt)</string>
     <string name="template_markdown">Markdown (.md)</string>
     <string name="template_dated_folder">Dated folder</string>
@@ -371,6 +372,8 @@
     <string name="operation_type_move">Moving</string>
     <string name="operation_type_delete">Deleting</string>
     <string name="operation_type_archive">Archiving</string>
+    <string name="operation_type_download">Downloading</string>
+    <string name="operation_type_upload">Uploading</string>
 
     <!-- ViewModel toasts -->
     <string name="bookmark_saved">Bookmark %d saved</string>
@@ -796,6 +799,7 @@
     <string name="transfer_qr_title">Scan QR code</string>
     <string name="transfer_qr_subtitle">Open this URL in any browser to download files</string>
     <string name="qr_step1_wifi">Step 1: Connect to Wi-Fi</string>
+    <string name="qr_wifi_hint">Enable Wi-Fi on the target device before scanning</string>
     <string name="qr_step2_download">Step 2: Download files</string>
     <string name="qr_hotspot_ssid">Network name (SSID)</string>
     <string name="qr_hotspot_password">Password</string>
@@ -980,6 +984,7 @@
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Terminal</string>
+    <string name="tv_remote_title">TV Remote</string>
     <string name="terminal_input_hint">Enter command\u2026</string>
     <string name="terminal_send">Send</string>
     <string name="terminal_history_up">Previous command</string>
@@ -1090,6 +1095,7 @@
     <string name="cast_media_channel_name">Cast playback</string>
     <string name="cast_media_notification_text">Casting to %s</string>
     <string name="cast_notification_disconnect">Disconnect</string>
+    <string name="cast_image_counter">%1$d of %2$d</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">No Haron devices nearby</string>
@@ -1209,4 +1215,81 @@
     <string name="trash_overflow_title">Trash is too small</string>
     <string name="trash_overflow_message">Selected files (%1$s) exceed the trash limit (%2$s). They can only be deleted permanently.</string>
     <string name="delete_permanently">Delete permanently</string>
+
+    <!-- Shizuku -->
+    <string name="shizuku_section">Shizuku</string>
+    <string name="shizuku_description">Required for access to Android/data and Android/obb folders</string>
+    <string name="shizuku_not_installed">Not installed</string>
+    <string name="shizuku_not_running">Not running</string>
+    <string name="shizuku_no_permission">No permission</string>
+    <string name="shizuku_ready">Connected ✓</string>
+    <string name="shizuku_install">Install from Play Store</string>
+    <string name="shizuku_install_github">Install from GitHub</string>
+    <string name="shizuku_open_app">Open Shizuku</string>
+    <string name="shizuku_request_permission">Request permission</string>
+    <string name="shizuku_retry">Retry</string>
+    <string name="shizuku_not_installed_title">Shizuku required</string>
+    <string name="shizuku_not_installed_body">Shizuku is needed to access Android/data and Android/obb folders. Install it from Play Store or GitHub.</string>
+    <string name="shizuku_not_running_title">Shizuku not running</string>
+    <string name="shizuku_not_running_body">Shizuku is installed but not started. Open the app and start the service.</string>
+
+    <!-- TV Remote -->
+    <string name="remote_touchpad">Touchpad</string>
+    <string name="remote_keyboard">Keyboard</string>
+    <string name="remote_touchpad_hint">Swipe to move cursor\nTap to click\nTwo fingers to scroll</string>
+    <string name="remote_keyboard_hint">Type text…</string>
+
+    <!-- Bluetooth HID Remote -->
+    <string name="bt_remote_title">Bluetooth Remote</string>
+    <string name="bt_hid_not_supported">Bluetooth HID is not supported on this device (requires Android 9+)</string>
+    <string name="bt_hid_connecting">Connecting…</string>
+    <string name="bt_hid_select_device">Select device</string>
+    <string name="bt_hid_connected">Connected via Bluetooth</string>
+    <string name="bt_hid_no_paired">No paired devices. Pair your TV in Bluetooth settings first.</string>
+    <string name="bt_hid_setup_info">Your phone will act as a Bluetooth keyboard and mouse. The TV must initiate the connection.</string>
+    <string name="bt_hid_make_discoverable">Make phone visible</string>
+    <string name="bt_hid_waiting">Waiting for TV to connect…</string>
+    <string name="bt_hid_instructions">On your TV, go to Settings → Bluetooth → find your phone in the list and connect to it.</string>
+
+    <!-- Cloud -->
+    <string name="cloud_section">Cloud</string>
+    <string name="cloud_google_drive">Google Drive</string>
+    <string name="cloud_dropbox">Dropbox</string>
+    <string name="cloud_onedrive">OneDrive</string>
+    <string name="cloud_yandex_disk">Yandex Disk</string>
+    <string name="cloud_add_account">Add account</string>
+    <string name="cloud_sign_in">Sign in</string>
+    <string name="cloud_sign_out">Sign out</string>
+    <string name="cloud_connected">Connected</string>
+    <string name="cloud_not_connected">Not connected</string>
+    <string name="cloud_auth_title">Cloud storage</string>
+    <string name="cloud_auth_description">Connect your cloud storage to browse files</string>
+    <string name="cloud_signing_in">Signing in…</string>
+    <string name="cloud_error_auth">Authentication failed: %s</string>
+    <string name="cloud_downloading">Downloading…</string>
+    <string name="cloud_uploading">Uploading…</string>
+    <string name="cloud_transferring">Transferring…</string>
+    <string name="cloud_download_complete">Downloaded: %d files</string>
+    <string name="cloud_upload_complete">Uploaded: %d files</string>
+    <string name="cloud_delete_confirm">Delete \"%s\" from cloud?</string>
+    <string name="cloud_create_folder">Create folder</string>
+    <string name="cloud_error_list">Failed to list files: %s</string>
+    <string name="cloud_error_download">Download failed: %s</string>
+    <string name="cloud_error_upload">Upload failed: %s</string>
+    <string name="cloud_error_delete">Delete failed: %s</string>
+    <string name="cloud_preparing">Preparing…</string>
+    <string name="cloud_download_local_only">Download target must be a local folder</string>
+    <string name="cloud_deleted">Deleted %d files from cloud</string>
+    <string name="cloud_save_title">Save changes</string>
+    <string name="cloud_save_to_cloud">Save to cloud</string>
+    <string name="cloud_save_to_local">Save locally</string>
+    <string name="cloud_save_to_both">Save both</string>
+    <string name="cloud_save_discard">Discard</string>
+    <string name="cloud_save_success">Saved to cloud</string>
+    <string name="cloud_save_local_success">Saved to %1$s</string>
+    <string name="cloud_save_no_local_panel">No local panel path available</string>
+    <string name="cloud_rename_success">Renamed</string>
+    <string name="cloud_streaming">Streaming…</string>
+    <string name="cloud_moved">Moved %d file(s) in cloud</string>
+    <string name="cloud_move_not_supported">Cross-storage move not supported</string>
 </resources>

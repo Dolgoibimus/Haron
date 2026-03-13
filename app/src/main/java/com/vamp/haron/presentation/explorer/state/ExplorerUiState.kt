@@ -78,7 +78,9 @@ sealed interface DialogState {
         val allPaths: List<String>,
         val destinationDir: String,
         val operationType: OperationType,
-        val decisions: Map<String, ConflictResolution> = emptyMap()
+        val decisions: Map<String, ConflictResolution> = emptyMap(),
+        val sourcePanelId: PanelId? = null,
+        val targetPanelId: PanelId? = null
     ) : DialogState
     data class QuickPreview(
         val entry: FileEntry,
@@ -87,7 +89,8 @@ sealed interface DialogState {
         val error: String? = null,
         val adjacentFiles: List<FileEntry> = emptyList(),
         val currentFileIndex: Int = 0,
-        val previewCache: Map<Int, PreviewData> = emptyMap()
+        val previewCache: Map<Int, PreviewData> = emptyMap(),
+        val resolvedPath: String? = null
     ) : DialogState
     data class CreateArchive(
         val selectedPaths: List<String>
@@ -155,6 +158,31 @@ sealed interface DialogState {
         val hasSingleRootFolder: Boolean,
         val isFromNormalFolder: Boolean = false,
         val archivePaths: List<String> = emptyList()
+    ) : DialogState
+    data class ShizukuNotInstalled(
+        val panelId: PanelId,
+        val path: String
+    ) : DialogState
+    data class ShizukuNotRunning(
+        val panelId: PanelId,
+        val path: String
+    ) : DialogState
+    data class CloudTransfer(
+        val fileName: String,
+        val percent: Int = 0,
+        val isUpload: Boolean = false,
+        val transfers: List<CloudTransferEntry> = emptyList()
+    ) : DialogState {
+        data class CloudTransferEntry(
+            val id: String,
+            val fileName: String,
+            val percent: Int = 0,
+            val isUpload: Boolean = false
+        )
+    }
+    data class CloudCreateFolder(
+        val panelId: PanelId,
+        val cloudPath: String
     ) : DialogState
 }
 

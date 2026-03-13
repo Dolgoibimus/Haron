@@ -86,6 +86,7 @@
 
     <!-- Create template -->
     <string name="template_folder">Папка</string>
+    <string name="template_folder_name_hint">Имя папки</string>
     <string name="template_text_file">Текстовый файл (.txt)</string>
     <string name="template_markdown">Markdown (.md)</string>
     <string name="template_dated_folder">Папка с датой</string>
@@ -371,6 +372,8 @@
     <string name="operation_type_move">Перемещение</string>
     <string name="operation_type_delete">Удаление</string>
     <string name="operation_type_archive">Архивирование</string>
+    <string name="operation_type_download">Скачивание</string>
+    <string name="operation_type_upload">Загрузка</string>
 
     <!-- ViewModel toasts -->
     <string name="bookmark_saved">Закладка %d сохранена</string>
@@ -796,6 +799,7 @@
     <string name="transfer_qr_title">Сканируйте QR-код</string>
     <string name="transfer_qr_subtitle">Откройте этот URL в любом браузере для скачивания файлов</string>
     <string name="qr_step1_wifi">Шаг 1: Подключись к Wi-Fi</string>
+    <string name="qr_wifi_hint">Включите Wi-Fi на целевом устройстве перед сканированием</string>
     <string name="qr_step2_download">Шаг 2: Скачай файлы</string>
     <string name="qr_hotspot_ssid">Имя сети (SSID)</string>
     <string name="qr_hotspot_password">Пароль</string>
@@ -980,6 +984,7 @@
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Терминал</string>
+    <string name="tv_remote_title">Пульт ТВ</string>
     <string name="terminal_input_hint">Введите команду\u2026</string>
     <string name="terminal_send">Отправить</string>
     <string name="terminal_history_up">Предыдущая команда</string>
@@ -1090,6 +1095,7 @@
     <string name="cast_media_channel_name">Воспроизведение на ТВ</string>
     <string name="cast_media_notification_text">Трансляция на %s</string>
     <string name="cast_notification_disconnect">Отключить</string>
+    <string name="cast_image_counter">%1$d из %2$d</string>
 
     <!-- Quick Send -->
     <string name="quick_send_no_devices">Нет устройств Haron поблизости</string>
@@ -1208,4 +1214,81 @@
     <string name="trash_overflow_title">Корзина слишком мала</string>
     <string name="trash_overflow_message">Выбранные файлы (%1$s) превышают лимит корзины (%2$s). Их можно удалить только безвозвратно.</string>
     <string name="delete_permanently">Удалить безвозвратно</string>
+
+    <!-- Shizuku -->
+    <string name="shizuku_section">Shizuku</string>
+    <string name="shizuku_description">Необходим для доступа к папкам Android/data и Android/obb</string>
+    <string name="shizuku_not_installed">Не установлен</string>
+    <string name="shizuku_not_running">Не запущен</string>
+    <string name="shizuku_no_permission">Нет разрешения</string>
+    <string name="shizuku_ready">Подключён ✓</string>
+    <string name="shizuku_install">Установить из Play Store</string>
+    <string name="shizuku_install_github">Установить с GitHub</string>
+    <string name="shizuku_open_app">Открыть Shizuku</string>
+    <string name="shizuku_request_permission">Запросить разрешение</string>
+    <string name="shizuku_retry">Повторить</string>
+    <string name="shizuku_not_installed_title">Требуется Shizuku</string>
+    <string name="shizuku_not_installed_body">Shizuku нужен для доступа к папкам Android/data и Android/obb. Установите его из Play Store или GitHub.</string>
+    <string name="shizuku_not_running_title">Shizuku не запущен</string>
+    <string name="shizuku_not_running_body">Shizuku установлен, но не запущен. Откройте приложение и запустите сервис.</string>
+
+    <!-- TV Remote -->
+    <string name="remote_touchpad">Тачпад</string>
+    <string name="remote_keyboard">Клавиатура</string>
+    <string name="remote_touchpad_hint">Проведите для перемещения курсора\nНажмите для клика\nДва пальца для прокрутки</string>
+    <string name="remote_keyboard_hint">Введите текст…</string>
+
+    <!-- Bluetooth HID Remote -->
+    <string name="bt_remote_title">Bluetooth-пульт</string>
+    <string name="bt_hid_not_supported">Bluetooth HID не поддерживается на этом устройстве (требуется Android 9+)</string>
+    <string name="bt_hid_connecting">Подключение…</string>
+    <string name="bt_hid_select_device">Выберите устройство</string>
+    <string name="bt_hid_connected">Подключено по Bluetooth</string>
+    <string name="bt_hid_no_paired">Нет сопряжённых устройств. Сначала сопрягите ТВ в настройках Bluetooth.</string>
+    <string name="bt_hid_setup_info">Телефон будет работать как Bluetooth-клавиатура и мышь. Подключение должен инициировать ТВ.</string>
+    <string name="bt_hid_make_discoverable">Сделать телефон видимым</string>
+    <string name="bt_hid_waiting">Ожидание подключения от ТВ…</string>
+    <string name="bt_hid_instructions">На ТВ зайдите в Настройки → Bluetooth → найдите телефон в списке и подключитесь к нему.</string>
+
+    <!-- Cloud -->
+    <string name="cloud_section">Облако</string>
+    <string name="cloud_google_drive">Google Диск</string>
+    <string name="cloud_dropbox">Dropbox</string>
+    <string name="cloud_onedrive">OneDrive</string>
+    <string name="cloud_yandex_disk">Яндекс Диск</string>
+    <string name="cloud_add_account">Добавить аккаунт</string>
+    <string name="cloud_sign_in">Войти</string>
+    <string name="cloud_sign_out">Выйти</string>
+    <string name="cloud_connected">Подключено</string>
+    <string name="cloud_not_connected">Не подключено</string>
+    <string name="cloud_auth_title">Облачное хранилище</string>
+    <string name="cloud_auth_description">Подключите облачное хранилище для просмотра файлов</string>
+    <string name="cloud_signing_in">Вход…</string>
+    <string name="cloud_error_auth">Ошибка авторизации: %s</string>
+    <string name="cloud_downloading">Скачивание…</string>
+    <string name="cloud_uploading">Загрузка…</string>
+    <string name="cloud_transferring">Передача…</string>
+    <string name="cloud_download_complete">Скачано: %d файлов</string>
+    <string name="cloud_upload_complete">Загружено: %d файлов</string>
+    <string name="cloud_delete_confirm">Удалить \"%s\" из облака?</string>
+    <string name="cloud_create_folder">Создать папку</string>
+    <string name="cloud_error_list">Не удалось загрузить список: %s</string>
+    <string name="cloud_error_download">Ошибка скачивания: %s</string>
+    <string name="cloud_error_upload">Ошибка загрузки: %s</string>
+    <string name="cloud_error_delete">Ошибка удаления: %s</string>
+    <string name="cloud_preparing">Подготовка…</string>
+    <string name="cloud_download_local_only">Целевая папка должна быть локальной</string>
+    <string name="cloud_deleted">Удалено %d файлов из облака</string>
+    <string name="cloud_save_title">Сохранение изменений</string>
+    <string name="cloud_save_to_cloud">Сохранить в облако</string>
+    <string name="cloud_save_to_local">Сохранить локально</string>
+    <string name="cloud_save_to_both">Сохранить везде</string>
+    <string name="cloud_save_discard">Отменить</string>
+    <string name="cloud_save_success">Сохранено в облако</string>
+    <string name="cloud_save_local_success">Сохранено в %1$s</string>
+    <string name="cloud_save_no_local_panel">Нет пути локальной панели</string>
+    <string name="cloud_rename_success">Переименовано</string>
+    <string name="cloud_streaming">Стриминг…</string>
+    <string name="cloud_moved">Перемещено %d файл(ов) в облаке</string>
+    <string name="cloud_move_not_supported">Перемещение между хранилищами не поддерживается</string>
 </resources>

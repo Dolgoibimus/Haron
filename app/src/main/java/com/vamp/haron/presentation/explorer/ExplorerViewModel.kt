@@ -92,6 +92,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.Intent
@@ -157,6 +158,9 @@ class ExplorerViewModel @Inject constructor(
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 1)
     val navigationEvent = _navigationEvent.asSharedFlow()
 
+    /** Track preload jobs to cancel them when user swipes to a new page */
+    private val preloadJobs = mutableListOf<Job>()
+
     // Cloud accounts state
     private val _cloudAccounts = MutableStateFlow(cloudManager.getConnectedAccounts())
     val cloudAccounts: StateFlow<List<com.vamp.haron.domain.model.CloudAccount>> = _cloudAccounts.asStateFlow()
@@ -204,10 +208,102 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
-    /** Current cloud transfer job for cancellation */
-    private var cloudTransferJob: kotlinx.coroutines.Job? = null
+    /** Active cloud transfer jobs: transferId → Job */
+    private val cloudTransferJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    private var transferIdCounter = 0
+
+    /** Start a cloud transfer and track it. Returns transfer ID. */
+    private fun launchCloudTransfer(
+        fileName: String,
+        isUpload: Boolean,
+        block: suspend (transferId: String) -> Unit
+    ): String {
+        val id = "ct_${++transferIdCounter}"
+        val job = viewModelScope.launch {
+            try {
+                block(id)
+            } finally {
+                cloudTransferJobs.remove(id)
+                removeTransferFromDialog(id)
+            }
+        }
+        cloudTransferJobs[id] = job
+        addTransferToDialog(id, fileName, 0, isUpload)
+        return id
+    }
+
+    /** Update progress for a specific transfer */
+    private fun updateTransferProgress(transferId: String, fileName: String, percent: Int, isUpload: Boolean) {
+        _uiState.update { state ->
+            val current = state.dialogState
+            if (current is DialogState.CloudTransfer) {
+                val updated = current.transfers.map {
+                    if (it.id == transferId) it.copy(fileName = fileName, percent = percent) else it
+                }
+                state.copy(dialogState = current.copy(
+                    fileName = updated.firstOrNull()?.fileName ?: fileName,
+                    percent = updated.firstOrNull()?.percent ?: percent,
+                    transfers = updated
+                ))
+            } else state
+        }
+    }
+
+    private fun addTransferToDialog(id: String, fileName: String, percent: Int, isUpload: Boolean) {
+        _uiState.update { state ->
+            val entry = DialogState.CloudTransfer.CloudTransferEntry(id, fileName, percent, isUpload)
+            val current = state.dialogState
+            if (current is DialogState.CloudTransfer) {
+                val newList = current.transfers + entry
+                state.copy(dialogState = current.copy(
+                    fileName = current.fileName,
+                    transfers = newList
+                ))
+            } else {
+                state.copy(dialogState = DialogState.CloudTransfer(
+                    fileName = fileName,
+                    percent = percent,
+                    isUpload = isUpload,
+                    transfers = listOf(entry)
+                ))
+            }
+        }
+    }
+
+    private fun removeTransferFromDialog(transferId: String) {
+        _uiState.update { state ->
+            val current = state.dialogState
+            if (current is DialogState.CloudTransfer) {
+                val remaining = current.transfers.filter { it.id != transferId }
+                if (remaining.isEmpty()) {
+                    state.copy(dialogState = DialogState.None)
+                } else {
+                    state.copy(dialogState = current.copy(
+                        fileName = remaining.first().fileName,
+                        percent = remaining.first().percent,
+                        transfers = remaining
+                    ))
+                }
+            } else state
+        }
+    }
+
+    /** Launch a cloud job tracked in cloudTransferJobs (for batch ops using operationProgress, not CloudTransfer dialog). */
+    private fun launchCloudJob(block: suspend () -> Unit) {
+        val id = "ct_${++transferIdCounter}"
+        cloudTransferJobs[id] = viewModelScope.launch {
+            try { block() } finally { cloudTransferJobs.remove(id) }
+        }
+    }
 
     fun isCloudPath(path: String): Boolean = path.startsWith("cloud://")
+
+    /** Get Authorization header for cloud thumbnail requests (Yandex needs OAuth, GDrive needs Bearer) */
+    fun getCloudAuthHeader(currentPath: String): String? {
+        if (!currentPath.startsWith("cloud://yandex/")) return null
+        val token = cloudManager.getAccessToken(com.vamp.haron.domain.model.CloudProvider.YANDEX_DISK)
+        return if (token != null) "OAuth $token" else null
+    }
 
     /**
      * Download a cloud file to cache, then open with appropriate viewer.
@@ -216,8 +312,7 @@ class ExplorerViewModel @Inject constructor(
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return
         val (provider, cloudFileId) = parsed
 
-        cloudTransferJob = viewModelScope.launch {
-            _uiState.update { it.copy(dialogState = DialogState.CloudTransfer(entry.name)) }
+        launchCloudTransfer(entry.name, isUpload = false) { transferId ->
             try {
                 val cacheDir = File(appContext.cacheDir, "cloud_downloads")
                 cacheDir.mkdirs()
@@ -225,26 +320,17 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        _uiState.update {
-                            it.copy(dialogState = DialogState.CloudTransfer(
-                                fileName = progress.fileName.ifEmpty { entry.name },
-                                percent = progress.percent,
-                                isUpload = false
-                            ))
-                        }
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
-                            _uiState.update { it.copy(dialogState = DialogState.None) }
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
                             } else {
-                                // Open downloaded file with local viewer
                                 val localEntry = entry.copy(path = localFile.absolutePath)
                                 onFileClick(_uiState.value.activePanel, localEntry)
                             }
                         }
                     }
             } catch (e: Exception) {
-                _uiState.update { it.copy(dialogState = DialogState.None) }
                 _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
             }
         }
@@ -257,8 +343,7 @@ class ExplorerViewModel @Inject constructor(
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return
         val (provider, cloudFileId) = parsed
 
-        cloudTransferJob = viewModelScope.launch {
-            _uiState.update { it.copy(dialogState = DialogState.CloudTransfer(entry.name)) }
+        launchCloudTransfer(entry.name, isUpload = false) { transferId ->
             try {
                 val cacheDir = File(appContext.cacheDir, "cloud_downloads")
                 cacheDir.mkdirs()
@@ -266,15 +351,8 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        _uiState.update {
-                            it.copy(dialogState = DialogState.CloudTransfer(
-                                fileName = progress.fileName.ifEmpty { entry.name },
-                                percent = progress.percent,
-                                isUpload = false
-                            ))
-                        }
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
-                            _uiState.update { it.copy(dialogState = DialogState.None) }
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
                             } else {
@@ -290,7 +368,6 @@ class ExplorerViewModel @Inject constructor(
                         }
                     }
             } catch (e: Exception) {
-                _uiState.update { it.copy(dialogState = DialogState.None) }
                 _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
             }
         }
@@ -314,6 +391,96 @@ class ExplorerViewModel @Inject constructor(
                         }
                     }
                 }
+        }
+    }
+
+    /** Download cloud archive to cache and navigate into it */
+    private fun cloudDownloadAndNavigateArchive(panelId: PanelId, entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, cloudFileId) = parsed
+
+        launchCloudTransfer(entry.name, isUpload = false) { transferId ->
+            try {
+                val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+                cacheDir.mkdirs()
+                val localFile = File(cacheDir, entry.name)
+
+                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    .collect { progress ->
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        if (progress.isComplete) {
+                            if (progress.error != null) {
+                                _toastMessage.tryEmit(progress.error)
+                            } else {
+                                navigateIntoArchive(panelId, localFile.absolutePath, "", null)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
+            }
+        }
+    }
+
+    /** Download cloud fb2/fb2.zip/document to cache and open in DocumentViewer */
+    private fun cloudDownloadAndOpenDocument(entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, cloudFileId) = parsed
+
+        launchCloudTransfer(entry.name, isUpload = false) { transferId ->
+            try {
+                val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+                cacheDir.mkdirs()
+                val localFile = File(cacheDir, entry.name)
+
+                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    .collect { progress ->
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        if (progress.isComplete) {
+                            if (progress.error != null) {
+                                _toastMessage.tryEmit(progress.error)
+                            } else {
+                                preferences.lastDocumentFile = localFile.absolutePath
+                                _navigationEvent.tryEmit(
+                                    NavigationEvent.OpenDocumentViewer(localFile.absolutePath, entry.name)
+                                )
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
+            }
+        }
+    }
+
+    /** Download cloud PDF to cache and open in PDF reader */
+    private fun cloudDownloadAndOpenPdf(entry: FileEntry) {
+        val parsed = cloudManager.parseCloudUri(entry.path) ?: return
+        val (provider, cloudFileId) = parsed
+
+        launchCloudTransfer(entry.name, isUpload = false) { transferId ->
+            try {
+                val cacheDir = File(appContext.cacheDir, "cloud_downloads")
+                cacheDir.mkdirs()
+                val localFile = File(cacheDir, entry.name)
+
+                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    .collect { progress ->
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        if (progress.isComplete) {
+                            if (progress.error != null) {
+                                _toastMessage.tryEmit(progress.error)
+                            } else {
+                                preferences.lastDocumentFile = localFile.absolutePath
+                                _navigationEvent.tryEmit(
+                                    NavigationEvent.OpenPdfReader(localFile.absolutePath, entry.name)
+                                )
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_download, e.message ?: ""))
+            }
         }
     }
 
@@ -458,7 +625,7 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = selected.sumOf { it.size }
         var completedBytes = 0L
 
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
             }
@@ -532,7 +699,7 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = selected.sumOf { it.size }
         var completedBytes = 0L
 
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
             }
@@ -594,7 +761,7 @@ class ExplorerViewModel @Inject constructor(
         clearSelection(activeId)
         val total = selected.size
         EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: $total files")
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
             }
@@ -669,9 +836,14 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun cancelCloudTransfer() {
-        cloudTransferJob?.cancel()
-        cloudTransferJob = null
+        cloudTransferJobs.values.forEach { it.cancel() }
+        cloudTransferJobs.clear()
         _uiState.update { it.copy(dialogState = DialogState.None, operationProgress = null) }
+    }
+
+    fun cancelSingleCloudTransfer(transferId: String) {
+        cloudTransferJobs[transferId]?.cancel()
+        // Job removal + dialog cleanup happens in the finally block of launchCloudTransfer/launchCloudJob
     }
 
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
@@ -1545,8 +1717,9 @@ class ExplorerViewModel @Inject constructor(
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
         } else if (isCloudPath(entry.path)) {
-            // Cloud media — stream without full download
             val type = entry.iconRes()
+            val nameLc = entry.name.lowercase()
+            // Cloud media — stream without full download
             if (type in listOf("video", "audio")) {
                 cloudStreamAndPlay(entry)
                 return
@@ -1554,6 +1727,21 @@ class ExplorerViewModel @Inject constructor(
             // Cloud text — download to cache and open in text editor with cloud save
             if (type in listOf("text", "code")) {
                 cloudDownloadAndOpenText(entry)
+                return
+            }
+            // Cloud archive — download to cache and navigate into
+            if (type == "archive" && !nameLc.endsWith(".fb2.zip")) {
+                cloudDownloadAndNavigateArchive(panelId, entry)
+                return
+            }
+            // Cloud fb2/fb2.zip — download to cache and open in DocumentViewer
+            if (nameLc.endsWith(".fb2") || nameLc.endsWith(".fb2.zip")) {
+                cloudDownloadAndOpenDocument(entry)
+                return
+            }
+            // Cloud PDF — download to cache and open in PDF reader
+            if (type == "pdf") {
+                cloudDownloadAndOpenPdf(entry)
                 return
             }
             // Other cloud files — download to cache first, then open
@@ -1795,7 +1983,8 @@ class ExplorerViewModel @Inject constructor(
                                     it.copy(dialogState = current.copy(
                                         previewData = data,
                                         isLoading = false,
-                                        previewCache = current.previewCache + (idx to data)
+                                        previewCache = current.previewCache + (idx to data),
+                                        resolvedPath = previewEntry.path.takeIf { it != entry.path }
                                     ))
                                 }
                                 // Preload neighbors
@@ -2556,7 +2745,7 @@ class ExplorerViewModel @Inject constructor(
             val selected = panel.files.filter { it.path in cloudPaths }
             val total = selected.size
             EcosystemLogger.d(HaronConstants.TAG, "confirmDelete: cloud delete $total files")
-            cloudTransferJob = viewModelScope.launch {
+            launchCloudJob {
                 _uiState.update {
                     it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
                 }
@@ -2753,9 +2942,9 @@ class ExplorerViewModel @Inject constructor(
         // Cancel inline operation
         inlineOperationJob?.cancel()
         inlineOperationJob = null
-        // Cancel cloud transfer
-        cloudTransferJob?.cancel()
-        cloudTransferJob = null
+        // Cancel cloud transfers
+        cloudTransferJobs.values.forEach { it.cancel() }
+        cloudTransferJobs.clear()
         _uiState.update { state ->
             val p = state.operationProgress
             if (p != null && !p.isComplete) {
@@ -3194,6 +3383,10 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun onPreviewFileChanged(newIndex: Int) {
+        // Cancel pending preloads from previous page to avoid OOM / race conditions
+        preloadJobs.forEach { it.cancel() }
+        preloadJobs.clear()
+
         val dialog = _uiState.value.dialogState
         if (dialog !is DialogState.QuickPreview) return
         val files = dialog.adjacentFiles
@@ -3238,7 +3431,8 @@ class ExplorerViewModel @Inject constructor(
                             it.copy(dialogState = current.copy(
                                 previewData = data,
                                 isLoading = false,
-                                previewCache = current.previewCache + (newIndex to data)
+                                previewCache = current.previewCache + (newIndex to data),
+                                resolvedPath = resolved.path.takeIf { it != newEntry.path }
                             ))
                         }
                         preloadPreview(newIndex - 1, files)
@@ -3379,19 +3573,36 @@ class ExplorerViewModel @Inject constructor(
                 return resolveCloudArchiveForPreview(entry)
             }
             val thumbUrl = entry.thumbnailUrl
+            val isGDrive = entry.path.startsWith("cloud://gdrive/")
+            val isYandex = entry.path.startsWith("cloud://yandex/")
+            val isDropbox = entry.path.startsWith("cloud://dropbox/")
             if (thumbUrl.isNullOrEmpty()) {
-                // No thumbnail available — show as unsupported preview
+                // No thumbnail URL — download file to cache for previewable types
+                val previewableType = type in listOf("image", "text", "code", "pdf", "document")
+                if (previewableType) {
+                    return resolveCloudArchiveForPreview(entry)
+                }
                 return entry
             }
-            val needsAuth = thumbUrl.contains("googleapis.com")
+            // Dropbox non-images: thumbnailUrl is a direct file link (not a thumbnail image)
+            // → download with proper extension, not as .jpg
+            // GDrive & Yandex: thumbnailUrl is always a thumbnail image
+            if (isDropbox && type != "image") {
+                return resolveCloudArchiveForPreview(entry)
+            }
+            // Google Drive: thumbnailUrl is always a thumbnail image (for any file type)
+            // Yandex Disk: thumbnailUrl is a preview image (requires OAuth token)
+            // Dropbox images: thumbnailUrl is a direct image file → decodable as bitmap
+            val needsAuth = thumbUrl.contains("googleapis.com") || thumbUrl.contains("yandex.ru") || thumbUrl.contains("yandex.net")
             val cacheDir = File(appContext.cacheDir, "cloud_thumbs")
             cacheDir.mkdirs()
             // Stable cache key from cloud path
             val cacheKey = entry.path.hashCode().toUInt().toString(16)
             val ext = if (needsAuth) entry.extension.ifEmpty { "jpg" } else "jpg"
             val thumbFile = File(cacheDir, "thumb_${cacheKey}.$ext")
-            // Reuse cached thumbnail
-            if (thumbFile.exists() && thumbFile.length() > 0) {
+            val tempThumbFile = File(cacheDir, "thumb_${cacheKey}.tmp")
+            // Reuse cached thumbnail (only if no active download)
+            if (thumbFile.exists() && thumbFile.length() > 0 && !tempThumbFile.exists()) {
                 return entry.copy(path = thumbFile.absolutePath, extension = ext)
             }
             try {
@@ -3401,22 +3612,23 @@ class ExplorerViewModel @Inject constructor(
                     conn.connectTimeout = 15_000
                     conn.readTimeout = 30_000
                     conn.instanceFollowRedirects = true
-                    // Authenticated content download (fallback for files without thumbnailLink)
                     if (needsAuth) {
                         val parsed = cloudManager.parseCloudUri(entry.path)
                         if (parsed != null) {
                             val token = cloudManager.getFreshAccessToken(parsed.first)
                             if (token != null) {
-                                conn.setRequestProperty("Authorization", "Bearer $token")
+                                val authPrefix = if (isYandex) "OAuth" else "Bearer"
+                                conn.setRequestProperty("Authorization", "$authPrefix $token")
                             }
                         }
                     }
                     try {
                         conn.inputStream.use { input ->
-                            java.io.FileOutputStream(thumbFile).use { output ->
+                            java.io.FileOutputStream(tempThumbFile).use { output ->
                                 input.copyTo(output)
                             }
                         }
+                        tempThumbFile.renameTo(thumbFile)
                     } finally {
                         conn.disconnect()
                     }
@@ -3425,6 +3637,7 @@ class ExplorerViewModel @Inject constructor(
                     return entry.copy(path = thumbFile.absolutePath, extension = ext)
                 }
             } catch (e: Exception) {
+                tempThumbFile.delete()
                 EcosystemLogger.e(HaronConstants.TAG, "resolvePreviewEntry thumbnail download failed: ${e.message}")
             }
             return entry
@@ -3438,28 +3651,31 @@ class ExplorerViewModel @Inject constructor(
         } ?: entry
     }
 
-    /** Download cloud archive to cache for preview (list contents). */
+    /** Download cloud file to cache for preview. Atomic write (temp + rename) to avoid race conditions. */
     private suspend fun resolveCloudArchiveForPreview(entry: FileEntry): FileEntry {
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return entry
         val (provider, cloudFileId) = parsed
         val cacheDir = File(appContext.cacheDir, "cloud_downloads")
         cacheDir.mkdirs()
         val localFile = File(cacheDir, entry.name)
-        // Reuse cached file if recent (< 10 min)
-        if (localFile.exists() && localFile.length() > 0 &&
+        val tempFile = File(cacheDir, "${entry.name}.downloading")
+        // Reuse cached file if recent (< 10 min) AND no active download
+        if (localFile.exists() && localFile.length() > 0 && !tempFile.exists() &&
             System.currentTimeMillis() - localFile.lastModified() < 10 * 60 * 1000) {
             return entry.copy(path = localFile.absolutePath)
         }
         return try {
             var resultEntry = entry
-            cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+            cloudManager.downloadFile(provider, cloudFileId, tempFile.absolutePath)
                 .collect { progress ->
                     if (progress.isComplete && progress.error == null) {
+                        tempFile.renameTo(localFile)
                         resultEntry = entry.copy(path = localFile.absolutePath)
                     }
                 }
             resultEntry
         } catch (e: Exception) {
+            tempFile.delete()
             EcosystemLogger.e(HaronConstants.TAG, "resolveCloudArchiveForPreview failed: ${e.message}")
             entry
         }
@@ -3471,21 +3687,25 @@ class ExplorerViewModel @Inject constructor(
         if (current !is DialogState.QuickPreview) return
         if (index in current.previewCache) return
 
-        viewModelScope.launch {
-            val resolved = resolvePreviewEntry(files[index])
-            loadPreviewUseCase(resolved)
-                .onSuccess { data ->
-                    val dialog = _uiState.value.dialogState
-                    if (dialog is DialogState.QuickPreview) {
-                        _uiState.update {
-                            it.copy(dialogState = dialog.copy(
-                                previewCache = dialog.previewCache + (index to data)
-                            ))
+        val job = viewModelScope.launch {
+            try {
+                val resolved = resolvePreviewEntry(files[index])
+                loadPreviewUseCase(resolved)
+                    .onSuccess { data ->
+                        val dialog = _uiState.value.dialogState
+                        if (dialog is DialogState.QuickPreview) {
+                            _uiState.update {
+                                it.copy(dialogState = dialog.copy(
+                                    previewCache = dialog.previewCache + (index to data)
+                                ))
+                            }
                         }
                     }
-                }
-            // Silently ignore preload errors
+            } catch (_: Exception) {
+                // Silently ignore preload errors
+            }
         }
+        preloadJobs.add(job)
     }
 
     fun dismissDialog() {
@@ -3986,7 +4206,7 @@ class ExplorerViewModel @Inject constructor(
         sourcePanelId: PanelId,
         targetPanelId: PanelId
     ) {
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             val total = paths.size
             val sourcePanel = getPanel(sourcePanelId)
             val nameMap = sourcePanel.files.associateBy { it.path }
@@ -4078,7 +4298,7 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = validFiles.sumOf { it.length() }
         var completedBytes = 0L
 
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             val total = validFiles.size
             EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: launching upload of $total files, totalBytes=$totalBytes")
 
@@ -4192,7 +4412,7 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = uploadPlan.sumOf { it.file.length() }
         var completedBytes = 0L
 
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             val total = uploadPlan.size
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
@@ -4301,7 +4521,7 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = downloadPlan.sumOf { it.third.size }
         var completedBytes = 0L
 
-        cloudTransferJob = viewModelScope.launch {
+        launchCloudJob {
             val total = downloadPlan.size
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))

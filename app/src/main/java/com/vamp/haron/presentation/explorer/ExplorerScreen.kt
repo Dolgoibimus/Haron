@@ -1,6 +1,7 @@
 package com.vamp.haron.presentation.explorer
 
 import android.widget.Toast
+import com.vamp.haron.domain.model.PreviewData
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -562,6 +563,7 @@ fun ExplorerScreen(
                 currentFolderSize = state.folderSizeCache[state.topPanel.currentPath],
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
+                cloudAuthHeader = viewModel.getCloudAuthHeader(state.topPanel.currentPath),
                 modifier = modifier
             )
         }
@@ -702,6 +704,7 @@ fun ExplorerScreen(
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
                 hasSelectionBar = hasSelection && !isDragging,
+                cloudAuthHeader = viewModel.getCloudAuthHeader(state.bottomPanel.currentPath),
                 modifier = modifier
             )
         }
@@ -875,27 +878,33 @@ fun ExplorerScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         val typeLabel = stringResource(p.type.labelRes)
                         val hasFilePercent = p.filePercent in 0..100
-                        val progressText = when {
-                            p.currentFileName.isNotEmpty() ->
-                                "$typeLabel: ${p.currentFileName} (${p.current}/${p.total})"
+                        val nameText = when {
+                            p.currentFileName.isNotEmpty() -> "$typeLabel: ${p.currentFileName}"
                             p.current == 0 && p.currentFileName.isEmpty() ->
                                 stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
-                            else ->
-                                stringResource(R.string.file_operation_count_format, typeLabel, p.current, p.total)
+                            else -> typeLabel
                         }
+                        val counterText = if (p.total > 1) "(${p.current}/${p.total})" else ""
                         val percentText = if (hasFilePercent) "${p.filePercent}%" else ""
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = progressText,
+                                text = nameText,
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
                             )
+                            if (counterText.isNotEmpty()) {
+                                Text(
+                                    text = counterText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
                             if (percentText.isNotEmpty()) {
                                 Text(
                                     text = percentText,
@@ -1096,7 +1105,11 @@ private fun ExplorerDialogs(
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
                     } else {
-                        onOpenPdfReader(dialog.entry.path, dialog.entry.name)
+                        val pdfPath = dialog.resolvedPath
+                            ?: (dialog.previewData as? PreviewData.PdfPreview)?.filePath
+                                ?.takeIf { it.isNotEmpty() }
+                            ?: dialog.entry.path
+                        onOpenPdfReader(pdfPath, dialog.entry.name)
                     }
                 },
                 onOpenDocument = {
@@ -1104,7 +1117,8 @@ private fun ExplorerDialogs(
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
                     } else {
-                        onOpenDocumentViewer(dialog.entry.path, dialog.entry.name)
+                        val docPath = dialog.resolvedPath ?: dialog.entry.path
+                        onOpenDocumentViewer(docPath, dialog.entry.name)
                     }
                 },
                 onOpenArchive = {
@@ -1112,7 +1126,8 @@ private fun ExplorerDialogs(
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
                     } else {
-                        viewModel.navigateIntoArchive(state.activePanel, dialog.entry.path, "", null)
+                        val archivePath = dialog.resolvedPath ?: dialog.entry.path
+                        viewModel.navigateIntoArchive(state.activePanel, archivePath, "", null)
                     }
                 },
                 onInstallApk = {
@@ -1336,12 +1351,15 @@ private fun ExplorerDialogs(
             )
         }
         is DialogState.CloudTransfer -> {
-            com.vamp.haron.presentation.cloud.CloudTransferDialog(
-                fileName = dialog.fileName,
-                percent = dialog.percent,
-                isUpload = dialog.isUpload,
-                onCancel = { viewModel.cancelCloudTransfer() }
-            )
+            if (dialog.transfers.isNotEmpty()) {
+                com.vamp.haron.presentation.cloud.CloudTransferDialog(
+                    transfers = dialog.transfers.map {
+                        com.vamp.haron.presentation.cloud.CloudTransferItem(it.id, it.fileName, it.percent, it.isUpload)
+                    },
+                    onCancel = { transferId -> viewModel.cancelSingleCloudTransfer(transferId) },
+                    onCancelAll = { viewModel.cancelCloudTransfer() }
+                )
+            }
         }
         is DialogState.CloudCreateFolder -> {
             com.vamp.haron.presentation.cloud.CloudCreateFolderDialog(

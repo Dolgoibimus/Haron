@@ -36,8 +36,11 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.SendToMobile
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Refresh
@@ -66,6 +69,8 @@ import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.data.network.NetworkDeviceType
+import com.vamp.haron.domain.model.CloudAccount
+import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.data.usb.UsbVolume
 import com.vamp.haron.presentation.explorer.state.SafRootInfo
 
@@ -97,6 +102,11 @@ fun DrawerMenu(
 
     onRefreshNetwork: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
+    cloudAccounts: List<CloudAccount> = emptyList(),
+    onOpenCloudAuth: () -> Unit = {},
+    onNavigateToCloud: (CloudProvider) -> Unit = {},
+    onOpenTvRemote: () -> Unit = {},
+    onOpenBtRemote: () -> Unit = {},
     isListeningForTransfer: Boolean = false,
     onOpenSettings: () -> Unit,
     onOpenFeatures: () -> Unit = {},
@@ -300,6 +310,46 @@ fun DrawerMenu(
                 }
             }
 
+            // --- Cloud ---
+            item {
+                SectionHeader(
+                    icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
+                    title = stringResource(R.string.cloud_section)
+                )
+            }
+            if (cloudAccounts.isEmpty()) {
+                item {
+                    DrawerItem(
+                        icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        title = stringResource(R.string.cloud_add_account),
+                        onClick = { onOpenCloudAuth() }
+                    )
+                }
+            } else {
+                items(cloudAccounts, key = { "cloud_${it.provider.scheme}" }) { account ->
+                    DrawerItem(
+                        icon = { Icon(Icons.Filled.CloudDone, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                        title = when (account.provider) {
+                            CloudProvider.GOOGLE_DRIVE -> stringResource(R.string.cloud_google_drive)
+                            CloudProvider.DROPBOX -> stringResource(R.string.cloud_dropbox)
+                            CloudProvider.ONEDRIVE -> stringResource(R.string.cloud_onedrive)
+                            CloudProvider.YANDEX_DISK -> stringResource(R.string.cloud_yandex_disk)
+                        },
+                        subtitle = account.email.ifEmpty { stringResource(R.string.cloud_connected) },
+                        onClick = { onNavigateToCloud(account.provider); onDismiss() }
+                    )
+                }
+                item {
+                    DrawerItem(
+                        icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        title = stringResource(R.string.cloud_add_account),
+                        onClick = { onOpenCloudAuth() }
+                    )
+                }
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+
             // --- Favorites ---
             item {
                 SectionHeader(
@@ -490,6 +540,20 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Code, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
                     title = stringResource(R.string.terminal_title),
                     onClick = { onOpenTerminal(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Computer, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                    title = stringResource(R.string.tv_remote_title),
+                    onClick = { onOpenTvRemote(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Bluetooth, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                    title = stringResource(R.string.bt_remote_title),
+                    onClick = { onOpenBtRemote(); onDismiss() }
                 )
             }
 

@@ -32,6 +32,7 @@ object CloudOAuthHelper {
     }
     const val REDIRECT_URI_DROPBOX = "haron://oauth/dropbox"
     const val REDIRECT_URI_ONEDRIVE = "haron://oauth/onedrive"
+    const val REDIRECT_URI_YANDEX = "haron://oauth/yandex"
 
     /** Pending OAuth result from deep link redirect */
     data class PendingAuth(val providerScheme: String, val code: String)

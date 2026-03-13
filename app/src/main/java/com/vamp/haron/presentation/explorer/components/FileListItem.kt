@@ -97,6 +97,7 @@ fun FileListItem(
     isDragHovered: Boolean = false,
     marqueeEnabled: Boolean = true,
     folderSize: Long? = null,
+    cloudAuthHeader: String? = null,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -135,13 +136,35 @@ fun FileListItem(
     }
 
     // Thumbnail loading
+    val isCloudFile = entry.path.startsWith("cloud://")
+    val hasCloudThumb = isCloudFile && !entry.thumbnailUrl.isNullOrEmpty()
+    // Google Drive / Yandex Disk: thumbnailUrl → always a thumbnail image
+    // Dropbox thumbnailUrl → direct file download (only decodable as bitmap for images)
+    val isGoogleDrive = entry.path.startsWith("cloud://gdrive/")
+    val isYandexDisk = entry.path.startsWith("cloud://yandex/")
+    val cloudThumbIsImage = isGoogleDrive || isYandexDisk || fileType == "image"
     val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
-    val showThumbnail = fileType in listOf("image", "video", "text", "code", "apk", "document", "pdf") || isFb2Zip
+    val showLocalThumbnail = !isCloudFile &&
+        (fileType in listOf("image", "video", "text", "code", "apk", "document", "pdf") || isFb2Zip)
     var thumbnail by remember(entry.path) {
-        mutableStateOf<Bitmap?>(if (showThumbnail) ThumbnailCache.get(entry.path) else null)
+        mutableStateOf<Bitmap?>(ThumbnailCache.get(entry.path))
     }
 
-    if (showThumbnail && thumbnail == null) {
+    if (hasCloudThumb && thumbnail == null) {
+        val context = LocalContext.current
+        LaunchedEffect(entry.path) {
+            thumbnail = if (cloudThumbIsImage) {
+                // URL returns an image (GDrive/Yandex thumbnail or Dropbox image file)
+                val authHdr = if (isYandexDisk) cloudAuthHeader else null
+                ThumbnailCache.loadFromUrl(entry.path, entry.thumbnailUrl!!, authHdr)
+            } else {
+                // Dropbox non-image: URL returns full file → download + generate thumbnail
+                ThumbnailCache.loadCloudThumbnail(
+                    context, entry.path, entry.thumbnailUrl!!, fileType
+                )
+            }
+        }
+    } else if (showLocalThumbnail && thumbnail == null) {
         val context = LocalContext.current
         LaunchedEffect(entry.path) {
             thumbnail = ThumbnailCache.loadThumbnail(

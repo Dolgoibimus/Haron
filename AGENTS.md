@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.53 (Phase 4, Batch 53)
+**Текущая версия:** 0.60 (Phase 4, Batch 60)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -18,7 +18,238 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-### ▶ Batch 53 — HLS-транскодирование + прогрессивный каст ✅ проверено (каст работает)
+Нет активных задач.
+
+---
+
+### Batch 61 — Параллельные облачные трансферы + OOM fix ⚠️ не проверено
+
+**Что сделано:**
+- **OOM fix**: `setFixedLengthStreamingMode(totalSize)` в обоих upload-методах `YandexDiskProvider` — больше не буферит всё тело запроса в памяти
+- **Параллельные трансферы**: полная миграция с единого `cloudTransferJob` на `cloudTransferJobs: MutableMap<String, Job>`
+  - `launchCloudTransfer(fileName, isUpload) { transferId -> ... }` — для одиночных файлов (CloudTransfer диалог)
+  - `launchCloudJob { ... }` — для batch-операций (operationProgress)
+  - Все 13 call sites мигрированы, compat alias удалён
+  - Новый трансфер НЕ отменяет предыдущие — работают параллельно
+- **CloudTransferDialog**: стэкированные прогресс-бары (2dp gap), кнопка × на каждом трансфере при мульти-режиме
+- **Индивидуальная отмена**: `cancelSingleCloudTransfer(transferId)` — отменяет конкретный трансфер, остальные продолжают
+- Строки: `cloud_transferring` (EN/RU) для смешанных upload+download
+
+---
+
+### Batch 60 — Яндекс Диск (облачный провайдер) ⚠️ не проверено
+
+**Что сделано:**
+- Добавлен `YANDEX_DISK("yandex", "Yandex Disk")` в `CloudProvider` enum
+- Создан `YandexDiskProvider` — полная реализация `CloudProviderInterface` через REST API (без SDK):
+  - OAuth PKCE авторизация через `oauth.yandex.com` (с scopes `cloud_api:disk.read/write/info`)
+  - `listFiles()` — пагинация, childCount для папок, thumbnails (preview URL из API)
+  - `downloadFile()` — двухшаговый: получить temp URL → GET с progress
+  - `uploadFile()` — двухшаговый: получить upload URL → PUT с progress + `setFixedLengthStreamingMode`
+  - `delete()` — удаление в корзину
+  - `createFolder()`, `rename()`, `moveFile()` — через `/resources` и `/resources/move`
+  - `updateFileContent()` — upload с overwrite=true
+  - `withRefresh{}` — перехват 401 → refresh token → повтор
+  - `getFreshAccessToken()` — для proxy-streaming
+  - User info: `GET /` → login, display_name
+  - Логирование EcosystemLogger на каждом шаге
+- Зарегистрирован в `CloudManager.init{}`, `CloudOAuthHelper` (redirect URI), `CloudAuthDialog` (when branch), `DrawerMenu` (when branch)
+- Превью Яндекс-файлов: auth header `OAuth <token>` → `ThumbnailCache.loadFromUrl(authHeader)` → `FileListItem` + `FilePanel`
+- Строки: `cloud_yandex_disk` в EN и RU strings.xml
+- Deep link `haron://oauth/yandex` — работает через существующий intent-filter (wildcard path)
+- Все универсальные механизмы (use cases, DnD, cloud:// навигация, токен-стор) работают автоматически
+
+---
+
+### Batch 59 — Grid long press: выделение вместо DnD ✅ проверено
+
+**Проблема:** В grid-режиме long press на иконку невыделенного файла сразу активировал DnD при движении пальца, убивая свайп-выделение диапазона.
+
+**Исправление:** `FilePanel.kt` строка ~1206 — заменил `samePanelDragActivated = false` на `isSamePanelDrag = false` + `dragStartIndex = index`. Теперь при движении пальца `onDrag` попадает в ветку range selection → соседние файлы выделяются свайпом.
+
+---
+
+### Batch 58 — Облачные превью в сетке + фикс PDF/fb2 превью ✅ проверено
+
+**Что сделано (Batch 58):**
+
+**1. Облачные превью в сетке — ВСЕ форматы:**
+- `ThumbnailCache.loadFromUrl()` — загрузка bitmap из URL (для cloud thumbnail-картинок)
+- `ThumbnailCache.loadCloudThumbnail()` — скачивание файла во temp → генерация thumbnail → удаление temp (для PDF, текст, код, документы, APK)
+- Dropbox `enrichWithThumbnails` расширен: temp links для ВСЕХ previewable типов (images, PDF, text, code, documents, APK), лимит 10МБ/файл, до 50 файлов
+- Google Drive: `thumbnailLink` и fallback URL дополнены `access_token` → работают без доп. авторизации
+- `FileListItem`: Google Drive → `loadFromUrl` (URL = thumbnail-картинка); Dropbox images → `loadFromUrl`; Dropbox non-images → `loadCloudThumbnail` (URL = полный файл → скачать + сгенерировать)
+
+**2. Фикс PDF превью — конфликт вложенных пейджеров:**
+- Убран внутренний `HorizontalPager` для страниц PDF в `QuickPreviewDialog`
+- PDF теперь показывает только первую страницу + счётчик "N страниц"
+- Свайп всегда листает между файлами, а не между страницами PDF
+
+**3. Фикс fb2 превью для облачных файлов:**
+- Добавлен тип `"document"` в previewable types в `resolvePreviewEntry`
+- Облачные fb2/docx/odt/doc/rtf теперь скачиваются в cache перед превью
+
+**4. Фикс ошибки QuickPreview при листании:**
+- `preloadJobs` — трекинг preload-джобов, отмена при смене страницы (предотвращает OOM от множественных параллельных decoding)
+- try/catch в `preloadPreview` — ошибки preload не крашат корутину
+- Atomic write в `resolveCloudArchiveForPreview` — temp file + rename (race condition при concurrent downloads)
+- Atomic write в `resolvePreviewEntry` thumbnail download — temp file + rename
+
+**Изменённые файлы:**
+- `common/util/ThumbnailCache.kt` — `loadFromUrl()` + `loadCloudThumbnail()`
+- `presentation/explorer/components/FileListItem.kt` — cloud thumbnail для всех типов
+- `presentation/explorer/components/QuickPreviewDialog.kt` — убран вложенный PDF пейджер
+- `presentation/explorer/ExplorerViewModel.kt` — preloadJobs, atomic writes, "document" в previewable types
+- `data/cloud/provider/GoogleDriveProvider.kt` — `access_token` в thumbnailUrl
+- `data/cloud/provider/DropboxProvider.kt` — `enrichWithThumbnails` расширен на все previewable типы
+
+---
+
+### Batch 57 — Финализация Dropbox провайдера ✅ проверено (проценты)
+
+**Что сделано (Batch 57):**
+
+**Батч 1: Token Refresh + пагинация + API ключ**
+- API ключ: `w16lhavuph6eee8` (был placeholder)
+- `refreshToken()` — POST к `oauth2/token` с `grant_type=refresh_token`, сохраняет новый accessToken
+- `withRefresh()` — обёртка над API-вызовами, ловит `InvalidAccessTokenException` → refresh → retry
+- `withRefreshSuspend()` — suspend-вариант для download/upload (где block сам suspend)
+- `getFreshAccessToken()` — принудительный refresh для стриминга/прокси
+- Пагинация `listFiles()`: `while (result.hasMore) { listFolderContinue(cursor) }` — папки >500 файлов
+
+**Батч 2: moveFile**
+- `moveFile()` реализован: извлекает имя файла из пути, строит `toPath = "$newParentId/$fileName"`, вызывает `moveV2`
+- Работает для same-panel DnD в облаке
+
+**Батч 3: Прогресс download/upload**
+- Download: `downloader.inputStream` + ручное чтение буфером 8KB + emit каждый процент
+- Upload: `CountingInputStream` (FilterInputStream + AtomicLong) + async upload + polling каждые 200мс
+- `updateFileContent` — тот же подход с CountingInputStream
+
+**ID → path**: Dropbox использует пути как идентификаторы (не внутренние ID), исправлен `toCloudFileEntry()` — `id = pathDisplay`
+
+**Батч 4: UI прогресс-бара + chunked upload**
+- Прогресс-бар: формат `filename... (1/5) 42%` — счётчик перед процентами, имя обрезается
+- Dropbox chunked upload: файлы >150МБ → upload sessions кусками по 4МБ с прогрессом после каждого chunk
+- `updateFileContent` — тот же chunked подход для больших файлов
+
+**Батч 5: Dropbox streaming + preview**
+- HTTP-прокси (`HttpFileServer.kt`): добавлен Dropbox — POST к `content.dropboxapi.com/2/files/download` с `Dropbox-API-Arg` header
+- Preview (`resolvePreviewEntry`): для cloud-файлов без thumbnailUrl (Dropbox) — скачивание в cache для image/text/code/pdf
+- Видео/аудио из Dropbox теперь стримится через локальный прокси (как GDrive)
+
+**Батч 6: Открытие файлов + превью-иконки Dropbox**
+- Видео: HTTP-прокси для Dropbox через `get_temporary_link` (direct URL с Range support)
+- Архивы: `cloudDownloadAndNavigateArchive()` — скачивает и навигирует внутрь архива
+- fb2/fb2.zip: `cloudDownloadAndOpenDocument()` — скачивает и открывает в DocumentViewer
+- PDF: `cloudDownloadAndOpenPdf()` — скачивает и открывает в PDF reader
+- Превью-иконки: `enrichWithThumbnails()` — после listing, parallel `getTemporaryLink` для image-файлов (до 50)
+- Preview: для cloud без thumbnailUrl — скачивание в cache для image/text/code/pdf
+
+**Изменённые файлы:**
+- `data/cloud/provider/DropboxProvider.kt` — полная переработка + thumbnail enrichment
+- `data/transfer/HttpFileServer.kt` — streaming proxy: Dropbox temporary link + helper method
+- `presentation/explorer/ExplorerScreen.kt` — layout прогресс-бара (счётчик перед процентами)
+- `presentation/explorer/ExplorerViewModel.kt` — 3 новых cloud open метода + preview fix
+
+---
+
+### Batch 56 — Три тап-зоны + Same-panel DnD + Cloud↔Local DnD ⚠️ не проверено
+
+**Что сделано (Batch 56):**
+
+**Три тап-зоны на имени файла (список, 1 колонка):**
+- Левая треть: выделение диапазона свайпом (как было)
+- Средняя треть: долгий тап → выделить файл → начать перетаскивание (same-panel DnD)
+- Правая треть: QuickSend / cross-panel DnD / fallback select (как было)
+
+**DnD в сетке (2+ колонки):**
+- Долгий тап на иконку: 1 файл не выделен → выделить → первое движение пальца → DnD (с вибрацией); уже выделен → сразу DnD
+- Зона имени: поведение не изменено (QuickSend / cross-panel / select)
+
+**Same-panel DnD:**
+- Перетащить файл на папку в той же панели (облако или локально)
+- При наведении на папку — подсветка через `hoveredFolderPath`
+- Cloud move через Google Drive API (`files.update` с `addParents`/`removeParents`)
+
+**Cross-panel Cloud↔Local DnD:**
+- Cloud → Local: файлы скачиваются в целевую локальную папку с прогрессом
+- Local → Cloud: файлы загружаются в целевую облачную папку с прогрессом
+- Cloud → Cloud: перемещение через API облака (без скачивания)
+
+**Cloud thumbnail fallback:**
+- Файлы без `thumbnailLink` от Google API → fallback URL `files/{id}?alt=media` с Bearer токеном
+
+**Изменённые файлы:**
+- `presentation/explorer/components/FilePanel.kt` — три зоны, isSamePanelDrag, samePanelDragActivated, вибрация
+- `data/cloud/provider/CloudProviderInterface.kt` — +moveFile()
+- `data/cloud/provider/GoogleDriveProvider.kt` — moveFile + thumbnail fallback
+- `data/cloud/provider/DropboxProvider.kt` — moveFile (заглушка)
+- `data/cloud/provider/OneDriveProvider.kt` — moveFile (заглушка)
+- `data/cloud/CloudManager.kt` — moveFile фасад
+- `presentation/explorer/ExplorerViewModel.kt` — executeCloudDragMove, executeDragCloudDownload, executeDragCloudUpload, thumbnail auth
+- `res/values/strings.xml` — +cloud_moved, +cloud_move_not_supported
+- `res/values-ru/strings.xml` — +cloud_moved, +cloud_move_not_supported
+- `res/raw/features.txt` — расширен раздел облачных хранилищ
+- `res/raw-ru/features.txt` — расширен раздел облачных хранилищ
+
+---
+
+### Batch 55 — Облачные файлы: полноценная работа в панели ⚠️ не проверено
+
+**Что сделано (Batch 55):**
+
+**Батч 1: Thumbnail больше + Удаление из QuickPreview**
+- Увеличен thumbnail Google Drive: `=s220` → `=s800`
+- Кнопка корзины в QuickPreview теперь работает для облачных файлов (`silentDelete` → `cloudManager.delete()`)
+
+**Батч 2: Cloud Rename**
+- `rename()` добавлен в `CloudProviderInterface` + реализован для Google Drive, OneDrive, Dropbox
+- `getAccessToken()` — метод получения токена для стриминга
+- `updateFileContent()` — перезаливка файла в облако (все 3 провайдера)
+- `confirmInlineRename()` — теперь работает для cloud-файлов
+
+**Батч 3: Галерея из облачных thumbnails**
+- `downloadCloudThumbnail()` — скачивает `=s1600` thumbnail в `cacheDir/cloud_gallery/`
+- `openCloudGallery()` — параллельная загрузка всех image thumbnails → `GalleryHolder` → навигация
+- QuickPreview → "Открыть в галерее" для облачных файлов → вызывает `openCloudGallery()`
+
+**Батч 4: Стриминг видео/аудио через локальный прокси**
+- `CloudStreamConfig` + маршрут `GET /cloud/stream/{streamId}` в HttpFileServer
+- Прокси к Google Drive / OneDrive API с поддержкой `Range` header (перемотка)
+- `cloudStreamAndPlay()` — строит плейлист из стрим-URL, запускает VLC
+- VlcPlayerAdapter — поддержка `http://` URL
+- `onFileClick` — облачные видео/аудио стримятся без полной загрузки
+
+**Батч 5: Текстовые файлы — save-to-cloud**
+- `OpenTextEditorCloud` event + маршрут `text_editor_cloud` в навигации
+- `cloudDownloadAndOpenText()` — скачивает файл в кэш → открывает редактор с `cloudUri`
+- TextEditorScreen — опциональный `cloudUri`: при сохранении показывает диалог "Сохранить в облако / Локально / Отмена"
+- `CloudManagerEntryPoint` — Hilt EntryPoint для доступа к CloudManager из TextEditorScreen
+
+**Батч 6: Строки + очистка кэша**
+- Добавлены строки EN + RU: `cloud_save_title`, `cloud_save_to_cloud`, `cloud_save_to_local`, `cloud_save_discard`, `cloud_save_success`, `cloud_rename_success`, `cloud_streaming`
+- Автоочистка `cloud_thumbs/` и `cloud_gallery/` при запуске (файлы старше 7 дней)
+
+**Изменённые файлы:**
+- `data/cloud/provider/CloudProviderInterface.kt` — +3 метода (rename, getAccessToken, updateFileContent)
+- `data/cloud/provider/GoogleDriveProvider.kt` — thumbnail =s800, rename, getAccessToken, updateFileContent
+- `data/cloud/provider/OneDriveProvider.kt` — rename, getAccessToken, updateFileContent
+- `data/cloud/provider/DropboxProvider.kt` — rename, getAccessToken, updateFileContent
+- `data/cloud/CloudManager.kt` — +3 фасадных метода
+- `data/transfer/HttpFileServer.kt` — cloud streaming proxy endpoint
+- `service/VlcPlayerAdapter.kt` — поддержка http:// URL
+- `domain/model/NavigationEvent.kt` — +OpenTextEditorCloud
+- `presentation/explorer/ExplorerViewModel.kt` — cloud streaming, gallery, text edit, rename, cache cleanup
+- `presentation/explorer/ExplorerScreen.kt` — cloud-aware preview actions
+- `presentation/editor/TextEditorScreen.kt` — cloudUri + cloud save dialog
+- `presentation/navigation/HaronNavigation.kt` — text_editor_cloud route
+- `res/values/strings.xml` — +8 строк
+- `res/values-ru/strings.xml` — +8 строк
+
+---
+
+### Batch 53 — HLS-транскодирование + прогрессивный каст ✅ проверено (каст работает)
 
 **Что сделано (Batch 53):**
 - Заменён Media3 Transformer на FFmpeg (`com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1`)
@@ -114,10 +345,12 @@
 | 51 | SMB-браузер (вкладка в Передача) | ✅ проверено |
 | 51b | Двухпанельный SMB-режим (SMB + локальные файлы) | ✅ проверено |
 | 52 | Фиксы корзины + тап на пустом месте | ✅ проверено |
+| 54 | Облака (GDrive/Dropbox/OneDrive) + пульт ТВ (тачпад/клавиатура) | ⚠️ не проверено |
 
 ### Хотелки (после релиза):
 | Фича | Описание |
 |------|----------|
+| Shizuku — доступ к Android/data и obb | Доступ к `/Android/data` и `/Android/obb` через Shizuku (shell UID 2000). SAF заблокирован Google. Shizuku — стандартное решение (Solid Explorer, MiXplorer). Нужно: `dev.rikka.shizuku:api`, AIDL-сервис `ShizukuFileService`, fallback в `FileRepositoryImpl.getFiles()`, UI авторизации. SAF-код уже есть (fallback при `listFiles() == null`), Shizuku — второй fallback после SAF |
 | Перемотка во время транскода | HLS live seek — перемотка видео на Chromecast пока транскодирование ещё идёт (STREAM_TYPE_LIVE не поддерживает seek, нужен ▶ Media Source Extensions или ▶ частичный VOD reload) |
 | Торрент-клиент | Встроенный торрент: последовательная загрузка + стрим на ТВ через Cast (libtorrent4j) |
 | Сетевой поток на Cast | Ввод URL видео (HTTP/HLS/DASH/m3u8) → трансляция на телевизор через Chromecast/DLNA без скачивания на телефон. IPTV-ссылки, видео с NAS, прямые эфиры — всё кидается на ТВ, телефон как пульт |
@@ -569,7 +802,6 @@
 - [ ] Монтажный стол (FFmpeg: обрезка, склейка видео, таймлайн)
 - [ ] Чистильщик мессенджеров (Telegram/WhatsApp кэш и медиа)
 - [ ] Root-режим (опциональный): chmod, /data, системные папки
-- [ ] Система подсказок (мигающие рамки, onboarding)
 - [ ] Телефон как пульт (тачпад + клавиатура)
 
 #### Уже сделано (Phase 4):
@@ -610,14 +842,77 @@
 
 ## Известные проблемы (нерешённые)
 
-- **Транскодирование артефакты** — каст видео (AVI/MKV→MP4) показывает артефакты и дёрганье на Chromecast. Перепробовано всё: 8 Mbps VBR → `experimentalSetEnableHighQualityTargeting` → 8 Mbps CBR + Main Profile 4.1 + 1080p cap + 30fps cap. **Артефакты не уходят.** Вероятно, аппаратный MediaCodec на устройстве даёт низкое качество. Следующий вариант — FFmpeg (software encoder, +15-30 МБ к APK).
-- **Debug в CastOverlay** — красный текст `"tp=$transcodePercent | $debugCastInfo"` + alpha 0.6 на пульте. Убрать после финальной проверки.
+Нет активных проблем.
 
 ---
 
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 54 — Облака + Пульт ТВ ⚠️ не проверено
+
+**Облачные хранилища (Google Drive, Dropbox, OneDrive):**
+- OAuth2 PKCE через custom URI scheme `haron://oauth/{provider}` (deep link)
+- `CloudOAuthHelper` — генерация code_verifier/code_challenge, обмен кода на токен
+- `CloudManager` — singleton facade (аналог SmbManager) для всех провайдеров
+- `CloudTokenStore` — зашифрованное хранение токенов (AES-256-GCM, Android Keystore)
+- `CloudProviderInterface` — общий интерфейс: listFiles, download, upload, delete, createFolder, getAuthUrl, handleAuthCode
+- 3 провайдера: `GoogleDriveProvider`, `DropboxProvider`, `OneDriveProvider`
+- 5 use cases: CloudListFiles, CloudDownload, CloudUpload, CloudDelete, CloudCreateFolder
+- `CloudModule` (Hilt DI) + `CloudAuthDialog` (UI авторизации в ExplorerScreen)
+- Навигация: `cloud://gdrive/`, `cloud://dropbox/`, `cloud://onedrive/` в панели
+- Тап на облачный файл → скачивание в cacheDir/cloud_downloads/ → открытие локально
+- Копирование между панелями: cloud→local = download, local→cloud = upload
+- Перемещение cloud-файлов заблокировано (только copy)
+- Удаление: через CloudManager.delete()
+- Создание папки в облаке: `CloudCreateFolderDialog`
+- Прогресс скачивания/загрузки: `CloudTransferDialog`
+- Deep link handling: `AndroidManifest.xml` (intent-filter) + `MainActivity.kt` (processExternalIntent)
+
+**Пульт ТВ (Remote Control):**
+- `RemoteInputChannel` — WebSocket-канал для команд пульта (мышь, клавиатура, клики)
+- `TouchpadPanel` — тачпад с поддержкой перемещения курсора, тапа, long press, скролла
+- `VirtualKeyboardPanel` — виртуальная клавиатура для ввода текста на ТВ
+- Интегрированы в CastOverlay как дополнительные режимы пульта
+
+**Файлы (новые):**
+- `data/cloud/CloudOAuthHelper.kt`
+- `data/cloud/CloudManager.kt`, `CloudTokenStore.kt`
+- `data/cloud/provider/CloudProviderInterface.kt`, `GoogleDriveProvider.kt`, `DropboxProvider.kt`, `OneDriveProvider.kt`
+- `di/CloudModule.kt`
+- `domain/model/CloudAccount.kt`, `CloudFileEntry.kt`, `CloudProvider.kt`, `CloudTransferProgress.kt`
+- `domain/usecase/CloudListFilesUseCase.kt`, `CloudDownloadUseCase.kt`, `CloudUploadUseCase.kt`, `CloudDeleteUseCase.kt`, `CloudCreateFolderUseCase.kt`
+- `presentation/cloud/CloudAuthDialog.kt`, `CloudTransferDialog.kt`, `CloudCreateFolderDialog.kt`
+- `data/cast/RemoteInputChannel.kt`
+- `presentation/cast/components/TouchpadPanel.kt`, `VirtualKeyboardPanel.kt`
+
+**Файлы (изменённые):**
+- `AndroidManifest.xml` (OAuth deep link), `MainActivity.kt` (OAuth callback)
+- `ExplorerUiState.kt` (+CloudTransfer, +CloudCreateFolder), `ExplorerViewModel.kt` (cloud file ops)
+- `ExplorerScreen.kt` (cloud dialogs), `DrawerMenu.kt` (cloud entries)
+- `CastOverlay.kt`, `CastViewModel.kt`, `MediaRemotePanel.kt` (remote input integration)
+- `strings.xml` EN+RU (cloud strings)
+
+**⚠️ Placeholder credentials**: `YOUR_GOOGLE_CLIENT_ID`, `YOUR_DROPBOX_APP_KEY`, `YOUR_ONEDRIVE_CLIENT_ID` — нужно заменить реальными ключами из консолей разработчиков
+
+### Shizuku — доступ к Android/data и Android/obb ✅ проверено
+
+На Android 11+ папки Android/data и Android/obb недоступны даже с MANAGE_EXTERNAL_STORAGE. Shizuku (UserService UID 2000) обходит FUSE-ограничения.
+
+**Цепочка fallback:** `File.listFiles()` → SAF → Shizuku → пустой список
+
+**Файлы:** `data/shizuku/` (AIDL + ShizukuFileEntry + ShizukuFileService + ShizukuManager), `ShizukuInstallDialog.kt`, `FileRepositoryImpl.kt` (fallback + enrichment childCount), `ExplorerViewModel.kt` (ShizukuState проверка), `ExplorerScreen.kt` (диалоги), `SettingsScreen.kt` (секция статуса), `AndroidManifest.xml` (ShizukuProvider), `proguard-rules.pro`, `strings.xml` EN+RU
+
+**Исправленные баги:** File.exists() false для restricted paths → обход; Shizuku.unbindUserService 3 параметра; childCount без скрытых файлов; enrichment через IPC для родительского Android/
+
+### Удаление из превью картинок ✅ проверено
+
+Кнопка корзины справа от «Открыть в галерее» в QuickPreviewDialog для всех изображений. Удаляет в корзину без подтверждения. При удалении превью переходит на следующее/предыдущее фото, закрывается только если файл был последним.
+
+**Файлы:** `QuickPreviewDialog.kt` (+onDelete, Row с кнопками, isImage по расширению при loading), `ExplorerViewModel.kt` (+deleteFromPreview, +silentDelete — удаление без dismiss диалога), `ExplorerScreen.kt` (onDelete callback)
+
+**Нюансы:** silentDelete вместо confirmDelete (тот вызывает dismissDialog); isImage учитывает iconRes() при loading чтобы кнопки не исчезали; предзагрузка соседей после каждого удаления
 
 ### Корзина — фикс размеров + диалог переполнения ✅ проверено
 
@@ -812,7 +1107,7 @@
 - Список (1 колонка) — без изменений
 - Файлы: `FilePanel.kt` (detectTapGestures + detectDragGesturesAfterLongPress), `FileListItem.kt` (убраны click-модификаторы в grid)
 
-### UI-фиксы — Терминал + Текстовый редактор ⚠️ не проверено
+### UI-фиксы — Терминал + Текстовый редактор ✅ проверено
 
 **Проверить при первом запуске:**
 
@@ -1892,12 +2187,14 @@
 ### Хранилища (SAF)
 - Поддержка SD-карты и внешних хранилищ
 - Все файловые операции работают с внешними носителями
+- Доступ к Android/data и Android/obb через Shizuku (Android 11+)
 
 ### Быстрый просмотр
 - Тап по иконке файла → диалог превью
 - Изображения, видео, аудио, текст, PDF, архивы, APK, документы, FB2
 - Воспроизведение медиа прямо в превью
 - Кнопки «Открыть в галерее / читалке / архиваторе»
+- Удаление картинок прямо из превью (кнопка корзины) — переходит к следующему фото
 
 ### Медиаплеер
 - Встроенный плеер на движке VLC (LibVLC)
@@ -1970,6 +2267,7 @@
 - Безопасность: PIN, биометрия, секретный вопрос
 - Переключатель «Требовать PIN при запуске»
 - Лимит корзины
+- Статус и управление Shizuku (установить, запустить, разрешение)
 
 ### Метки (теги)
 - Цветные метки с названием (8 цветов)
@@ -2187,8 +2485,6 @@
 
 - **Проверка SD-карты** — перемещение между хранилищами (внутренняя ↔ SD) использует copy+delete. Протестировать на устройстве с SD-картой.
 - **Батч 54** — История сравнений с кешем результатов (запланирован, не реализован)
-- **Терминал — капитализация** — клавиатура ставит заглавную после пробела, все стандартные способы не помогают. Возможно нужен кастомный InputConnection.
-- **Текстовый редактор — серая полоса** — между текстом и клавиатурой. Нужен скриншот для диагностики.
 
 ---
 

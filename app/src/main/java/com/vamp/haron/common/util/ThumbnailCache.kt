@@ -41,6 +41,80 @@ object ThumbnailCache {
 
     fun get(path: String): Bitmap? = cache.get(path)
 
+    /** Load thumbnail from a URL (for cloud files with thumbnailUrl) */
+    suspend fun loadFromUrl(cacheKey: String, url: String, authHeader: String? = null): Bitmap? = withContext(Dispatchers.IO) {
+        cache.get(cacheKey)?.let { return@withContext it }
+        try {
+            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 15_000
+            connection.instanceFollowRedirects = true
+            if (authHeader != null) {
+                connection.setRequestProperty("Authorization", authHeader)
+            }
+            val responseCode = connection.responseCode
+            if (responseCode != 200) {
+                connection.disconnect()
+                return@withContext null
+            }
+            val bytes = connection.inputStream.readBytes()
+            connection.disconnect()
+            if (bytes.isEmpty()) return@withContext null
+
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            if (opts.outWidth <= 0 || opts.outHeight <= 0) return@withContext null
+
+            val sampleSize = calculateInSampleSize(
+                opts.outWidth, opts.outHeight, THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE
+            )
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts)
+                ?: return@withContext null
+            cache.put(cacheKey, bitmap)
+            bitmap
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Download cloud file to temp, generate type-specific thumbnail, delete temp.
+     *  For non-image cloud files (PDF, text, code, documents etc.) */
+    suspend fun loadCloudThumbnail(
+        context: Context,
+        cacheKey: String,
+        url: String,
+        type: String
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        cache.get(cacheKey)?.let { return@withContext it }
+        val tempFile = File(context.cacheDir, "cloud_thumb_${cacheKey.hashCode().toUInt().toString(16)}")
+        try {
+            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 30_000
+            connection.instanceFollowRedirects = true
+            val responseCode = connection.responseCode
+            if (responseCode != 200) {
+                connection.disconnect()
+                return@withContext null
+            }
+            connection.inputStream.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            connection.disconnect()
+            if (!tempFile.exists() || tempFile.length() == 0L) return@withContext null
+
+            // Generate thumbnail from the downloaded file using existing logic
+            val bitmap = loadThumbnail(context, tempFile.absolutePath, false, type)
+            bitmap?.let { cache.put(cacheKey, it) }
+            bitmap
+        } catch (_: Exception) {
+            null
+        } finally {
+            tempFile.delete()
+        }
+    }
+
     suspend fun loadThumbnail(
         context: Context,
         path: String,
