@@ -88,6 +88,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -660,7 +661,7 @@ class ExplorerViewModel @Inject constructor(
                     downloaded++
                     refreshPanel(targetId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += entry.size
                     EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${entry.name}: ${e.message}")
                 }
@@ -731,7 +732,7 @@ class ExplorerViewModel @Inject constructor(
                     uploaded++
                     refreshPanel(targetId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += entry.size
                     EcosystemLogger.e(HaronConstants.TAG, "Cloud upload failed: ${entry.name}: ${e.message}")
                 }
@@ -4264,7 +4265,7 @@ class ExplorerViewModel @Inject constructor(
                     downloaded++
                     refreshPanel(targetPanelId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += fileSize
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud download failed: $fileName: ${e.message}")
                 }
@@ -4347,7 +4348,7 @@ class ExplorerViewModel @Inject constructor(
                     uploaded++
                     refreshPanel(targetPanelId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += fileSize
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload failed: $fileName: ${e.message}")
                 }
@@ -4470,7 +4471,7 @@ class ExplorerViewModel @Inject constructor(
                     uploaded++
                     refreshPanel(targetPanelId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += fileSize
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload (decisions) failed: $uploadName: ${e.message}")
                 }
@@ -4572,7 +4573,7 @@ class ExplorerViewModel @Inject constructor(
                     downloaded++
                     refreshPanel(targetPanelId)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     completedBytes += fileSize
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud download (decisions) failed: ${localFile.name}: ${e.message}")
                 }

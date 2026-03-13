@@ -10,10 +10,11 @@ import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.model.CloudTransferProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -182,138 +183,142 @@ class YandexDiskProvider(
         }
     }
 
-    override fun downloadFile(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = flow {
-        try {
-            val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
-            val fileName = cloudFileId.substringAfterLast('/')
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk download: path=$diskPath")
-
-            emit(CloudTransferProgress(fileName, 0, 0))
-
-            // Step 1: get download URL
-            val encodedPath = URLEncoder.encode(diskPath, "UTF-8")
-            val linkJson = withRefreshSuspend {
-                apiGet("/resources/download?path=$encodedPath")
-            } ?: throw Exception("Failed to get download link")
-
-            val href = linkJson.optString("href", "")
-            if (href.isEmpty()) throw Exception("Empty download href")
-
-            // Step 2: download from href
-            val url = URL(href)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                instanceFollowRedirects = true
-                connectTimeout = 30_000
-                readTimeout = 60_000
-            }
-
+    override fun downloadFile(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = channelFlow {
+        withContext(Dispatchers.IO) {
             try {
-                val totalSize = conn.contentLengthLong.let { if (it < 0) 0L else it }
-                emit(CloudTransferProgress(fileName, 0, totalSize))
+                val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
+                val fileName = cloudFileId.substringAfterLast('/')
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk download: path=$diskPath")
 
-                java.io.BufferedInputStream(conn.inputStream, 262144).use { input ->
-                    java.io.BufferedOutputStream(FileOutputStream(File(localPath)), 262144).use { fos ->
-                        val buffer = ByteArray(262144)
-                        var bytesRead: Int
-                        var totalRead = 0L
-                        var lastEmitPercent = -1
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            fos.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-                            val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
-                            if (percent != lastEmitPercent) {
-                                emit(CloudTransferProgress(fileName, totalRead, totalSize))
-                                lastEmitPercent = percent
-                            }
-                        }
-                    }
+                send(CloudTransferProgress(fileName, 0, 0))
+
+                // Step 1: get download URL
+                val encodedPath = URLEncoder.encode(diskPath, "UTF-8")
+                val linkJson = withRefreshSuspend {
+                    apiGet("/resources/download?path=$encodedPath")
+                } ?: throw Exception("Failed to get download link")
+
+                val href = linkJson.optString("href", "")
+                if (href.isEmpty()) throw Exception("Empty download href")
+
+                // Step 2: download from href
+                val url = URL(href)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    instanceFollowRedirects = true
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
                 }
-            } finally {
-                conn.disconnect()
-            }
 
-            val fileSize = File(localPath).length()
-            emit(CloudTransferProgress(fileName, fileSize, fileSize, isComplete = true))
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk download complete: $fileName, ${fileSize}B")
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "YandexDisk download error: ${e.message}")
-            emit(CloudTransferProgress("", 0, 0, isComplete = true, error = e.message))
-        }
-    }.flowOn(Dispatchers.IO)
+                try {
+                    val totalSize = conn.contentLengthLong.let { if (it < 0) 0L else it }
+                    send(CloudTransferProgress(fileName, 0, totalSize))
 
-    override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = flow {
-        try {
-            val file = File(localPath)
-            val totalSize = file.length()
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName to $cloudDirPath, size=$totalSize")
-
-            emit(CloudTransferProgress(fileName, 0, totalSize))
-
-            // Build target path
-            val targetDiskPath = when {
-                cloudDirPath.isEmpty() || cloudDirPath == "/" -> "disk:/$fileName"
-                cloudDirPath.startsWith("disk:") -> "$cloudDirPath/$fileName"
-                else -> "disk:/$cloudDirPath/$fileName"
-            }
-
-            // Step 1: get upload URL
-            val encodedPath = URLEncoder.encode(targetDiskPath, "UTF-8")
-            val linkJson = withRefreshSuspend {
-                apiGet("/resources/upload?path=$encodedPath&overwrite=true")
-            } ?: throw Exception("Failed to get upload link")
-
-            val href = linkJson.optString("href", "")
-            if (href.isEmpty()) throw Exception("Empty upload href")
-
-            // Step 2: PUT file to href (streaming mode to avoid OOM on large files)
-            val url = URL(href)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                setRequestProperty("Content-Type", "application/octet-stream")
-                doOutput = true
-                setFixedLengthStreamingMode(totalSize)
-                connectTimeout = 30_000
-                readTimeout = 120_000
-            }
-
-            try {
-                FileInputStream(file).use { fis ->
-                    java.io.BufferedOutputStream(conn.outputStream, 262144).use { out ->
-                        val buffer = ByteArray(262144)
-                        var bytesRead: Int
-                        var totalWritten = 0L
-                        var lastEmitPercent = -1
-                        while (fis.read(buffer).also { bytesRead = it } != -1) {
-                            out.write(buffer, 0, bytesRead)
-                            totalWritten += bytesRead
-                            val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
-                            if (percent != lastEmitPercent) {
-                                emit(CloudTransferProgress(fileName, totalWritten, totalSize))
-                                lastEmitPercent = percent
-                                if (percent % 10 == 0) {
-                                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                    BufferedInputStream(conn.inputStream, 262144).use { input ->
+                        BufferedOutputStream(FileOutputStream(File(localPath)), 262144).use { fos ->
+                            val buffer = ByteArray(262144)
+                            var bytesRead: Int
+                            var totalRead = 0L
+                            var lastEmitPercent = -1
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                fos.write(buffer, 0, bytesRead)
+                                totalRead += bytesRead
+                                val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
+                                if (percent != lastEmitPercent) {
+                                    trySend(CloudTransferProgress(fileName, totalRead, totalSize))
+                                    lastEmitPercent = percent
                                 }
                             }
                         }
                     }
+                } finally {
+                    conn.disconnect()
                 }
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    val errorBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    throw Exception("Upload failed: HTTP $code, $errorBody")
-                }
-            } finally {
-                conn.disconnect()
-            }
 
-            emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload complete: $fileName")
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload error: ${e.message}")
-            emit(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = e.message))
+                val fileSize = File(localPath).length()
+                send(CloudTransferProgress(fileName, fileSize, fileSize, isComplete = true))
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk download complete: $fileName, ${fileSize}B")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "YandexDisk download error: ${e.message}")
+                send(CloudTransferProgress("", 0, 0, isComplete = true, error = e.message))
+            }
         }
-    }.flowOn(Dispatchers.IO)
+    }
+
+    override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = channelFlow {
+        withContext(Dispatchers.IO) {
+            try {
+                val file = File(localPath)
+                val totalSize = file.length()
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName to $cloudDirPath, size=$totalSize")
+
+                send(CloudTransferProgress(fileName, 0, totalSize))
+
+                // Build target path
+                val targetDiskPath = when {
+                    cloudDirPath.isEmpty() || cloudDirPath == "/" -> "disk:/$fileName"
+                    cloudDirPath.startsWith("disk:") -> "$cloudDirPath/$fileName"
+                    else -> "disk:/$cloudDirPath/$fileName"
+                }
+
+                // Step 1: get upload URL
+                val encodedPath = URLEncoder.encode(targetDiskPath, "UTF-8")
+                val linkJson = withRefreshSuspend {
+                    apiGet("/resources/upload?path=$encodedPath&overwrite=true")
+                } ?: throw Exception("Failed to get upload link")
+
+                val href = linkJson.optString("href", "")
+                if (href.isEmpty()) throw Exception("Empty upload href")
+
+                // Step 2: PUT file to href (streaming mode to avoid OOM on large files)
+                val url = URL(href)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    setRequestProperty("Content-Type", "application/octet-stream")
+                    doOutput = true
+                    setFixedLengthStreamingMode(totalSize)
+                    connectTimeout = 30_000
+                    readTimeout = 300_000
+                }
+
+                try {
+                    FileInputStream(file).use { fis ->
+                        BufferedOutputStream(conn.outputStream, 262144).use { out ->
+                            val buffer = ByteArray(262144)
+                            var bytesRead: Int
+                            var totalWritten = 0L
+                            var lastEmitPercent = -1
+                            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                                out.write(buffer, 0, bytesRead)
+                                totalWritten += bytesRead
+                                val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
+                                if (percent != lastEmitPercent) {
+                                    trySend(CloudTransferProgress(fileName, totalWritten, totalSize))
+                                    lastEmitPercent = percent
+                                    if (percent % 10 == 0) {
+                                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    val code = conn.responseCode
+                    if (code !in 200..299) {
+                        val errorBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                        throw Exception("Upload failed: HTTP $code, $errorBody")
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+
+                send(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload complete: $fileName")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload error: ${e.message}")
+                send(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = e.message))
+            }
+        }
+    }
 
     override suspend fun delete(cloudFileId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -444,69 +449,71 @@ class YandexDiskProvider(
         }
     }
 
-    override fun updateFileContent(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = flow {
-        try {
-            val file = File(localPath)
-            val totalSize = file.length()
-            val fileName = file.name
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: $cloudFileId from $localPath")
-
-            emit(CloudTransferProgress(fileName, 0, totalSize))
-
-            val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
-            val encodedPath = URLEncoder.encode(diskPath, "UTF-8")
-            val linkJson = withRefreshSuspend {
-                apiGet("/resources/upload?path=$encodedPath&overwrite=true")
-            } ?: throw Exception("Failed to get upload link")
-
-            val href = linkJson.optString("href", "")
-            if (href.isEmpty()) throw Exception("Empty upload href")
-
-            val url = URL(href)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                setRequestProperty("Content-Type", "application/octet-stream")
-                doOutput = true
-                setFixedLengthStreamingMode(totalSize)
-                connectTimeout = 30_000
-                readTimeout = 120_000
-            }
-
+    override fun updateFileContent(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = channelFlow {
+        withContext(Dispatchers.IO) {
             try {
-                FileInputStream(file).use { fis ->
-                    java.io.BufferedOutputStream(conn.outputStream, 262144).use { out ->
-                        val buffer = ByteArray(262144)
-                        var bytesRead: Int
-                        var totalWritten = 0L
-                        var lastEmitPercent = -1
-                        while (fis.read(buffer).also { bytesRead = it } != -1) {
-                            out.write(buffer, 0, bytesRead)
-                            totalWritten += bytesRead
-                            val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
-                            if (percent != lastEmitPercent) {
-                                emit(CloudTransferProgress(fileName, totalWritten, totalSize))
-                                lastEmitPercent = percent
-                                if (percent % 10 == 0) {
-                                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                val file = File(localPath)
+                val totalSize = file.length()
+                val fileName = file.name
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: $cloudFileId from $localPath")
+
+                send(CloudTransferProgress(fileName, 0, totalSize))
+
+                val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
+                val encodedPath = URLEncoder.encode(diskPath, "UTF-8")
+                val linkJson = withRefreshSuspend {
+                    apiGet("/resources/upload?path=$encodedPath&overwrite=true")
+                } ?: throw Exception("Failed to get upload link")
+
+                val href = linkJson.optString("href", "")
+                if (href.isEmpty()) throw Exception("Empty upload href")
+
+                val url = URL(href)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    setRequestProperty("Content-Type", "application/octet-stream")
+                    doOutput = true
+                    setFixedLengthStreamingMode(totalSize)
+                    connectTimeout = 30_000
+                    readTimeout = 300_000
+                }
+
+                try {
+                    FileInputStream(file).use { fis ->
+                        BufferedOutputStream(conn.outputStream, 262144).use { out ->
+                            val buffer = ByteArray(262144)
+                            var bytesRead: Int
+                            var totalWritten = 0L
+                            var lastEmitPercent = -1
+                            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                                out.write(buffer, 0, bytesRead)
+                                totalWritten += bytesRead
+                                val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
+                                if (percent != lastEmitPercent) {
+                                    trySend(CloudTransferProgress(fileName, totalWritten, totalSize))
+                                    lastEmitPercent = percent
+                                    if (percent % 10 == 0) {
+                                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $fileName $percent% ($totalWritten/$totalSize)")
+                                    }
                                 }
                             }
                         }
                     }
+                    if (conn.responseCode !in 200..299) {
+                        throw Exception("Update failed: HTTP ${conn.responseCode}")
+                    }
+                } finally {
+                    conn.disconnect()
                 }
-                if (conn.responseCode !in 200..299) {
-                    throw Exception("Update failed: HTTP ${conn.responseCode}")
-                }
-            } finally {
-                conn.disconnect()
-            }
 
-            emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent complete: $fileName")
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "YandexDisk updateFileContent error: ${e.message}")
-            emit(CloudTransferProgress("", 0, 0, isComplete = true, error = e.message))
+                send(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent complete: $fileName")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "YandexDisk updateFileContent error: ${e.message}")
+                send(CloudTransferProgress("", 0, 0, isComplete = true, error = e.message))
+            }
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     // ── Token refresh ──────────────────────────────────────────────────
 
