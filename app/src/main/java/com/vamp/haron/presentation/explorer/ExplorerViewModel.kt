@@ -592,15 +592,43 @@ class ExplorerViewModel @Inject constructor(
         if (selected.isEmpty()) return
 
         clearSelection(activeId)
-        viewModelScope.launch {
+        val total = selected.size
+        cloudTransferJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
+            }
+
             var deleted = 0
-            for (entry in selected) {
+            for ((idx, entry) in selected.withIndex()) {
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, entry.name, OperationType.DELETE,
+                        filePercent = if (total > 0) ((idx * 100) / total) else 0
+                    ))
+                }
                 val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
                 val (provider, cloudFileId) = parsed
-                cloudManager.delete(provider, cloudFileId).onSuccess { deleted++ }
+                cloudManager.delete(provider, cloudFileId)
+                    .onSuccess {
+                        deleted++
+                        refreshPanel(activeId)
+                    }
+                    .onFailure { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "Cloud delete failed: ${entry.name}: ${e.message}")
+                    }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(
+                    deleted, total, "", OperationType.DELETE, isComplete = true
+                ))
             }
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
-            refreshPanel(activeId)
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
         }
     }
 
@@ -4190,6 +4218,20 @@ class ExplorerViewModel @Inject constructor(
         targetPanelId: PanelId,
         decisions: Map<String, ConflictResolution>
     ) {
+        // Cloud routing — same as executeDragMove
+        if (paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeCloudDragMove(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+        if (paths.any { isCloudPath(it) } && !isCloudPath(destinationDir)) {
+            executeDragCloudDownload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+        if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeDragCloudUpload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+
         val total = paths.size
         viewModelScope.launch {
             var completed = 0
