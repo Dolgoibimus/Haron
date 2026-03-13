@@ -4096,6 +4096,246 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    // --- Cloud DnD with conflict decisions ---
+
+    /**
+     * Generate unique name for cloud upload when existing names collide.
+     */
+    private fun generateCloudUniqueName(name: String, existingNames: Set<String>): String {
+        if (name !in existingNames) return name
+        val baseName = name.substringBeforeLast('.', name)
+        val ext = if ('.' in name) ".${name.substringAfterLast('.')}" else ""
+        var counter = 1
+        while ("${baseName}($counter)$ext" in existingNames) counter++
+        return "${baseName}($counter)$ext"
+    }
+
+    /**
+     * DnD: local → cloud — upload with conflict decisions (SKIP/REPLACE/RENAME).
+     */
+    private fun executeDragCloudUploadWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        val destParsed = cloudManager.parseCloudUri(destinationDir) ?: return
+        val (provider, cloudDir) = destParsed
+        val targetPanel = getPanel(targetPanelId)
+        val existingCloudFiles = targetPanel.files.associateBy { it.name }
+        val existingNames = existingCloudFiles.keys.toMutableSet()
+
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUploadWithDecisions: ${paths.size} paths, decisions=$decisions")
+
+        // Build upload plan: (localFile, uploadName, needsDeleteExisting)
+        data class UploadEntry(val file: File, val uploadName: String, val deleteCloudPath: String?)
+        val uploadPlan = paths.mapNotNull { path ->
+            val file = File(path)
+            if (!file.exists() || file.isDirectory) return@mapNotNull null
+            val resolution = decisions[path] ?: ConflictResolution.RENAME
+            EcosystemLogger.d(HaronConstants.TAG, "  file=${file.name}, resolution=$resolution")
+            when (resolution) {
+                ConflictResolution.SKIP -> null
+                ConflictResolution.REPLACE -> {
+                    val existing = existingCloudFiles[file.name]
+                    UploadEntry(file, file.name, existing?.path)
+                }
+                ConflictResolution.RENAME -> {
+                    val uniqueName = generateCloudUniqueName(file.name, existingNames)
+                    existingNames.add(uniqueName)
+                    UploadEntry(file, uniqueName, null)
+                }
+            }
+        }
+
+        if (uploadPlan.isEmpty()) return
+
+        val totalBytes = uploadPlan.sumOf { it.file.length() }
+        var completedBytes = 0L
+
+        cloudTransferJob = viewModelScope.launch {
+            val total = uploadPlan.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
+            }
+
+            // Pre-delete existing cloud files for REPLACE decisions
+            for (entry in uploadPlan) {
+                val deletePath = entry.deleteCloudPath ?: continue
+                val parsed = cloudManager.parseCloudUri(deletePath) ?: continue
+                cloudManager.delete(parsed.first, parsed.second)
+                    .onSuccess { EcosystemLogger.d(HaronConstants.TAG, "  pre-deleted cloud file for replace: ${entry.uploadName}") }
+                    .onFailure { e -> EcosystemLogger.e(HaronConstants.TAG, "  pre-delete failed: ${entry.uploadName}: ${e.message}") }
+            }
+
+            var uploaded = 0
+            for ((idx, uploadEntry) in uploadPlan.withIndex()) {
+                val file = uploadEntry.file
+                val uploadName = uploadEntry.uploadName
+                val fileSize = file.length()
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, uploadName, OperationType.UPLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.uploadFile(provider, file.absolutePath, cloudDir, uploadName)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, uploadName, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += fileSize
+                    uploaded++
+                    refreshPanel(targetPanelId)
+                } catch (e: Exception) {
+                    completedBytes += fileSize
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload (decisions) failed: $uploadName: ${e.message}")
+                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(uploaded, total, "", OperationType.UPLOAD, isComplete = true))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    /**
+     * DnD: cloud → local — download with conflict decisions (SKIP/REPLACE/RENAME).
+     */
+    private fun executeDragCloudDownloadWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudDownloadWithDecisions: ${paths.size} paths, decisions=$decisions")
+
+        val sourcePanel = getPanel(sourcePanelId)
+        val nameMap = sourcePanel.files.associateBy { it.path }
+
+        // Build download plan: (cloudPath, localTargetFile)
+        val downloadPlan = paths.mapNotNull { path ->
+            val entry = nameMap[path]
+            val fileName = entry?.name ?: return@mapNotNull null
+            val resolution = decisions[path] ?: ConflictResolution.RENAME
+            EcosystemLogger.d(HaronConstants.TAG, "  file=$fileName, resolution=$resolution")
+            when (resolution) {
+                ConflictResolution.SKIP -> null
+                ConflictResolution.REPLACE -> {
+                    // Download will overwrite existing local file
+                    Triple(path, File(destinationDir, fileName), entry)
+                }
+                ConflictResolution.RENAME -> {
+                    // Generate unique local name
+                    val destDir = File(destinationDir)
+                    val baseName = fileName.substringBeforeLast('.', fileName)
+                    val ext = if ('.' in fileName) ".${fileName.substringAfterLast('.')}" else ""
+                    var target = File(destDir, fileName)
+                    var counter = 1
+                    while (target.exists()) {
+                        target = File(destDir, "${baseName}($counter)$ext")
+                        counter++
+                    }
+                    Triple(path, target, entry)
+                }
+            }
+        }
+
+        if (downloadPlan.isEmpty()) return
+
+        val totalBytes = downloadPlan.sumOf { it.third.size }
+        var completedBytes = 0L
+
+        cloudTransferJob = viewModelScope.launch {
+            val total = downloadPlan.size
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
+            }
+
+            var downloaded = 0
+            for ((idx, entry) in downloadPlan.withIndex()) {
+                val (cloudPath, localFile, fileEntry) = entry
+                val parsed = cloudManager.parseCloudUri(cloudPath) ?: continue
+                val (provider, cloudFileId) = parsed
+                val fileSize = fileEntry.size
+
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(
+                        idx + 1, total, localFile.name, OperationType.DOWNLOAD,
+                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
+                    ))
+                }
+
+                try {
+                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            _uiState.update {
+                                it.copy(operationProgress = OperationProgress(
+                                    idx + 1, total, localFile.name, OperationType.DOWNLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100)
+                                ))
+                            }
+                        }
+                    completedBytes += fileSize
+                    downloaded++
+                    refreshPanel(targetPanelId)
+                } catch (e: Exception) {
+                    completedBytes += fileSize
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD cloud download (decisions) failed: ${localFile.name}: ${e.message}")
+                }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(downloaded, total, "", OperationType.DOWNLOAD, isComplete = true))
+            }
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    /**
+     * DnD: cloud → cloud — move with conflict decisions (SKIP/REPLACE/RENAME).
+     * For now, delegates to non-decision version (skipping SKIP files).
+     */
+    private fun executeCloudDragMoveWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        val filteredPaths = paths.filter { path ->
+            val resolution = decisions[path] ?: ConflictResolution.RENAME
+            resolution != ConflictResolution.SKIP
+        }
+        if (filteredPaths.isEmpty()) return
+        // TODO: handle REPLACE (delete existing) and RENAME for cloud-to-cloud
+        executeCloudDragMove(filteredPaths, destinationDir, sourcePanelId, targetPanelId)
+    }
+
     // --- Conflict resolution (per-file card) ---
 
     private fun buildConflictPairs(paths: List<String>, targetPanel: PanelUiState): List<ConflictPair> {
@@ -4218,17 +4458,17 @@ class ExplorerViewModel @Inject constructor(
         targetPanelId: PanelId,
         decisions: Map<String, ConflictResolution>
     ) {
-        // Cloud routing — same as executeDragMove
+        // Cloud routing with decisions support
         if (paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
-            executeCloudDragMove(paths, destinationDir, sourcePanelId, targetPanelId)
+            executeCloudDragMoveWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
             return
         }
         if (paths.any { isCloudPath(it) } && !isCloudPath(destinationDir)) {
-            executeDragCloudDownload(paths, destinationDir, sourcePanelId, targetPanelId)
+            executeDragCloudDownloadWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
             return
         }
         if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
-            executeDragCloudUpload(paths, destinationDir, sourcePanelId, targetPanelId)
+            executeDragCloudUploadWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
             return
         }
 
