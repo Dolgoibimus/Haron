@@ -40,15 +40,15 @@ fun DragOverlay(
     val yPx = offset.y.toInt() - with(density) { 24.dp.roundToPx() }
 
     Box {
-        // Operation indicator — floating above the text, ~6-7th character position
+        // Operation indicator — floating above text, ~2-3rd char from name start
         Icon(
             if (dragOperation == DragOperation.COPY) Icons.Filled.ContentCopy
             else Icons.AutoMirrored.Filled.DriveFileMove,
             contentDescription = null,
             modifier = Modifier
                 .offset {
-                    // 12dp padding + 20dp icon + 8dp spacer + ~6 chars × ~7sp ≈ 82dp from left
-                    val iconX = xPx + with(density) { 82.dp.roundToPx() }
+                    // 12dp padding + 20dp icon + 8dp spacer = 40dp to text start, +2 chars ≈ +14dp
+                    val iconX = xPx + with(density) { 54.dp.roundToPx() }
                     val iconY = yPx - with(density) { 14.dp.roundToPx() }
                     IntOffset(iconX, iconY)
                 }
@@ -73,7 +73,8 @@ fun DragOverlay(
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(Modifier.width(8.dp))
+                // 7-8 char gap before file name
+                Spacer(Modifier.width(56.dp))
                 Text(
                     text = previewName,
                     style = MaterialTheme.typography.bodySmall,
