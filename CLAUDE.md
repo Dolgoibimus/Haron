@@ -48,6 +48,13 @@ Package: `com.vamp.haron`. Min SDK 26, Target SDK 34.
 - **pdfbox-android** — обязательно `PDFBoxResourceLoader.init(context)` в
   `Application.onCreate()` до любого вызова PDFBox API. Иначе `ExceptionInInitializerError`.
 
+## Защита от перезаписи
+
+- **features.txt, strings.xml, AGENTS.md** — НИКОГДА не использовать Write (полная перезапись).
+  Только **Edit** (точечная замена конкретного блока). После авто-сжатия контекста
+  Write потеряет всё содержимое кроме того, что сессия "помнит".
+- Перед любым изменением features.txt — сначала **Read**, убедиться что видишь полный файл.
+
 ## Правила сессии
 
 - После реализации новой фичи → обновить `haron-agents.md`
