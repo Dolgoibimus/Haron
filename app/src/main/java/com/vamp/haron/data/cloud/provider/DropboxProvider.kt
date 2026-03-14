@@ -99,8 +99,39 @@ class DropboxProvider(
                 val account = tempClient.users().currentAccount
                 email = account?.email ?: ""
                 displayName = account?.name?.displayName ?: ""
+                EcosystemLogger.d(HaronConstants.TAG, "Dropbox: SDK user info: email=$email, name=$displayName")
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "Dropbox: failed to fetch user info: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox: SDK user info failed: ${e.message}, trying HTTP fallback")
+            }
+
+            // HTTP fallback if SDK didn't return email
+            if (email.isEmpty()) {
+                try {
+                    val url = java.net.URL("https://api.dropboxapi.com/2/users/get_current_account")
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        setRequestProperty("Authorization", "Bearer ${token.accessToken}")
+                        setRequestProperty("Content-Type", "application/json")
+                        doOutput = true
+                        connectTimeout = 15_000
+                        readTimeout = 15_000
+                    }
+                    conn.outputStream.use { it.write("null".toByteArray()) }
+                    if (conn.responseCode == 200) {
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val json = org.json.JSONObject(body)
+                        email = json.optString("email", "")
+                        if (displayName.isEmpty()) {
+                            displayName = json.optJSONObject("name")?.optString("display_name", "") ?: ""
+                        }
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox: HTTP fallback email=$email, name=$displayName")
+                    } else {
+                        val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
+                        EcosystemLogger.e(HaronConstants.TAG, "Dropbox: HTTP fallback failed: ${conn.responseCode}, $err")
+                    }
+                } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "Dropbox: HTTP fallback error: ${e.message}")
+                }
             }
 
             tokenStore.removeByKey(pendingKey)

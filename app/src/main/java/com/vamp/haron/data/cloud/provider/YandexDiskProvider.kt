@@ -42,8 +42,8 @@ class YandexDiskProvider(
         const val CLIENT_ID = "15344409a0d246588f29e4c3af4492b5"
         const val CLIENT_SECRET = "806d0a878d674b9a9dea5148f46d0055"
         const val REDIRECT_URI = CloudOAuthHelper.REDIRECT_URI_YANDEX
-        private const val AUTH_URL = "https://oauth.yandex.com/authorize"
-        private const val TOKEN_URL = "https://oauth.yandex.com/token"
+        private const val AUTH_URL = "https://oauth.yandex.ru/authorize"
+        private const val TOKEN_URL = "https://oauth.yandex.ru/token"
         private const val API_BASE = "https://cloud-api.yandex.net/v1/disk"
         private const val SCOPES = "cloud_api:disk.read cloud_api:disk.write cloud_api:disk.info"
         private const val UPLOAD_CHUNK_SIZE = 10L * 1024 * 1024 // 10MB chunks for Content-Range upload
