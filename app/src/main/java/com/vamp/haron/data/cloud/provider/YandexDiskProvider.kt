@@ -45,6 +45,7 @@ class YandexDiskProvider(
         private const val TOKEN_URL = "https://oauth.yandex.com/token"
         private const val API_BASE = "https://cloud-api.yandex.net/v1/disk"
         private const val SCOPES = "cloud_api:disk.read cloud_api:disk.write cloud_api:disk.info"
+        private const val UPLOAD_CHUNK_SIZE = 10L * 1024 * 1024 // 10MB chunks for Content-Range upload
 
         /** Shared OkHttpClient for uploads — better connection management than HttpURLConnection */
         val uploadClient: OkHttpClient = OkHttpClient.Builder()
@@ -311,41 +312,116 @@ class YandexDiskProvider(
                 val refreshed = refreshToken()
                 EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: pre-refresh result=$refreshed")
 
-                // Build target path
-                val targetDiskPath = when {
-                    cloudDirPath.isEmpty() || cloudDirPath == "/" -> "disk:/$fileName"
-                    cloudDirPath.startsWith("disk:") -> "$cloudDirPath/$fileName"
-                    else -> "disk:/$cloudDirPath/$fileName"
-                }
-                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: targetDiskPath=$targetDiskPath")
+                // Upload as .tmp to bypass MIME-type throttling (.mp4/.avi → 128KB/s)
+                // then rename to real name after upload completes
+                val ext = fileName.substringAfterLast('.', "")
+                val throttledExts = setOf("mp4", "avi", "mkv", "wmv", "zip", "rar", "7z", "tar", "gz", "db", "dat")
+                val useTemp = ext.lowercase() in throttledExts
+                val uploadName = if (useTemp) "${fileName}.tmp" else fileName
 
-                // Retry wrapper: 3 attempts with exponential backoff
-                val maxAttempts = 3
-                var lastError: Exception? = null
-                for (attempt in 1..maxAttempts) {
-                    try {
-                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: attempt $attempt/$maxAttempts")
-                        uploadFileAttempt(file, targetDiskPath, fileName, totalSize) { written ->
-                            trySend(CloudTransferProgress(fileName, written, totalSize))
-                        }
-                        lastError = null
-                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: attempt $attempt SUCCEEDED")
-                        break // success
-                    } catch (e: Exception) {
-                        lastError = e
-                        EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
-                        if (attempt < maxAttempts) {
-                            val backoffMs = attempt * 2000L // 2s, 4s
-                            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: refreshing token, backoff ${backoffMs}ms before retry...")
-                            refreshToken()
-                            delay(backoffMs)
+                val targetDiskPath = when {
+                    cloudDirPath.isEmpty() || cloudDirPath == "/" -> "disk:/$uploadName"
+                    cloudDirPath.startsWith("disk:") -> "$cloudDirPath/$uploadName"
+                    else -> "disk:/$cloudDirPath/$uploadName"
+                }
+                val finalDiskPath = if (useTemp) {
+                    targetDiskPath.removeSuffix(".tmp")
+                } else targetDiskPath
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: targetDiskPath=$targetDiskPath, useTemp=$useTemp")
+
+                // Step 1: get upload URL (lives 30 minutes)
+                val encodedPath = URLEncoder.encode(targetDiskPath, "UTF-8")
+                val linkJson = apiGet("/resources/upload?path=$encodedPath&overwrite=true")
+                    ?: throw Exception("Failed to get upload link")
+                val href = linkJson.optString("href", "")
+                if (href.isEmpty()) throw Exception("Empty upload href")
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: got upload URL, href length=${href.length}")
+
+                // Step 2: chunked upload with Content-Range (per-chunk retry)
+                val chunkSize = UPLOAD_CHUNK_SIZE
+                val totalChunks = ((totalSize + chunkSize - 1) / chunkSize).toInt()
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: $totalChunks chunks of ${chunkSize / 1024 / 1024}MB each")
+
+                var offset = 0L
+                var chunkNum = 0
+                val startTime = System.currentTimeMillis()
+
+                while (offset < totalSize) {
+                    chunkNum++
+                    val end = minOf(offset + chunkSize - 1, totalSize - 1)
+                    val chunkLen = end - offset + 1
+                    val contentRange = "bytes $offset-$end/$totalSize"
+
+                    // Per-chunk retry: 5 attempts
+                    var chunkSuccess = false
+                    for (attempt in 1..5) {
+                        try {
+                            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: chunk $chunkNum/$totalChunks [$contentRange] attempt $attempt")
+
+                            val chunkBody = object : RequestBody() {
+                                override fun contentType() = "application/octet-stream".toMediaType()
+                                override fun contentLength() = chunkLen
+
+                                override fun writeTo(sink: BufferedSink) {
+                                    java.io.RandomAccessFile(file, "r").use { raf ->
+                                        raf.seek(offset)
+                                        val buffer = ByteArray(65536)
+                                        var remaining = chunkLen
+                                        while (remaining > 0) {
+                                            val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+                                            val read = raf.read(buffer, 0, toRead)
+                                            if (read <= 0) break
+                                            sink.write(buffer, 0, read)
+                                            remaining -= read
+                                        }
+                                    }
+                                }
+                            }
+
+                            val request = Request.Builder()
+                                .url(href)
+                                .put(chunkBody)
+                                .header("Content-Range", contentRange)
+                                .build()
+
+                            uploadClient.newCall(request).execute().use { response ->
+                                val code = response.code
+                                if (code !in 200..299) {
+                                    val errorBody = response.body?.string()
+                                    throw Exception("HTTP $code: $errorBody")
+                                }
+                            }
+                            chunkSuccess = true
+                            break
+                        } catch (e: Exception) {
+                            EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload: chunk $chunkNum attempt $attempt FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                            if (attempt < 5) {
+                                val backoff = attempt * 2000L
+                                delay(backoff)
+                                if (attempt >= 3) refreshToken()
+                            }
                         }
                     }
-                }
-                if (lastError != null) throw lastError
+                    if (!chunkSuccess) throw Exception("Chunk $chunkNum failed after 5 attempts")
 
+                    offset = end + 1
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val percent = ((offset * 100) / totalSize).toInt()
+                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: chunk $chunkNum/$totalChunks OK, $percent% (${offset / 1024}KB/${totalSize / 1024}KB) ${elapsed}ms")
+                    trySend(CloudTransferProgress(fileName, offset, totalSize))
+                }
+
+                // Step 3: rename .tmp → real name (if throttling bypass was used)
+                if (useTemp) {
+                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: renaming $targetDiskPath → $finalDiskPath")
+                    val from = URLEncoder.encode(targetDiskPath, "UTF-8")
+                    val to = URLEncoder.encode(finalDiskPath, "UTF-8")
+                    apiRequest("POST", "/resources/move?from=$from&path=$to&overwrite=true", null)
+                }
+
+                val totalElapsed = System.currentTimeMillis() - startTime
                 send(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
-                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: COMPLETE $fileName ($totalSize bytes)")
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: COMPLETE $fileName ($totalSize bytes) in ${totalElapsed}ms")
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload FINAL ERROR: ${e.javaClass.simpleName}: ${e.message}")
                 e.cause?.let { cause ->
@@ -353,74 +429,6 @@ class YandexDiskProvider(
                 }
                 send(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = e.message))
             }
-        }
-    }
-
-    /** Single upload attempt via OkHttp. Throws on failure. */
-    private fun uploadFileAttempt(
-        file: File,
-        targetDiskPath: String,
-        fileName: String,
-        totalSize: Long,
-        onProgress: (Long) -> Unit
-    ) {
-        // Step 1: get upload URL
-        val encodedPath = URLEncoder.encode(targetDiskPath, "UTF-8")
-        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 1 — getting upload URL for $targetDiskPath")
-        val startTime = System.currentTimeMillis()
-        val linkJson = apiGet("/resources/upload?path=$encodedPath&overwrite=true")
-            ?: throw Exception("Failed to get upload link")
-        val href = linkJson.optString("href", "")
-        if (href.isEmpty()) throw Exception("Empty upload href")
-        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: got upload URL in ${System.currentTimeMillis() - startTime}ms, href length=${href.length}")
-
-        // Step 2: PUT file via OkHttp — better connection management, write timeout, keepalive
-        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 2 — PUT via OkHttp, size=${totalSize / 1024}KB")
-
-        val requestBody = object : RequestBody() {
-            override fun contentType() = "application/octet-stream".toMediaType()
-            override fun contentLength() = totalSize
-
-            override fun writeTo(sink: BufferedSink) {
-                val putStartTime = System.currentTimeMillis()
-                FileInputStream(file).use { fis ->
-                    val buffer = ByteArray(65536) // 64KB — smaller writes for better network pacing
-                    var bytesRead: Int
-                    var totalWritten = 0L
-                    var lastEmitPercent = -1
-                    while (fis.read(buffer).also { bytesRead = it } != -1) {
-                        sink.write(buffer, 0, bytesRead)
-                        sink.flush()
-                        totalWritten += bytesRead
-                        val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
-                        if (percent != lastEmitPercent) {
-                            onProgress(totalWritten)
-                            lastEmitPercent = percent
-                            if (percent % 5 == 0) {
-                                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: $fileName $percent% ($totalWritten/$totalSize) ${System.currentTimeMillis() - putStartTime}ms")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val request = Request.Builder()
-            .url(href)
-            .put(requestBody)
-            .build()
-
-        val putStartTime = System.currentTimeMillis()
-        uploadClient.newCall(request).execute().use { response ->
-            val putElapsed = System.currentTimeMillis() - putStartTime
-            val code = response.code
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: HTTP response code=$code, elapsed=${putElapsed}ms")
-            if (code !in 200..299) {
-                val errorBody = response.body?.string()
-                EcosystemLogger.e(HaronConstants.TAG, "YandexDisk uploadAttempt: FAILED HTTP $code, body=$errorBody")
-                throw Exception("Upload failed: HTTP $code, $errorBody")
-            }
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: SUCCESS, total time=${System.currentTimeMillis() - startTime}ms")
         }
     }
 
@@ -563,36 +571,76 @@ class YandexDiskProvider(
 
                 send(CloudTransferProgress(fileName, 0, totalSize))
 
-                // Pre-refresh token
                 EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: pre-refreshing token...")
                 refreshToken()
 
                 val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
-                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: diskPath=$diskPath")
 
-                // Retry wrapper: 3 attempts with exponential backoff
-                val maxAttempts = 3
-                var lastError: Exception? = null
-                for (attempt in 1..maxAttempts) {
-                    try {
-                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: attempt $attempt/$maxAttempts")
-                        uploadFileAttempt(file, diskPath, fileName, totalSize) { written ->
-                            trySend(CloudTransferProgress(fileName, written, totalSize))
-                        }
-                        lastError = null
-                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: attempt $attempt SUCCEEDED")
-                        break
-                    } catch (e: Exception) {
-                        lastError = e
-                        EcosystemLogger.e(HaronConstants.TAG, "YandexDisk updateFileContent: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
-                        if (attempt < maxAttempts) {
-                            val backoffMs = attempt * 2000L
-                            refreshToken()
-                            delay(backoffMs)
+                // Get upload URL
+                val encodedPath = URLEncoder.encode(diskPath, "UTF-8")
+                val linkJson = apiGet("/resources/upload?path=$encodedPath&overwrite=true")
+                    ?: throw Exception("Failed to get upload link")
+                val href = linkJson.optString("href", "")
+                if (href.isEmpty()) throw Exception("Empty upload href")
+
+                // Chunked upload with Content-Range + per-chunk retry
+                val chunkSize = UPLOAD_CHUNK_SIZE
+                var offset = 0L
+                var chunkNum = 0
+                val totalChunks = ((totalSize + chunkSize - 1) / chunkSize).toInt()
+
+                while (offset < totalSize) {
+                    chunkNum++
+                    val end = minOf(offset + chunkSize - 1, totalSize - 1)
+                    val chunkLen = end - offset + 1
+                    val contentRange = "bytes $offset-$end/$totalSize"
+
+                    var chunkSuccess = false
+                    for (attempt in 1..5) {
+                        try {
+                            val chunkBody = object : RequestBody() {
+                                override fun contentType() = "application/octet-stream".toMediaType()
+                                override fun contentLength() = chunkLen
+                                override fun writeTo(sink: BufferedSink) {
+                                    java.io.RandomAccessFile(file, "r").use { raf ->
+                                        raf.seek(offset)
+                                        val buffer = ByteArray(65536)
+                                        var remaining = chunkLen
+                                        while (remaining > 0) {
+                                            val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+                                            val read = raf.read(buffer, 0, toRead)
+                                            if (read <= 0) break
+                                            sink.write(buffer, 0, read)
+                                            remaining -= read
+                                        }
+                                    }
+                                }
+                            }
+
+                            val request = Request.Builder()
+                                .url(href)
+                                .put(chunkBody)
+                                .header("Content-Range", contentRange)
+                                .build()
+
+                            uploadClient.newCall(request).execute().use { response ->
+                                if (response.code !in 200..299) {
+                                    throw Exception("HTTP ${response.code}: ${response.body?.string()}")
+                                }
+                            }
+                            chunkSuccess = true
+                            break
+                        } catch (e: Exception) {
+                            EcosystemLogger.e(HaronConstants.TAG, "YandexDisk updateFileContent: chunk $chunkNum attempt $attempt FAILED: ${e.message}")
+                            if (attempt < 5) delay(attempt * 2000L)
                         }
                     }
+                    if (!chunkSuccess) throw Exception("Chunk $chunkNum failed after 5 attempts")
+
+                    offset = end + 1
+                    trySend(CloudTransferProgress(fileName, offset, totalSize))
+                    EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: chunk $chunkNum/$totalChunks OK, ${(offset * 100 / totalSize)}%")
                 }
-                if (lastError != null) throw lastError
 
                 send(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
                 EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: COMPLETE $fileName ($totalSize bytes)")
