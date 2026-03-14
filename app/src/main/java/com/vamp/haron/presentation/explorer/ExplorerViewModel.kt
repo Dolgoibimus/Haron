@@ -299,6 +299,46 @@ class ExplorerViewModel @Inject constructor(
 
     fun isCloudPath(path: String): Boolean = path.startsWith("cloud://")
 
+    // ── Operation progress list helpers ──────────────────────────────────
+
+    private var progressIdCounter = 0
+
+    /** Generate a unique ID for a new operation progress. */
+    private fun nextProgressId(): String = "op_${++progressIdCounter}"
+
+    /** Update or add an operation progress by ID. Also updates legacy operationProgress for primary. */
+    private fun updateProgress(progress: OperationProgress) {
+        _uiState.update { state ->
+            val list = state.operationProgressList.toMutableList()
+            val idx = list.indexOfFirst { it.id == progress.id }
+            if (idx >= 0) list[idx] = progress else list.add(progress)
+            // Remove completed entries after a short display
+            val active = list.filter { !it.isComplete }
+            val completed = list.filter { it.isComplete }
+            val newList = active + completed
+            state.copy(
+                operationProgress = newList.firstOrNull(),
+                operationProgressList = newList
+            )
+        }
+    }
+
+    /** Remove a completed progress by ID. */
+    private fun removeProgress(id: String) {
+        _uiState.update { state ->
+            val newList = state.operationProgressList.filter { it.id != id }
+            state.copy(
+                operationProgress = newList.firstOrNull(),
+                operationProgressList = newList
+            )
+        }
+    }
+
+    /** Clear all progress entries. */
+    private fun clearAllProgress() {
+        _uiState.update { it.copy(operationProgress = null, operationProgressList = emptyList()) }
+    }
+
     /** Get Authorization header for cloud thumbnail requests (Yandex needs OAuth, GDrive needs Bearer) */
     fun getCloudAuthHeader(currentPath: String): String? {
         if (!currentPath.startsWith("cloud://yandex/")) return null
@@ -626,10 +666,9 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = selected.sumOf { it.size }
         var completedBytes = 0L
 
+        val progressId = nextProgressId()
         launchCloudJob {
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.DOWNLOAD, id = progressId))
 
             var downloaded = 0
             for ((idx, entry) in selected.withIndex()) {
@@ -637,12 +676,11 @@ class ExplorerViewModel @Inject constructor(
                 val (provider, cloudFileId) = parsed
                 val localFile = File(targetDir, entry.name)
 
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, entry.name, OperationType.DOWNLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
@@ -650,12 +688,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, entry.name, OperationType.DOWNLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += entry.size
                     downloaded++
@@ -666,17 +703,13 @@ class ExplorerViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${entry.name}: ${e.message}")
                 }
             }
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    downloaded, total, "", OperationType.DOWNLOAD, isComplete = true
-                ))
-            }
+            updateProgress(OperationProgress(
+                downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId
+            ))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
 
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -710,20 +743,18 @@ class ExplorerViewModel @Inject constructor(
         var completedBytes = 0L
         EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: totalBytes=$totalBytes (${totalBytes / 1024}KB)")
 
+        val progressId = nextProgressId()
         launchCloudJob {
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.UPLOAD, id = progressId))
 
             var uploaded = 0
             for ((idx, entry) in selected.withIndex()) {
                 EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: uploading [${idx + 1}/$total] ${entry.name} (${entry.size / 1024}KB) to $cloudDir")
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, entry.name, OperationType.UPLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, entry.name, OperationType.UPLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
@@ -734,12 +765,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, entry.name, OperationType.UPLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, entry.name, OperationType.UPLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += entry.size
                     uploaded++
@@ -752,17 +782,13 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
             EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: DONE, uploaded $uploaded/$total files")
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    uploaded, total, "", OperationType.UPLOAD, isComplete = true
-                ))
-            }
+            updateProgress(OperationProgress(
+                uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId
+            ))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
 
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -779,20 +805,18 @@ class ExplorerViewModel @Inject constructor(
         clearSelection(activeId)
         val total = selected.size
         EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: $total files")
+        val progressId = nextProgressId()
         launchCloudJob {
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.DELETE, id = progressId))
             delay(300) // let progress bar animation play
 
             var deleted = 0
             for ((idx, entry) in selected.withIndex()) {
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, entry.name, OperationType.DELETE,
-                        filePercent = if (total > 0) ((idx * 100) / total) else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, entry.name, OperationType.DELETE,
+                    filePercent = if (total > 0) ((idx * 100) / total) else 0,
+                    id = progressId
+                ))
                 val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
                 val (provider, cloudFileId) = parsed
                 EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: deleting ${entry.name} (${idx + 1}/$total)")
@@ -806,19 +830,14 @@ class ExplorerViewModel @Inject constructor(
                     }
             }
 
-            // Show completion for at least 1 second
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    deleted, total, "", OperationType.DELETE, isComplete = true,
-                    filePercent = 100
-                ))
-            }
+            updateProgress(OperationProgress(
+                deleted, total, "", OperationType.DELETE, isComplete = true,
+                filePercent = 100, id = progressId
+            ))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_deleted, deleted))
 
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -856,7 +875,7 @@ class ExplorerViewModel @Inject constructor(
     fun cancelCloudTransfer() {
         cloudTransferJobs.values.forEach { it.cancel() }
         cloudTransferJobs.clear()
-        _uiState.update { it.copy(dialogState = DialogState.None, operationProgress = null) }
+        _uiState.update { it.copy(dialogState = DialogState.None, operationProgress = null, operationProgressList = emptyList()) }
     }
 
     fun cancelSingleCloudTransfer(transferId: String) {
@@ -2974,8 +2993,10 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { state ->
             val p = state.operationProgress
             if (p != null && !p.isComplete) {
-                state.copy(operationProgress = null)
-            } else state
+                state.copy(operationProgress = null, operationProgressList = emptyList())
+            } else {
+                state.copy(operationProgressList = emptyList())
+            }
         }
         _toastMessage.tryEmit(appContext.getString(R.string.operation_cancelled))
     }
@@ -4264,19 +4285,17 @@ class ExplorerViewModel @Inject constructor(
         sourcePanelId: PanelId,
         targetPanelId: PanelId
     ) {
+        val progressId = nextProgressId()
         launchCloudJob {
             val total = paths.size
             val sourcePanel = getPanel(sourcePanelId)
             val nameMap = sourcePanel.files.associateBy { it.path }
-            // Total bytes for overall progress
             val totalBytes = paths.sumOf { nameMap[it]?.size ?: 0L }
             var completedBytes = 0L
 
             EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudDownload: $total files → $destinationDir, totalBytes=$totalBytes")
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.DOWNLOAD, id = progressId))
 
             var downloaded = 0
             for ((idx, path) in paths.withIndex()) {
@@ -4287,12 +4306,11 @@ class ExplorerViewModel @Inject constructor(
                 val fileSize = entry?.size ?: 0L
                 val localFile = File(destinationDir, fileName)
 
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, fileName, OperationType.DOWNLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, fileName, OperationType.DOWNLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
@@ -4300,12 +4318,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, fileName, OperationType.DOWNLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, fileName, OperationType.DOWNLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += fileSize
                     downloaded++
@@ -4317,17 +4334,13 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    downloaded, total, "", OperationType.DOWNLOAD, isComplete = true
-                ))
-            }
+            updateProgress(OperationProgress(
+                downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId
+            ))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
 
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -4357,25 +4370,23 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = validFiles.sumOf { it.length() }
         var completedBytes = 0L
 
+        val progressId = nextProgressId()
         launchCloudJob {
             val total = validFiles.size
             EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: launching upload of $total files, totalBytes=$totalBytes")
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.UPLOAD, id = progressId))
 
             var uploaded = 0
             for ((idx, file) in validFiles.withIndex()) {
                 val fileName = file.name
                 val fileSize = file.length()
 
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, fileName, OperationType.UPLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, fileName, OperationType.UPLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.uploadFile(provider, file.absolutePath, cloudDir, fileName)
@@ -4383,12 +4394,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, fileName, OperationType.UPLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, fileName, OperationType.UPLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += fileSize
                     uploaded++
@@ -4400,17 +4410,13 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(
-                    uploaded, total, "", OperationType.UPLOAD, isComplete = true
-                ))
-            }
+            updateProgress(OperationProgress(
+                uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId
+            ))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
 
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -4472,11 +4478,10 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = uploadPlan.sumOf { it.file.length() }
         var completedBytes = 0L
 
+        val progressId = nextProgressId()
         launchCloudJob {
             val total = uploadPlan.size
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.UPLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.UPLOAD, id = progressId))
 
             // Pre-delete existing cloud files for REPLACE decisions
             for (entry in uploadPlan) {
@@ -4493,12 +4498,11 @@ class ExplorerViewModel @Inject constructor(
                 val uploadName = uploadEntry.uploadName
                 val fileSize = file.length()
 
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, uploadName, OperationType.UPLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, uploadName, OperationType.UPLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.uploadFile(provider, file.absolutePath, cloudDir, uploadName)
@@ -4506,12 +4510,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, uploadName, OperationType.UPLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, uploadName, OperationType.UPLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += fileSize
                     uploaded++
@@ -4523,14 +4526,10 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(uploaded, total, "", OperationType.UPLOAD, isComplete = true))
-            }
+            updateProgress(OperationProgress(uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 
@@ -4582,11 +4581,10 @@ class ExplorerViewModel @Inject constructor(
         val totalBytes = downloadPlan.sumOf { it.third.size }
         var completedBytes = 0L
 
+        val progressId = nextProgressId()
         launchCloudJob {
             val total = downloadPlan.size
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DOWNLOAD))
-            }
+            updateProgress(OperationProgress(0, total, "", OperationType.DOWNLOAD, id = progressId))
 
             var downloaded = 0
             for ((idx, entry) in downloadPlan.withIndex()) {
@@ -4595,12 +4593,11 @@ class ExplorerViewModel @Inject constructor(
                 val (provider, cloudFileId) = parsed
                 val fileSize = fileEntry.size
 
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(
-                        idx + 1, total, localFile.name, OperationType.DOWNLOAD,
-                        filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0
-                    ))
-                }
+                updateProgress(OperationProgress(
+                    idx + 1, total, localFile.name, OperationType.DOWNLOAD,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
 
                 try {
                     cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
@@ -4608,12 +4605,11 @@ class ExplorerViewModel @Inject constructor(
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
-                            _uiState.update {
-                                it.copy(operationProgress = OperationProgress(
-                                    idx + 1, total, localFile.name, OperationType.DOWNLOAD,
-                                    filePercent = overallPercent.coerceIn(0, 100)
-                                ))
-                            }
+                            updateProgress(OperationProgress(
+                                idx + 1, total, localFile.name, OperationType.DOWNLOAD,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId
+                            ))
                         }
                     completedBytes += fileSize
                     downloaded++
@@ -4625,14 +4621,10 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(downloaded, total, "", OperationType.DOWNLOAD, isComplete = true))
-            }
+            updateProgress(OperationProgress(downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
             delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            removeProgress(progressId)
         }
     }
 

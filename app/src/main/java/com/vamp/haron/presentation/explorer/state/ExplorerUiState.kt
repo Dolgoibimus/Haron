@@ -30,7 +30,8 @@ data class ExplorerUiState(
     val showShelf: Boolean = false,
     val shelfItems: List<ShelfItem> = emptyList(),
     val dragState: DragState = DragState.Idle,
-    val operationProgress: OperationProgress? = null,
+    val operationProgress: OperationProgress? = null, // primary (first) progress — backward compat
+    val operationProgressList: List<OperationProgress> = emptyList(), // all active operations
     val trashSizeInfo: String = "",
     val themeMode: String = "system",
     val safRoots: List<SafRootInfo> = emptyList(),

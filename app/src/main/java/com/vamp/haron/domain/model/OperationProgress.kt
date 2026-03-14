@@ -9,7 +9,8 @@ data class OperationProgress(
     val type: OperationType = OperationType.COPY,
     val isComplete: Boolean = false,
     val error: String? = null,
-    val filePercent: Int = -1
+    val filePercent: Int = -1,
+    val id: String = ""
 )
 
 enum class OperationType(val labelRes: Int) {

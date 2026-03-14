@@ -855,17 +855,22 @@ fun ExplorerScreen(
             }
         }
 
-        // File operation progress bar
-        val progress = state.operationProgress
+        // File operation progress bar (supports multiple concurrent operations)
+        val progressList = state.operationProgressList.ifEmpty {
+            // backward compat: if only legacy field is set
+            listOfNotNull(state.operationProgress)
+        }
+        val primaryProgress = progressList.firstOrNull()
+        val secondaryList = progressList.drop(1)
         AnimatedVisibility(
-            visible = progress != null,
+            visible = primaryProgress != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
         ) {
-            progress?.let { p ->
+            primaryProgress?.let { p ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -876,6 +881,44 @@ fun ExplorerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        // Secondary operations — compact lines above primary
+                        secondaryList.forEach { s ->
+                            val sTypeLabel = stringResource(s.type.labelRes)
+                            val sName = if (s.currentFileName.isNotEmpty()) "$sTypeLabel: ${s.currentFileName}" else sTypeLabel
+                            val sCounter = if (s.total > 1) "(${s.current}/${s.total})" else ""
+                            val sPercent = if (s.filePercent in 0..100) "${s.filePercent}%" else ""
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = sName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (sCounter.isNotEmpty()) {
+                                    Text(
+                                        text = sCounter,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(start = 6.dp)
+                                    )
+                                }
+                                if (sPercent.isNotEmpty()) {
+                                    Text(
+                                        text = sPercent,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+                        // Primary operation — full progress bar
                         val typeLabel = stringResource(p.type.labelRes)
                         val hasFilePercent = p.filePercent in 0..100
                         val nameText = when {
@@ -895,7 +938,7 @@ fun ExplorerScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
+                                modifier = Modifier.weight(1f)
                             )
                             if (counterText.isNotEmpty()) {
                                 Text(
