@@ -95,6 +95,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.content.Intent
 import android.provider.DocumentsContract
@@ -212,6 +214,9 @@ class ExplorerViewModel @Inject constructor(
     /** Active cloud transfer jobs: transferId → Job */
     private val cloudTransferJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
     private var transferIdCounter = 0
+
+    /** Mutex to serialize cloud uploads — parallel PUTs cause Yandex to reset ALL connections */
+    private val cloudUploadMutex = Mutex()
 
     /** Start a cloud transfer and track it. Returns transfer ID. */
     private fun launchCloudTransfer(
@@ -757,20 +762,22 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
-                        .collect { progress ->
-                            if (progress.error != null) {
-                                EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${entry.name}: ${progress.error}")
+                    cloudUploadMutex.withLock {
+                        cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
+                            .collect { progress ->
+                                if (progress.error != null) {
+                                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${entry.name}: ${progress.error}")
+                                }
+                                val overallPercent = if (totalBytes > 0) {
+                                    ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                                } else 0
+                                updateProgress(OperationProgress(
+                                    idx + 1, total, entry.name, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100),
+                                    id = progressId
+                                ))
                             }
-                            val overallPercent = if (totalBytes > 0) {
-                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
-                            } else 0
-                            updateProgress(OperationProgress(
-                                idx + 1, total, entry.name, OperationType.UPLOAD,
-                                filePercent = overallPercent.coerceIn(0, 100),
-                                id = progressId
-                            ))
-                        }
+                    }
                     completedBytes += entry.size
                     uploaded++
                     EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${entry.name} uploaded OK, completedBytes=$completedBytes")
@@ -4389,17 +4396,19 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.uploadFile(provider, file.absolutePath, cloudDir, fileName)
-                        .collect { progress ->
-                            val overallPercent = if (totalBytes > 0) {
-                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
-                            } else 0
-                            updateProgress(OperationProgress(
-                                idx + 1, total, fileName, OperationType.UPLOAD,
-                                filePercent = overallPercent.coerceIn(0, 100),
-                                id = progressId
-                            ))
-                        }
+                    cloudUploadMutex.withLock {
+                        cloudManager.uploadFile(provider, file.absolutePath, cloudDir, fileName)
+                            .collect { progress ->
+                                val overallPercent = if (totalBytes > 0) {
+                                    ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                                } else 0
+                                updateProgress(OperationProgress(
+                                    idx + 1, total, fileName, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100),
+                                    id = progressId
+                                ))
+                            }
+                    }
                     completedBytes += fileSize
                     uploaded++
                     refreshPanel(targetPanelId)
@@ -4505,17 +4514,19 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.uploadFile(provider, file.absolutePath, cloudDir, uploadName)
-                        .collect { progress ->
-                            val overallPercent = if (totalBytes > 0) {
-                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
-                            } else 0
-                            updateProgress(OperationProgress(
-                                idx + 1, total, uploadName, OperationType.UPLOAD,
-                                filePercent = overallPercent.coerceIn(0, 100),
-                                id = progressId
-                            ))
-                        }
+                    cloudUploadMutex.withLock {
+                        cloudManager.uploadFile(provider, file.absolutePath, cloudDir, uploadName)
+                            .collect { progress ->
+                                val overallPercent = if (totalBytes > 0) {
+                                    ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                                } else 0
+                                updateProgress(OperationProgress(
+                                    idx + 1, total, uploadName, OperationType.UPLOAD,
+                                    filePercent = overallPercent.coerceIn(0, 100),
+                                    id = progressId
+                                ))
+                            }
+                    }
                     completedBytes += fileSize
                     uploaded++
                     refreshPanel(targetPanelId)

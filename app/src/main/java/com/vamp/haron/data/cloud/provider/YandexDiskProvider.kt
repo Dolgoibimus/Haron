@@ -392,6 +392,7 @@ class YandexDiskProvider(
                         totalWritten += bytesRead
                         val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
                         if (percent != lastEmitPercent) {
+                            out.flush()
                             onProgress(totalWritten)
                             lastEmitPercent = percent
                             if (percent % 10 == 0) {
