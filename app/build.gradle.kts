@@ -166,6 +166,10 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
+    // FTP client (Apache Commons Net) + embedded FTP server (Apache FtpServer)
+    implementation("org.apache.commons:commons-net:3.11.1")
+    implementation("org.apache.ftpserver:ftpserver-core:1.2.0")
+
     // SMB client (smbj + RPC for share enumeration)
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("com.rapid7.client:dcerpc:0.12.13")

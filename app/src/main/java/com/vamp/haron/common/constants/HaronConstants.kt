@@ -38,4 +38,17 @@ object HaronConstants {
     // SSH
     const val SSH_CREDENTIAL_KEYSTORE_ALIAS = "haron_ssh_cred_key"
     const val SSH_CREDENTIAL_FILE = "ssh_credentials.enc"
+
+    // FTP
+    const val FTP_PREFIX = "ftp://"
+    const val FTPS_PREFIX = "ftps://"
+    const val FTP_DEFAULT_PORT = 21
+    const val FTP_SERVER_DEFAULT_PORT = 2121
+    const val FTP_SERVER_PORT_FALLBACK = 2131
+    const val FTP_PASSIVE_PORT_START = 50000
+    const val FTP_PASSIVE_PORT_END = 50100
+    const val FTP_CONNECT_TIMEOUT_MS = 10_000
+    const val FTP_SO_TIMEOUT_MS = 30_000
+    const val FTP_CREDENTIAL_KEYSTORE_ALIAS = "haron_ftp_cred_key"
+    const val FTP_CREDENTIAL_FILE = "ftp_credentials.enc"
 }

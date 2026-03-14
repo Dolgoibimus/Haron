@@ -234,6 +234,16 @@
 - Upload/download with progress
 - Saved connections (encrypted)
 
+# FTP Client & Server [NEW]
+- Connect to remote FTP servers [NEW]
+- Browse, download, upload files with progress [NEW]
+- Dual-panel: FTP files on top, local files on bottom [NEW]
+- FTPS (TLS) support [NEW]
+- Saved FTP connections (encrypted credentials) [NEW]
+- Built-in FTP server: share phone files to PC [NEW]
+- Anonymous or password-protected access [NEW]
+- Read-only mode option [NEW]
+
 # Quick Send
 - Long tap file → device circles → drag to send
 - Trusted devices auto-accept

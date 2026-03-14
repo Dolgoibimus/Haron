@@ -66,6 +66,9 @@ import com.vamp.haron.data.voice.VoiceState
 import com.vamp.haron.data.security.AuthManager
 import com.vamp.haron.data.cloud.CloudManager
 import com.vamp.haron.data.cloud.CloudOAuthHelper
+import com.vamp.haron.data.ftp.FtpClientManager
+import com.vamp.haron.data.ftp.FtpFileInfo
+import com.vamp.haron.data.ftp.FtpPathUtils
 import com.vamp.haron.data.shizuku.ShizukuManager
 import com.vamp.haron.data.usb.UsbStorageManager
 import com.vamp.haron.domain.model.CloudProvider
@@ -149,7 +152,8 @@ class ExplorerViewModel @Inject constructor(
     private val extractArchiveUseCase: ExtractArchiveUseCase,
     val shizukuManager: ShizukuManager,
     private val cloudManager: CloudManager,
-    private val httpFileServer: com.vamp.haron.data.transfer.HttpFileServer
+    private val httpFileServer: com.vamp.haron.data.transfer.HttpFileServer,
+    private val ftpClientManager: FtpClientManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -1441,6 +1445,12 @@ class ExplorerViewModel @Inject constructor(
                     val parsed = cloudManager.parseCloudUri(path)
                     if (parsed != null) "${parsed.provider.displayName}: /${parsed.path}" else path
                 }
+                FtpPathUtils.isFtpPath(path) -> {
+                    val host = FtpPathUtils.parseHost(path)
+                    val port = FtpPathUtils.parsePort(path)
+                    val rel = FtpPathUtils.parseRelativePath(path)
+                    "FTP: $host:$port$rel"
+                }
                 path.startsWith("content://") -> buildSafDisplayPath(path)
                 else -> path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
             }
@@ -1477,6 +1487,40 @@ class ExplorerViewModel @Inject constructor(
                             historyIndex = index,
                             selectedPaths = emptySet(),
                             cloudBreadcrumbs = newBreadcrumbs
+                        )
+                    }
+                }.onFailure { e ->
+                    updatePanel(panelId) { it.copy(isLoading = false, error = e.message) }
+                }
+                return@launch
+            }
+
+            // FTP path — use FtpClientManager
+            if (FtpPathUtils.isFtpPath(path)) {
+                val host = FtpPathUtils.parseHost(path)
+                val port = FtpPathUtils.parsePort(path)
+                val relPath = FtpPathUtils.parseRelativePath(path)
+                ftpClientManager.listFiles(host, port, relPath).onSuccess { ftpFiles ->
+                    val fileEntries = ftpFiles.map { it.toFileEntry(host, port) }
+                    updatePanel(panelId) {
+                        var history = it.navigationHistory
+                        var index = it.historyIndex
+                        if (pushHistory) {
+                            history = history.take(index + 1) + path
+                            if (history.size > MAX_HISTORY_SIZE) {
+                                history = history.takeLast(MAX_HISTORY_SIZE)
+                            }
+                            index = history.lastIndex
+                        }
+                        it.copy(
+                            currentPath = path,
+                            displayPath = displayPath,
+                            files = fileEntries,
+                            isLoading = false,
+                            error = null,
+                            navigationHistory = history,
+                            historyIndex = index,
+                            selectedPaths = emptySet()
                         )
                     }
                 }.onFailure { e ->
@@ -1545,7 +1589,7 @@ class ExplorerViewModel @Inject constructor(
                         PanelId.TOP -> preferences.topPanelPath = path
                         PanelId.BOTTOM -> preferences.bottomPanelPath = path
                     }
-                    if (!path.startsWith("content://")) {
+                    if (!path.startsWith("content://") && !FtpPathUtils.isFtpPath(path)) {
                         preferences.addRecentPath(path)
                         _uiState.update { it.copy(recentPaths = preferences.getRecentPaths()) }
                     }
@@ -1596,6 +1640,8 @@ class ExplorerViewModel @Inject constructor(
                 }
                 // Calculate current folder size for breadcrumb (skip restricted paths — walkTopDown causes GC storm)
                 val skipSizeCalc = path.startsWith("content://") ||
+                    path.startsWith("cloud://") ||
+                    FtpPathUtils.isFtpPath(path) ||
                     path == HaronConstants.VIRTUAL_SECURE_PATH ||
                     isRestrictedAndroidDir(path)
                 if (!skipSizeCalc &&

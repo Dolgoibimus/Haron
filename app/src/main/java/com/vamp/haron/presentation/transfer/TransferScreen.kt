@@ -71,6 +71,11 @@ import com.vamp.haron.presentation.transfer.components.DeviceList
 import com.vamp.haron.presentation.transfer.components.QrCodeDialog
 import com.vamp.haron.presentation.transfer.components.QrScannerDialog
 import com.vamp.haron.presentation.transfer.components.ReceiveDialog
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import com.vamp.haron.presentation.transfer.components.FtpBrowserTab
 import com.vamp.haron.presentation.transfer.components.SmbBrowserTab
 import com.vamp.haron.presentation.transfer.components.TransferProgressCard
 import com.vamp.core.logger.EcosystemLogger
@@ -83,10 +88,14 @@ fun TransferScreen(
     onOpenFolder: (String) -> Unit = {},
     openScanner: Boolean = false,
     viewModel: TransferViewModel = hiltViewModel(),
-    smbViewModel: SmbViewModel = hiltViewModel()
+    smbViewModel: SmbViewModel = hiltViewModel(),
+    ftpViewModel: FtpViewModel = hiltViewModel(),
+    ftpServerViewModel: FtpServerViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val smbState by smbViewModel.state.collectAsState()
+    val ftpState by ftpViewModel.state.collectAsState()
+    val ftpServerState by ftpServerViewModel.state.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(openScanner) }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -107,6 +116,12 @@ fun TransferScreen(
 
     LaunchedEffect(Unit) {
         smbViewModel.toastMessage.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        ftpViewModel.toastMessage.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -136,19 +151,32 @@ fun TransferScreen(
         }
     }
 
-    // Back button: clear selection → navigate up active panel → switch panel → disconnect
+    // Back button for SMB tab
     BackHandler(enabled = selectedTab == 1 && !smbState.serverListMode) {
-        // First clear any selection in active panel
         if (smbState.activePanel == PanelId.BOTTOM && smbState.localPanel.selectedPaths.isNotEmpty()) {
             smbViewModel.clearLocalSelection()
         } else if (smbState.activePanel == PanelId.TOP && smbState.selectedFiles.isNotEmpty()) {
             smbViewModel.clearSelection()
         } else if (!smbViewModel.onNavigateUpActivePanel()) {
-            // Can't go up in active panel — switch to other panel or disconnect
             if (smbState.activePanel == PanelId.BOTTOM) {
                 smbViewModel.setActivePanel(PanelId.TOP)
             } else {
                 smbViewModel.onNavigateUp()
+            }
+        }
+    }
+
+    // Back button for FTP tab
+    BackHandler(enabled = selectedTab == 2 && !ftpState.serverListMode) {
+        if (ftpState.activePanel == PanelId.BOTTOM && ftpState.localPanel.selectedPaths.isNotEmpty()) {
+            ftpViewModel.clearLocalSelection()
+        } else if (ftpState.activePanel == PanelId.TOP && ftpState.selectedFiles.isNotEmpty()) {
+            ftpViewModel.clearSelection()
+        } else if (!ftpViewModel.onNavigateUpActivePanel()) {
+            if (ftpState.activePanel == PanelId.BOTTOM) {
+                ftpViewModel.setActivePanel(PanelId.TOP)
+            } else {
+                ftpViewModel.onNavigateUp()
             }
         }
     }
@@ -164,11 +192,15 @@ fun TransferScreen(
                 ) {
                     IconButton(
                         onClick = {
-                            if (selectedTab == 1 && !smbState.serverListMode) {
-                                smbViewModel.onNavigateUpActivePanel()
-                            } else {
-                                viewModel.cancelTransfer()
-                                onBack()
+                            when {
+                                selectedTab == 1 && !smbState.serverListMode ->
+                                    smbViewModel.onNavigateUpActivePanel()
+                                selectedTab == 2 && !ftpState.serverListMode ->
+                                    ftpViewModel.onNavigateUpActivePanel()
+                                else -> {
+                                    viewModel.cancelTransfer()
+                                    onBack()
+                                }
                             }
                         },
                         modifier = Modifier.size(35.dp)
@@ -247,16 +279,26 @@ fun TransferScreen(
                     text = { Text(stringResource(R.string.smb_tab_title)) },
                     icon = { Icon(Icons.Filled.Computer, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text(stringResource(R.string.ftp_tab_title)) }
+                )
             }
 
             when (selectedTab) {
                 0 -> TransferTabContent(
                     state = state,
                     viewModel = viewModel,
-                    onOpenFolder = onOpenFolder
+                    onOpenFolder = onOpenFolder,
+                    ftpServerViewModel = ftpServerViewModel,
+                    ftpServerState = ftpServerState
                 )
                 1 -> SmbBrowserTab(
                     viewModel = smbViewModel
+                )
+                2 -> FtpBrowserTab(
+                    viewModel = ftpViewModel
                 )
             }
         }
@@ -359,7 +401,9 @@ fun TransferScreen(
 private fun TransferTabContent(
     state: TransferUiState,
     viewModel: TransferViewModel,
-    onOpenFolder: (String) -> Unit
+    onOpenFolder: (String) -> Unit,
+    ftpServerViewModel: FtpServerViewModel,
+    ftpServerState: FtpServerUiState
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
             // Battery saver warning
@@ -523,6 +567,19 @@ private fun TransferTabContent(
 
             Spacer(Modifier.height(8.dp))
 
+            // FTP Server section
+            FtpServerSection(
+                state = ftpServerState,
+                onStart = { ftpServerViewModel.startServer() },
+                onStop = { ftpServerViewModel.stopServer() },
+                onAnonymousChanged = { ftpServerViewModel.setAnonymousAccess(it) },
+                onReadOnlyChanged = { ftpServerViewModel.setReadOnly(it) },
+                onUsernameChanged = { ftpServerViewModel.setUsername(it) },
+                onPasswordChanged = { ftpServerViewModel.setPassword(it) }
+            )
+
+            Spacer(Modifier.height(4.dp))
+
             // Scanning indicator
             if (state.isScanning) {
                 Row(
@@ -570,6 +627,120 @@ private fun TransferTabContent(
             } else {
                 Spacer(Modifier.weight(1f))
             }
+    }
+}
+
+@Composable
+private fun FtpServerSection(
+    state: FtpServerUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onAnonymousChanged: (Boolean) -> Unit,
+    onReadOnlyChanged: (Boolean) -> Unit,
+    onUsernameChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (state.isRunning) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Storage,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.ftp_server_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { if (state.isRunning) onStop() else onStart() }
+                ) {
+                    Text(
+                        stringResource(
+                            if (state.isRunning) R.string.ftp_server_stop
+                            else R.string.ftp_server_start
+                        )
+                    )
+                }
+            }
+
+            if (state.isRunning && state.serverUrl != null) {
+                Text(
+                    state.serverUrl,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 28.dp, top = 4.dp)
+                )
+            }
+
+            if (!state.isRunning) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 28.dp, top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.ftp_server_anonymous),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = state.anonymousAccess,
+                        onCheckedChange = onAnonymousChanged
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 28.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.ftp_server_read_only),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = state.readOnly,
+                        onCheckedChange = onReadOnlyChanged
+                    )
+                }
+                if (!state.anonymousAccess) {
+                    OutlinedTextField(
+                        value = state.username,
+                        onValueChange = onUsernameChanged,
+                        label = { Text(stringResource(R.string.ftp_username)) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 28.dp, end = 4.dp, top = 4.dp)
+                    )
+                    OutlinedTextField(
+                        value = state.password,
+                        onValueChange = onPasswordChanged,
+                        label = { Text(stringResource(R.string.ftp_password)) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 28.dp, end = 4.dp, top = 4.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

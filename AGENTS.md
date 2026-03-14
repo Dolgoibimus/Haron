@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.65 (Phase 4, Batch 65)
+**Текущая версия:** 0.68 (Phase 4, Batch 68)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,92 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 68 — FTP-сервер + FTP-клиент ⚠️ не проверено
+
+**Цель:** Полноценная FTP-функциональность: встроенный FTP-сервер (раздавать файлы) + FTP-клиент (подключаться к удалённым серверам).
+
+#### Зависимости
+- `org.apache.commons:commons-net:3.11.1` — FTP-клиент
+- `org.apache.ftpserver:ftpserver-core:1.2.0` — встраиваемый FTP-сервер
+
+#### Data layer — FTP Client
+- **FtpCredential** — модель учётных данных (host, port, username, password, useFtps)
+- **FtpFileInfo** — модель файла (name, isDirectory, size, lastModified, path, permissions) + `toFileEntry()` для Explorer
+- **FtpTransferProgress** — прогресс загрузки/скачивания
+- **FtpPathUtils** — парсинг ftp:// путей (parseHost, parsePort, parseRelativePath, buildPath, getParentPath, isRoot, connectionKey)
+- **FtpCredentialStore** — шифрованное хранилище (AES-256-GCM + Android Keystore), файл `ftp_credentials.enc`
+- **FtpClientManager** — `@Singleton`, пул соединений (ConcurrentHashMap + Mutex), passive mode, binary transfer. Методы: connect, listFiles, downloadFile, uploadFile, createDirectory, delete, rename, disconnect, autoReconnect
+
+#### Data layer — FTP Server
+- **FtpServerConfig** — настройки (port, anonymous, username, password, readOnly)
+- **FtpServerManager** — `@Singleton`, Apache FtpServer. Port fallback 2121→2131, passive ports 50000-50100. IP через HttpFileServer
+- **HaronFtplet** — логирование событий сервера (login, upload, download, delete, mkdir)
+
+#### Presentation — FTP Client
+- **FtpViewModel** — dual-panel (FTP сверху, локальные снизу), connect/browse/download/upload/createFolder/delete/rename
+- **FtpAuthDialog** — host, port, username, password, FTPS checkbox, save credentials
+- **FtpBrowserTab** — вкладка в TransferScreen: сохранённые серверы + браузер файлов
+
+#### Presentation — FTP Server
+- **FtpServerViewModel** — start/stop сервер, настройки (port, anonymous, readOnly, credentials)
+- **FtpServerSection** — UI карточка в Transfer tab: toggle, URL, настройки
+
+#### Интеграция
+- **TransferScreen** — 3-я вкладка "FTP" + FTP Server секция в Transfer tab
+- **TransferService** — ACTION_START_FTP_SERVER / ACTION_STOP_FTP_SERVER (foreground + wake lock)
+- **ExplorerViewModel** — навигация по ftp:// путям в панелях (navigateTo), skip size calc для ftp://
+
+#### Новые файлы (11)
+| Файл | Назначение |
+|------|-----------|
+| data/ftp/FtpCredential.kt | Модель учётных данных |
+| data/ftp/FtpFileInfo.kt | Модели файла + прогресса + toFileEntry() |
+| data/ftp/FtpPathUtils.kt | Парсинг ftp:// путей |
+| data/ftp/FtpCredentialStore.kt | Шифрованное хранилище |
+| data/ftp/FtpClientManager.kt | Фасад FTP-клиента |
+| data/ftp/FtpServerManager.kt | Встроенный FTP-сервер |
+| data/ftp/HaronFtplet.kt | Логирование событий сервера |
+| presentation/transfer/FtpViewModel.kt | VM клиента |
+| presentation/transfer/FtpServerViewModel.kt | VM сервера |
+| presentation/transfer/components/FtpAuthDialog.kt | Диалог подключения |
+| presentation/transfer/components/FtpBrowserTab.kt | Вкладка FTP-браузера |
+
+---
+
+### Batch 67 — Батарейные оптимизации ⚠️ не проверено
+
+**Цель:** Снизить расход батареи — idle timeout для сервисов, оптимизация поллинга, пропуск лишней работы.
+
+#### CastMediaService
+- Idle watchdog: проверка каждые 60 сек, если 15 мин без активности → stopSelfAndCleanup()
+- `lastActivityTime` обновляется при play/pause и updatePlayingState
+- Wake lock 30 мин остаётся как safety net
+
+#### TransferService
+- Wake lock отпускается при паузе (`pauseTransfer()` → `releaseWakeLock()`)
+- Wake lock снова берётся при возобновлении (`resumeTransfer()` → `acquireWakeLock()`)
+- Idle watchdog: 15 мин без обновления прогресса → cancel transfer
+- `touchActivity()` вызывается через companion `updateProgress()`
+
+#### FileOperationService
+- Wake lock сокращён с 60 мин до 30 мин
+- Progress-idle watchdog: 5 мин без прогресса → лог предупреждения, 15 мин → cancel операции
+- `lastProgressTime` обновляется при каждом файле в цикле
+
+#### ScreenMirrorService
+- `activeClients` (AtomicInteger) — счётчик HTTP-клиентов `/frame` и `/mjpeg`
+- Когда клиентов нет → ImageReader listener пропускает JPEG compress (`image.close()` без обработки)
+- Экономит CPU когда никто не смотрит зеркалирование
+
+#### DlnaManager
+- Интервал поллинга увеличен с 2 до 3 сек
+- Заменены orphan `CoroutineScope(Dispatchers.IO)` на class-level `scope` (structured concurrency)
+
+#### UsbStorageManager
+- Интервал поллинга увеличен с 30 до 60 сек (BroadcastReceiver остаётся основным)
 
 ---
 

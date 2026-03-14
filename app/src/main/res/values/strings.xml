@@ -1291,4 +1291,35 @@
     <string name="cloud_streaming">Streaming…</string>
     <string name="cloud_moved">Moved %d file(s) in cloud</string>
     <string name="cloud_move_not_supported">Cross-storage move not supported</string>
+
+    <!-- FTP (Batch 68) -->
+    <string name="ftp_tab_title">FTP</string>
+    <string name="ftp_connect">Connect</string>
+    <string name="ftp_disconnect">Disconnect</string>
+    <string name="ftp_username">Username</string>
+    <string name="ftp_password">Password</string>
+    <string name="ftp_save_credentials">Save credentials</string>
+    <string name="ftp_connecting">Connecting\u2026</string>
+    <string name="ftp_connection_failed">Connection failed: %s</string>
+    <string name="ftp_auth_title">Connect to %s</string>
+    <string name="ftp_anonymous">Anonymous</string>
+    <string name="ftp_saved_servers">Saved</string>
+    <string name="ftp_no_servers">No FTP servers</string>
+    <string name="ftp_download">Download</string>
+    <string name="ftp_upload">Upload</string>
+    <string name="ftp_create_folder">New folder</string>
+    <string name="ftp_delete_confirm">Delete %d items?</string>
+    <string name="ftp_downloading">Downloading\u2026</string>
+    <string name="ftp_uploading">Uploading\u2026</string>
+    <string name="ftp_manual_connect">Add FTP server</string>
+    <string name="ftp_rename">Rename</string>
+    <string name="ftp_host">Host</string>
+    <string name="ftp_port">Port</string>
+    <string name="ftp_server_title">FTP Server</string>
+    <string name="ftp_server_start">Start</string>
+    <string name="ftp_server_stop">Stop</string>
+    <string name="ftp_server_running">FTP server running</string>
+    <string name="ftp_server_anonymous">Anonymous access</string>
+    <string name="ftp_server_read_only">Read only</string>
+    <string name="ftp_server_credentials">Server credentials</string>
 </resources>

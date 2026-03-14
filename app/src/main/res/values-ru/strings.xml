@@ -1290,4 +1290,35 @@
     <string name="cloud_streaming">Стриминг…</string>
     <string name="cloud_moved">Перемещено %d файл(ов) в облаке</string>
     <string name="cloud_move_not_supported">Перемещение между хранилищами не поддерживается</string>
+
+    <!-- FTP (Batch 68) -->
+    <string name="ftp_tab_title">FTP</string>
+    <string name="ftp_connect">Подключить</string>
+    <string name="ftp_disconnect">Отключить</string>
+    <string name="ftp_username">Имя пользователя</string>
+    <string name="ftp_password">Пароль</string>
+    <string name="ftp_save_credentials">Сохранить учётные данные</string>
+    <string name="ftp_connecting">Подключение\u2026</string>
+    <string name="ftp_connection_failed">Ошибка подключения: %s</string>
+    <string name="ftp_auth_title">Подключение к %s</string>
+    <string name="ftp_anonymous">Анонимно</string>
+    <string name="ftp_saved_servers">Сохранённые</string>
+    <string name="ftp_no_servers">Нет FTP-серверов</string>
+    <string name="ftp_download">Скачать</string>
+    <string name="ftp_upload">Загрузить</string>
+    <string name="ftp_create_folder">Новая папка</string>
+    <string name="ftp_delete_confirm">Удалить %d элементов?</string>
+    <string name="ftp_downloading">Скачивание\u2026</string>
+    <string name="ftp_uploading">Загрузка\u2026</string>
+    <string name="ftp_manual_connect">Добавить FTP-сервер</string>
+    <string name="ftp_rename">Переименовать</string>
+    <string name="ftp_host">Хост</string>
+    <string name="ftp_port">Порт</string>
+    <string name="ftp_server_title">FTP-сервер</string>
+    <string name="ftp_server_start">Запустить</string>
+    <string name="ftp_server_stop">Остановить</string>
+    <string name="ftp_server_running">FTP-сервер запущен</string>
+    <string name="ftp_server_anonymous">Анонимный доступ</string>
+    <string name="ftp_server_read_only">Только чтение</string>
+    <string name="ftp_server_credentials">Учётные данные сервера</string>
 </resources>
