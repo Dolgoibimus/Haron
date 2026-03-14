@@ -39,11 +39,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.constants.HaronConstants
 import java.util.concurrent.Executors
 
 @Composable
@@ -52,6 +55,12 @@ fun QrScannerDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    // Capture Activity lifecycle BEFORE Dialog (Dialog creates separate sub-composition
+    // with its own lifecycle that may not be RESUMED → CameraX won't start)
+    val activityLifecycleOwner = LocalLifecycleOwner.current
+
+    EcosystemLogger.d(HaronConstants.TAG, "QrScanner: dialog opened")
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -63,6 +72,7 @@ fun QrScannerDialog(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasCameraPermission = granted
+        EcosystemLogger.d(HaronConstants.TAG, "QrScanner: camera permission granted=$granted")
         if (!granted) onDismiss()
     }
 
@@ -100,6 +110,7 @@ fun QrScannerDialog(
 
                 CameraPreviewWithScanner(
                     onCodeScanned = onResult,
+                    lifecycleOwner = activityLifecycleOwner,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(280.dp)
@@ -119,10 +130,10 @@ fun QrScannerDialog(
 @Composable
 private fun CameraPreviewWithScanner(
     onCodeScanned: (String) -> Unit,
+    lifecycleOwner: LifecycleOwner,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     var scanned by remember { mutableStateOf(false) }
 
@@ -135,6 +146,8 @@ private fun CameraPreviewWithScanner(
 
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
+                    EcosystemLogger.d(HaronConstants.TAG, "QrScanner: cameraProvider obtained")
+
                     val preview = Preview.Builder().build().also {
                         it.surfaceProvider = previewView.surfaceProvider
                     }
@@ -166,6 +179,7 @@ private fun CameraPreviewWithScanner(
                                             val value = barcode.url?.url ?: barcode.rawValue
                                             if (value != null && !scanned) {
                                                 scanned = true
+                                                EcosystemLogger.d(HaronConstants.TAG, "QrScanner: code scanned, value=$value")
                                                 onCodeScanned(value)
                                             }
                                             break
@@ -188,7 +202,10 @@ private fun CameraPreviewWithScanner(
                             preview,
                             analysis
                         )
-                    } catch (_: Exception) { }
+                        EcosystemLogger.d(HaronConstants.TAG, "QrScanner: camera bound to lifecycle")
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "QrScanner: bindToLifecycle failed: ${e.message}")
+                    }
                 }, ContextCompat.getMainExecutor(ctx))
 
                 previewView
@@ -199,6 +216,7 @@ private fun CameraPreviewWithScanner(
 
     DisposableEffect(Unit) {
         onDispose {
+            EcosystemLogger.d(HaronConstants.TAG, "QrScanner: disposing camera")
             try {
                 cameraProviderFuture.get().unbindAll()
             } catch (_: Exception) { }

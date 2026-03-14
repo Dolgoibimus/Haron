@@ -1254,7 +1254,6 @@
     <string name="cloud_section">Облако</string>
     <string name="cloud_google_drive">Google Диск</string>
     <string name="cloud_dropbox">Dropbox</string>
-    <string name="cloud_onedrive">OneDrive</string>
     <string name="cloud_yandex_disk">Яндекс Диск</string>
     <string name="cloud_add_account">Добавить аккаунт</string>
     <string name="cloud_sign_in">Войти</string>

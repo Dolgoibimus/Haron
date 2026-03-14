@@ -338,7 +338,7 @@
 - Auto mode detection
 
 # Cloud Storage [NEW]
-- Google Drive, Dropbox, OneDrive, Yandex Disk [NEW]
+- Google Drive, Dropbox, Yandex Disk [NEW]
 - Secure OAuth2 authentication with PKCE [NEW]
 - Browse cloud files in dual-panel mode (just like local files) [NEW]
 - Clickable breadcrumbs for cloud folder navigation [NEW]

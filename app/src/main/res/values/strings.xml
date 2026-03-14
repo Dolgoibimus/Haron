@@ -1255,7 +1255,6 @@
     <string name="cloud_section">Cloud</string>
     <string name="cloud_google_drive">Google Drive</string>
     <string name="cloud_dropbox">Dropbox</string>
-    <string name="cloud_onedrive">OneDrive</string>
     <string name="cloud_yandex_disk">Yandex Disk</string>
     <string name="cloud_add_account">Add account</string>
     <string name="cloud_sign_in">Sign in</string>
