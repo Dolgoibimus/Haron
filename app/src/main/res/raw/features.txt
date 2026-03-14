@@ -338,7 +338,7 @@
 - Auto mode detection
 
 # Cloud Storage [NEW]
-- Google Drive, Dropbox, OneDrive [NEW]
+- Google Drive, Dropbox, OneDrive, Yandex Disk [NEW]
 - Secure OAuth2 authentication with PKCE [NEW]
 - Browse cloud files in dual-panel mode (just like local files) [NEW]
 - Clickable breadcrumbs for cloud folder navigation [NEW]
@@ -349,10 +349,13 @@
 - Open and edit text files from cloud [NEW]
 - Save edited files back to cloud, to local storage, or both [NEW]
 - Download cloud files to local storage [NEW]
-- Upload local files to cloud [NEW]
+- Upload local files to cloud (files up to 500MB+) [NEW]
+- Reliable upload: 8-10MB chunks with automatic retry on network failure [NEW]
 - Rename files and folders in cloud [NEW]
 - Delete files from cloud (including from Quick Preview) [NEW]
 - Create folders in cloud [NEW]
+- Drag and drop files between local storage and cloud [NEW]
+- Parallel transfers with individual cancel for each [NEW]
 
 # Appearance
 - Theme: system / light / dark

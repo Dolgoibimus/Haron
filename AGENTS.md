@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.63 (Phase 4, Batch 63)
+**Текущая версия:** 0.64 (Phase 4, Batch 64)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -22,32 +22,55 @@
 
 ---
 
-### Batch 64 — Cloud upload reliability: все 3 провайдера ⚠️ не проверено
+### Batch 64 — Cloud upload reliability + crash fix ✅ проверено
 
 **Проблема:** Большие файлы (140-440MB) падали с ConnectionResetException через ~40 секунд у всех провайдеров. Root cause — сетевое оборудование (роутер/ISP) убивает долгие upload-соединения.
 
-**Что сделано:**
+#### Общая инфраструктура
+- **Sequential upload mutex** (`cloudUploadMutex` — `kotlinx.coroutines.sync.Mutex`): параллельные PUT-запросы вызывали массовый ConnectionReset у всех провайдеров одновременно. 3 обёртки `withLock {}` вокруг `cloudManager.uploadFile()` в `cloudUploadFromLocal`, `executeDragCloudUpload`, `executeDragCloudUploadWithDecisions`
+- **OkHttp 4.12.0**: добавлен в зависимости (`build.gradle.kts`) — лучше connection pooling, keepalive, HTTP/2, write timeout
+- **ConcurrentHashMap вместо mutableMapOf**: `cloudTransferJobs` заменён на `ConcurrentHashMap` — при нажатии «Отмена» (main thread) во время upload (IO thread вызывает `.remove()`) был `ConcurrentModificationException` с крашем
 
-**Общее:**
-- **Sequential upload mutex**: `cloudUploadMutex` в ExplorerViewModel — параллельные PUT-запросы вызывали массовый ConnectionReset, теперь загрузки идут последовательно
-- **OkHttp 4.12.0**: добавлен в зависимости — лучше connection management, keepalive, HTTP/2
+#### Google Drive ✅ проверено
+- **Retry на ANY IOException**: раньше проверял только "reset"/"refused"/"timeout" в тексте ошибки — пропускал `IOException: unexpected end of stream`. Теперь: `if (e is java.io.IOException)` без string matching
+- **10MB chunks** (было 2MB), **3 retries** (было 2), **exponential backoff** (2с, 4с)
+- **`driveService = null`** при ретрае — force re-init на случай stale connection
 
-**Google Drive:** ✅ проверено пользователем
-- **Retry на ANY IOException**: раньше проверял только "reset"/"refused"/"timeout" в сообщении — пропускал "unexpected end of stream". Теперь ловит любой IOException
-- **10MB chunks** (было 2MB), **3 retries** (было 2), exponential backoff
+#### Yandex Disk ✅ проверено
+- **Content-Range chunked upload**: полная замена одного PUT на чанки по 10MB. Каждый чанк — отдельный HTTP-запрос с заголовком `Content-Range: bytes start-end/total`. При падении ретраится только этот чанк (до 5 попыток). Реализовано в `uploadFile()` и `updateFileContent()`
+- **OkHttp для чанков**: `uploadClient` (companion object) — `writeTimeout(10 мин)`, `readTimeout(10 мин)`, `connectTimeout(60с)`, `retryOnConnectionFailure(true)`
+- **RandomAccessFile для seek**: при ретрае чанка — `raf.seek(offset)` вместо создания нового потока + skip
+- **MIME-type throttling bypass**: Яндекс троттлит .mp4/.avi/.mkv/.zip/.rar/.7z до ~128KB/s. Обход: загрузка как `.tmp` → rename через `GET /resources/move?from=...&path=...&overwrite=true`
+- **User-Agent "Haron/1.0"**: явный заголовок — Яндекс блокирует/троттлит unknown clients
+- **Старый `uploadFileAttempt()`** удалён — логика чанков inline в каждом методе
 
-**Yandex Disk:**
-- **Content-Range chunked upload**: полный переход с одного PUT на чанки по 10MB с заголовком `Content-Range: bytes start-end/total`. Каждый чанк — отдельный HTTP-запрос, при падении ретраится только он (5 попыток)
-- **OkHttp для чанков**: `uploadClient` с writeTimeout 10 мин, retryOnConnectionFailure
-- **RandomAccessFile для seek**: при ретрае чанка — seek на нужный offset вместо нового потока
-- **MIME-type throttling bypass**: загрузка как `.tmp` → rename через API для .mp4/.avi/.mkv/.zip/.rar/.7z (Yandex троттлит эти типы до ~128KB/s)
-- **User-Agent "Haron/1.0"**: явный заголовок (Yandex блокирует unknown clients)
+#### Dropbox ✅ проверено
+- **8MB chunks** (было 4MB, рекомендация Dropbox для стабильности)
+- **Empty session start**: `uploadSessionStart().uploadAndFinish(ByteArrayInputStream(ByteArray(0)), 0)` — все данные через append, легче ретраить при обрыве
+- **Per-chunk retry** (до 5 попыток): новый `FileInputStream(file)` + `fis.skip(offset)` на каждую попытку (старый поток exhausted)
+- **IncorrectOffsetError handling**: два catch-блока:
+  - `UploadSessionAppendErrorException` → `errorValue.isIncorrectOffset` → `getIncorrectOffsetValue().correctOffset`
+  - `UploadSessionFinishErrorException` → `errorValue.isLookupFailed` → `getLookupFailedValue().isIncorrectOffset` → `correctOffset`
+  - Корректирует offset когда сервер получил данные, но HTTP-ответ потерялся
+- Реализовано в обоих методах: `uploadFile()` и `updateFileContent()`
 
-**Dropbox:**
-- **8MB chunks** (было 4MB, рекомендация Dropbox)
-- **Empty session start**: все данные через append — легче ретраить
-- **Per-chunk retry** (5 попыток): новый FileInputStream + skip(offset) на каждый attempt
-- **IncorrectOffsetError handling**: append (UploadSessionAppendErrorException) + finish (UploadSessionFinishErrorException → lookupFailed) — когда сервер получил данные, но ответ потерялся, SDK корректирует offset
+#### Файлы изменены
+| Файл | Изменения |
+|------|-----------|
+| `app/build.gradle.kts` | +OkHttp 4.12.0 |
+| `YandexDiskProvider.kt` | Content-Range chunked upload, OkHttp client, .tmp rename, удалён `uploadFileAttempt()` |
+| `DropboxProvider.kt` | 8MB chunks, empty session start, per-chunk retry, IncorrectOffsetError |
+| `GoogleDriveProvider.kt` | Retry ANY IOException, 10MB chunks, 3 retries, backoff |
+| `ExplorerViewModel.kt` | `cloudUploadMutex` (Mutex), `ConcurrentHashMap` |
+
+#### Коммиты
+- `7f1f3f0` — retry 2→3, exponential backoff, keep-alive
+- `0ff3a86` — sequential cloud uploads via Mutex + flush
+- `020ff32` — always fixed-length streaming
+- `3c0a4ef` — switch to OkHttp for Yandex uploads
+- `e93cc8c` — GDrive retry on ANY IOException, 10MB chunks
+- `dd71c75` — Yandex Content-Range chunked + Dropbox per-chunk retry
+- `379b00a` — ConcurrentModificationException fix (ConcurrentHashMap)
 
 ---
 
@@ -2383,6 +2406,26 @@
 - Ручная настройка точки доступа (SSID/пароль) для Wi-Fi QR — сохраняется после первого ввода
 - Определение корпоративных сетей (CGNAT) — подсказка включить точку доступа
 - Счётчик отправленных файлов и байтов при скачивании целевым устройством
+
+### Облачные хранилища
+- Google Drive, Dropbox, OneDrive, Яндекс Диск
+- Безопасная OAuth2 авторизация с PKCE
+- Просмотр облачных файлов в двухпанельном режиме (как локальные)
+- Кликабельные хлебные крошки для навигации по облачным папкам
+- Счётчик файлов в облачных папках
+- Быстрый просмотр облачных картинок с большими миниатюрами
+- Облачная галерея: полноэкранный просмотр со свайпом между фото
+- Стриминг видео и аудио из облака (играет сразу, без полной загрузки)
+- Открытие и редактирование текстовых файлов из облака
+- Сохранение в облако, локально или и туда, и туда
+- Скачивание облачных файлов в локальное хранилище
+- Загрузка локальных файлов в облако (файлы до 500MB+)
+- Надёжная загрузка: чанки по 8-10MB с повторной отправкой при обрыве сети
+- Переименование файлов и папок в облаке
+- Удаление из облака (в том числе из быстрого просмотра)
+- Создание папок в облаке
+- Перетаскивание файлов между локальным хранилищем и облаком
+- Параллельные трансферы с индивидуальной отменой каждого
 
 ### Сканер штрихкодов
 - Долгий тап на кнопку QR → открывается камера-сканер
