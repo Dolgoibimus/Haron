@@ -690,16 +690,25 @@ class ExplorerViewModel @Inject constructor(
         val sourcePanel = getPanel(activeId)
         val targetPanel = getPanel(targetId)
         val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths && !it.isDirectory }
-        if (selected.isEmpty()) return
+        if (selected.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: no files selected, aborting")
+            return
+        }
 
         val targetCloudPath = targetPanel.currentPath
-        val parsed = cloudManager.parseCloudUri(targetCloudPath) ?: return
+        val parsed = cloudManager.parseCloudUri(targetCloudPath)
+        if (parsed == null) {
+            EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: cannot parse cloud URI: $targetCloudPath")
+            return
+        }
         val (provider, cloudDir) = parsed
+        EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: provider=$provider, cloudDir=$cloudDir, files=${selected.size}, names=${selected.map { it.name }}")
 
         clearSelection(activeId)
         val total = selected.size
         val totalBytes = selected.sumOf { it.size }
         var completedBytes = 0L
+        EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: totalBytes=$totalBytes (${totalBytes / 1024}KB)")
 
         launchCloudJob {
             _uiState.update {
@@ -708,6 +717,7 @@ class ExplorerViewModel @Inject constructor(
 
             var uploaded = 0
             for ((idx, entry) in selected.withIndex()) {
+                EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: uploading [${idx + 1}/$total] ${entry.name} (${entry.size / 1024}KB) to $cloudDir")
                 _uiState.update {
                     it.copy(operationProgress = OperationProgress(
                         idx + 1, total, entry.name, OperationType.UPLOAD,
@@ -718,6 +728,9 @@ class ExplorerViewModel @Inject constructor(
                 try {
                     cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
                         .collect { progress ->
+                            if (progress.error != null) {
+                                EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${entry.name}: ${progress.error}")
+                            }
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
@@ -730,13 +743,15 @@ class ExplorerViewModel @Inject constructor(
                         }
                     completedBytes += entry.size
                     uploaded++
+                    EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${entry.name} uploaded OK, completedBytes=$completedBytes")
                     refreshPanel(targetId)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     completedBytes += entry.size
-                    EcosystemLogger.e(HaronConstants.TAG, "Cloud upload failed: ${entry.name}: ${e.message}")
+                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${entry.name} FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 }
             }
+            EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: DONE, uploaded $uploaded/$total files")
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(
                     uploaded, total, "", OperationType.UPLOAD, isComplete = true

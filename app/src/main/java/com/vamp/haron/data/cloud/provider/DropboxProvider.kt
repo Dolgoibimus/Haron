@@ -190,72 +190,134 @@ class DropboxProvider(
             val targetPath = if (cloudDirPath.isEmpty() || cloudDirPath == "/") "/$fileName"
                              else "$cloudDirPath/$fileName"
 
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: START fileName=$fileName, localPath=$localPath, targetPath=$targetPath, size=$totalSize (${totalSize / 1024}KB)")
+
+            if (!file.exists()) {
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload: file does not exist: $localPath")
+                emit(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = "File not found: $localPath"))
+                return@flow
+            }
+            if (!file.canRead()) {
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload: cannot read file: $localPath")
+                emit(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = "Cannot read file: $localPath"))
+                return@flow
+            }
+
             emit(CloudTransferProgress(fileName, 0, totalSize))
 
-            if (totalSize <= SINGLE_UPLOAD_LIMIT) {
-                // Small file: single upload with CountingInputStream + polling
-                val bytesRead = AtomicLong(0L)
-                val uploadJob = withContext(Dispatchers.IO) {
-                    async {
+            // Pre-refresh token before upload (prevents expired token mid-upload)
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: pre-refreshing token...")
+            val refreshed = refreshToken()
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: pre-refresh result=$refreshed")
+
+            // Retry wrapper: 2 attempts with token refresh on failure
+            val maxAttempts = 2
+            var lastError: Exception? = null
+            for (attempt in 1..maxAttempts) {
+                try {
+                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: attempt $attempt/$maxAttempts")
+
+                    if (totalSize <= SINGLE_UPLOAD_LIMIT) {
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: using single upload (size ${totalSize / 1024}KB <= ${SINGLE_UPLOAD_LIMIT / 1024 / 1024}MB limit)")
+                        // Small file: single upload with CountingInputStream + polling
+                        val bytesRead = AtomicLong(0L)
+                        val uploadJob = withContext(Dispatchers.IO) {
+                            async {
+                                FileInputStream(file).use { fis ->
+                                    val countingStream = CountingInputStream(fis, bytesRead)
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: calling uploadAndFinish for $targetPath")
+                                    val startTime = System.currentTimeMillis()
+                                    val result = withRefreshSuspend {
+                                        getClient()!!.files().uploadBuilder(targetPath)
+                                            .withMode(WriteMode.OVERWRITE)
+                                            .uploadAndFinish(countingStream)
+                                    }
+                                    val elapsed = System.currentTimeMillis() - startTime
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: uploadAndFinish completed in ${elapsed}ms, result name=${result.name}, size=${result.size}, rev=${result.rev}")
+                                    result
+                                }
+                            }
+                        }
+                        var lastEmitPercent = -1
+                        while (!uploadJob.isCompleted) {
+                            delay(200)
+                            val read = bytesRead.get()
+                            val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
+                            if (percent != lastEmitPercent) {
+                                emit(CloudTransferProgress(fileName, read, totalSize))
+                                lastEmitPercent = percent
+                                if (percent % 10 == 0) {
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: progress $percent% ($read/$totalSize)")
+                                }
+                            }
+                        }
+                        uploadJob.await() // re-throws if upload failed
+                    } else {
+                        // Large file: chunked upload session (Dropbox limit 150MB per single call)
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: using CHUNKED session for ${totalSize / 1024 / 1024}MB file (> ${SINGLE_UPLOAD_LIMIT / 1024 / 1024}MB limit)")
+                        val c = getClient() ?: throw Exception("Not authenticated")
                         FileInputStream(file).use { fis ->
-                            val countingStream = CountingInputStream(fis, bytesRead)
-                            withRefreshSuspend {
-                                getClient()!!.files().uploadBuilder(targetPath)
-                                    .withMode(WriteMode.OVERWRITE)
-                                    .uploadAndFinish(countingStream)
+                            // Start session with first chunk
+                            val firstChunk = minOf(CHUNK_SIZE, totalSize)
+                            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: uploadSessionStart, firstChunk=${firstChunk / 1024}KB")
+                            val startResult = c.files().uploadSessionStart()
+                                .uploadAndFinish(fis, firstChunk)
+                            var offset = firstChunk
+                            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: session started, sessionId=${startResult.sessionId}, offset=$offset")
+                            emit(CloudTransferProgress(fileName, offset, totalSize))
+
+                            // Append chunks + finish with last chunk
+                            var chunkNum = 1
+                            while (offset < totalSize) {
+                                val remaining = totalSize - offset
+                                val thisChunk = minOf(CHUNK_SIZE, remaining)
+                                val cursor = UploadSessionCursor(startResult.sessionId, offset)
+                                chunkNum++
+
+                                if (offset + thisChunk >= totalSize) {
+                                    // Last chunk — finish session
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: chunk #$chunkNum FINISH, offset=$offset, chunkSize=${thisChunk / 1024}KB")
+                                    val commitInfo = CommitInfo.newBuilder(targetPath)
+                                        .withMode(WriteMode.OVERWRITE)
+                                        .build()
+                                    c.files().uploadSessionFinish(cursor, commitInfo)
+                                        .uploadAndFinish(fis, thisChunk)
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: session finished OK")
+                                } else {
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: chunk #$chunkNum APPEND, offset=$offset, chunkSize=${thisChunk / 1024}KB")
+                                    c.files().uploadSessionAppendV2(cursor)
+                                        .uploadAndFinish(fis, thisChunk)
+                                }
+                                offset += thisChunk
+                                val percent = ((offset * 100) / totalSize).toInt()
+                                EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: chunk #$chunkNum done, offset=$offset, $percent%")
+                                emit(CloudTransferProgress(fileName, offset, totalSize))
                             }
                         }
                     }
-                }
-                var lastEmitPercent = -1
-                while (!uploadJob.isCompleted) {
-                    delay(200)
-                    val read = bytesRead.get()
-                    val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
-                    if (percent != lastEmitPercent) {
-                        emit(CloudTransferProgress(fileName, read, totalSize))
-                        lastEmitPercent = percent
-                    }
-                }
-                uploadJob.await()
-            } else {
-                // Large file: chunked upload session (Dropbox limit 150MB per single call)
-                EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: using chunked session for ${totalSize / 1024 / 1024}MB file")
-                val c = getClient() ?: throw Exception("Not authenticated")
-                FileInputStream(file).use { fis ->
-                    // Start session with first chunk
-                    val firstChunk = minOf(CHUNK_SIZE, totalSize)
-                    val startResult = c.files().uploadSessionStart()
-                        .uploadAndFinish(fis, firstChunk)
-                    var offset = firstChunk
-                    emit(CloudTransferProgress(fileName, offset, totalSize))
 
-                    // Append chunks + finish with last chunk
-                    while (offset < totalSize) {
-                        val remaining = totalSize - offset
-                        val thisChunk = minOf(CHUNK_SIZE, remaining)
-                        val cursor = UploadSessionCursor(startResult.sessionId, offset)
-
-                        if (offset + thisChunk >= totalSize) {
-                            // Last chunk — finish session
-                            val commitInfo = CommitInfo.newBuilder(targetPath)
-                                .withMode(WriteMode.OVERWRITE)
-                                .build()
-                            c.files().uploadSessionFinish(cursor, commitInfo)
-                                .uploadAndFinish(fis, thisChunk)
-                        } else {
-                            c.files().uploadSessionAppendV2(cursor)
-                                .uploadAndFinish(fis, thisChunk)
-                        }
-                        offset += thisChunk
-                        emit(CloudTransferProgress(fileName, offset, totalSize))
+                    lastError = null
+                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: attempt $attempt SUCCEEDED")
+                    break // success
+                } catch (e: Exception) {
+                    lastError = e
+                    EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                    if (attempt < maxAttempts) {
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: refreshing token before retry...")
+                        refreshToken()
+                        delay(1000)
                     }
                 }
             }
+            if (lastError != null) throw lastError
 
             emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: COMPLETE $fileName ($totalSize bytes)")
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload error: ${e.message}")
+            EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload FINAL ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            e.cause?.let { cause ->
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload cause: ${cause.javaClass.simpleName}: ${cause.message}")
+            }
             emit(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = e.message))
         }
     }.flowOn(Dispatchers.IO)
@@ -342,66 +404,105 @@ class DropboxProvider(
             val totalSize = file.length()
             val fileName = file.name
 
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: START cloudFileId=$cloudFileId, localPath=$localPath, size=$totalSize (${totalSize / 1024}KB)")
+
             emit(CloudTransferProgress(fileName, 0, totalSize))
 
-            if (totalSize <= SINGLE_UPLOAD_LIMIT) {
-                val bytesRead = AtomicLong(0L)
-                val uploadJob = withContext(Dispatchers.IO) {
-                    async {
+            // Pre-refresh token
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: pre-refreshing token...")
+            refreshToken()
+
+            // Retry wrapper: 2 attempts
+            val maxAttempts = 2
+            var lastError: Exception? = null
+            for (attempt in 1..maxAttempts) {
+                try {
+                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: attempt $attempt/$maxAttempts")
+
+                    if (totalSize <= SINGLE_UPLOAD_LIMIT) {
+                        val bytesRead = AtomicLong(0L)
+                        val uploadJob = withContext(Dispatchers.IO) {
+                            async {
+                                FileInputStream(file).use { fis ->
+                                    val countingStream = CountingInputStream(fis, bytesRead)
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: calling uploadAndFinish for $cloudFileId")
+                                    val startTime = System.currentTimeMillis()
+                                    val result = withRefreshSuspend {
+                                        getClient()!!.files().uploadBuilder(cloudFileId)
+                                            .withMode(WriteMode.OVERWRITE)
+                                            .uploadAndFinish(countingStream)
+                                    }
+                                    val elapsed = System.currentTimeMillis() - startTime
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: completed in ${elapsed}ms, rev=${result.rev}")
+                                    result
+                                }
+                            }
+                        }
+                        var lastEmitPercent = -1
+                        while (!uploadJob.isCompleted) {
+                            delay(200)
+                            val read = bytesRead.get()
+                            val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
+                            if (percent != lastEmitPercent) {
+                                emit(CloudTransferProgress(fileName, read, totalSize))
+                                lastEmitPercent = percent
+                            }
+                        }
+                        uploadJob.await()
+                    } else {
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: using CHUNKED session for ${totalSize / 1024 / 1024}MB file")
+                        val c = getClient() ?: throw Exception("Not authenticated")
                         FileInputStream(file).use { fis ->
-                            val countingStream = CountingInputStream(fis, bytesRead)
-                            withRefreshSuspend {
-                                getClient()!!.files().uploadBuilder(cloudFileId)
-                                    .withMode(WriteMode.OVERWRITE)
-                                    .uploadAndFinish(countingStream)
+                            val firstChunk = minOf(CHUNK_SIZE, totalSize)
+                            val startResult = c.files().uploadSessionStart()
+                                .uploadAndFinish(fis, firstChunk)
+                            var offset = firstChunk
+                            EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: session started, sessionId=${startResult.sessionId}")
+                            emit(CloudTransferProgress(fileName, offset, totalSize))
+
+                            var chunkNum = 1
+                            while (offset < totalSize) {
+                                val remaining = totalSize - offset
+                                val thisChunk = minOf(CHUNK_SIZE, remaining)
+                                val cursor = UploadSessionCursor(startResult.sessionId, offset)
+                                chunkNum++
+
+                                if (offset + thisChunk >= totalSize) {
+                                    val commitInfo = CommitInfo.newBuilder(cloudFileId)
+                                        .withMode(WriteMode.OVERWRITE)
+                                        .build()
+                                    c.files().uploadSessionFinish(cursor, commitInfo)
+                                        .uploadAndFinish(fis, thisChunk)
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: chunk #$chunkNum FINISH done")
+                                } else {
+                                    c.files().uploadSessionAppendV2(cursor)
+                                        .uploadAndFinish(fis, thisChunk)
+                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: chunk #$chunkNum APPEND done")
+                                }
+                                offset += thisChunk
+                                emit(CloudTransferProgress(fileName, offset, totalSize))
                             }
                         }
                     }
-                }
-                var lastEmitPercent = -1
-                while (!uploadJob.isCompleted) {
-                    delay(200)
-                    val read = bytesRead.get()
-                    val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
-                    if (percent != lastEmitPercent) {
-                        emit(CloudTransferProgress(fileName, read, totalSize))
-                        lastEmitPercent = percent
-                    }
-                }
-                uploadJob.await()
-            } else {
-                val c = getClient() ?: throw Exception("Not authenticated")
-                FileInputStream(file).use { fis ->
-                    val firstChunk = minOf(CHUNK_SIZE, totalSize)
-                    val startResult = c.files().uploadSessionStart()
-                        .uploadAndFinish(fis, firstChunk)
-                    var offset = firstChunk
-                    emit(CloudTransferProgress(fileName, offset, totalSize))
 
-                    while (offset < totalSize) {
-                        val remaining = totalSize - offset
-                        val thisChunk = minOf(CHUNK_SIZE, remaining)
-                        val cursor = UploadSessionCursor(startResult.sessionId, offset)
-
-                        if (offset + thisChunk >= totalSize) {
-                            val commitInfo = CommitInfo.newBuilder(cloudFileId)
-                                .withMode(WriteMode.OVERWRITE)
-                                .build()
-                            c.files().uploadSessionFinish(cursor, commitInfo)
-                                .uploadAndFinish(fis, thisChunk)
-                        } else {
-                            c.files().uploadSessionAppendV2(cursor)
-                                .uploadAndFinish(fis, thisChunk)
-                        }
-                        offset += thisChunk
-                        emit(CloudTransferProgress(fileName, offset, totalSize))
+                    lastError = null
+                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: attempt $attempt SUCCEEDED")
+                    break
+                } catch (e: Exception) {
+                    lastError = e
+                    EcosystemLogger.e(HaronConstants.TAG, "Dropbox updateFileContent: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                    if (attempt < maxAttempts) {
+                        refreshToken()
+                        delay(1000)
                     }
                 }
             }
+            if (lastError != null) throw lastError
 
             emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: COMPLETE $fileName")
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "Dropbox updateFileContent error: ${e.message}")
+            EcosystemLogger.e(HaronConstants.TAG, "Dropbox updateFileContent FINAL ERROR: ${e.javaClass.simpleName}: ${e.message}")
             emit(CloudTransferProgress("", 0, 0, isComplete = true, error = e.message))
         }
     }.flowOn(Dispatchers.IO)
