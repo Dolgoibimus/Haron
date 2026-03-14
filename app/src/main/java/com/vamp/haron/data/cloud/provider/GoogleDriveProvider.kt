@@ -229,13 +229,13 @@ class GoogleDriveProvider(
 
     override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = callbackFlow {
         var lastError: Exception? = null
-        val maxRetries = 2
+        val maxRetries = 3
 
         for (attempt in 1..maxRetries) {
             try {
                 // Force-refresh token before upload to avoid Connection reset
                 val refreshed = refreshToken()
-                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: attempt=$attempt, tokenRefreshed=$refreshed, file=$fileName")
+                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: attempt=$attempt/$maxRetries, tokenRefreshed=$refreshed, file=$fileName, size=${File(localPath).length() / 1024}KB")
                 val service = getService() ?: throw Exception("Not authenticated")
                 val file = File(localPath)
                 val totalSize = file.length()
@@ -252,17 +252,25 @@ class GoogleDriveProvider(
                 val createReq = service.files().create(fileMetadata, mediaContent)
                     .setFields("id,name,size")
 
-                // Enable resumable upload with progress
+                // Enable resumable upload with progress — 10MB chunks for better throughput
                 createReq.mediaHttpUploader?.apply {
                     isDirectUploadEnabled = false // use resumable
-                    chunkSize = 2 * 1024 * 1024 // 2MB chunks
+                    chunkSize = 10 * 1024 * 1024 // 10MB chunks (Google minimum recommended)
                 }
 
                 createReq.mediaHttpUploader?.setProgressListener { uploader ->
                     val percent = when (uploader.uploadState) {
-                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_IN_PROGRESS ->
-                            (uploader.progress * 100).toInt()
-                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_COMPLETE -> 100
+                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_IN_PROGRESS -> {
+                            val p = (uploader.progress * 100).toInt()
+                            if (p % 10 == 0) {
+                                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload progress: $fileName $p%")
+                            }
+                            p
+                        }
+                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_COMPLETE -> {
+                            EcosystemLogger.d(HaronConstants.TAG, "GDrive upload progress: $fileName 100% COMPLETE")
+                            100
+                        }
                         else -> 0
                     }
                     val transferred = (totalSize * percent / 100)
@@ -272,20 +280,21 @@ class GoogleDriveProvider(
                 withContext(Dispatchers.IO) { createReq.execute() }
 
                 trySend(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: SUCCESS $fileName (attempt $attempt)")
                 lastError = null
                 break // success — exit retry loop
             } catch (e: Exception) {
                 lastError = e
-                EcosystemLogger.e(HaronConstants.TAG, "GDrive upload error (attempt $attempt): ${e.javaClass.simpleName}: ${e.message}")
-                if (attempt < maxRetries && (e.message?.contains("reset", ignoreCase = true) == true ||
-                            e.message?.contains("refused", ignoreCase = true) == true ||
-                            e.message?.contains("timeout", ignoreCase = true) == true)) {
-                    // Retry after brief delay for transient network errors
-                    kotlinx.coroutines.delay(1000L)
+                EcosystemLogger.e(HaronConstants.TAG, "GDrive upload error (attempt $attempt/$maxRetries): ${e.javaClass.simpleName}: ${e.message}")
+                // Retry on ANY IOException (connection reset, end of stream, timeout, etc.)
+                if (attempt < maxRetries && e is java.io.IOException) {
+                    val backoffMs = attempt * 2000L // 2s, 4s
+                    EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: retrying in ${backoffMs}ms...")
+                    kotlinx.coroutines.delay(backoffMs)
                     driveService = null // force re-init
                     continue
                 }
-                break // non-retryable error
+                break // non-retryable error or max retries exhausted
             }
         }
 
