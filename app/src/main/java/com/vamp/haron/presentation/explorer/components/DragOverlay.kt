@@ -40,6 +40,22 @@ fun DragOverlay(
     val yPx = offset.y.toInt() - with(density) { 24.dp.roundToPx() }
 
     Box {
+        // Operation indicator — floating above the text, ~6-7th character position
+        Icon(
+            if (dragOperation == DragOperation.COPY) Icons.Filled.ContentCopy
+            else Icons.AutoMirrored.Filled.DriveFileMove,
+            contentDescription = null,
+            modifier = Modifier
+                .offset {
+                    // 12dp padding + 20dp icon + 8dp spacer + ~6 chars × ~7sp ≈ 82dp from left
+                    val iconX = xPx + with(density) { 82.dp.roundToPx() }
+                    val iconY = yPx - with(density) { 14.dp.roundToPx() }
+                    IntOffset(iconX, iconY)
+                }
+                .size(14.dp),
+            tint = if (dragOperation == DragOperation.COPY) MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.primary
+        )
         Surface(
             modifier = Modifier
                 .offset { IntOffset(xPx, yPx) },
@@ -51,16 +67,6 @@ fun DragOverlay(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Operation indicator icon
-                Icon(
-                    if (dragOperation == DragOperation.COPY) Icons.Filled.ContentCopy
-                    else Icons.AutoMirrored.Filled.DriveFileMove,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (dragOperation == DragOperation.COPY) MaterialTheme.colorScheme.tertiary
-                    else MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(4.dp))
                 Icon(
                     Icons.AutoMirrored.Filled.InsertDriveFile,
                     contentDescription = null,
