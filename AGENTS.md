@@ -411,7 +411,7 @@
 
 ---
 
-### Batch 56 — Три тап-зоны + Same-panel DnD + Cloud↔Local DnD ⚠️ не проверено
+### Batch 56 — Три тап-зоны + Same-panel DnD + Cloud↔Local DnD ✅ проверено
 
 **Что сделано (Batch 56):**
 
@@ -452,7 +452,7 @@
 
 ---
 
-### Batch 55 — Облачные файлы: полноценная работа в панели ⚠️ не проверено
+### Batch 55 — Облачные файлы: полноценная работа в панели ✅ проверено
 
 **Что сделано (Batch 55):**
 
@@ -602,7 +602,7 @@
 | 51 | SMB-браузер (вкладка в Передача) | ✅ проверено |
 | 51b | Двухпанельный SMB-режим (SMB + локальные файлы) | ✅ проверено |
 | 52 | Фиксы корзины + тап на пустом месте | ✅ проверено |
-| 54 | Облака (GDrive/Dropbox/Yandex) + пульт ТВ (тачпад/клавиатура) | ⚠️ не проверено |
+| 54 | Облака (GDrive/Dropbox/Yandex) + пульт ТВ (тачпад/клавиатура) | ✅ проверено |
 
 ### Хотелки (после релиза):
 | Фича | Описание |
@@ -1107,7 +1107,7 @@
 
 > Выполненные задачи с описанием как решили.
 
-### Batch 54 — Облака + Пульт ТВ ⚠️ не проверено
+### Batch 54 — Облака + Пульт ТВ ✅ проверено
 
 **Облачные хранилища (Google Drive, Dropbox, Yandex Disk):**
 - OAuth2 PKCE через custom URI scheme `haron://oauth/{provider}` (deep link)
@@ -1195,7 +1195,7 @@
 
 **Файлы:** `ExplorerUiState.kt` (+ArchiveCreateConflict, +ArchiveExtractOptions), `ExplorerViewModel.kt` (рефакторинг confirmCreateArchive/extractFromArchive/extractSelectedArchiveFiles), `ExplorerScreen.kt` (+2 диалога), `ExtractOptionsDialog.kt` (новый), `CreateZipUseCase.kt` (findUniqueZipPath → companion), `strings.xml` EN+RU
 
-### QuickSend — редизайн оверлея ⚠️ не проверено
+### QuickSend — редизайн оверлея ✅ проверено
 
 **Было:** круглые иконки устройств, расположенные дугой.
 **Стало:** вертикальный список горизонтальных элементов с полным именем устройства + marquee-анимация для длинных имён.
@@ -1218,7 +1218,7 @@
 
 **Файлы:** `proguard-rules.pro`, `SearchRepositoryImpl.kt`, `ContentExtractor.kt`, `DocumentParser.kt`, `LoadPreviewUseCase.kt`, `ThumbnailCache.kt`, `PdfReaderScreen.kt`, `TranscodeVideoUseCase.kt`, `BrowseArchiveUseCase.kt`, `ExtractArchiveUseCase.kt`, `SshSessionManager.kt`, `SmbManager.kt`
 
-### OOM fix — mutex для индексации ⚠️ не проверено
+### OOM fix — mutex для индексации ✅ проверено
 
 **Проблема:** глобальная индексация (`indexByMode`) и поиск по содержимому папки (`indexFolderContent`) работали одновременно → OOM (253MB/256MB heap).
 
@@ -1230,7 +1230,7 @@
 
 **Файлы:** `SearchRepository.kt` (+cancelGlobalIndexing), `SearchRepositoryImpl.kt` (mutex, job, content limit, GC)
 
-### SMB — утечка IPC$ соединений + фильтр подсетей ⚠️ не проверено
+### SMB — утечка IPC$ соединений + фильтр подсетей ✅ проверено
 
 **Проблема 1:** `listShares()` вызывал `SMBTransportFactories.SRVSVC.getTransport(session)`, который каждый раз открывал новый `IPC$` share через `session.connectShare("IPC$")`. Share никогда не закрывался → накопление соединений.
 
