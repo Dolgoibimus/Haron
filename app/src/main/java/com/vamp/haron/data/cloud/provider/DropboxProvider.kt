@@ -210,8 +210,8 @@ class DropboxProvider(
             val refreshed = refreshToken()
             EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: pre-refresh result=$refreshed")
 
-            // Retry wrapper: 2 attempts with token refresh on failure
-            val maxAttempts = 2
+            // Retry wrapper: 3 attempts with exponential backoff
+            val maxAttempts = 3
             var lastError: Exception? = null
             for (attempt in 1..maxAttempts) {
                 try {
@@ -303,9 +303,10 @@ class DropboxProvider(
                     lastError = e
                     EcosystemLogger.e(HaronConstants.TAG, "Dropbox upload: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
                     if (attempt < maxAttempts) {
-                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: refreshing token before retry...")
+                        val backoffMs = attempt * 2000L
+                        EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: refreshing token, backoff ${backoffMs}ms before retry...")
                         refreshToken()
-                        delay(1000)
+                        delay(backoffMs)
                     }
                 }
             }
@@ -412,8 +413,8 @@ class DropboxProvider(
             EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: pre-refreshing token...")
             refreshToken()
 
-            // Retry wrapper: 2 attempts
-            val maxAttempts = 2
+            // Retry wrapper: 3 attempts with exponential backoff
+            val maxAttempts = 3
             var lastError: Exception? = null
             for (attempt in 1..maxAttempts) {
                 try {
@@ -492,8 +493,9 @@ class DropboxProvider(
                     lastError = e
                     EcosystemLogger.e(HaronConstants.TAG, "Dropbox updateFileContent: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
                     if (attempt < maxAttempts) {
+                        val backoffMs = attempt * 2000L
                         refreshToken()
-                        delay(1000)
+                        delay(backoffMs)
                     }
                 }
             }

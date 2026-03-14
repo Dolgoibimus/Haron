@@ -305,8 +305,8 @@ class YandexDiskProvider(
                 }
                 EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: targetDiskPath=$targetDiskPath")
 
-                // Retry wrapper: 2 attempts with 1s delay on transient errors
-                val maxAttempts = 2
+                // Retry wrapper: 3 attempts with exponential backoff
+                val maxAttempts = 3
                 var lastError: Exception? = null
                 for (attempt in 1..maxAttempts) {
                     try {
@@ -321,10 +321,10 @@ class YandexDiskProvider(
                         lastError = e
                         EcosystemLogger.e(HaronConstants.TAG, "YandexDisk upload: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
                         if (attempt < maxAttempts) {
-                            // Refresh token in case of auth error, wait before retry
-                            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: refreshing token before retry...")
+                            val backoffMs = attempt * 2000L // 2s, 4s
+                            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: refreshing token, backoff ${backoffMs}ms before retry...")
                             refreshToken()
-                            delay(1000)
+                            delay(backoffMs)
                         }
                     }
                 }
@@ -367,14 +367,16 @@ class YandexDiskProvider(
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"
             setRequestProperty("Content-Type", "application/octet-stream")
+            setRequestProperty("Connection", "keep-alive")
+            setRequestProperty("Keep-Alive", "timeout=600")
             doOutput = true
             if (isChunked) {
                 setChunkedStreamingMode(4 * 1024 * 1024) // 4MB chunks
             } else {
                 setFixedLengthStreamingMode(totalSize)
             }
-            connectTimeout = 30_000
-            readTimeout = 300_000
+            connectTimeout = 60_000
+            readTimeout = 600_000 // 10 min for large files
         }
 
         try {
@@ -560,8 +562,8 @@ class YandexDiskProvider(
                 val diskPath = if (cloudFileId.startsWith("disk:")) cloudFileId else "disk:/$cloudFileId"
                 EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: diskPath=$diskPath")
 
-                // Retry wrapper: 2 attempts
-                val maxAttempts = 2
+                // Retry wrapper: 3 attempts with exponential backoff
+                val maxAttempts = 3
                 var lastError: Exception? = null
                 for (attempt in 1..maxAttempts) {
                     try {
@@ -576,8 +578,9 @@ class YandexDiskProvider(
                         lastError = e
                         EcosystemLogger.e(HaronConstants.TAG, "YandexDisk updateFileContent: attempt $attempt/$maxAttempts FAILED: ${e.javaClass.simpleName}: ${e.message}")
                         if (attempt < maxAttempts) {
+                            val backoffMs = attempt * 2000L
                             refreshToken()
-                            delay(1000)
+                            delay(backoffMs)
                         }
                     }
                 }
