@@ -30,6 +30,7 @@
 - Inline renaming (like Windows)
 - Batch rename: template, numbering, find & replace
 - Drag-and-Drop between panels (single and group)
+- Copy or Move chooser on divider when dragging between panels [NEW]
 - Conflict dialog: replace / rename / skip
 
 # Trash
