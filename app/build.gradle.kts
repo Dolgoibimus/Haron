@@ -167,7 +167,7 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     // FTP client (Apache Commons Net) + embedded FTP server (Apache FtpServer)
-    implementation("org.apache.commons:commons-net:3.11.1")
+    implementation("commons-net:commons-net:3.11.1")
     implementation("org.apache.ftpserver:ftpserver-core:1.2.0")
 
     // SMB client (smbj + RPC for share enumeration)

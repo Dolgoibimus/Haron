@@ -35,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicInteger
 
 class ScreenMirrorService : Service() {
 
@@ -59,6 +60,7 @@ class ScreenMirrorService : Service() {
     private var engine: ApplicationEngine? = null
     @Volatile private var lastFrameBytes: ByteArray? = null
     private var actualPort: Int = 0
+    private val activeClients = AtomicInteger(0)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -124,6 +126,9 @@ class ScreenMirrorService : Service() {
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
+                // Skip JPEG compression when no clients are connected — saves CPU
+                if (activeClients.get() == 0) return@setOnImageAvailableListener
+
                 val plane = image.planes[0]
                 val buffer = plane.buffer
                 val pixelStride = plane.pixelStride
@@ -202,26 +207,36 @@ refresh();
                     call.respondText(html, ContentType.Text.Html)
                 }
                 get("/frame") {
-                    val frame = lastFrameBytes
-                    if (frame != null) {
-                        call.respondBytes(frame, ContentType.Image.JPEG)
-                    } else {
-                        call.respondText("No frame", status = HttpStatusCode.ServiceUnavailable)
+                    activeClients.incrementAndGet()
+                    try {
+                        val frame = lastFrameBytes
+                        if (frame != null) {
+                            call.respondBytes(frame, ContentType.Image.JPEG)
+                        } else {
+                            call.respondText("No frame", status = HttpStatusCode.ServiceUnavailable)
+                        }
+                    } finally {
+                        activeClients.decrementAndGet()
                     }
                 }
                 get("/mjpeg") {
-                    call.respondBytesWriter(contentType = ContentType.parse("multipart/x-mixed-replace; boundary=frame")) {
-                        while (isActive && isRunning) {
-                            val frame = lastFrameBytes
-                            if (frame != null) {
-                                val header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
-                                writeFully(header.toByteArray())
-                                writeFully(frame)
-                                writeFully("\r\n".toByteArray())
-                                flush()
+                    activeClients.incrementAndGet()
+                    try {
+                        call.respondBytesWriter(contentType = ContentType.parse("multipart/x-mixed-replace; boundary=frame")) {
+                            while (isActive && isRunning) {
+                                val frame = lastFrameBytes
+                                if (frame != null) {
+                                    val header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
+                                    writeFully(header.toByteArray())
+                                    writeFully(frame)
+                                    writeFully("\r\n".toByteArray())
+                                    flush()
+                                }
+                                delay(500)
                             }
-                            delay(500)
                         }
+                    } finally {
+                        activeClients.decrementAndGet()
                     }
                 }
             }

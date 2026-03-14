@@ -9,11 +9,21 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.MainActivity
 import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CastMediaService : Service() {
 
@@ -26,6 +36,8 @@ class CastMediaService : Service() {
         const val ACTION_DISCONNECT = "com.vamp.haron.CAST_DISCONNECT"
         const val EXTRA_TITLE = "title"
         const val EXTRA_DEVICE_NAME = "device_name"
+        private const val IDLE_CHECK_INTERVAL_MS = 60_000L
+        private const val IDLE_TIMEOUT_MS = 15 * 60 * 1000L // 15 min
 
         var isRunning: Boolean = false
             private set
@@ -38,6 +50,9 @@ class CastMediaService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var title: String = ""
     private var deviceName: String = ""
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var idleJob: Job? = null
+    private var lastActivityTime = SystemClock.elapsedRealtime()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -57,9 +72,12 @@ class CastMediaService : Service() {
                 updateNotification(isPlaying = true)
                 acquireWakeLock()
                 isRunning = true
+                touchActivity()
+                startIdleWatchdog()
                 EcosystemLogger.d(HaronConstants.TAG, "CastMediaService started: title=$title, device=$deviceName")
             }
             ACTION_PLAY_PAUSE -> {
+                touchActivity()
                 onPlayPauseRequested?.invoke()
                 EcosystemLogger.d(HaronConstants.TAG, "CastMediaService play/pause")
             }
@@ -78,11 +96,31 @@ class CastMediaService : Service() {
     }
 
     fun updatePlayingState(isPlaying: Boolean) {
+        touchActivity()
         updateNotification(isPlaying)
+    }
+
+    private fun touchActivity() {
+        lastActivityTime = SystemClock.elapsedRealtime()
+    }
+
+    private fun startIdleWatchdog() {
+        idleJob?.cancel()
+        idleJob = serviceScope.launch {
+            while (isActive) {
+                delay(IDLE_CHECK_INTERVAL_MS)
+                val idleMs = SystemClock.elapsedRealtime() - lastActivityTime
+                if (idleMs >= IDLE_TIMEOUT_MS) {
+                    EcosystemLogger.d(HaronConstants.TAG, "CastMediaService idle timeout (${idleMs / 1000}s), stopping")
+                    withContext(Dispatchers.Main) { stopSelfAndCleanup() }
+                }
+            }
+        }
     }
 
     private fun stopSelfAndCleanup() {
         isRunning = false
+        idleJob?.cancel()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -164,6 +202,8 @@ class CastMediaService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        idleJob?.cancel()
+        serviceScope.cancel()
         releaseWakeLock()
         super.onDestroy()
     }

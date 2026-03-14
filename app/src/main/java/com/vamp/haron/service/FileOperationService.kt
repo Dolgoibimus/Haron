@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import com.vamp.core.logger.EcosystemLogger
@@ -29,6 +30,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,8 +40,10 @@ class FileOperationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operationJob: Job? = null
+    private var idleJob: Job? = null
     private var currentOperationType: OperationType = OperationType.COPY
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lastProgressTime = SystemClock.elapsedRealtime()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -79,7 +84,9 @@ class FileOperationService : Service() {
 
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "haron:fileop")
-            .apply { acquire(60 * 60 * 1000L) }
+            .apply { acquire(30 * 60 * 1000L) } // 30 min safety net
+        lastProgressTime = SystemClock.elapsedRealtime()
+        startProgressIdleWatchdog()
 
         operationJob = scope.launch {
             executeOperation(sourcePaths, destinationDir, isMove, conflictResolution)
@@ -115,6 +122,7 @@ class FileOperationService : Service() {
                 currentFileName = fileName,
                 type = type
             )
+            lastProgressTime = SystemClock.elapsedRealtime()
 
             withContext(Dispatchers.Main) {
                 updateNotification(fileName, index, total)
@@ -213,6 +221,7 @@ class FileOperationService : Service() {
             }
         }
 
+        idleJob?.cancel()
         _progress.value = OperationProgress(
             current = completed,
             total = total,
@@ -273,8 +282,25 @@ class FileOperationService : Service() {
         return candidate
     }
 
+    private fun startProgressIdleWatchdog() {
+        idleJob?.cancel()
+        idleJob = scope.launch {
+            while (isActive) {
+                delay(IDLE_CHECK_INTERVAL_MS)
+                val idleMs = SystemClock.elapsedRealtime() - lastProgressTime
+                if (idleMs >= PROGRESS_WARNING_MS && idleMs < PROGRESS_TIMEOUT_MS) {
+                    EcosystemLogger.d(HaronConstants.TAG, "FileOperationService: no progress for ${idleMs / 1000}s")
+                } else if (idleMs >= PROGRESS_TIMEOUT_MS) {
+                    EcosystemLogger.e(HaronConstants.TAG, "FileOperationService: no progress for ${idleMs / 1000}s, cancelling")
+                    withContext(Dispatchers.Main) { cancelOperation() }
+                }
+            }
+        }
+    }
+
     private fun cancelOperation() {
         operationJob?.cancel()
+        idleJob?.cancel()
         _progress.value = _progress.value?.copy(
             isComplete = true,
             error = getString(R.string.operation_cancelled)
@@ -377,6 +403,7 @@ class FileOperationService : Service() {
     }
 
     override fun onDestroy() {
+        idleJob?.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         scope.cancel()
@@ -386,6 +413,9 @@ class FileOperationService : Service() {
     companion object {
         private const val CHANNEL_ID = "file_operations"
         private const val NOTIFICATION_ID = 42001
+        private const val IDLE_CHECK_INTERVAL_MS = 60_000L
+        private const val PROGRESS_WARNING_MS = 5 * 60 * 1000L  // 5 min — log warning
+        private const val PROGRESS_TIMEOUT_MS = 15 * 60 * 1000L // 15 min — cancel
         const val ACTION_CANCEL = "com.vamp.haron.CANCEL_OPERATION"
         const val EXTRA_SOURCE_PATHS = "source_paths"
         const val EXTRA_DESTINATION_DIR = "destination_dir"
