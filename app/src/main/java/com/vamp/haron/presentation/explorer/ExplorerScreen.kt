@@ -74,7 +74,6 @@ import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.DrawerMenu
 import com.vamp.haron.presentation.explorer.components.FilePropertiesDialog
-import com.vamp.haron.presentation.explorer.components.DragDividerStrip
 import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
@@ -600,6 +599,8 @@ fun ExplorerScreen(
                 bottomFileCount = state.bottomPanel.files.size,
                 isTopActive = activePanel == PanelId.TOP,
                 isLandscape = isLandscape,
+                isDragging = isDragging,
+                dragOperation = if (dragState is DragState.Dragging) dragState.dragOperation else DragOperation.MOVE,
                 onDrag = { delta ->
                     viewModel.updatePanelRatio(state.panelRatio + delta)
                 },
@@ -1039,16 +1040,8 @@ fun ExplorerScreen(
 
         // Voice FAB moved to global overlay in MainActivity
 
-        // Drag overlay — ghost icon following finger + copy/move strip on divider
+        // Drag overlay — ghost icon following finger
         if (dragState is DragState.Dragging) {
-            DragDividerStrip(
-                isLandscape = isLandscape,
-                dragOperation = dragState.dragOperation,
-                dividerStartPx = dividerStart,
-                dividerEndPx = dividerEnd,
-                crossStartPx = dividerCrossStart,
-                crossEndPx = dividerCrossEnd
-            )
             DragOverlay(
                 previewName = dragState.previewName,
                 fileCount = dragState.fileCount,

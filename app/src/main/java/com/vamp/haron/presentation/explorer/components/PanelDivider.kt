@@ -10,15 +10,23 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
+import com.vamp.haron.presentation.explorer.state.DragOperation
 
 @Composable
 fun PanelDivider(
@@ -27,6 +35,8 @@ fun PanelDivider(
     bottomFileCount: Int,
     isTopActive: Boolean,
     isLandscape: Boolean = false,
+    isDragging: Boolean = false,
+    dragOperation: DragOperation = DragOperation.MOVE,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDoubleTap: () -> Unit,
@@ -36,6 +46,11 @@ fun PanelDivider(
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+
+    val copyColor = MaterialTheme.colorScheme.tertiary
+    val moveColor = MaterialTheme.colorScheme.primary
+    val copyActiveAlpha = if (dragOperation == DragOperation.COPY) 1f else 0.5f
+    val moveActiveAlpha = if (dragOperation == DragOperation.MOVE) 1f else 0.5f
 
     val sizeModifier = if (isLandscape) {
         Modifier.fillMaxHeight().width(24.dp)
@@ -61,7 +76,7 @@ fun PanelDivider(
         contentAlignment = Alignment.Center
     ) {
         if (isLandscape) {
-            // Landscape: vertical layout — top count, center reset, bottom count
+            // Landscape: vertical layout
             Column(
                 modifier = Modifier.fillMaxHeight().width(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -84,6 +99,23 @@ fun PanelDivider(
                     )
                 }
 
+                if (isDragging) {
+                    // COPY zone
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .width(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = stringResource(R.string.dnd_copy),
+                            modifier = Modifier.size(14.dp),
+                            tint = copyColor.copy(alpha = copyActiveAlpha)
+                        )
+                    }
+                }
+
                 // Center zone: tap → reset 50/50
                 Box(
                     modifier = Modifier
@@ -94,6 +126,23 @@ fun PanelDivider(
                         },
                     contentAlignment = Alignment.Center
                 ) { }
+
+                if (isDragging) {
+                    // MOVE zone
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .width(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.DriveFileMove,
+                            contentDescription = stringResource(R.string.dnd_move),
+                            modifier = Modifier.size(14.dp),
+                            tint = moveColor.copy(alpha = moveActiveAlpha)
+                        )
+                    }
+                }
 
                 // Bottom zone: second panel file count + tap → tools
                 Box(
@@ -125,7 +174,7 @@ fun PanelDivider(
                     )
             )
         } else {
-            // Portrait: horizontal layout (original)
+            // Portrait: horizontal layout
             Row(
                 modifier = Modifier.fillMaxWidth().height(24.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -148,6 +197,23 @@ fun PanelDivider(
                     )
                 }
 
+                if (isDragging) {
+                    // COPY zone
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = stringResource(R.string.dnd_copy),
+                            modifier = Modifier.size(14.dp),
+                            tint = copyColor.copy(alpha = copyActiveAlpha)
+                        )
+                    }
+                }
+
                 // Center zone: tap → reset 50/50
                 Box(
                     modifier = Modifier
@@ -158,6 +224,23 @@ fun PanelDivider(
                         },
                     contentAlignment = Alignment.Center
                 ) { }
+
+                if (isDragging) {
+                    // MOVE zone
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.DriveFileMove,
+                            contentDescription = stringResource(R.string.dnd_move),
+                            modifier = Modifier.size(14.dp),
+                            tint = moveColor.copy(alpha = moveActiveAlpha)
+                        )
+                    }
+                }
 
                 // Right zone: bottom panel file count + tap → tools
                 Box(
