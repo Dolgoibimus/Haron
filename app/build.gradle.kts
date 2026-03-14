@@ -151,6 +151,8 @@ dependencies {
     implementation("com.dropbox.core:dropbox-core-sdk:7.0.0")
     // OneDrive uses direct HTTP calls to Graph REST API (no SDK needed)
     implementation("androidx.browser:browser:1.8.0")
+    // OkHttp (reliable large file uploads — keepalive, write timeout, HTTP/2)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Diff utils (file comparison)
     implementation("io.github.java-diff-utils:java-diff-utils:4.12")

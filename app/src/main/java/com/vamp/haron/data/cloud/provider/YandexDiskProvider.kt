@@ -16,6 +16,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okio.BufferedSink
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -25,6 +30,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 class YandexDiskProvider(
     private val context: Context,
@@ -39,6 +45,14 @@ class YandexDiskProvider(
         private const val TOKEN_URL = "https://oauth.yandex.com/token"
         private const val API_BASE = "https://cloud-api.yandex.net/v1/disk"
         private const val SCOPES = "cloud_api:disk.read cloud_api:disk.write cloud_api:disk.info"
+
+        /** Shared OkHttpClient for uploads — better connection management than HttpURLConnection */
+        val uploadClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
+            .retryOnConnectionFailure(true)
+            .build()
     }
 
     override fun isAuthenticated(): Boolean {
@@ -342,7 +356,7 @@ class YandexDiskProvider(
         }
     }
 
-    /** Single upload attempt. Throws on failure. Uses chunked upload for files >100MB. */
+    /** Single upload attempt via OkHttp. Throws on failure. */
     private fun uploadFileAttempt(
         file: File,
         targetDiskPath: String,
@@ -360,37 +374,26 @@ class YandexDiskProvider(
         if (href.isEmpty()) throw Exception("Empty upload href")
         EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: got upload URL in ${System.currentTimeMillis() - startTime}ms, href length=${href.length}")
 
-        // Step 2: PUT file to href
-        // Always use fixed-length streaming (Content-Length header) — some CDN/proxies
-        // reject Transfer-Encoding: chunked for large files, causing Connection reset.
-        // setFixedLengthStreamingMode(long) streams data without buffering in memory.
-        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 2 — PUT file, fixedLength, size=${totalSize / 1024}KB")
-        val url = URL(href)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "PUT"
-            setRequestProperty("Content-Type", "application/octet-stream")
-            setRequestProperty("Connection", "keep-alive")
-            setRequestProperty("Keep-Alive", "timeout=600")
-            doOutput = true
-            setFixedLengthStreamingMode(totalSize)
-            connectTimeout = 60_000
-            readTimeout = 600_000 // 10 min for large files
-        }
+        // Step 2: PUT file via OkHttp — better connection management, write timeout, keepalive
+        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 2 — PUT via OkHttp, size=${totalSize / 1024}KB")
 
-        try {
-            val putStartTime = System.currentTimeMillis()
-            FileInputStream(file).use { fis ->
-                BufferedOutputStream(conn.outputStream, 262144).use { out ->
-                    val buffer = ByteArray(262144)
+        val requestBody = object : RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength() = totalSize
+
+            override fun writeTo(sink: BufferedSink) {
+                val putStartTime = System.currentTimeMillis()
+                FileInputStream(file).use { fis ->
+                    val buffer = ByteArray(65536) // 64KB — smaller writes for better network pacing
                     var bytesRead: Int
                     var totalWritten = 0L
                     var lastEmitPercent = -1
                     while (fis.read(buffer).also { bytesRead = it } != -1) {
-                        out.write(buffer, 0, bytesRead)
+                        sink.write(buffer, 0, bytesRead)
+                        sink.flush()
                         totalWritten += bytesRead
                         val percent = if (totalSize > 0) ((totalWritten * 100) / totalSize).toInt() else 0
                         if (percent != lastEmitPercent) {
-                            out.flush()
                             onProgress(totalWritten)
                             lastEmitPercent = percent
                             if (percent % 5 == 0) {
@@ -400,18 +403,24 @@ class YandexDiskProvider(
                     }
                 }
             }
+        }
+
+        val request = Request.Builder()
+            .url(href)
+            .put(requestBody)
+            .build()
+
+        val putStartTime = System.currentTimeMillis()
+        uploadClient.newCall(request).execute().use { response ->
             val putElapsed = System.currentTimeMillis() - putStartTime
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: PUT body sent in ${putElapsed}ms, reading response...")
-            val code = conn.responseCode
-            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: HTTP response code=$code")
+            val code = response.code
+            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: HTTP response code=$code, elapsed=${putElapsed}ms")
             if (code !in 200..299) {
-                val errorBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                val errorBody = response.body?.string()
                 EcosystemLogger.e(HaronConstants.TAG, "YandexDisk uploadAttempt: FAILED HTTP $code, body=$errorBody")
                 throw Exception("Upload failed: HTTP $code, $errorBody")
             }
             EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: SUCCESS, total time=${System.currentTimeMillis() - startTime}ms")
-        } finally {
-            conn.disconnect()
         }
     }
 
