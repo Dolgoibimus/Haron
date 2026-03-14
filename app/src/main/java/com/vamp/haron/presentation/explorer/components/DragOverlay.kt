@@ -12,6 +12,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,12 +26,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.vamp.haron.presentation.explorer.state.DragOperation
 
 @Composable
 fun DragOverlay(
     previewName: String,
     fileCount: Int,
-    offset: Offset
+    offset: Offset,
+    dragOperation: DragOperation = DragOperation.MOVE
 ) {
     val density = LocalDensity.current
     val xPx = offset.x.toInt() - with(density) { 40.dp.roundToPx() }
@@ -47,6 +51,16 @@ fun DragOverlay(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Operation indicator icon
+                Icon(
+                    if (dragOperation == DragOperation.COPY) Icons.Filled.ContentCopy
+                    else Icons.AutoMirrored.Filled.DriveFileMove,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (dragOperation == DragOperation.COPY) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(4.dp))
                 Icon(
                     Icons.AutoMirrored.Filled.InsertDriveFile,
                     contentDescription = null,

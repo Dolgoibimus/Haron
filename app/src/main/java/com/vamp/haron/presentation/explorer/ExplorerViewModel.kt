@@ -75,6 +75,7 @@ import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.repository.SecureFolderRepository
 import com.vamp.haron.domain.usecase.BatchRenameUseCase
 import com.vamp.haron.domain.usecase.ForceDeleteUseCase
+import com.vamp.haron.presentation.explorer.state.DragOperation
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
@@ -4094,23 +4095,31 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun updateDragOperation(operation: DragOperation) {
+        val current = _uiState.value.dragState
+        if (current is DragState.Dragging && current.dragOperation != operation) {
+            _uiState.update { it.copy(dragState = current.copy(dragOperation = operation)) }
+        }
+    }
+
     fun endDrag(targetPanelId: PanelId?) {
         val current = _uiState.value.dragState
         if (current !is DragState.Dragging) return
 
         val hoveredFolder = current.hoveredFolderPath
-        EcosystemLogger.d(HaronConstants.TAG, "endDrag: targetPanel=$targetPanelId, source=${current.sourcePanelId}, hoveredFolder=$hoveredFolder, paths=${current.draggedPaths.size}")
+        val operation = current.dragOperation
+        EcosystemLogger.d(HaronConstants.TAG, "endDrag: targetPanel=$targetPanelId, source=${current.sourcePanelId}, hoveredFolder=$hoveredFolder, paths=${current.draggedPaths.size}, op=$operation")
         _uiState.update { it.copy(dragState = DragState.Idle) }
 
         // Drop into a specific folder (same or other panel)
         if (hoveredFolder != null) {
             val paths = current.draggedPaths
-            // Don't move a folder into itself
+            // Don't move/copy a folder into itself
             if (paths.any { hoveredFolder.startsWith(it) } || paths.contains(hoveredFolder)) {
                 EcosystemLogger.d(HaronConstants.TAG, "endDrag: abort — folder into itself")
                 return
             }
-            // Don't move files into their own parent directory (no-op)
+            // Don't move/copy files into their own parent directory (no-op)
             val sourceDir = getPanel(current.sourcePanelId).currentPath
             if (hoveredFolder == sourceDir) {
                 EcosystemLogger.d(HaronConstants.TAG, "endDrag: abort — same parent dir")
@@ -4118,6 +4127,10 @@ class ExplorerViewModel @Inject constructor(
             }
             clearSelection(current.sourcePanelId)
             val destPanelId = targetPanelId ?: current.sourcePanelId
+            // Determine effective operation: same panel folder = always MOVE, cross-panel = user choice
+            val isCrossPanel = destPanelId != current.sourcePanelId
+            val effectiveOp = if (isCrossPanel) operation else DragOperation.MOVE
+            val opType = if (effectiveOp == DragOperation.COPY) OperationType.COPY else OperationType.MOVE
 
             // Check for conflicts in the target folder (local files only)
             if (!isCloudPath(hoveredFolder) && !hoveredFolder.startsWith("content://")) {
@@ -4159,7 +4172,7 @@ class ExplorerViewModel @Inject constructor(
                             conflictPairs = conflictPairs,
                             allPaths = paths,
                             destinationDir = hoveredFolder,
-                            operationType = OperationType.MOVE,
+                            operationType = opType,
                             sourcePanelId = current.sourcePanelId,
                             targetPanelId = destPanelId
                         ))
@@ -4168,7 +4181,11 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
-            executeDragMove(paths, hoveredFolder, current.sourcePanelId, destPanelId, current.fileCount, ConflictResolution.RENAME)
+            if (effectiveOp == DragOperation.COPY) {
+                executeDragCopy(paths, hoveredFolder, current.sourcePanelId, destPanelId, current.fileCount, ConflictResolution.RENAME)
+            } else {
+                executeDragMove(paths, hoveredFolder, current.sourcePanelId, destPanelId, current.fileCount, ConflictResolution.RENAME)
+            }
             return
         }
 
@@ -4179,11 +4196,12 @@ class ExplorerViewModel @Inject constructor(
 
         val sourcePanel = getPanel(current.sourcePanelId)
         val targetPanel = getPanel(targetPanelId)
-        EcosystemLogger.d(HaronConstants.TAG, "endDrag: cross-panel, src=${sourcePanel.currentPath}, dst=${targetPanel.currentPath}")
+        EcosystemLogger.d(HaronConstants.TAG, "endDrag: cross-panel, src=${sourcePanel.currentPath}, dst=${targetPanel.currentPath}, op=$operation")
         if (sourcePanel.currentPath == targetPanel.currentPath) return
 
         val paths = current.draggedPaths
         clearSelection(current.sourcePanelId)
+        val opType = if (operation == DragOperation.COPY) OperationType.COPY else OperationType.MOVE
 
         // Conflict check — works for both local and cloud destinations (name-based comparison)
         try {
@@ -4194,7 +4212,7 @@ class ExplorerViewModel @Inject constructor(
                         conflictPairs = conflictPairs,
                         allPaths = paths,
                         destinationDir = targetPanel.currentPath,
-                        operationType = OperationType.MOVE,
+                        operationType = opType,
                         sourcePanelId = current.sourcePanelId,
                         targetPanelId = targetPanelId
                     ))
@@ -4205,8 +4223,13 @@ class ExplorerViewModel @Inject constructor(
             EcosystemLogger.e(HaronConstants.TAG, "endDrag: buildConflictPairs failed: ${e.message}")
         }
 
-        EcosystemLogger.d(HaronConstants.TAG, "endDrag: calling executeDragMove, paths=$paths, dest=${targetPanel.currentPath}")
-        executeDragMove(paths, targetPanel.currentPath, current.sourcePanelId, targetPanelId, current.fileCount, ConflictResolution.RENAME)
+        if (operation == DragOperation.COPY) {
+            EcosystemLogger.d(HaronConstants.TAG, "endDrag: calling executeDragCopy, paths=$paths, dest=${targetPanel.currentPath}")
+            executeDragCopy(paths, targetPanel.currentPath, current.sourcePanelId, targetPanelId, current.fileCount, ConflictResolution.RENAME)
+        } else {
+            EcosystemLogger.d(HaronConstants.TAG, "endDrag: calling executeDragMove, paths=$paths, dest=${targetPanel.currentPath}")
+            executeDragMove(paths, targetPanel.currentPath, current.sourcePanelId, targetPanelId, current.fileCount, ConflictResolution.RENAME)
+        }
     }
 
     private fun executeDragMove(
@@ -4264,6 +4287,116 @@ class ExplorerViewModel @Inject constructor(
             delay(2000)
             _uiState.update {
                 if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    private fun executeDragCopy(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        fileCount: Int,
+        resolution: ConflictResolution
+    ) {
+        EcosystemLogger.d(HaronConstants.TAG, "executeDragCopy: ${paths.size} paths, dest=$destinationDir, isCloud=${isCloudPath(destinationDir)}")
+        // Cloud → cloud: use cloud API (inherently copy for cloud download/upload)
+        if (paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeCloudDragMove(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+        // Cloud → local: download (inherently copy)
+        if (paths.any { isCloudPath(it) } && !isCloudPath(destinationDir)) {
+            executeDragCloudDownload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+        // Local → cloud: upload (inherently copy)
+        if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeDragCloudUpload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+
+        val total = paths.size
+        viewModelScope.launch {
+            var completed = 0
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY))
+            }
+
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.COPY))
+                }
+                fileRepository.copyFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+                    .onFailure { e ->
+                        EcosystemLogger.e(HaronConstants.TAG, "DnD copy error: $fileName: ${e.message}")
+                    }
+            }
+
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
+            }
+            // Only refresh target panel — source unchanged for copy
+            refreshPanel(targetPanelId)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
+
+            delay(2000)
+            _uiState.update {
+                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+            }
+        }
+    }
+
+    private fun executeDragCopyWithDecisions(
+        paths: List<String>,
+        destinationDir: String,
+        sourcePanelId: PanelId,
+        targetPanelId: PanelId,
+        decisions: Map<String, ConflictResolution>
+    ) {
+        // Cloud routing (inherently copy for cloud)
+        if (paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeCloudDragMoveWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
+            return
+        }
+        if (paths.any { isCloudPath(it) } && !isCloudPath(destinationDir)) {
+            executeDragCloudDownloadWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
+            return
+        }
+        if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
+            executeDragCloudUploadWithDecisions(paths, destinationDir, sourcePanelId, targetPanelId, decisions)
+            return
+        }
+
+        val total = paths.size
+        viewModelScope.launch {
+            var completed = 0
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY))
+            }
+            for ((index, path) in paths.withIndex()) {
+                val fileName = extractFileName(path)
+                _uiState.update {
+                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.COPY))
+                }
+                val resolution = decisions[path] ?: ConflictResolution.RENAME
+                fileRepository.copyFilesWithResolutions(
+                    listOf(path), destinationDir, mapOf(path to resolution)
+                ).onSuccess { c -> completed += c }
+            }
+            _uiState.update {
+                it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
+            }
+            refreshPanel(targetPanelId)
+            if (completed > 0) hapticManager.success() else hapticManager.error()
+            viewModelScope.launch {
+                delay(2000)
+                _uiState.update {
+                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
+                }
             }
         }
     }
@@ -4794,7 +4927,17 @@ class ExplorerViewModel @Inject constructor(
         decisions: Map<String, ConflictResolution>
     ) {
         when (dialog.operationType) {
-            OperationType.COPY -> executeCopyWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
+            OperationType.COPY -> {
+                if (dialog.sourcePanelId != null && dialog.targetPanelId != null) {
+                    // DnD copy case — panel IDs saved in dialog
+                    executeDragCopyWithDecisions(
+                        dialog.allPaths, dialog.destinationDir,
+                        dialog.sourcePanelId, dialog.targetPanelId, decisions
+                    )
+                } else {
+                    executeCopyWithDecisions(dialog.allPaths, dialog.destinationDir, decisions)
+                }
+            }
             OperationType.MOVE -> {
                 if (dialog.sourcePanelId != null && dialog.targetPanelId != null) {
                     // DnD case — panel IDs saved in dialog

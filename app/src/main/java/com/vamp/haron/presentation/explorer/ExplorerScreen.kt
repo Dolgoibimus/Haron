@@ -74,6 +74,7 @@ import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
 import com.vamp.haron.presentation.explorer.components.DeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.DrawerMenu
 import com.vamp.haron.presentation.explorer.components.FilePropertiesDialog
+import com.vamp.haron.presentation.explorer.components.DragDividerStrip
 import com.vamp.haron.presentation.explorer.components.DragOverlay
 import com.vamp.haron.presentation.explorer.components.FilePanel
 import com.vamp.haron.presentation.explorer.components.PanelDivider
@@ -96,6 +97,7 @@ import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.presentation.explorer.state.DragOperation
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
 import com.vamp.haron.presentation.applock.LockScreen
@@ -373,6 +375,12 @@ fun ExplorerScreen(
     var bottomPanelStart by remember { mutableFloatStateOf(0f) }
     var bottomPanelEnd by remember { mutableFloatStateOf(0f) }
 
+    // Divider position for DnD copy/move strip
+    var dividerStart by remember { mutableFloatStateOf(0f) }
+    var dividerEnd by remember { mutableFloatStateOf(0f) }
+    var dividerCrossStart by remember { mutableFloatStateOf(0f) }
+    var dividerCrossEnd by remember { mutableFloatStateOf(0f) }
+
     val dragState = state.dragState
     val isDragging = dragState is DragState.Dragging
 
@@ -387,6 +395,22 @@ fun ExplorerScreen(
     } else null
 
     val haptic = LocalHapticFeedback.current
+
+    // Detect divider zone crossing for copy/move selection
+    if (dragState is DragState.Dragging) {
+        val primaryCoord = if (isLandscape) dragState.dragOffset.x else dragState.dragOffset.y
+        val crossCoord = if (isLandscape) dragState.dragOffset.y else dragState.dragOffset.x
+        val isOverDivider = primaryCoord in dividerStart..dividerEnd
+        if (isOverDivider && dividerCrossEnd > dividerCrossStart) {
+            val midpoint = (dividerCrossStart + dividerCrossEnd) / 2f
+            val newOp = if (crossCoord < midpoint) DragOperation.COPY else DragOperation.MOVE
+            if (newOp != dragState.dragOperation) {
+                viewModel.updateDragOperation(newOp)
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+    }
+
     // Track previous drag target for haptic
     var prevDragTarget by remember { mutableStateOf<PanelId?>(null) }
     if (dragTargetPanel != prevDragTarget) {
@@ -582,7 +606,21 @@ fun ExplorerScreen(
                 onDragEnd = { viewModel.savePanelRatio() },
                 onDoubleTap = { viewModel.resetPanelRatio() },
                 onBookmarkTap = { viewModel.showBookmarkPopup() },
-                onRightZoneTap = { viewModel.showToolsPopup() }
+                onRightZoneTap = { viewModel.showToolsPopup() },
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInRoot()
+                    if (isLandscape) {
+                        dividerStart = pos.x
+                        dividerEnd = pos.x + coords.size.width
+                        dividerCrossStart = pos.y
+                        dividerCrossEnd = pos.y + coords.size.height
+                    } else {
+                        dividerStart = pos.y
+                        dividerEnd = pos.y + coords.size.height
+                        dividerCrossStart = pos.x
+                        dividerCrossEnd = pos.x + coords.size.width
+                    }
+                }
             )
         }
 
@@ -1001,12 +1039,21 @@ fun ExplorerScreen(
 
         // Voice FAB moved to global overlay in MainActivity
 
-        // Drag overlay — ghost icon following finger
+        // Drag overlay — ghost icon following finger + copy/move strip on divider
         if (dragState is DragState.Dragging) {
+            DragDividerStrip(
+                isLandscape = isLandscape,
+                dragOperation = dragState.dragOperation,
+                dividerStartPx = dividerStart,
+                dividerEndPx = dividerEnd,
+                crossStartPx = dividerCrossStart,
+                crossEndPx = dividerCrossEnd
+            )
             DragOverlay(
                 previewName = dragState.previewName,
                 fileCount = dragState.fileCount,
-                offset = dragState.dragOffset
+                offset = dragState.dragOffset,
+                dragOperation = dragState.dragOperation
             )
         }
 

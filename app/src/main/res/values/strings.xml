@@ -1329,4 +1329,6 @@
     <string name="ftp_server_anonymous">Anonymous access</string>
     <string name="ftp_server_read_only">Read only</string>
     <string name="ftp_server_credentials">Server credentials</string>
+    <string name="dnd_copy">Copy</string>
+    <string name="dnd_move">Move</string>
 </resources>

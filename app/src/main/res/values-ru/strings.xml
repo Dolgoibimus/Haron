@@ -1328,4 +1328,6 @@
     <string name="ftp_server_anonymous">Анонимный доступ</string>
     <string name="ftp_server_read_only">Только чтение</string>
     <string name="ftp_server_credentials">Учётные данные сервера</string>
+    <string name="dnd_copy">Копировать</string>
+    <string name="dnd_move">Переместить</string>
 </resources>
