@@ -36,18 +36,20 @@ fun DragOverlay(
     dragOperation: DragOperation = DragOperation.MOVE
 ) {
     val density = LocalDensity.current
-    val xPx = offset.x.toInt() - with(density) { 40.dp.roundToPx() }
+    // Shift entire overlay ~50dp to the right to make room for op icon above text
+    val shiftRight = with(density) { 50.dp.roundToPx() }
+    val xPx = offset.x.toInt() - with(density) { 40.dp.roundToPx() } + shiftRight
     val yPx = offset.y.toInt() - with(density) { 24.dp.roundToPx() }
 
     Box {
-        // Operation indicator — floating above text, ~2-3rd char from name start
+        // Operation indicator — above text, 2-3 chars from text start
+        // Text starts at: 12dp padding + 20dp icon + 8dp spacer = 40dp from Surface left
         Icon(
             if (dragOperation == DragOperation.COPY) Icons.Filled.ContentCopy
             else Icons.AutoMirrored.Filled.DriveFileMove,
             contentDescription = null,
             modifier = Modifier
                 .offset {
-                    // 12dp padding + 20dp icon + 8dp spacer = 40dp to text start, +2 chars ≈ +14dp
                     val iconX = xPx + with(density) { 54.dp.roundToPx() }
                     val iconY = yPx - with(density) { 14.dp.roundToPx() }
                     IntOffset(iconX, iconY)
@@ -73,8 +75,7 @@ fun DragOverlay(
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
-                // 7-8 char gap before file name
-                Spacer(Modifier.width(56.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = previewName,
                     style = MaterialTheme.typography.bodySmall,
