@@ -43,8 +43,8 @@ fun DragDividerStrip(
     val dividerCenterPx = (dividerStartPx + dividerEndPx) / 2f
     val offsetPrimary = (dividerCenterPx - stripSizePx / 2f).toInt()
 
-    val copyAlpha = if (dragOperation == DragOperation.COPY) 1f else 0.3f
-    val moveAlpha = if (dragOperation == DragOperation.MOVE) 1f else 0.3f
+    val copyAlpha = if (dragOperation == DragOperation.COPY) 1f else 0.55f
+    val moveAlpha = if (dragOperation == DragOperation.MOVE) 1f else 0.55f
 
     val copyColor = MaterialTheme.colorScheme.tertiary
     val moveColor = MaterialTheme.colorScheme.primary

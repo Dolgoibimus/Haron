@@ -4926,6 +4926,11 @@ class ExplorerViewModel @Inject constructor(
         dialog: DialogState.ConfirmConflict,
         decisions: Map<String, ConflictResolution>
     ) {
+        // If all files are SKIP — no-op, don't show progress bar
+        if (decisions.values.all { it == ConflictResolution.SKIP }) {
+            EcosystemLogger.d(HaronConstants.TAG, "executeWithDecisions: all files SKIP, no-op")
+            return
+        }
         when (dialog.operationType) {
             OperationType.COPY -> {
                 if (dialog.sourcePanelId != null && dialog.targetPanelId != null) {
