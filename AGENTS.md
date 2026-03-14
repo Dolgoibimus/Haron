@@ -118,7 +118,7 @@
 
 ---
 
-### Batch 63 — Яндекс: upload reliability + childCount + HttpFileServer streaming ⚠️ не проверено
+### Batch 63 — Яндекс: upload reliability + childCount + HttpFileServer streaming ✅ проверено
 
 **Что сделано:**
 - **childCount для папок**: параллельные `GET /resources?path=...&limit=0` запросы для получения `_embedded.total` — раньше все папки показывали "0 элементов"
@@ -128,7 +128,7 @@
 
 ---
 
-### Batch 62 — Скорость облачных трансферов + превью фиксы ⚠️ не проверено
+### Batch 62 — Скорость облачных трансферов + превью фиксы ✅ проверено
 
 **Что сделано:**
 - **channelFlow вместо flow**: `downloadFile/uploadFile/updateFileContent` в `YandexDiskProvider` переведены с `flow { emit() }` на `channelFlow { trySend() }` — `trySend()` не блокирует write-loop (upload глох на 6-7% из-за `emit()` приостанавливающего запись)
@@ -141,7 +141,7 @@
 
 ---
 
-### Batch 61 — Параллельные облачные трансферы + OOM fix ⚠️ не проверено
+### Batch 61 — Параллельные облачные трансферы + OOM fix ✅ проверено
 
 **Что сделано:**
 - **OOM fix**: `setFixedLengthStreamingMode(totalSize)` в обоих upload-методах `YandexDiskProvider` — больше не буферит всё тело запроса в памяти
@@ -156,7 +156,7 @@
 
 ---
 
-### Batch 60 — Яндекс Диск (облачный провайдер) ⚠️ не проверено
+### Batch 60 — Яндекс Диск (облачный провайдер) ✅ проверено
 
 **Что сделано:**
 - Добавлен `YANDEX_DISK("yandex", "Yandex Disk")` в `CloudProvider` enum
