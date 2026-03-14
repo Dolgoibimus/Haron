@@ -22,22 +22,38 @@
 
 ---
 
-## Следующий пункт
+### Batch 64 — Cloud upload reliability: все 3 провайдера ⚠️ не проверено
 
-### Загрузка файлов в Яндекс Диск — не работает
-- Загрузка (upload) в Яндекс Диск не проходит — требует отладки
-- Pre-refresh, retry, chunked upload уже реализованы (Batch 63), но проблема не ушла
-- Нужно: подключить устройство, воспроизвести проблему, посмотреть логи (`adb logcat -s Haron:* -d | tail -80`), найти root cause
+**Проблема:** Большие файлы (140-440MB) падали с ConnectionResetException через ~40 секунд у всех провайдеров. Root cause — сетевое оборудование (роутер/ISP) убивает долгие upload-соединения.
+
+**Что сделано:**
+
+**Общее:**
+- **Sequential upload mutex**: `cloudUploadMutex` в ExplorerViewModel — параллельные PUT-запросы вызывали массовый ConnectionReset, теперь загрузки идут последовательно
+- **OkHttp 4.12.0**: добавлен в зависимости — лучше connection management, keepalive, HTTP/2
+
+**Google Drive:** ✅ проверено пользователем
+- **Retry на ANY IOException**: раньше проверял только "reset"/"refused"/"timeout" в сообщении — пропускал "unexpected end of stream". Теперь ловит любой IOException
+- **10MB chunks** (было 2MB), **3 retries** (было 2), exponential backoff
+
+**Yandex Disk:**
+- **Content-Range chunked upload**: полный переход с одного PUT на чанки по 10MB с заголовком `Content-Range: bytes start-end/total`. Каждый чанк — отдельный HTTP-запрос, при падении ретраится только он (5 попыток)
+- **OkHttp для чанков**: `uploadClient` с writeTimeout 10 мин, retryOnConnectionFailure
+- **RandomAccessFile для seek**: при ретрае чанка — seek на нужный offset вместо нового потока
+- **MIME-type throttling bypass**: загрузка как `.tmp` → rename через API для .mp4/.avi/.mkv/.zip/.rar/.7z (Yandex троттлит эти типы до ~128KB/s)
+- **User-Agent "Haron/1.0"**: явный заголовок (Yandex блокирует unknown clients)
+
+**Dropbox:**
+- **8MB chunks** (было 4MB, рекомендация Dropbox)
+- **Empty session start**: все данные через append — легче ретраить
+- **Per-chunk retry** (5 попыток): новый FileInputStream + skip(offset) на каждый attempt
+- **IncorrectOffsetError handling**: append (UploadSessionAppendErrorException) + finish (UploadSessionFinishErrorException → lookupFailed) — когда сервер получил данные, но ответ потерялся, SDK корректирует offset
 
 ---
 
 ### Batch 63 — Яндекс: upload reliability + childCount + HttpFileServer streaming ⚠️ не проверено
 
 **Что сделано:**
-- **Upload pre-refresh**: `refreshToken()` перед каждым upload (как Google Drive) — исключает 401 при протухшем токене
-- **Retry wrapper**: 2 попытки с 1с паузой + повторный refreshToken между попытками — устойчивость к транзиентным ошибкам
-- **Chunked upload**: `setChunkedStreamingMode(4MB)` для файлов >100MB (иначе `setFixedLengthStreamingMode`) — partial writes для больших файлов
-- **`uploadFileAttempt()` helper**: общий код для `uploadFile` и `updateFileContent` — один паттерн retry+chunked
 - **childCount для папок**: параллельные `GET /resources?path=...&limit=0` запросы для получения `_embedded.total` — раньше все папки показывали "0 элементов"
 - **HttpFileServer Yandex streaming**: добавлен case `"yandex"` в `when(config.provider)` — двухшаговая загрузка (temp URL), правильный auth prefix `"OAuth"` вместо `"Bearer"`, `needsAuth` исключает Yandex (temp URL self-authenticated)
 - **downloadCloudThumbnail auth**: добавлена авторизация для Yandex (`OAuth` prefix), увеличение размера thumbnail (`size=XXXL`)
