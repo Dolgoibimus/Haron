@@ -212,7 +212,7 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /** Active cloud transfer jobs: transferId → Job */
-    private val cloudTransferJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    private val cloudTransferJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private var transferIdCounter = 0
 
     /** Mutex to serialize cloud uploads — parallel PUTs cause Yandex to reset ALL connections */
