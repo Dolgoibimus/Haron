@@ -6,6 +6,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -55,6 +56,7 @@ fun CastOverlay(
     val showBtDevicePicker by castViewModel.showBtDevicePicker.collectAsState()
     val hidConnectionState by castViewModel.hidConnectionState.collectAsState()
     val isBluetoothHidMode by castViewModel.isBluetoothHidMode.collectAsState()
+    val btPairedDevices by castViewModel.btPairedDevices.collectAsState()
     val btHidWaitingForTv by castViewModel.btHidWaitingForTv.collectAsState()
     // Compute transcode percent directly from transcodeProgress (no async derived state)
     val transcodePercent = transcodeProgress?.let {
@@ -74,7 +76,8 @@ fun CastOverlay(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .padding(bottom = 16.dp),
+                .imePadding()
+                .padding(bottom = 2.dp),
             contentAlignment = Alignment.BottomCenter
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -183,7 +186,9 @@ fun CastOverlay(
     if (showBtDevicePicker) {
         BtDevicePickerDialog(
             connectionState = hidConnectionState,
-            waitingForTv = btHidWaitingForTv,
+            pairedDevices = btPairedDevices,
+            isDiscoverable = btHidWaitingForTv,
+            onConnectDevice = { castViewModel.connectBtHidToDevice(it) },
             onMakeDiscoverable = { castViewModel.requestBtDiscoverable() },
             onDismiss = { castViewModel.dismissBtDevicePicker() }
         )

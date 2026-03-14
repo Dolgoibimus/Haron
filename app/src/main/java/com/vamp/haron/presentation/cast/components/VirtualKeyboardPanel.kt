@@ -7,15 +7,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -87,6 +91,22 @@ fun VirtualKeyboardPanel(
                     )
                 }
                 Row {
+                    IconButton(
+                        onClick = {
+                            if (text.isNotEmpty()) {
+                                onRemoteInput(RemoteInputEvent.ClearAll)
+                                text = ""
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = stringResource(R.string.remote_clear_text),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                     IconButton(onClick = onShowTouchpad, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -108,29 +128,35 @@ fun VirtualKeyboardPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // Text input field
+            // Text input field — grows up to 2x initial height, then scrolls
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Bottom
             ) {
+                val scrollState = rememberScrollState()
                 BasicTextField(
                     value = text,
                     onValueChange = { newText ->
-                        // Send each new character as it's typed
-                        if (newText.length > text.length) {
-                            val added = newText.substring(text.length)
-                            onRemoteInput(RemoteInputEvent.TextInput(added))
-                        } else if (newText.length < text.length) {
-                            // Backspace
-                            val deleted = text.length - newText.length
-                            repeat(deleted) {
-                                onRemoteInput(RemoteInputEvent.KeyPress(8)) // Backspace
+                        // Smart diff: find common prefix, delete old suffix, type new suffix
+                        // Handles voice input that inserts/replaces in the middle (e.g. punctuation)
+                        val oldText = text
+                        if (newText != oldText) {
+                            val commonLen = oldText.zip(newText).takeWhile { (a, b) -> a == b }.size
+                            val charsToDelete = oldText.length - commonLen
+                            val charsToAdd = newText.substring(commonLen)
+                            repeat(charsToDelete) {
+                                onRemoteInput(RemoteInputEvent.KeyPress(android.view.KeyEvent.KEYCODE_DEL))
+                            }
+                            if (charsToAdd.isNotEmpty()) {
+                                onRemoteInput(RemoteInputEvent.TextInput(charsToAdd))
                             }
                         }
                         text = newText
                     },
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 40.dp, max = 160.dp)
+                        .verticalScroll(scrollState)
                         .focusRequester(focusRequester),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface
@@ -139,7 +165,7 @@ fun VirtualKeyboardPanel(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            onRemoteInput(RemoteInputEvent.KeyPress(13)) // Enter
+                            onRemoteInput(RemoteInputEvent.KeyPress(android.view.KeyEvent.KEYCODE_ENTER))
                             text = ""
                         }
                     ),
@@ -150,13 +176,6 @@ fun VirtualKeyboardPanel(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (text.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.remote_keyboard_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
                             innerTextField()
                         }
                     }
@@ -164,7 +183,7 @@ fun VirtualKeyboardPanel(
 
                 IconButton(
                     onClick = {
-                        onRemoteInput(RemoteInputEvent.KeyPress(13)) // Enter
+                        onRemoteInput(RemoteInputEvent.KeyPress(android.view.KeyEvent.KEYCODE_ENTER))
                         text = ""
                     },
                     modifier = Modifier.size(40.dp)

@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.68 (Phase 4, Batch 68)
+**Текущая версия:** 0.69 (Phase 4, Batch 69)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -22,7 +22,59 @@
 
 ---
 
-### Batch 68 — FTP-сервер + FTP-клиент ⚠️ не проверено
+### Batch 69 — Bluetooth HID пульт: доработка ✅ проверено
+
+**Цель:** Довести BT HID пульт до рабочего состояния — подключение, клавиатура, пунктуация, UX.
+
+#### Подключение
+- Переделан flow: вместо "make discoverable + ждать" → показ списка спаренных устройств + подключение с телефона
+- `connect()` для переподключения к уже спаренным устройствам
+- `requestBtDiscoverable()` — fallback для первого сопряжения
+- `replyReport()` в onGetReport + `reportError(SUCCESS)` в onSetReport — хост не отключается
+- Фикс `init()`: re-registration при `hidDevice!=null` но `isRegistered=false`
+
+#### BtDevicePickerDialog — полная переделка
+- Список спаренных устройств (переподключение в 1 тап)
+- Пошаговая инструкция для первого сопряжения (шаги 0-4)
+- Предупреждение (красным): удалить старое сопряжение перед HID-подключением
+- Упоминание что устройство может показаться как "Неизвестное устройство"
+- Индикатор discoverable-режима (спиннер + текст)
+
+#### VirtualKeyboardPanel — клавиатура
+- Фикс backspace: KEYCODE_DEL=67 (было 8=KEYCODE_1)
+- Фикс Enter: KEYCODE_ENTER=66 (было 13=ASCII CR)
+- Smart diff: `commonPrefix` вместо `substring(length)` — голосовой ввод корректно обрабатывает вставку/замену в середине текста
+- Расширяемое поле ввода: min 40dp → max 160dp (~8 строк), потом прокрутка
+- Убран placeholder-текст (достаточно мигающего курсора)
+- Кнопка "Очистить текст" (корзина, красная) — Ctrl+A + Backspace на удалённом устройстве
+
+#### Кириллица и пунктуация
+- Полная карта ЙЦУКЕН → QWERTY (32 буквы + ё) в `cyrillicToHid()`
+- Автоопределение режима (`isRussianMode`) по последним введённым буквам
+- `russianPunctuationToHid()` — пунктуация по позициям русской раскладки (`.`→`/`, `,`→Shift+`/`, `?`→Shift+7, и т.д.)
+- Без этого: `.` → `ю`, `,` → `б`, `?` → `,` на русской раскладке хоста
+
+#### Производительность и надёжность
+- `keyboardMutex` — сериализация HID keyboard-событий (backspace/текст не теряются при массовом удалении)
+- `sendClearAll()` — Ctrl+A + Backspace через HID (мгновенная очистка вместо N backspaces)
+- `imePadding()` на CastOverlay — панель поднимается над системной клавиатурой
+
+#### Модифицированные файлы
+| Файл | Изменение |
+|------|-----------|
+| BluetoothHidManager.kt | Cyrillic mapping, Russian punct, Mutex, replyReport, ClearAll |
+| BtDevicePickerDialog.kt | Paired devices + step-by-step instructions |
+| VirtualKeyboardPanel.kt | Smart diff, expandable field, clear button |
+| CastOverlay.kt | imePadding, reduced bottom padding |
+| CastViewModel.kt | connectBtHidToDevice() |
+| RemoteInputEvent.kt | +ClearAll event |
+| DlnaManager.kt | +ClearAll branch (no-op) |
+| GoogleCastManager.kt | +ClearAll branch (no-op) |
+| strings.xml (EN + RU) | BT HID strings + clear text |
+
+---
+
+### Batch 68 — FTP-сервер + FTP-клиент ✅ проверено
 
 **Цель:** Полноценная FTP-функциональность: встроенный FTP-сервер (раздавать файлы) + FTP-клиент (подключаться к удалённым серверам).
 

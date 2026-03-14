@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +39,8 @@ class BluetoothHidManager @Inject constructor(
     private var hidDevice: BluetoothHidDevice? = null
     private var connectedDevice: BluetoothDevice? = null
     private var isRegistered = false
+    private val keyboardMutex = Mutex()
+    private var isRussianMode = false
 
     private val _connectionState = MutableStateFlow<HidConnectionState>(HidConnectionState.Disconnected)
     val connectionState: StateFlow<HidConnectionState> = _connectionState.asStateFlow()
@@ -116,18 +120,28 @@ class BluetoothHidManager @Inject constructor(
     )
 
     fun isSupported(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
-        return adapter != null
+        val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && adapter != null
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: isSupported=$supported, SDK=${Build.VERSION.SDK_INT}, adapter=${adapter != null}, btEnabled=${adapter?.isEnabled}")
+        return supported
     }
 
     /** Returns true when HID profile proxy is connected and app is registered */
-    fun isReady(): Boolean = hidDevice != null && isRegistered
+    fun isReady(): Boolean {
+        val ready = hidDevice != null && isRegistered
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: isReady=$ready, hidDevice=${hidDevice != null}, isRegistered=$isRegistered")
+        return ready
+    }
 
     @SuppressLint("MissingPermission")
     fun refreshPairedDevices() {
-        if (adapter == null) return
+        if (adapter == null) {
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: refreshPairedDevices — adapter is null")
+            return
+        }
         try {
-            _pairedDevices.value = adapter.bondedDevices?.toList() ?: emptyList()
+            val devices = adapter.bondedDevices?.toList() ?: emptyList()
+            _pairedDevices.value = devices
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: refreshPairedDevices — found ${devices.size} paired devices: ${devices.map { try { it.name } catch (_: Exception) { it.address } }}")
         } catch (e: SecurityException) {
             EcosystemLogger.e(HaronConstants.TAG, "BT HID: refreshPairedDevices security error: ${e.message}")
         }
@@ -135,26 +149,41 @@ class BluetoothHidManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun init() {
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: init() called, SDK=${Build.VERSION.SDK_INT}, adapter=${adapter != null}, btEnabled=${adapter?.isEnabled}, hidDevice=${hidDevice != null}")
         if (!isSupported()) {
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: init() — NOT SUPPORTED")
             _connectionState.value = HidConnectionState.NotSupported
             return
         }
-        if (hidDevice != null) return
+        if (hidDevice != null) {
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: init() — already initialized, isRegistered=$isRegistered")
+            if (!isRegistered) {
+                EcosystemLogger.d(HaronConstants.TAG, "BT HID: init() — re-registering app")
+                registerApp()
+            }
+            return
+        }
 
         try {
-            adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: requesting HID_DEVICE profile proxy...")
+            val proxyResult = adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
                     hidDevice = proxy as? BluetoothHidDevice
-                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: profile proxy connected")
-                    registerApp()
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: profile proxy connected, hidDevice=${hidDevice != null}, profile=$profile")
+                    if (hidDevice != null) {
+                        registerApp()
+                    } else {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: profile proxy connected but cast to BluetoothHidDevice failed, proxy=${proxy?.javaClass?.name}")
+                    }
                 }
 
                 override fun onServiceDisconnected(profile: Int) {
                     hidDevice = null
                     isRegistered = false
-                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: profile proxy disconnected")
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: profile proxy disconnected, profile=$profile")
                 }
             }, BluetoothProfile.HID_DEVICE)
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: getProfileProxy returned $proxyResult")
         } catch (e: SecurityException) {
             EcosystemLogger.e(HaronConstants.TAG, "BT HID: init security error: ${e.message}")
             _connectionState.value = HidConnectionState.Error(e.message ?: "Security error")
@@ -163,10 +192,18 @@ class BluetoothHidManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     private fun registerApp() {
-        val hid = hidDevice ?: return
-        if (isRegistered) return
+        val hid = hidDevice
+        if (hid == null) {
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: registerApp — hidDevice is null")
+            return
+        }
+        if (isRegistered) {
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: registerApp — already registered")
+            return
+        }
 
         try {
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: registerApp — creating SDP settings, descriptor size=${hidReportDescriptor.size}")
             val sdp = BluetoothHidDeviceAppSdpSettings(
                 "Haron Remote",
                 "Haron File Manager Remote",
@@ -178,50 +215,113 @@ class BluetoothHidManager @Inject constructor(
             val callback = object : BluetoothHidDevice.Callback() {
                 override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
                     isRegistered = registered
-                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: app registered=$registered")
+                    val deviceName = try { pluggedDevice?.name } catch (_: Exception) { null }
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: onAppStatusChanged registered=$registered, pluggedDevice=$deviceName (${pluggedDevice?.address})")
+                    if (registered) {
+                        refreshPairedDevices()
+                    }
                 }
 
                 @SuppressLint("MissingPermission")
                 override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
+                    val stateName = when (state) {
+                        BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
+                        BluetoothProfile.STATE_CONNECTING -> "CONNECTING"
+                        BluetoothProfile.STATE_DISCONNECTED -> "DISCONNECTED"
+                        BluetoothProfile.STATE_DISCONNECTING -> "DISCONNECTING"
+                        else -> "UNKNOWN($state)"
+                    }
+                    val name = try { device?.name } catch (_: SecurityException) { null } ?: device?.address ?: "null"
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: onConnectionStateChanged state=$stateName, device=$name (${device?.address})")
+
                     when (state) {
                         BluetoothProfile.STATE_CONNECTED -> {
                             connectedDevice = device
-                            val name = try { device?.name } catch (_: SecurityException) { null } ?: device?.address ?: "Unknown"
                             _connectionState.value = HidConnectionState.Connected(name)
-                            EcosystemLogger.d(HaronConstants.TAG, "BT HID: connected to $name")
+                            EcosystemLogger.i(HaronConstants.TAG, "BT HID: *** CONNECTED to $name ***")
+                        }
+                        BluetoothProfile.STATE_CONNECTING -> {
+                            _connectionState.value = HidConnectionState.Connecting
                         }
                         BluetoothProfile.STATE_DISCONNECTED -> {
                             connectedDevice = null
                             _connectionState.value = HidConnectionState.Disconnected
-                            EcosystemLogger.d(HaronConstants.TAG, "BT HID: disconnected")
+                            EcosystemLogger.i(HaronConstants.TAG, "BT HID: *** DISCONNECTED ***")
                         }
                     }
                 }
+
+                @SuppressLint("MissingPermission")
+                override fun onGetReport(device: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {
+                    val name = try { device?.name } catch (_: Exception) { device?.address }
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: onGetReport device=$name, type=$type, id=$id, bufferSize=$bufferSize")
+                    // Must reply — host disconnects if no response
+                    val report = when (id.toInt()) {
+                        1 -> byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0) // keyboard: no keys
+                        2 -> byteArrayOf(0, 0, 0, 0)              // mouse: no movement
+                        else -> byteArrayOf()
+                    }
+                    try {
+                        val ok = hid.replyReport(device, type, id, report)
+                        EcosystemLogger.d(HaronConstants.TAG, "BT HID: replyReport id=$id, ok=$ok")
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: replyReport error: ${e.message}")
+                    }
+                }
+
+                @SuppressLint("MissingPermission")
+                override fun onSetReport(device: BluetoothDevice?, type: Byte, id: Byte, data: ByteArray?) {
+                    val name = try { device?.name } catch (_: Exception) { device?.address }
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: onSetReport device=$name, type=$type, id=$id, dataSize=${data?.size}")
+                    // Acknowledge the SET_REPORT
+                    try {
+                        hid.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS)
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: reportError error: ${e.message}")
+                    }
+                }
+
+                override fun onInterruptData(device: BluetoothDevice?, reportId: Byte, data: ByteArray?) {
+                    val name = try { device?.name } catch (_: Exception) { device?.address }
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: onInterruptData device=$name, reportId=$reportId, dataSize=${data?.size}")
+                }
             }
 
-            hid.registerApp(sdp, null, null, { it.run() }, callback)
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: calling registerApp()...")
+            val result = hid.registerApp(sdp, null, null, { it.run() }, callback)
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: registerApp() returned $result")
         } catch (e: SecurityException) {
             EcosystemLogger.e(HaronConstants.TAG, "BT HID: registerApp security error: ${e.message}")
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: registerApp error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
     @SuppressLint("MissingPermission")
     fun connect(device: BluetoothDevice) {
         val hid = hidDevice
+        val name = try { device.name } catch (_: Exception) { device.address }
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: connect() called, device=$name (${device.address}), hidDevice=${hid != null}, isRegistered=$isRegistered")
         if (hid == null || !isRegistered) {
-            _connectionState.value = HidConnectionState.Error("HID not ready")
+            val reason = if (hid == null) "hidDevice is null" else "not registered"
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: connect failed — $reason")
+            _connectionState.value = HidConnectionState.Error("HID not ready: $reason")
             return
         }
         _connectionState.value = HidConnectionState.Connecting
         try {
             val result = hid.connect(device)
+            EcosystemLogger.d(HaronConstants.TAG, "BT HID: connect() returned $result for $name")
             if (!result) {
-                _connectionState.value = HidConnectionState.Error("Connection failed")
-                EcosystemLogger.e(HaronConstants.TAG, "BT HID: connect() returned false")
+                _connectionState.value = HidConnectionState.Error("connect() returned false")
+                EcosystemLogger.e(HaronConstants.TAG, "BT HID: connect() returned false for $name — device may not support HID or is already connected")
             }
         } catch (e: SecurityException) {
             _connectionState.value = HidConnectionState.Error(e.message ?: "Security error")
             EcosystemLogger.e(HaronConstants.TAG, "BT HID: connect security error: ${e.message}")
+        } catch (e: Exception) {
+            _connectionState.value = HidConnectionState.Error(e.message ?: "Error")
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: connect error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -229,9 +329,12 @@ class BluetoothHidManager @Inject constructor(
     fun disconnect() {
         val hid = hidDevice
         val device = connectedDevice
+        val name = try { device?.name } catch (_: Exception) { device?.address }
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: disconnect() called, device=$name, hidDevice=${hid != null}")
         if (hid != null && device != null) {
             try {
                 hid.disconnect(device)
+                EcosystemLogger.d(HaronConstants.TAG, "BT HID: disconnect() sent for $name")
             } catch (e: SecurityException) {
                 EcosystemLogger.e(HaronConstants.TAG, "BT HID: disconnect security error: ${e.message}")
             }
@@ -241,87 +344,115 @@ class BluetoothHidManager @Inject constructor(
     }
 
     fun sendMouseMove(dx: Float, dy: Float) {
-        val hid = hidDevice ?: return
-        val device = connectedDevice ?: return
+        val hid = hidDevice
+        val device = connectedDevice
+        if (hid == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseMove — hidDevice null"); return }
+        if (device == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseMove — connectedDevice null"); return }
         val clampedDx = dx.toInt().coerceIn(-127, 127).toByte()
         val clampedDy = dy.toInt().coerceIn(-127, 127).toByte()
-        // Report ID 2: buttons(0) + dx + dy + wheel(0)
         val report = byteArrayOf(0x00, clampedDx, clampedDy, 0x00)
         try {
-            hid.sendReport(device, 2, report)
+            val ok = hid.sendReport(device, 2, report)
+            if (!ok) EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseMove — sendReport returned false")
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseMove error: ${e.message}")
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseMove error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
     fun sendMouseClick(button: Int = 0) {
-        val hid = hidDevice ?: return
-        val device = connectedDevice ?: return
+        val hid = hidDevice
+        val device = connectedDevice
+        if (hid == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseClick — hidDevice null"); return }
+        if (device == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseClick — connectedDevice null"); return }
         val buttonByte = (1 shl button).toByte()
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendMouseClick button=$button (byte=$buttonByte)")
         scope.launch {
             try {
-                // Button down
-                hid.sendReport(device, 2, byteArrayOf(buttonByte, 0x00, 0x00, 0x00))
+                val ok1 = hid.sendReport(device, 2, byteArrayOf(buttonByte, 0x00, 0x00, 0x00))
                 delay(50)
-                // Button up
-                hid.sendReport(device, 2, byteArrayOf(0x00, 0x00, 0x00, 0x00))
+                val ok2 = hid.sendReport(device, 2, byteArrayOf(0x00, 0x00, 0x00, 0x00))
+                if (!ok1 || !ok2) EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseClick — sendReport returned false (down=$ok1 up=$ok2)")
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseClick error: ${e.message}")
+                EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendMouseClick error: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
     }
 
     fun sendScroll(dy: Float) {
-        val hid = hidDevice ?: return
-        val device = connectedDevice ?: return
+        val hid = hidDevice
+        val device = connectedDevice
+        if (hid == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendScroll — hidDevice null"); return }
+        if (device == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendScroll — connectedDevice null"); return }
         val clampedDy = dy.toInt().coerceIn(-127, 127).toByte()
-        // Report ID 2: buttons(0) + dx(0) + dy(0) + wheel
         val report = byteArrayOf(0x00, 0x00, 0x00, clampedDy)
         try {
-            hid.sendReport(device, 2, report)
+            val ok = hid.sendReport(device, 2, report)
+            if (!ok) EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendScroll — sendReport returned false")
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendScroll error: ${e.message}")
+            EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendScroll error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
     fun sendKeyPress(hidUsageCode: Int) {
-        val hid = hidDevice ?: return
-        val device = connectedDevice ?: return
+        val hid = hidDevice
+        val device = connectedDevice
+        if (hid == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendKeyPress — hidDevice null"); return }
+        if (device == null) { EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendKeyPress — connectedDevice null"); return }
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendKeyPress code=0x${hidUsageCode.toString(16)}")
         scope.launch {
-            try {
-                // Key down: modifier(0) + reserved(0) + keycode + padding
-                val report = byteArrayOf(0x00, 0x00, hidUsageCode.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
-                hid.sendReport(device, 1, report)
-                delay(30)
-                // Key up: all zeros
-                hid.sendReport(device, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
-            } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendKeyPress error: ${e.message}")
+            keyboardMutex.withLock {
+                try {
+                    val h = hidDevice ?: return@withLock
+                    val d = connectedDevice ?: return@withLock
+                    val report = byteArrayOf(0x00, 0x00, hidUsageCode.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
+                    val ok1 = h.sendReport(d, 1, report)
+                    delay(30)
+                    val ok2 = h.sendReport(d, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
+                    delay(20)
+                    if (!ok1 || !ok2) EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendKeyPress — sendReport returned false (down=$ok1 up=$ok2)")
+                } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendKeyPress error: ${e.javaClass.simpleName}: ${e.message}")
+                }
             }
         }
     }
 
     fun sendTextInput(text: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendTextInput text='$text' (${text.length} chars)")
         scope.launch {
-            for (char in text) {
-                val (modifier, usageCode) = charToHid(char) ?: continue
-                val hid = hidDevice ?: return@launch
-                val device = connectedDevice ?: return@launch
-                try {
-                    val report = byteArrayOf(modifier, 0x00, usageCode, 0x00, 0x00, 0x00, 0x00, 0x00)
-                    hid.sendReport(device, 1, report)
-                    delay(30)
-                    hid.sendReport(device, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
-                    delay(20)
-                } catch (e: Exception) {
-                    EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendTextInput error: ${e.message}")
-                    break
+            keyboardMutex.withLock {
+                for (char in text) {
+                    val pair = charToHid(char)
+                    if (pair == null) {
+                        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendTextInput — no HID mapping for '$char' (${char.code})")
+                        continue
+                    }
+                    val (modifier, usageCode) = pair
+                    val h = hidDevice ?: run {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendTextInput — hidDevice became null mid-send")
+                        return@withLock
+                    }
+                    val d = connectedDevice ?: run {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendTextInput — connectedDevice became null mid-send")
+                        return@withLock
+                    }
+                    try {
+                        val report = byteArrayOf(modifier, 0x00, usageCode, 0x00, 0x00, 0x00, 0x00, 0x00)
+                        h.sendReport(d, 1, report)
+                        delay(30)
+                        h.sendReport(d, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
+                        delay(20)
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendTextInput error at '$char': ${e.javaClass.simpleName}: ${e.message}")
+                        break
+                    }
                 }
             }
         }
     }
 
     fun sendRemoteInput(event: RemoteInputEvent) {
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendRemoteInput event=${event.javaClass.simpleName}")
         when (event) {
             is RemoteInputEvent.MouseMove -> sendMouseMove(event.dx, event.dy)
             is RemoteInputEvent.MouseClick -> sendMouseClick(event.button)
@@ -331,16 +462,40 @@ class BluetoothHidManager @Inject constructor(
                     sendTextInput(event.char.toString())
                 } else {
                     val hidCode = androidKeyToHid(event.keyCode)
+                    EcosystemLogger.d(HaronConstants.TAG, "BT HID: KeyPress keyCode=${event.keyCode} → hidCode=0x${hidCode.toString(16)}")
                     if (hidCode != 0) sendKeyPress(hidCode)
+                    else EcosystemLogger.d(HaronConstants.TAG, "BT HID: no HID mapping for Android keyCode=${event.keyCode}")
                 }
             }
             is RemoteInputEvent.TextInput -> sendTextInput(event.text)
-            else -> { /* media events not handled by HID */ }
+            is RemoteInputEvent.ClearAll -> sendClearAll()
+            else -> {
+                EcosystemLogger.d(HaronConstants.TAG, "BT HID: ignoring media event ${event.javaClass.simpleName}")
+            }
         }
     }
 
-    /** Convert ASCII char to (modifier, HID usage code) */
+    /** Convert char to (modifier, HID usage code).
+     *  Supports ASCII + Cyrillic (ЙЦУКЕН → QWERTY physical key mapping).
+     *  Tracks language mode to send punctuation via correct layout positions. */
     private fun charToHid(char: Char): Pair<Byte, Byte>? {
+        // Track mode: Cyrillic → Russian layout, Latin → English layout
+        if (char in 'а'..'я' || char in 'А'..'Я' || char == 'ё' || char == 'Ё') {
+            isRussianMode = true
+        } else if (char in 'a'..'z' || char in 'A'..'Z') {
+            isRussianMode = false
+        }
+
+        // Check Cyrillic first (ЙЦУКЕН layout → QWERTY physical key positions)
+        val cyrillicResult = cyrillicToHid(char)
+        if (cyrillicResult != null) return cyrillicResult
+
+        // Punctuation in Russian mode — use Russian layout key positions
+        if (isRussianMode) {
+            val ruPunct = russianPunctuationToHid(char)
+            if (ruPunct != null) return ruPunct
+        }
+
         val isUpper = char.isUpperCase()
         val modifier: Byte = if (isUpper) 0x02 else 0x00 // Left Shift
         val lower = char.lowercaseChar()
@@ -387,6 +542,103 @@ class BluetoothHidManager @Inject constructor(
             else -> null
         }
         return if (usageCode != null) Pair(modifier, usageCode) else null
+    }
+
+    /** Map Cyrillic char (ЙЦУКЕН) to HID scan code via QWERTY physical key position.
+     *  Host must have Russian layout active for correct output. */
+    private fun cyrillicToHid(char: Char): Pair<Byte, Byte>? {
+        val isUpper = char.isUpperCase()
+        val modifier: Byte = if (isUpper) 0x02 else 0x00
+        val lower = char.lowercaseChar()
+        val hid: Byte = when (lower) {
+            'й' -> 0x14 // q
+            'ц' -> 0x1A // w
+            'у' -> 0x08 // e
+            'к' -> 0x15 // r
+            'е' -> 0x17 // t
+            'н' -> 0x1C // y
+            'г' -> 0x18 // u
+            'ш' -> 0x0C // i
+            'щ' -> 0x12 // o
+            'з' -> 0x13 // p
+            'х' -> 0x2F // [
+            'ъ' -> 0x30 // ]
+            'ф' -> 0x04 // a
+            'ы' -> 0x16 // s
+            'в' -> 0x07 // d
+            'а' -> 0x09 // f
+            'п' -> 0x0A // g
+            'р' -> 0x0B // h
+            'о' -> 0x0D // j
+            'л' -> 0x0E // k
+            'д' -> 0x0F // l
+            'ж' -> 0x33 // ;
+            'э' -> 0x34 // '
+            'я' -> 0x1D // z
+            'ч' -> 0x1B // x
+            'с' -> 0x06 // c
+            'м' -> 0x19 // v
+            'и' -> 0x05 // b
+            'т' -> 0x11 // n
+            'ь' -> 0x10 // m
+            'б' -> 0x36 // ,
+            'ю' -> 0x37 // .
+            'ё' -> 0x35 // `
+            else -> return null
+        }
+        return Pair(modifier, hid)
+    }
+
+    /** Send Ctrl+A (select all) then Backspace to clear all text on remote */
+    private fun sendClearAll() {
+        val hid = hidDevice
+        val device = connectedDevice
+        if (hid == null || device == null) return
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: sendClearAll — Ctrl+A + Backspace")
+        scope.launch {
+            keyboardMutex.withLock {
+                try {
+                    val h = hidDevice ?: return@withLock
+                    val d = connectedDevice ?: return@withLock
+                    // Ctrl+A (select all): modifier=0x01 (Left Ctrl), key=0x04 (a)
+                    h.sendReport(d, 1, byteArrayOf(0x01, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00))
+                    delay(50)
+                    h.sendReport(d, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
+                    delay(30)
+                    // Backspace
+                    h.sendReport(d, 1, byteArrayOf(0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x00))
+                    delay(30)
+                    h.sendReport(d, 1, byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
+                } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "BT HID: sendClearAll error: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /** Map punctuation to Russian keyboard layout key positions.
+     *  On Russian layout: . = / key, , = Shift+/ key, ? = Shift+7, etc. */
+    private fun russianPunctuationToHid(char: Char): Pair<Byte, Byte>? {
+        return when (char) {
+            '.' -> Pair(0x00, 0x38)       // / key = . in Russian
+            ',' -> Pair(0x02, 0x38)       // Shift + / key = , in Russian
+            '?' -> Pair(0x02, 0x24)       // Shift + 7 = ? in Russian
+            '!' -> Pair(0x02, 0x1E)       // Shift + 1 = ! in Russian
+            ':' -> Pair(0x02, 0x23)       // Shift + 6 = : in Russian
+            ';' -> Pair(0x02, 0x21)       // Shift + 4 = ; in Russian
+            '"' -> Pair(0x02, 0x1F)       // Shift + 2 = " in Russian
+            '№' -> Pair(0x02, 0x20)       // Shift + 3 = № in Russian
+            '%' -> Pair(0x02, 0x22)       // Shift + 5 = % (same)
+            '*' -> Pair(0x02, 0x25)       // Shift + 8 = * (same)
+            '(' -> Pair(0x02, 0x26)       // Shift + 9 = (
+            ')' -> Pair(0x02, 0x27)       // Shift + 0 = )
+            '-' -> Pair(0x00, 0x2D)       // - key (same in both)
+            '=' -> Pair(0x00, 0x2E)       // = key (same in both)
+            ' ' -> Pair(0x00, 0x2C)       // Space
+            '\n' -> Pair(0x00, 0x28)      // Enter
+            '\t' -> Pair(0x00, 0x2B)      // Tab
+            else -> null
+        }
     }
 
     /** Convert Android KeyEvent keyCode to HID Usage Code */

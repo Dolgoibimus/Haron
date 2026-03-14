@@ -613,11 +613,16 @@ class CastViewModel @Inject constructor(
         EcosystemLogger.d(HaronConstants.TAG, "BT HID: showing setup dialog")
     }
 
-    /** Request discoverable mode — TV must initiate HID connection to us */
+    /** Connect to a specific paired device from the phone side */
+    fun connectBtHidToDevice(device: BluetoothDevice) {
+        EcosystemLogger.d(HaronConstants.TAG, "BT HID: user selected device, connecting from phone")
+        bluetoothHidManager.connect(device)
+    }
+
+    /** Request discoverable mode — fallback if device not paired */
     fun requestBtDiscoverable() {
         EcosystemLogger.d(HaronConstants.TAG, "BT HID: requesting discoverable mode")
         _btHidWaitingForTv.value = true
-        // Emit event for UI to launch ACTION_REQUEST_DISCOVERABLE
         _requestDiscoverable.tryEmit(300) // 300 seconds
     }
 

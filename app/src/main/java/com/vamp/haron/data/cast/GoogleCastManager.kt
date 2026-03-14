@@ -183,7 +183,8 @@ class GoogleCastManager @Inject constructor(
             is RemoteInputEvent.MouseClick,
             is RemoteInputEvent.Scroll,
             is RemoteInputEvent.KeyPress,
-            is RemoteInputEvent.TextInput -> { /* no-op */ }
+            is RemoteInputEvent.TextInput,
+            is RemoteInputEvent.ClearAll -> { /* no-op */ }
         }
     }
 

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
@@ -59,6 +60,8 @@ class DlnaManager @Inject constructor(
 
     private val _mediaDurationMs = MutableStateFlow(0L)
     val mediaDurationMs: StateFlow<Long> = _mediaDurationMs.asStateFlow()
+
+    private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     var connectedDeviceId: String? = null
         private set
@@ -251,7 +254,8 @@ class DlnaManager @Inject constructor(
             is RemoteInputEvent.MouseClick,
             is RemoteInputEvent.Scroll,
             is RemoteInputEvent.KeyPress,
-            is RemoteInputEvent.TextInput -> { /* no-op */ }
+            is RemoteInputEvent.TextInput,
+            is RemoteInputEvent.ClearAll -> { /* no-op */ }
         }
     }
 
@@ -282,10 +286,10 @@ class DlnaManager @Inject constructor(
 
     private fun startPolling(renderer: DlnaRenderer) {
         pollingJob?.cancel()
-        pollingJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        pollingJob = scope.launch {
             var consecutiveErrors = 0
             while (isActive) {
-                delay(2000)
+                delay(3000)
                 try {
                     pollTransportInfo(renderer)
                     pollPositionInfo(renderer)
@@ -386,7 +390,7 @@ class DlnaManager @Inject constructor(
         action: String,
         params: Map<String, String>
     ) {
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             sendSoapAction(controlUrl, serviceType, action, params)
         }
     }

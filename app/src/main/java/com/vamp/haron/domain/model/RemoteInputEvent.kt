@@ -13,6 +13,7 @@ sealed interface RemoteInputEvent {
     data class Scroll(val dx: Float, val dy: Float) : RemoteInputEvent
     data class KeyPress(val keyCode: Int, val char: Char? = null) : RemoteInputEvent
     data class TextInput(val text: String) : RemoteInputEvent
+    data object ClearAll : RemoteInputEvent  // Ctrl+A + Backspace
 }
 
 sealed interface HidConnectionState {

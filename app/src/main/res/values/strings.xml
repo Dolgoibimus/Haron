@@ -1238,6 +1238,7 @@
     <string name="remote_keyboard">Keyboard</string>
     <string name="remote_touchpad_hint">Swipe to move cursor\nTap to click\nTwo fingers to scroll</string>
     <string name="remote_keyboard_hint">Type text…</string>
+    <string name="remote_clear_text">Clear text</string>
 
     <!-- Bluetooth HID Remote -->
     <string name="bt_remote_title">Bluetooth Remote</string>
@@ -1246,10 +1247,16 @@
     <string name="bt_hid_select_device">Select device</string>
     <string name="bt_hid_connected">Connected via Bluetooth</string>
     <string name="bt_hid_no_paired">No paired devices. Pair your TV in Bluetooth settings first.</string>
-    <string name="bt_hid_setup_info">Your phone will act as a Bluetooth keyboard and mouse. The TV must initiate the connection.</string>
+    <string name="bt_hid_setup_info">Your phone will act as a Bluetooth keyboard and mouse for TV or PC.</string>
+    <string name="bt_hid_reconnect_hint">Already paired? Tap device to reconnect:</string>
     <string name="bt_hid_make_discoverable">Make phone visible</string>
-    <string name="bt_hid_waiting">Waiting for TV to connect…</string>
-    <string name="bt_hid_instructions">On your TV, go to Settings → Bluetooth → find your phone in the list and connect to it.</string>
+    <string name="bt_hid_new_device_title">First connection:</string>
+    <string name="bt_hid_step_0">If phone is already paired with this device — remove it from Bluetooth settings on both devices first</string>
+    <string name="bt_hid_step_1">1. Press \"Make phone visible\" below</string>
+    <string name="bt_hid_step_2">2. On TV/PC open Bluetooth settings → Add new device</string>
+    <string name="bt_hid_step_3">3. Find your phone in the list (may show as \"Unknown device\")</string>
+    <string name="bt_hid_step_4">4. Connect. After that the device will appear in the list above</string>
+    <string name="bt_hid_discoverable_active">Phone is visible for 5 minutes. Connect from TV/PC now.</string>
 
     <!-- Cloud -->
     <string name="cloud_section">Cloud</string>

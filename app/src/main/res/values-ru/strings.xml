@@ -1237,6 +1237,7 @@
     <string name="remote_keyboard">Клавиатура</string>
     <string name="remote_touchpad_hint">Проведите для перемещения курсора\nНажмите для клика\nДва пальца для прокрутки</string>
     <string name="remote_keyboard_hint">Введите текст…</string>
+    <string name="remote_clear_text">Очистить текст</string>
 
     <!-- Bluetooth HID Remote -->
     <string name="bt_remote_title">Bluetooth-пульт</string>
@@ -1245,10 +1246,16 @@
     <string name="bt_hid_select_device">Выберите устройство</string>
     <string name="bt_hid_connected">Подключено по Bluetooth</string>
     <string name="bt_hid_no_paired">Нет сопряжённых устройств. Сначала сопрягите ТВ в настройках Bluetooth.</string>
-    <string name="bt_hid_setup_info">Телефон будет работать как Bluetooth-клавиатура и мышь. Подключение должен инициировать ТВ.</string>
+    <string name="bt_hid_setup_info">Телефон станет Bluetooth-клавиатурой и мышью для ТВ или ПК.</string>
+    <string name="bt_hid_reconnect_hint">Уже сопряжено? Нажмите для подключения:</string>
     <string name="bt_hid_make_discoverable">Сделать телефон видимым</string>
-    <string name="bt_hid_waiting">Ожидание подключения от ТВ…</string>
-    <string name="bt_hid_instructions">На ТВ зайдите в Настройки → Bluetooth → найдите телефон в списке и подключитесь к нему.</string>
+    <string name="bt_hid_new_device_title">Первое подключение:</string>
+    <string name="bt_hid_step_0">Если телефон уже сопряжён с этим устройством — сначала удалите его из настроек Bluetooth на обоих устройствах</string>
+    <string name="bt_hid_step_1">1. Нажмите \"Сделать телефон видимым\" ниже</string>
+    <string name="bt_hid_step_2">2. На ТВ/ПК откройте настройки Bluetooth → Добавить устройство</string>
+    <string name="bt_hid_step_3">3. Найдите телефон в списке (может отображаться как «Неизвестное устройство»)</string>
+    <string name="bt_hid_step_4">4. Подключитесь. После этого устройство появится в списке выше</string>
+    <string name="bt_hid_discoverable_active">Телефон виден 5 минут. Подключитесь с ТВ/ПК.</string>
 
     <!-- Cloud -->
     <string name="cloud_section">Облако</string>
