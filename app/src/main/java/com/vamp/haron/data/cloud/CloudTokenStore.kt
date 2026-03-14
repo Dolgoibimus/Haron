@@ -18,7 +18,8 @@ import javax.inject.Singleton
 
 /**
  * Encrypted token storage for cloud providers.
- * Pattern: same as SmbCredentialStore — AES-256-GCM via Android Keystore.
+ * Multi-account: keys are "scheme:email" (e.g. "gdrive:alice@gmail.com").
+ * Pattern: AES-256-GCM via Android Keystore.
  */
 @Singleton
 class CloudTokenStore @Inject constructor(
@@ -41,42 +42,82 @@ class CloudTokenStore @Inject constructor(
     private val file: File
         get() = File(context.filesDir, FILE_NAME)
 
-    fun save(provider: CloudProvider, tokens: CloudTokens) {
+    fun saveByKey(key: String, tokens: CloudTokens) {
         val map = loadAll().toMutableMap()
-        map[provider.scheme] = tokens
+        map[key] = tokens
         writeEncrypted(serializeMap(map))
-        EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: saved tokens for ${provider.scheme}")
+        EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: saved tokens for $key")
     }
 
-    fun load(provider: CloudProvider): CloudTokens? {
-        return loadAll()[provider.scheme]
+    fun loadByKey(key: String): CloudTokens? {
+        return loadAll()[key]
     }
 
-    fun remove(provider: CloudProvider) {
+    fun removeByKey(key: String) {
         val map = loadAll().toMutableMap()
-        map.remove(provider.scheme)
+        map.remove(key)
         if (map.isEmpty()) {
             file.delete()
         } else {
             writeEncrypted(serializeMap(map))
         }
-        EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: removed tokens for ${provider.scheme}")
+        EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: removed tokens for $key")
     }
 
+    /** Get all stored accounts as map: key → tokens */
+    fun getAllAccounts(): Map<String, CloudTokens> {
+        return loadAll()
+    }
+
+    /** Get all account keys for a specific provider type */
+    fun getAccountIds(provider: CloudProvider): List<String> {
+        return loadAll().keys.filter { it.startsWith("${provider.scheme}:") }
+    }
+
+    /** Get list of connected provider types (for backward compat) */
     fun getConnectedProviders(): List<CloudProvider> {
-        val map = loadAll()
-        return CloudProvider.entries.filter { map.containsKey(it.scheme) }
+        val keys = loadAll().keys
+        return CloudProvider.entries.filter { provider ->
+            keys.any { it.startsWith("${provider.scheme}:") }
+        }
     }
 
     private fun loadAll(): Map<String, CloudTokens> {
         if (!file.exists()) return emptyMap()
         return try {
             val decrypted = readDecrypted()
-            deserializeMap(decrypted)
+            val map = deserializeMap(decrypted)
+            // Migrate old format: keys without ':' → "scheme:email"
+            val needsMigration = map.keys.any { !it.contains(':') }
+            if (needsMigration) {
+                val migrated = migrateOldKeys(map)
+                writeEncrypted(serializeMap(migrated))
+                EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: migrated ${map.size} keys to multi-account format")
+                migrated
+            } else {
+                map
+            }
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "CloudTokenStore: load error: ${e.message}")
             emptyMap()
         }
+    }
+
+    /** Migrate old single-account keys (e.g. "gdrive") to multi-account ("gdrive:email") */
+    private fun migrateOldKeys(map: Map<String, CloudTokens>): Map<String, CloudTokens> {
+        val result = mutableMapOf<String, CloudTokens>()
+        for ((key, tokens) in map) {
+            if (key.contains(':')) {
+                result[key] = tokens
+            } else {
+                // Old format: key = scheme (e.g. "gdrive")
+                val email = tokens.email.ifEmpty { "account" }
+                val newKey = "$key:$email"
+                result[newKey] = tokens
+                EcosystemLogger.d(HaronConstants.TAG, "CloudTokenStore: migrated '$key' → '$newKey'")
+            }
+        }
+        return result
     }
 
     private fun serializeMap(map: Map<String, CloudTokens>): String {

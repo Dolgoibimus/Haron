@@ -28,7 +28,8 @@ import java.util.Date
 
 class GoogleDriveProvider(
     private val context: Context,
-    private val tokenStore: CloudTokenStore
+    private val tokenStore: CloudTokenStore,
+    private val tokenKey: String
 ) : CloudProviderInterface {
 
     companion object {
@@ -40,7 +41,7 @@ class GoogleDriveProvider(
     private var driveService: Drive? = null
 
     override fun isAuthenticated(): Boolean {
-        return tokenStore.load(CloudProvider.GOOGLE_DRIVE) != null
+        return tokenKey.isNotEmpty() && tokenStore.loadByKey(tokenKey) != null
     }
 
     override fun getAuthUrl(): String? {
@@ -57,7 +58,7 @@ class GoogleDriveProvider(
             "&prompt=consent"
     }
 
-    override suspend fun handleAuthCode(code: String): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun handleAuthCode(code: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val verifier = CloudOAuthHelper.getCodeVerifier(CloudProvider.GOOGLE_DRIVE.scheme)
                 ?: return@withContext Result.failure(Exception("No PKCE code verifier"))
@@ -75,33 +76,46 @@ class GoogleDriveProvider(
             )
             CloudOAuthHelper.clearCodeVerifier(CloudProvider.GOOGLE_DRIVE.scheme)
 
-            tokenResult.onSuccess { token ->
-                tokenStore.save(
-                    CloudProvider.GOOGLE_DRIVE,
-                    CloudTokenStore.CloudTokens(
-                        accessToken = token.accessToken,
-                        refreshToken = token.refreshToken
-                    )
+            val token = tokenResult.getOrElse { return@withContext Result.failure(it) }
+
+            // Save with pending key, fetch user info, then save with final key
+            val pendingKey = "${CloudProvider.GOOGLE_DRIVE.scheme}:_pending"
+            tokenStore.saveByKey(
+                pendingKey,
+                CloudTokenStore.CloudTokens(
+                    accessToken = token.accessToken,
+                    refreshToken = token.refreshToken
                 )
-                initDriveService()
-                // Fetch user info
-                try {
-                    val about = driveService?.about()?.get()?.setFields("user")?.execute()
-                    val user = about?.user
-                    if (user != null) {
-                        tokenStore.save(
-                            CloudProvider.GOOGLE_DRIVE,
-                            CloudTokenStore.CloudTokens(
-                                accessToken = token.accessToken,
-                                refreshToken = token.refreshToken,
-                                email = user.emailAddress ?: "",
-                                displayName = user.displayName ?: ""
-                            )
-                        )
-                    }
-                } catch (_: Exception) { }
+            )
+
+            // Create temporary Drive service to fetch user info
+            var email = ""
+            var displayName = ""
+            try {
+                val tempService = buildDriveService(token.accessToken, token.refreshToken)
+                val about = tempService.about().get().setFields("user").execute()
+                val user = about?.user
+                email = user?.emailAddress ?: ""
+                displayName = user?.displayName ?: ""
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "GDrive: failed to fetch user info: ${e.message}")
             }
-            tokenResult.map { }
+
+            // Remove pending, save with final key
+            tokenStore.removeByKey(pendingKey)
+            val finalKey = "${CloudProvider.GOOGLE_DRIVE.scheme}:${email.ifEmpty { "account" }}"
+            tokenStore.saveByKey(
+                finalKey,
+                CloudTokenStore.CloudTokens(
+                    accessToken = token.accessToken,
+                    refreshToken = token.refreshToken,
+                    email = email,
+                    displayName = displayName
+                )
+            )
+
+            EcosystemLogger.d(HaronConstants.TAG, "GDrive auth success: accountId=$finalKey, email=$email")
+            Result.success(finalKey)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "GDrive auth error: ${e.message}")
             Result.failure(e)
@@ -109,7 +123,9 @@ class GoogleDriveProvider(
     }
 
     override suspend fun signOut() {
-        tokenStore.remove(CloudProvider.GOOGLE_DRIVE)
+        if (tokenKey.isNotEmpty()) {
+            tokenStore.removeByKey(tokenKey)
+        }
         driveService = null
     }
 
@@ -135,7 +151,7 @@ class GoogleDriveProvider(
                 pageToken = result.nextPageToken
             } while (pageToken != null)
 
-            val currentToken = tokenStore.load(CloudProvider.GOOGLE_DRIVE)?.accessToken
+            val currentToken = tokenStore.loadByKey(tokenKey)?.accessToken
             val entries = allFiles.map { file ->
                 val isDir = file.mimeType == "application/vnd.google-apps.folder"
                 val rawThumbUrl = file.thumbnailLink?.replace(Regex("=s\\d+"), "=s800")
@@ -349,7 +365,7 @@ class GoogleDriveProvider(
     }
 
     override fun getAccessToken(): String? {
-        return tokenStore.load(CloudProvider.GOOGLE_DRIVE)?.accessToken
+        return tokenStore.loadByKey(tokenKey)?.accessToken
     }
 
     override suspend fun getFreshAccessToken(): String? = withContext(Dispatchers.IO) {
@@ -358,10 +374,10 @@ class GoogleDriveProvider(
             // so withRefresh won't trigger 401-based refresh
             refreshToken()
             EcosystemLogger.d(HaronConstants.TAG, "GDrive getFreshAccessToken: token force-refreshed")
-            tokenStore.load(CloudProvider.GOOGLE_DRIVE)?.accessToken
+            tokenStore.loadByKey(tokenKey)?.accessToken
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "GDrive getFreshAccessToken failed: ${e::class.simpleName}: ${e.message}")
-            tokenStore.load(CloudProvider.GOOGLE_DRIVE)?.accessToken // return stored even if stale
+            tokenStore.loadByKey(tokenKey)?.accessToken // return stored even if stale
         }
     }
 
@@ -456,6 +472,20 @@ class GoogleDriveProvider(
         return countMap
     }
 
+    private fun buildDriveService(accessToken: String, refreshToken: String?): Drive {
+        val credBuilder = UserCredentials.newBuilder()
+            .setClientId(CLIENT_ID)
+            .setClientSecret(CLIENT_SECRET)
+            .setAccessToken(AccessToken(accessToken, Date(Long.MAX_VALUE)))
+        refreshToken?.let { credBuilder.setRefreshToken(it) }
+        val credentials = credBuilder.build()
+        val transport = com.google.api.client.http.javanet.NetHttpTransport()
+        val jsonFactory = GsonFactory.getDefaultInstance()
+        return Drive.Builder(transport, jsonFactory, HttpCredentialsAdapter(credentials))
+            .setApplicationName("Haron")
+            .build()
+    }
+
     private fun getService(): Drive? {
         if (driveService != null) return driveService
         initDriveService()
@@ -463,23 +493,13 @@ class GoogleDriveProvider(
     }
 
     private fun initDriveService() {
-        val tokens = tokenStore.load(CloudProvider.GOOGLE_DRIVE) ?: return
-        val credBuilder = UserCredentials.newBuilder()
-            .setClientId(CLIENT_ID)
-            .setClientSecret(CLIENT_SECRET)
-            .setAccessToken(AccessToken(tokens.accessToken, Date(Long.MAX_VALUE)))
-        tokens.refreshToken?.let { credBuilder.setRefreshToken(it) }
-        val credentials = credBuilder.build()
-        val transport = com.google.api.client.http.javanet.NetHttpTransport()
-        val jsonFactory = GsonFactory.getDefaultInstance()
-        driveService = Drive.Builder(transport, jsonFactory, HttpCredentialsAdapter(credentials))
-            .setApplicationName("Haron")
-            .build()
+        val tokens = tokenStore.loadByKey(tokenKey) ?: return
+        driveService = buildDriveService(tokens.accessToken, tokens.refreshToken)
     }
 
     /** Refresh access token using refresh token */
     private suspend fun refreshToken(): Boolean = withContext(Dispatchers.IO) {
-        val tokens = tokenStore.load(CloudProvider.GOOGLE_DRIVE) ?: return@withContext false
+        val tokens = tokenStore.loadByKey(tokenKey) ?: return@withContext false
         val refreshToken = tokens.refreshToken ?: return@withContext false
         EcosystemLogger.d(HaronConstants.TAG, "GDrive: refreshing access token...")
 
@@ -494,8 +514,8 @@ class GoogleDriveProvider(
                 )
             )
             result.onSuccess { newToken ->
-                tokenStore.save(
-                    CloudProvider.GOOGLE_DRIVE,
+                tokenStore.saveByKey(
+                    tokenKey,
                     CloudTokenStore.CloudTokens(
                         accessToken = newToken.accessToken,
                         refreshToken = newToken.refreshToken ?: refreshToken,

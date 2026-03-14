@@ -34,7 +34,8 @@ import java.util.concurrent.TimeUnit
 
 class YandexDiskProvider(
     private val context: Context,
-    private val tokenStore: CloudTokenStore
+    private val tokenStore: CloudTokenStore,
+    private val tokenKey: String
 ) : CloudProviderInterface {
 
     companion object {
@@ -57,7 +58,7 @@ class YandexDiskProvider(
     }
 
     override fun isAuthenticated(): Boolean {
-        return tokenStore.load(CloudProvider.YANDEX_DISK) != null
+        return tokenKey.isNotEmpty() && tokenStore.loadByKey(tokenKey) != null
     }
 
     override fun getAuthUrl(): String? {
@@ -73,7 +74,7 @@ class YandexDiskProvider(
             "&force_confirm=true"
     }
 
-    override suspend fun handleAuthCode(code: String): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun handleAuthCode(code: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             EcosystemLogger.d(HaronConstants.TAG, "YandexDisk: handleAuthCode start")
             val verifier = CloudOAuthHelper.getCodeVerifier(CloudProvider.YANDEX_DISK.scheme)
@@ -91,37 +92,59 @@ class YandexDiskProvider(
             )
             CloudOAuthHelper.clearCodeVerifier(CloudProvider.YANDEX_DISK.scheme)
 
-            tokenResult.onSuccess { token ->
-                tokenStore.save(
-                    CloudProvider.YANDEX_DISK,
-                    CloudTokenStore.CloudTokens(
-                        accessToken = token.accessToken,
-                        refreshToken = token.refreshToken
-                    )
+            val token = tokenResult.getOrElse { return@withContext Result.failure(it) }
+
+            // Save with pending key, fetch user info, then save with final key
+            val pendingKey = "${CloudProvider.YANDEX_DISK.scheme}:_pending"
+            tokenStore.saveByKey(
+                pendingKey,
+                CloudTokenStore.CloudTokens(
+                    accessToken = token.accessToken,
+                    refreshToken = token.refreshToken
                 )
-                // Fetch user info
-                try {
-                    val diskInfo = apiGet("/")
-                    if (diskInfo != null) {
-                        val userObj = diskInfo.optJSONObject("user")
-                        val login = userObj?.optString("login", "") ?: ""
-                        val displayName = userObj?.optString("display_name", "") ?: ""
-                        tokenStore.save(
-                            CloudProvider.YANDEX_DISK,
-                            CloudTokenStore.CloudTokens(
-                                accessToken = token.accessToken,
-                                refreshToken = token.refreshToken,
-                                email = login,
-                                displayName = displayName
-                            )
-                        )
-                        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk: user=$login, displayName=$displayName")
-                    }
-                } catch (e: Exception) {
-                    EcosystemLogger.e(HaronConstants.TAG, "YandexDisk: fetch user info failed: ${e.message}")
+            )
+
+            var login = ""
+            var displayName = ""
+            try {
+                // Direct API call with new token to get user info
+                val url = java.net.URL("$API_BASE/")
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("Authorization", "OAuth ${token.accessToken}")
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
                 }
+                try {
+                    val responseCode = conn.responseCode
+                    if (responseCode in 200..299) {
+                        val json = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+                        val userObj = json.optJSONObject("user")
+                        login = userObj?.optString("login", "") ?: ""
+                        displayName = userObj?.optString("display_name", "") ?: ""
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk: user=$login, displayName=$displayName")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "YandexDisk: fetch user info failed: ${e.message}")
             }
-            tokenResult.map { }
+
+            tokenStore.removeByKey(pendingKey)
+            val finalKey = "${CloudProvider.YANDEX_DISK.scheme}:${login.ifEmpty { "account" }}"
+            tokenStore.saveByKey(
+                finalKey,
+                CloudTokenStore.CloudTokens(
+                    accessToken = token.accessToken,
+                    refreshToken = token.refreshToken,
+                    email = login,
+                    displayName = displayName
+                )
+            )
+
+            EcosystemLogger.d(HaronConstants.TAG, "YandexDisk auth success: accountId=$finalKey, login=$login")
+            Result.success(finalKey)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "YandexDisk auth error: ${e.message}")
             Result.failure(e)
@@ -129,7 +152,9 @@ class YandexDiskProvider(
     }
 
     override suspend fun signOut() {
-        tokenStore.remove(CloudProvider.YANDEX_DISK)
+        if (tokenKey.isNotEmpty()) {
+            tokenStore.removeByKey(tokenKey)
+        }
         EcosystemLogger.d(HaronConstants.TAG, "YandexDisk: signed out")
     }
 
@@ -548,16 +573,16 @@ class YandexDiskProvider(
     }
 
     override fun getAccessToken(): String? {
-        return tokenStore.load(CloudProvider.YANDEX_DISK)?.accessToken
+        return tokenStore.loadByKey(tokenKey)?.accessToken
     }
 
     override suspend fun getFreshAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
             refreshToken()
-            tokenStore.load(CloudProvider.YANDEX_DISK)?.accessToken
+            tokenStore.loadByKey(tokenKey)?.accessToken
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "YandexDisk getFreshAccessToken failed: ${e.message}")
-            tokenStore.load(CloudProvider.YANDEX_DISK)?.accessToken
+            tokenStore.loadByKey(tokenKey)?.accessToken
         }
     }
 
@@ -654,7 +679,7 @@ class YandexDiskProvider(
     // ── Token refresh ──────────────────────────────────────────────────
 
     private suspend fun refreshToken(): Boolean = withContext(Dispatchers.IO) {
-        val tokens = tokenStore.load(CloudProvider.YANDEX_DISK) ?: return@withContext false
+        val tokens = tokenStore.loadByKey(tokenKey) ?: return@withContext false
         val refreshTk = tokens.refreshToken ?: return@withContext false
         EcosystemLogger.d(HaronConstants.TAG, "YandexDisk: refreshing access token...")
 
@@ -669,8 +694,8 @@ class YandexDiskProvider(
                 )
             )
             result.onSuccess { newToken ->
-                tokenStore.save(
-                    CloudProvider.YANDEX_DISK,
+                tokenStore.saveByKey(
+                    tokenKey,
                     CloudTokenStore.CloudTokens(
                         accessToken = newToken.accessToken,
                         refreshToken = newToken.refreshToken ?: refreshTk,
@@ -717,7 +742,7 @@ class YandexDiskProvider(
 
     /** GET request to Yandex Disk API, returns parsed JSON */
     private fun apiGet(endpoint: String): JSONObject? {
-        val token = tokenStore.load(CloudProvider.YANDEX_DISK)?.accessToken ?: return null
+        val token = tokenStore.loadByKey(tokenKey)?.accessToken ?: return null
         val url = URL("$API_BASE$endpoint")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -742,7 +767,7 @@ class YandexDiskProvider(
 
     /** Generic HTTP request to Yandex Disk API, returns (responseCode, responseBody) */
     private fun apiRequest(method: String, endpoint: String, body: String?): Pair<Int, String?> {
-        val token = tokenStore.load(CloudProvider.YANDEX_DISK)?.accessToken
+        val token = tokenStore.loadByKey(tokenKey)?.accessToken
             ?: throw YandexAuthException("Not authenticated")
         val url = URL("$API_BASE$endpoint")
         val conn = (url.openConnection() as HttpURLConnection).apply {

@@ -184,16 +184,16 @@ class ExplorerViewModel @Inject constructor(
         _navigationEvent.tryEmit(NavigationEvent.OpenCloudAuth)
     }
 
-    fun navigateToCloud(provider: CloudProvider) {
+    fun navigateToCloud(accountId: String) {
         val panelId = _uiState.value.activePanel
-        navigateTo(panelId, "cloud://${provider.scheme}/")
+        navigateTo(panelId, "cloud://$accountId/")
     }
 
     fun cloudSignIn(provider: CloudProvider, code: String) {
         viewModelScope.launch {
-            cloudManager.handleAuthCode(provider, code).onSuccess {
+            cloudManager.handleAuthCode(provider, code).onSuccess { accountId ->
                 refreshCloudAccounts()
-                navigateToCloud(provider)
+                navigateToCloud(accountId)
             }.onFailure { e ->
                 _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_auth, e.message ?: ""))
             }
@@ -204,9 +204,9 @@ class ExplorerViewModel @Inject constructor(
         return cloudManager.getAuthUrl(provider)
     }
 
-    fun cloudSignOut(provider: CloudProvider) {
+    fun cloudSignOut(accountId: String) {
         viewModelScope.launch {
-            cloudManager.signOut(provider)
+            cloudManager.signOut(accountId)
             refreshCloudAccounts()
         }
     }
@@ -346,8 +346,9 @@ class ExplorerViewModel @Inject constructor(
 
     /** Get Authorization header for cloud thumbnail requests (Yandex needs OAuth, GDrive needs Bearer) */
     fun getCloudAuthHeader(currentPath: String): String? {
-        if (!currentPath.startsWith("cloud://yandex/")) return null
-        val token = cloudManager.getAccessToken(com.vamp.haron.domain.model.CloudProvider.YANDEX_DISK)
+        if (!currentPath.startsWith("cloud://yandex")) return null
+        val parsed = cloudManager.parseCloudUri(currentPath) ?: return null
+        val token = cloudManager.getAccessToken(parsed.accountId)
         return if (token != null) "OAuth $token" else null
     }
 
@@ -364,7 +365,7 @@ class ExplorerViewModel @Inject constructor(
                 cacheDir.mkdirs()
                 val localFile = File(cacheDir, entry.name)
 
-                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
                         updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
@@ -395,7 +396,7 @@ class ExplorerViewModel @Inject constructor(
                 cacheDir.mkdirs()
                 val localFile = File(cacheDir, entry.name)
 
-                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
                         updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
@@ -427,7 +428,7 @@ class ExplorerViewModel @Inject constructor(
         val (provider, cloudFileId) = parsed
 
         viewModelScope.launch {
-            cloudManager.updateFileContent(provider, cloudFileId, localPath)
+            cloudManager.updateFileContent(parsed.accountId, cloudFileId, localPath)
                 .collect { progress ->
                     if (progress.isComplete) {
                         if (progress.error != null) {
@@ -451,7 +452,7 @@ class ExplorerViewModel @Inject constructor(
                 cacheDir.mkdirs()
                 val localFile = File(cacheDir, entry.name)
 
-                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
                         updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
@@ -479,7 +480,7 @@ class ExplorerViewModel @Inject constructor(
                 cacheDir.mkdirs()
                 val localFile = File(cacheDir, entry.name)
 
-                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
                         updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
@@ -510,7 +511,7 @@ class ExplorerViewModel @Inject constructor(
                 cacheDir.mkdirs()
                 val localFile = File(cacheDir, entry.name)
 
-                cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
                         updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
                         if (progress.isComplete) {
@@ -583,16 +584,15 @@ class ExplorerViewModel @Inject constructor(
      */
     fun cloudStreamAndPlay(entry: FileEntry) {
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return
-        val (provider, _) = parsed
 
         viewModelScope.launch {
             EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: entry=${entry.name}, path=${entry.path}")
 
             // Pre-refresh token before streaming (Google tokens expire after 1 hour)
-            val freshToken = cloudManager.getFreshAccessToken(provider)
+            val freshToken = cloudManager.getFreshAccessToken(parsed.accountId)
             if (freshToken == null) {
                 _toastMessage.tryEmit(appContext.getString(R.string.cloud_error_auth, "No token"))
-                EcosystemLogger.e(HaronConstants.TAG, "cloudStreamAndPlay: no fresh token for ${provider.scheme}")
+                EcosystemLogger.e(HaronConstants.TAG, "cloudStreamAndPlay: no fresh token for ${parsed.accountId}")
                 return@launch
             }
             EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: got fresh token (${freshToken.take(10)}...)")
@@ -604,9 +604,8 @@ class ExplorerViewModel @Inject constructor(
             EcosystemLogger.d(HaronConstants.TAG, "cloudStreamAndPlay: server port=${httpFileServer.actualPort}")
             httpFileServer.clearCloudStreams()
             // Set up token provider so proxy gets fresh token on each request
-            httpFileServer.cloudTokenProvider = { providerScheme ->
-                val cp = com.vamp.haron.domain.model.CloudProvider.entries.firstOrNull { it.scheme == providerScheme }
-                cp?.let { cloudManager.getAccessToken(it) }
+            httpFileServer.cloudTokenProvider = { accountId ->
+                cloudManager.getAccessToken(accountId)
             }
 
             // Build playlist from all media files in the current panel
@@ -621,8 +620,8 @@ class ExplorerViewModel @Inject constructor(
                 httpFileServer.setupCloudStream(
                     streamId,
                     com.vamp.haron.data.transfer.HttpFileServer.CloudStreamConfig(
-                        fileId = p.second,
-                        provider = p.first.scheme,
+                        fileId = p.path,
+                        accountId = p.accountId,
                         fileName = f.name,
                         fileSize = f.size
                     )
@@ -688,7 +687,7 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                         .collect { progress ->
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
@@ -763,7 +762,7 @@ class ExplorerViewModel @Inject constructor(
 
                 try {
                     cloudUploadMutex.withLock {
-                        cloudManager.uploadFile(provider, entry.path, cloudDir, entry.name)
+                        cloudManager.uploadFile(parsed.accountId, entry.path, cloudDir, entry.name)
                             .collect { progress ->
                                 if (progress.error != null) {
                                     EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${entry.name}: ${progress.error}")
@@ -827,7 +826,7 @@ class ExplorerViewModel @Inject constructor(
                 val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
                 val (provider, cloudFileId) = parsed
                 EcosystemLogger.d(HaronConstants.TAG, "cloudDeleteSelected: deleting ${entry.name} (${idx + 1}/$total)")
-                cloudManager.delete(provider, cloudFileId)
+                cloudManager.delete(parsed.accountId, cloudFileId)
                     .onSuccess {
                         deleted++
                         refreshPanel(activeId)
@@ -859,7 +858,7 @@ class ExplorerViewModel @Inject constructor(
 
         _uiState.update { it.copy(dialogState = DialogState.None) }
         viewModelScope.launch {
-            cloudManager.createFolder(provider, parentPath, name)
+            cloudManager.createFolder(parsed.accountId, parentPath, name)
                 .onSuccess {
                     refreshPanel(dialog.panelId)
                 }
@@ -1440,7 +1439,7 @@ class ExplorerViewModel @Inject constructor(
                 path == HaronConstants.VIRTUAL_SECURE_PATH -> appContext.getString(R.string.all_secure_files)
                 path.startsWith("cloud://") -> {
                     val parsed = cloudManager.parseCloudUri(path)
-                    if (parsed != null) "${parsed.first.displayName}: /${parsed.second}" else path
+                    if (parsed != null) "${parsed.provider.displayName}: /${parsed.path}" else path
                 }
                 path.startsWith("content://") -> buildSafDisplayPath(path)
                 else -> path.removePrefix(HaronConstants.ROOT_PATH).ifEmpty { "/" }
@@ -1454,7 +1453,7 @@ class ExplorerViewModel @Inject constructor(
                     return@launch
                 }
                 val (provider, cloudPath) = parsed
-                cloudManager.listFiles(provider, cloudPath).onSuccess { cloudFiles ->
+                cloudManager.listFiles(parsed.accountId, cloudPath).onSuccess { cloudFiles ->
                     val fileEntries = cloudFiles.map { it.toFileEntry() }
                     updatePanel(panelId) {
                         var history = it.navigationHistory
@@ -1931,7 +1930,7 @@ class ExplorerViewModel @Inject constructor(
                 if (needsAuth) {
                     val parsed = cloudManager.parseCloudUri(entry.path)
                     if (parsed != null) {
-                        val token = cloudManager.getFreshAccessToken(parsed.first)
+                        val token = cloudManager.getFreshAccessToken(parsed.accountId)
                         if (token != null) {
                             val authPrefix = if (isYandex) "OAuth" else "Bearer"
                             conn.setRequestProperty("Authorization", "$authPrefix $token")
@@ -2813,7 +2812,7 @@ class ExplorerViewModel @Inject constructor(
                     }
                     val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
                     EcosystemLogger.d(HaronConstants.TAG, "confirmDelete: deleting ${entry.name} (${idx + 1}/$total)")
-                    cloudManager.delete(parsed.first, parsed.second)
+                    cloudManager.delete(parsed.accountId, parsed.path)
                         .onSuccess {
                             deleted++
                             refreshPanel(activeId)
@@ -3034,7 +3033,7 @@ class ExplorerViewModel @Inject constructor(
                 val parsed = cloudManager.parseCloudUri(path)
                 if (parsed != null) {
                     val (provider, cloudFileId) = parsed
-                    cloudManager.rename(provider, cloudFileId, newName)
+                    cloudManager.rename(parsed.accountId, cloudFileId, newName)
                         .onSuccess {
                             hapticManager.success()
                             _toastMessage.tryEmit(appContext.getString(R.string.cloud_rename_success))
@@ -3605,7 +3604,7 @@ class ExplorerViewModel @Inject constructor(
                     val parsed = cloudManager.parseCloudUri(path)
                     if (parsed != null) {
                         val (provider, cloudFileId) = parsed
-                        cloudManager.delete(provider, cloudFileId)
+                        cloudManager.delete(parsed.accountId, cloudFileId)
                     }
                 } else if (path.startsWith("content://")) {
                     fileRepository.deleteFiles(listOf(path))
@@ -3699,7 +3698,7 @@ class ExplorerViewModel @Inject constructor(
                     if (needsAuth) {
                         val parsed = cloudManager.parseCloudUri(entry.path)
                         if (parsed != null) {
-                            val token = cloudManager.getFreshAccessToken(parsed.first)
+                            val token = cloudManager.getFreshAccessToken(parsed.accountId)
                             if (token != null) {
                                 val authPrefix = if (isYandex) "OAuth" else "Bearer"
                                 conn.setRequestProperty("Authorization", "$authPrefix $token")
@@ -3750,7 +3749,7 @@ class ExplorerViewModel @Inject constructor(
         }
         return try {
             var resultEntry = entry
-            cloudManager.downloadFile(provider, cloudFileId, tempFile.absolutePath)
+            cloudManager.downloadFile(parsed.accountId, cloudFileId, tempFile.absolutePath)
                 .collect { progress ->
                     if (progress.isComplete && progress.error == null) {
                         tempFile.renameTo(localFile)
@@ -4250,7 +4249,7 @@ class ExplorerViewModel @Inject constructor(
             // Source parent folder ID from panel's current path
             val sourcePanel = getPanel(sourcePanelId)
             val sourceParsed = cloudManager.parseCloudUri(sourcePanel.currentPath)
-            val sourceParentId = sourceParsed?.second ?: "root"
+            val sourceParentId = sourceParsed?.path ?: "root"
 
             var moved = 0
             for (path in paths) {
@@ -4260,7 +4259,7 @@ class ExplorerViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "Cloud DnD: cross-provider move not supported")
                     continue
                 }
-                cloudManager.moveFile(provider, fileId, sourceParentId, destFolderId)
+                cloudManager.moveFile(parsed.accountId, fileId, sourceParentId, destFolderId)
                     .onSuccess { moved++ }
                     .onFailure { e ->
                         EcosystemLogger.e(HaronConstants.TAG, "Cloud DnD move error for $fileId: ${e.message}")
@@ -4320,7 +4319,7 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                         .collect { progress ->
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
@@ -4397,7 +4396,7 @@ class ExplorerViewModel @Inject constructor(
 
                 try {
                     cloudUploadMutex.withLock {
-                        cloudManager.uploadFile(provider, file.absolutePath, cloudDir, fileName)
+                        cloudManager.uploadFile(destParsed.accountId, file.absolutePath, cloudDir, fileName)
                             .collect { progress ->
                                 val overallPercent = if (totalBytes > 0) {
                                     ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
@@ -4496,7 +4495,7 @@ class ExplorerViewModel @Inject constructor(
             for (entry in uploadPlan) {
                 val deletePath = entry.deleteCloudPath ?: continue
                 val parsed = cloudManager.parseCloudUri(deletePath) ?: continue
-                cloudManager.delete(parsed.first, parsed.second)
+                cloudManager.delete(parsed.accountId, parsed.path)
                     .onSuccess { EcosystemLogger.d(HaronConstants.TAG, "  pre-deleted cloud file for replace: ${entry.uploadName}") }
                     .onFailure { e -> EcosystemLogger.e(HaronConstants.TAG, "  pre-delete failed: ${entry.uploadName}: ${e.message}") }
             }
@@ -4515,7 +4514,7 @@ class ExplorerViewModel @Inject constructor(
 
                 try {
                     cloudUploadMutex.withLock {
-                        cloudManager.uploadFile(provider, file.absolutePath, cloudDir, uploadName)
+                        cloudManager.uploadFile(destParsed.accountId, file.absolutePath, cloudDir, uploadName)
                             .collect { progress ->
                                 val overallPercent = if (totalBytes > 0) {
                                     ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
@@ -4611,7 +4610,7 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
-                    cloudManager.downloadFile(provider, cloudFileId, localFile.absolutePath)
+                    cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                         .collect { progress ->
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()

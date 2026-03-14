@@ -35,7 +35,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 class DropboxProvider(
     private val context: Context,
-    private val tokenStore: CloudTokenStore
+    private val tokenStore: CloudTokenStore,
+    private val tokenKey: String
 ) : CloudProviderInterface {
 
     companion object {
@@ -49,7 +50,7 @@ class DropboxProvider(
     private var client: DbxClientV2? = null
 
     override fun isAuthenticated(): Boolean {
-        return tokenStore.load(CloudProvider.DROPBOX) != null
+        return tokenKey.isNotEmpty() && tokenStore.loadByKey(tokenKey) != null
     }
 
     override fun getAuthUrl(): String? {
@@ -64,7 +65,7 @@ class DropboxProvider(
             "&token_access_type=offline"
     }
 
-    override suspend fun handleAuthCode(code: String): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun handleAuthCode(code: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val verifier = CloudOAuthHelper.getCodeVerifier(CloudProvider.DROPBOX.scheme)
                 ?: return@withContext Result.failure(Exception("No PKCE code verifier"))
@@ -81,28 +82,41 @@ class DropboxProvider(
             )
             CloudOAuthHelper.clearCodeVerifier(CloudProvider.DROPBOX.scheme)
 
-            tokenResult.onSuccess { token ->
-                tokenStore.save(
-                    CloudProvider.DROPBOX,
-                    CloudTokenStore.CloudTokens(accessToken = token.accessToken, refreshToken = token.refreshToken)
-                )
-                initClient()
-                try {
-                    val account = client?.users()?.currentAccount
-                    if (account != null) {
-                        tokenStore.save(
-                            CloudProvider.DROPBOX,
-                            CloudTokenStore.CloudTokens(
-                                accessToken = token.accessToken,
-                                refreshToken = token.refreshToken,
-                                email = account.email ?: "",
-                                displayName = account.name?.displayName ?: ""
-                            )
-                        )
-                    }
-                } catch (_: Exception) { }
+            val token = tokenResult.getOrElse { return@withContext Result.failure(it) }
+
+            // Save with pending key, fetch user info, then save with final key
+            val pendingKey = "${CloudProvider.DROPBOX.scheme}:_pending"
+            tokenStore.saveByKey(
+                pendingKey,
+                CloudTokenStore.CloudTokens(accessToken = token.accessToken, refreshToken = token.refreshToken)
+            )
+
+            var email = ""
+            var displayName = ""
+            try {
+                val config = DbxRequestConfig.newBuilder("Haron").build()
+                val tempClient = DbxClientV2(config, token.accessToken)
+                val account = tempClient.users().currentAccount
+                email = account?.email ?: ""
+                displayName = account?.name?.displayName ?: ""
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "Dropbox: failed to fetch user info: ${e.message}")
             }
-            tokenResult.map { }
+
+            tokenStore.removeByKey(pendingKey)
+            val finalKey = "${CloudProvider.DROPBOX.scheme}:${email.ifEmpty { "account" }}"
+            tokenStore.saveByKey(
+                finalKey,
+                CloudTokenStore.CloudTokens(
+                    accessToken = token.accessToken,
+                    refreshToken = token.refreshToken,
+                    email = email,
+                    displayName = displayName
+                )
+            )
+
+            EcosystemLogger.d(HaronConstants.TAG, "Dropbox auth success: accountId=$finalKey, email=$email")
+            Result.success(finalKey)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "Dropbox auth error: ${e.message}")
             Result.failure(e)
@@ -113,7 +127,9 @@ class DropboxProvider(
         try {
             client?.auth()?.tokenRevoke()
         } catch (_: Exception) { }
-        tokenStore.remove(CloudProvider.DROPBOX)
+        if (tokenKey.isNotEmpty()) {
+            tokenStore.removeByKey(tokenKey)
+        }
         client = null
     }
 
@@ -419,17 +435,17 @@ class DropboxProvider(
     }
 
     override fun getAccessToken(): String? {
-        return tokenStore.load(CloudProvider.DROPBOX)?.accessToken
+        return tokenStore.loadByKey(tokenKey)?.accessToken
     }
 
     override suspend fun getFreshAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
             refreshToken()
             EcosystemLogger.d(HaronConstants.TAG, "Dropbox getFreshAccessToken: token refreshed")
-            tokenStore.load(CloudProvider.DROPBOX)?.accessToken
+            tokenStore.loadByKey(tokenKey)?.accessToken
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "Dropbox getFreshAccessToken failed: ${e.message}")
-            tokenStore.load(CloudProvider.DROPBOX)?.accessToken
+            tokenStore.loadByKey(tokenKey)?.accessToken
         }
     }
 
@@ -585,7 +601,7 @@ class DropboxProvider(
     // ── Token refresh ──────────────────────────────────────────────────
 
     private suspend fun refreshToken(): Boolean = withContext(Dispatchers.IO) {
-        val tokens = tokenStore.load(CloudProvider.DROPBOX) ?: return@withContext false
+        val tokens = tokenStore.loadByKey(tokenKey) ?: return@withContext false
         val refreshToken = tokens.refreshToken ?: return@withContext false
         EcosystemLogger.d(HaronConstants.TAG, "Dropbox: refreshing access token...")
 
@@ -599,8 +615,8 @@ class DropboxProvider(
                 )
             )
             result.onSuccess { newToken ->
-                tokenStore.save(
-                    CloudProvider.DROPBOX,
+                tokenStore.saveByKey(
+                    tokenKey,
                     CloudTokenStore.CloudTokens(
                         accessToken = newToken.accessToken,
                         refreshToken = newToken.refreshToken ?: refreshToken,
@@ -654,7 +670,7 @@ class DropboxProvider(
     }
 
     private fun initClient() {
-        val tokens = tokenStore.load(CloudProvider.DROPBOX) ?: return
+        val tokens = tokenStore.loadByKey(tokenKey) ?: return
         val config = DbxRequestConfig.newBuilder("Haron").build()
         client = DbxClientV2(config, tokens.accessToken)
     }

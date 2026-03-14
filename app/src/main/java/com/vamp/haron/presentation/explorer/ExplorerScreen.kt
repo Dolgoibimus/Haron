@@ -1561,9 +1561,9 @@ private fun ExplorerOverlays(
                     onOpenBtRemote = onOpenBtRemote,
                     cloudAccounts = cloudAccounts,
                     onOpenCloudAuth = { viewModel.openCloudAuth() },
-                    onNavigateToCloud = { provider ->
+                    onNavigateToCloud = { accountId ->
                         viewModel.dismissDrawer()
-                        viewModel.navigateToCloud(provider)
+                        viewModel.navigateToCloud(accountId)
                     },
                     isListeningForTransfer = state.isListeningForTransfer,
                     usbVolumes = state.usbVolumes,
@@ -1613,12 +1613,12 @@ private fun ExplorerOverlays(
                         intent.launchUrl(context, android.net.Uri.parse(url))
                     }
                 },
-                onSignOut = { provider ->
-                    viewModel.cloudSignOut(provider)
+                onSignOut = { accountId ->
+                    viewModel.cloudSignOut(accountId)
                 },
-                onNavigateToCloud = { provider ->
+                onNavigateToCloud = { accountId ->
                     onShowCloudAuthDialogChange(false)
-                    viewModel.navigateToCloud(provider)
+                    viewModel.navigateToCloud(accountId)
                 },
                 onDismiss = { onShowCloudAuthDialogChange(false) }
             )

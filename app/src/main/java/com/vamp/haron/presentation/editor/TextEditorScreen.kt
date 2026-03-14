@@ -597,7 +597,7 @@ fun TextEditorScreen(
                     val parsed = cm.parseCloudUri(cloudUri)
                     if (parsed != null) {
                         val (provider, cloudFileId) = parsed
-                        cm.updateFileContent(provider, cloudFileId, filePath).collect { progress ->
+                        cm.updateFileContent(parsed.accountId, cloudFileId, filePath).collect { progress ->
                             if (progress.isComplete) {
                                 if (progress.error != null) {
                                     com.vamp.core.logger.EcosystemLogger.e(

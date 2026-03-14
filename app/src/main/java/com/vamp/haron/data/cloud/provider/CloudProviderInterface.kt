@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import java.io.InputStream
 
 /**
- * Common interface for cloud storage providers (Google Drive, Dropbox, OneDrive).
+ * Common interface for cloud storage providers (Google Drive, Dropbox, Yandex Disk).
  */
 interface CloudProviderInterface {
 
@@ -16,8 +16,8 @@ interface CloudProviderInterface {
     /** Get auth URL for OAuth2 flow (Chrome Custom Tab or Google Sign-In) */
     fun getAuthUrl(): String?
 
-    /** Handle OAuth2 callback with authorization code */
-    suspend fun handleAuthCode(code: String): Result<Unit>
+    /** Handle OAuth2 callback with authorization code. Returns accountId on success. */
+    suspend fun handleAuthCode(code: String): Result<String>
 
     /** Sign out and revoke tokens */
     suspend fun signOut()

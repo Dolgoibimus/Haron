@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.SendToMobile
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Lan
@@ -104,7 +105,7 @@ fun DrawerMenu(
     onOpenTerminal: () -> Unit = {},
     cloudAccounts: List<CloudAccount> = emptyList(),
     onOpenCloudAuth: () -> Unit = {},
-    onNavigateToCloud: (CloudProvider) -> Unit = {},
+    onNavigateToCloud: (String) -> Unit = {},
     onOpenTvRemote: () -> Unit = {},
     onOpenBtRemote: () -> Unit = {},
     isListeningForTransfer: Boolean = false,
@@ -312,38 +313,23 @@ fun DrawerMenu(
 
             // --- Cloud ---
             item {
-                SectionHeader(
+                SectionHeaderWithAction(
                     icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) },
-                    title = stringResource(R.string.cloud_section)
+                    title = stringResource(R.string.cloud_section),
+                    onAction = { onOpenCloudAuth() }
                 )
             }
-            if (cloudAccounts.isEmpty()) {
-                item {
-                    DrawerItem(
-                        icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        title = stringResource(R.string.cloud_add_account),
-                        onClick = { onOpenCloudAuth() }
-                    )
-                }
-            } else {
-                items(cloudAccounts, key = { "cloud_${it.provider.scheme}" }) { account ->
+            if (cloudAccounts.isNotEmpty()) {
+                items(cloudAccounts, key = { "cloud_${it.accountId}" }) { account ->
                     DrawerItem(
                         icon = { Icon(Icons.Filled.CloudDone, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
                         title = when (account.provider) {
                             CloudProvider.GOOGLE_DRIVE -> stringResource(R.string.cloud_google_drive)
                             CloudProvider.DROPBOX -> stringResource(R.string.cloud_dropbox)
-                            CloudProvider.ONEDRIVE -> stringResource(R.string.cloud_onedrive)
                             CloudProvider.YANDEX_DISK -> stringResource(R.string.cloud_yandex_disk)
                         },
                         subtitle = account.email.ifEmpty { stringResource(R.string.cloud_connected) },
-                        onClick = { onNavigateToCloud(account.provider); onDismiss() }
-                    )
-                }
-                item {
-                    DrawerItem(
-                        icon = { Icon(Icons.Filled.Cloud, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        title = stringResource(R.string.cloud_add_account),
-                        onClick = { onOpenCloudAuth() }
+                        onClick = { onNavigateToCloud(account.accountId); onDismiss() }
                     )
                 }
             }
@@ -636,6 +622,32 @@ private fun SectionHeader(
         icon()
         Spacer(Modifier.width(8.dp))
         Text(title, style = MaterialTheme.typography.titleSmall)
+    }
+}
+
+@Composable
+private fun SectionHeaderWithAction(
+    icon: @Composable () -> Unit,
+    title: String,
+    onAction: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        icon()
+        Spacer(Modifier.width(8.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        IconButton(onClick = onAction) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = stringResource(R.string.cloud_add_account),
+                Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

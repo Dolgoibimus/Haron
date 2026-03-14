@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.64 (Phase 4, Batch 64)
+**Текущая версия:** 0.65 (Phase 4, Batch 65)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,50 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 66 — Мульти-аккаунт для облачных хранилищ ⚠️ не проверено
+
+**Цель:** Поддержка нескольких аккаунтов одного облачного провайдера (например, два Google Drive аккаунта).
+
+#### Backend
+- **CloudTokenStore** — ключ хранилища `"gdrive"` → `"gdrive:alice@gmail.com"`. Новые методы: `saveByKey`, `loadByKey`, `removeByKey`, `getAllAccounts`, `getAccountIds`. Автомиграция старого формата.
+- **CloudAccount** — добавлено поле `accountId: String` (`"gdrive:alice@gmail.com"`)
+- **CloudProviderInterface** — `handleAuthCode` возвращает `Result<String>` (accountId) вместо `Result<Unit>`
+- **GoogleDriveProvider, DropboxProvider, YandexDiskProvider** — `tokenKey: String` в конструкторе. Pending-key flow при OAuth: сохранить временно → получить email → сохранить с финальным ключом
+- **CloudManager** — две карты: `authProviders` (один на тип, для OAuth) и `accountProviders` (один на аккаунт, для данных). Все методы принимают `accountId: String` вместо `CloudProvider`. Новый `CloudPath` data class с backward-compatible destructuring
+- **CloudPath** — `data class CloudPath(provider, path, accountId)` — `component1()=provider`, `component2()=path` для совместимости с существующими деструктуризациями
+- **Use cases** — все 5 use cases обновлены: `CloudProvider` → `String` (accountId)
+- **HttpFileServer** — `CloudStreamConfig.provider` → `accountId` + computed `providerScheme`
+
+#### ViewModel / UI
+- **ExplorerViewModel** — `navigateToCloud(accountId)`, `cloudSignOut(accountId)`, все ~30 мест с `parseCloudUri` обновлены на `parsed.accountId`
+- **ExplorerScreen** — callbacks `onSignOut` и `onNavigateToCloud` принимают `String` (accountId)
+- **TextEditorScreen** — cloud save использует `parsed.accountId`
+- **CloudAuthDialog** — полная переделка: группировка по провайдерам, dropdown (▼) для 2+ аккаунтов, кнопка "+ Добавить" с выпадающим меню провайдеров
+- **DrawerMenu** — key по `accountId`, onClick по `accountId`, `onNavigateToCloud: (String)`
+
+#### URI формат
+- `cloud://gdrive/path` — backward compat (первый аккаунт GDrive)
+- `cloud://gdrive:alice@gmail.com/path` — конкретный аккаунт
+
+---
+
+### Batch 65 — Удаление OneDrive + исправление QR-сканера ✅ проверено
+
+#### Удаление OneDrive
+- **OneDrive никогда не работал** — CLIENT_ID = placeholder "YOUR_ONEDRIVE_CLIENT_ID"
+- Удалён `OneDriveProvider.kt` целиком
+- Удалён `ONEDRIVE` из enum `CloudProvider`
+- Убраны все ссылки из `CloudManager`, `CloudOAuthHelper`, `CloudAuthDialog`, `DrawerMenu`, `HttpFileServer`, `CloudProviderInterface`
+- Удалены строки `cloud_onedrive` из `strings.xml` (EN + RU)
+- Обновлены `features.txt` (EN + RU) — убран OneDrive из списка провайдеров
+
+#### Исправление QR-сканера
+- **Проблема**: камера не инициализировалась при вызове через долгий тап — `Dialog {}` создаёт отдельную субкомпозицию, `LocalLifecycleOwner.current` внутри Dialog возвращает lifecycle `DialogWrapper` (не Activity), CameraX `bindToLifecycle()` привязывалась к нему
+- **Решение**: `lifecycleOwner` захватывается **до** `Dialog {}` (на уровне Activity) и передаётся параметром в `CameraPreviewWithScanner`
+- Добавлено логирование через `EcosystemLogger`: открытие сканера, получение камеры, распознание кода, ошибки привязки
 
 ---
 
@@ -88,7 +132,7 @@
 
 **Что сделано:**
 - **channelFlow вместо flow**: `downloadFile/uploadFile/updateFileContent` в `YandexDiskProvider` переведены с `flow { emit() }` на `channelFlow { trySend() }` — `trySend()` не блокирует write-loop (upload глох на 6-7% из-за `emit()` приостанавливающего запись)
-- **Буферы 8KB→256KB** во всех 4 облачных провайдерах (Yandex, OneDrive, Dropbox, GDrive) — ~32x меньше syscalls
+- **Буферы 8KB→256KB** во всех облачных провайдерах (Yandex, Dropbox, GDrive) — ~32x меньше syscalls
 - **readTimeout 120s→300s** для больших файлов в Yandex
 - **CancellationException re-throw**: добавлен `if (e is CancellationException) throw e` в 8 catch-блоках облачных операций — фантомный прогресс-бар после отмены
 - **Превью фикс расширений**: thumbnail всегда сохраняется с `.jpg` (раньше с оригинальным расширением `.pdf`/`.docx` → LoadPreviewUseCase пытался парсить JPEG как PDF)
@@ -420,7 +464,7 @@
 | 51 | SMB-браузер (вкладка в Передача) | ✅ проверено |
 | 51b | Двухпанельный SMB-режим (SMB + локальные файлы) | ✅ проверено |
 | 52 | Фиксы корзины + тап на пустом месте | ✅ проверено |
-| 54 | Облака (GDrive/Dropbox/OneDrive) + пульт ТВ (тачпад/клавиатура) | ⚠️ не проверено |
+| 54 | Облака (GDrive/Dropbox/Yandex) + пульт ТВ (тачпад/клавиатура) | ⚠️ не проверено |
 
 ### Хотелки (после релиза):
 | Фича | Описание |
@@ -436,7 +480,7 @@
 | DjVu формат | Поддержка просмотра файлов .djvu в читалке |
 | Анализатор памяти — путь в две строки | Длинный путь файла в анализаторе памяти переносить на вторую строку вместо обрезки |
 | FTP/SFTP/WebDAV | Доступ к файлам на удалённых серверах: FTP (хостинги, NAS), SFTP (любой Linux-сервер через SSH, визуальный браузер вместо команд), WebDAV (Nextcloud, Яндекс.Диск, NAS). Файлы сервера отображаются в панели как обычные папки — копирование, перемещение, скачивание/загрузка через двухпанельный интерфейс. Расширение SMB для других типов серверов |
-| Облака (GDrive, Dropbox, OneDrive) | Доступ к облачным хранилищам через их API — просмотр, загрузка, скачивание |
+| Облака (GDrive, Dropbox, Yandex) | Доступ к облачным хранилищам через их API — просмотр, загрузка, скачивание |
 | Root-доступ | Работа с файловой системой через su — просмотр/редактирование системных файлов |
 | Подсветка синтаксиса | Подсветка кода в текстовом редакторе (Kotlin, Java, XML, JSON, HTML, CSS, JS и др.) |
 | Доп. форматы архивов | TAR, TAR.GZ, TAR.BZ2, TAR.XZ, GZ, BZ2, XZ (Linux-архивы), ISO (образы дисков), CAB (Windows). Самые важные — TAR.GZ и ISO |
@@ -587,7 +631,7 @@
 - Ввод пути вручную
 - Клавиатурные сочетания (DeX)
 - FTP/SFTP/WebDAV
-- Облака (GDrive, Dropbox, OneDrive)
+- Облака (GDrive, Dropbox, Yandex)
 - EPUB-читалка
 - Скорость воспроизведения
 - Жесты в видеоплеере
@@ -870,7 +914,7 @@
 - [x] Встроенный терминал (полный): VT100/ANSI, цветной вывод, автодополнение, кликабельные пути ← Batch 37
 - [x] Стеганография (Tail-Append метод, AES-256-GCM) ← Batch 38
 - [x] Расширенный шаринг на ТВ: слайд-шоу, PDF-презентация, инфо о файле, зеркалирование экрана ← Batch 39
-- [ ] Интеграция с облаком (Google Drive, Dropbox, OneDrive как папки)
+- [ ] Интеграция с облаком (Google Drive, Dropbox, Yandex Disk как папки)
 - [ ] Машина времени (версии текстовых файлов)
 - [ ] Переименование по содержимому (ML Kit предлагает имя для фото)
 - [ ] Мониторинг мусора в реальном времени (WorkManager, уведомление)
@@ -927,16 +971,16 @@
 
 ### Batch 54 — Облака + Пульт ТВ ⚠️ не проверено
 
-**Облачные хранилища (Google Drive, Dropbox, OneDrive):**
+**Облачные хранилища (Google Drive, Dropbox, Yandex Disk):**
 - OAuth2 PKCE через custom URI scheme `haron://oauth/{provider}` (deep link)
 - `CloudOAuthHelper` — генерация code_verifier/code_challenge, обмен кода на токен
 - `CloudManager` — singleton facade (аналог SmbManager) для всех провайдеров
 - `CloudTokenStore` — зашифрованное хранение токенов (AES-256-GCM, Android Keystore)
 - `CloudProviderInterface` — общий интерфейс: listFiles, download, upload, delete, createFolder, getAuthUrl, handleAuthCode
-- 3 провайдера: `GoogleDriveProvider`, `DropboxProvider`, `OneDriveProvider`
+- 3 провайдера: `GoogleDriveProvider`, `DropboxProvider`, `YandexDiskProvider`
 - 5 use cases: CloudListFiles, CloudDownload, CloudUpload, CloudDelete, CloudCreateFolder
 - `CloudModule` (Hilt DI) + `CloudAuthDialog` (UI авторизации в ExplorerScreen)
-- Навигация: `cloud://gdrive/`, `cloud://dropbox/`, `cloud://onedrive/` в панели
+- Навигация: `cloud://gdrive/`, `cloud://dropbox/`, `cloud://yandex/` в панели
 - Тап на облачный файл → скачивание в cacheDir/cloud_downloads/ → открытие локально
 - Копирование между панелями: cloud→local = download, local→cloud = upload
 - Перемещение cloud-файлов заблокировано (только copy)
@@ -954,7 +998,7 @@
 **Файлы (новые):**
 - `data/cloud/CloudOAuthHelper.kt`
 - `data/cloud/CloudManager.kt`, `CloudTokenStore.kt`
-- `data/cloud/provider/CloudProviderInterface.kt`, `GoogleDriveProvider.kt`, `DropboxProvider.kt`, `OneDriveProvider.kt`
+- `data/cloud/provider/CloudProviderInterface.kt`, `GoogleDriveProvider.kt`, `DropboxProvider.kt`, `YandexDiskProvider.kt`
 - `di/CloudModule.kt`
 - `domain/model/CloudAccount.kt`, `CloudFileEntry.kt`, `CloudProvider.kt`, `CloudTransferProgress.kt`
 - `domain/usecase/CloudListFilesUseCase.kt`, `CloudDownloadUseCase.kt`, `CloudUploadUseCase.kt`, `CloudDeleteUseCase.kt`, `CloudCreateFolderUseCase.kt`
@@ -2408,7 +2452,7 @@
 - Счётчик отправленных файлов и байтов при скачивании целевым устройством
 
 ### Облачные хранилища
-- Google Drive, Dropbox, OneDrive, Яндекс Диск
+- Google Drive, Dropbox, Яндекс Диск
 - Безопасная OAuth2 авторизация с PKCE
 - Просмотр облачных файлов в двухпанельном режиме (как локальные)
 - Кликабельные хлебные крошки для навигации по облачным папкам

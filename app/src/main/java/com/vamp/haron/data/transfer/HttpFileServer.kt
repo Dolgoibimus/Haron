@@ -61,12 +61,15 @@ class HttpFileServer @Inject constructor(
     // Cloud streaming proxy
     data class CloudStreamConfig(
         val fileId: String,
-        val provider: String, // "gdrive", "onedrive", "dropbox"
+        val accountId: String, // "gdrive:alice@gmail.com"
         val fileName: String,
         val fileSize: Long
-    )
+    ) {
+        /** Provider scheme extracted from accountId (e.g. "gdrive") */
+        val providerScheme: String get() = accountId.substringBefore(':')
+    }
     private val cloudStreams = mutableMapOf<String, CloudStreamConfig>()
-    /** Callback to get fresh access token by provider scheme (e.g. "gdrive") */
+    /** Callback to get fresh access token by accountId */
     var cloudTokenProvider: ((String) -> String?)? = null
 
     // HLS (progressive transcode → Chromecast)
@@ -177,18 +180,17 @@ class HttpFileServer @Inject constructor(
 
                     try {
                         // Get fresh token on each request (tokens expire after 1 hour)
-                        val freshToken = cloudTokenProvider?.invoke(config.provider)
+                        val freshToken = cloudTokenProvider?.invoke(config.accountId)
                         if (freshToken == null) {
-                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): no token for ${config.provider}")
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): no token for ${config.accountId}")
                             call.respondText("No access token", status = HttpStatusCode.Unauthorized)
                             return@get
                         }
                         EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): using token ${freshToken.take(15)}...")
 
                         // Resolve download URL (provider-specific)
-                        val downloadUrl = when (config.provider) {
+                        val downloadUrl = when (config.providerScheme) {
                             "gdrive" -> "https://www.googleapis.com/drive/v3/files/${config.fileId}?alt=media"
-                            "onedrive" -> "https://graph.microsoft.com/v1.0/me/drive/items/${config.fileId}/content"
                             "yandex" -> {
                                 // Two-step: get temporary download URL, then stream from it
                                 val tempUrl = withContext(Dispatchers.IO) {
@@ -217,14 +219,14 @@ class HttpFileServer @Inject constructor(
                             }
                         }
                         // Yandex temp URL and Dropbox temp link are self-authenticated
-                        val needsAuth = config.provider !in listOf("dropbox", "yandex")
+                        val needsAuth = config.providerScheme !in listOf("dropbox", "yandex")
 
                         val url = java.net.URL(downloadUrl)
                         val conn = withContext(Dispatchers.IO) {
                             (url.openConnection() as java.net.HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 if (needsAuth) {
-                                    val authPrefix = if (config.provider == "yandex") "OAuth" else "Bearer"
+                                    val authPrefix = if (config.providerScheme == "yandex") "OAuth" else "Bearer"
                                     setRequestProperty("Authorization", "$authPrefix $freshToken")
                                 }
                                 instanceFollowRedirects = true
@@ -238,7 +240,7 @@ class HttpFileServer @Inject constructor(
                         }
 
                         val responseCode = withContext(Dispatchers.IO) { conn.responseCode }
-                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode from ${config.provider}")
+                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode from ${config.providerScheme}")
 
                         if (responseCode !in 200..299 && responseCode != 206) {
                             val errorBody = try { withContext(Dispatchers.IO) { conn.errorStream?.bufferedReader()?.readText() } } catch (_: Exception) { null }
