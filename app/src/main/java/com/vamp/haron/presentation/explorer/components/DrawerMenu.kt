@@ -52,6 +52,9 @@ import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +63,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -320,17 +327,15 @@ fun DrawerMenu(
                 )
             }
             if (cloudAccounts.isNotEmpty()) {
-                items(cloudAccounts, key = { "cloud_${it.accountId}" }) { account ->
-                    DrawerItem(
-                        icon = { Icon(Icons.Filled.CloudDone, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
-                        title = when (account.provider) {
-                            CloudProvider.GOOGLE_DRIVE -> stringResource(R.string.cloud_google_drive)
-                            CloudProvider.DROPBOX -> stringResource(R.string.cloud_dropbox)
-                            CloudProvider.YANDEX_DISK -> stringResource(R.string.cloud_yandex_disk)
-                        },
-                        subtitle = account.email.ifEmpty { stringResource(R.string.cloud_connected) },
-                        onClick = { onNavigateToCloud(account.accountId); onDismiss() }
-                    )
+                val grouped = cloudAccounts.groupBy { it.provider }
+                grouped.forEach { (provider, accounts) ->
+                    item(key = "cloud_group_${provider.scheme}") {
+                        CloudAccountGroup(
+                            provider = provider,
+                            accounts = accounts,
+                            onNavigateToCloud = { onNavigateToCloud(it); onDismiss() }
+                        )
+                    }
                 }
             }
 
@@ -606,6 +611,76 @@ fun DrawerMenu(
             }
 
             item { Spacer(Modifier.height(16.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun CloudAccountGroup(
+    provider: CloudProvider,
+    accounts: List<CloudAccount>,
+    onNavigateToCloud: (String) -> Unit
+) {
+    val primary = accounts.first()
+    var showDropdown by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onNavigateToCloud(primary.accountId) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.CloudDone, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                when (provider) {
+                    CloudProvider.GOOGLE_DRIVE -> stringResource(R.string.cloud_google_drive)
+                    CloudProvider.DROPBOX -> stringResource(R.string.cloud_dropbox)
+                    CloudProvider.YANDEX_DISK -> stringResource(R.string.cloud_yandex_disk)
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                primary.email.ifEmpty { stringResource(R.string.cloud_connected) },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (accounts.size > 1) {
+            IconButton(
+                onClick = { showDropdown = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Filled.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(
+                expanded = showDropdown,
+                onDismissRequest = { showDropdown = false }
+            ) {
+                accounts.drop(1).forEach { account ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                account.email.ifEmpty { account.displayName },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        onClick = {
+                            showDropdown = false
+                            onNavigateToCloud(account.accountId)
+                        }
+                    )
+                }
+            }
         }
     }
 }
