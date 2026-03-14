@@ -221,13 +221,16 @@
 
 # Cast to TV
 - Chromecast, Miracast, DLNA support
-- Media, slideshow, PDF presentation, file info, screen mirror (via browser) modes
+- Media, slideshow, PDF presentation, screen mirror (via browser) modes
 - Remote control: play/pause, seek, volume
-- Touchpad mode: move cursor on TV, tap, long press, scroll [NEW]
-- Virtual keyboard: type text on TV screen [NEW]
 - Transcoding: AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 for Chromecast
 - Transcode caching — instant replay of previously transcoded files
 - Automatic audio fallback for unsupported codecs (AC3/DTS)
+
+# Bluetooth HID Remote [NEW]
+- Touchpad mode: move cursor on TV, tap, long press, scroll [NEW]
+- Virtual keyboard: type text on TV screen (Latin + Cyrillic) [NEW]
+- Connect to paired Bluetooth devices [NEW]
 
 # Network & SMB
 - Auto-discover devices on LAN
