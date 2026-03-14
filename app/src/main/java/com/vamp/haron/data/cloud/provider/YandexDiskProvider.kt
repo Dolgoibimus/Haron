@@ -361,8 +361,10 @@ class YandexDiskProvider(
         EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: got upload URL in ${System.currentTimeMillis() - startTime}ms, href length=${href.length}")
 
         // Step 2: PUT file to href
-        val isChunked = totalSize > 100 * 1024 * 1024
-        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 2 — PUT file, chunked=$isChunked, size=${totalSize / 1024}KB")
+        // Always use fixed-length streaming (Content-Length header) — some CDN/proxies
+        // reject Transfer-Encoding: chunked for large files, causing Connection reset.
+        // setFixedLengthStreamingMode(long) streams data without buffering in memory.
+        EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: Step 2 — PUT file, fixedLength, size=${totalSize / 1024}KB")
         val url = URL(href)
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"
@@ -370,11 +372,7 @@ class YandexDiskProvider(
             setRequestProperty("Connection", "keep-alive")
             setRequestProperty("Keep-Alive", "timeout=600")
             doOutput = true
-            if (isChunked) {
-                setChunkedStreamingMode(4 * 1024 * 1024) // 4MB chunks
-            } else {
-                setFixedLengthStreamingMode(totalSize)
-            }
+            setFixedLengthStreamingMode(totalSize)
             connectTimeout = 60_000
             readTimeout = 600_000 // 10 min for large files
         }
@@ -395,8 +393,8 @@ class YandexDiskProvider(
                             out.flush()
                             onProgress(totalWritten)
                             lastEmitPercent = percent
-                            if (percent % 10 == 0) {
-                                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: $fileName $percent% ($totalWritten/$totalSize)")
+                            if (percent % 5 == 0) {
+                                EcosystemLogger.d(HaronConstants.TAG, "YandexDisk uploadAttempt: $fileName $percent% ($totalWritten/$totalSize) ${System.currentTimeMillis() - putStartTime}ms")
                             }
                         }
                     }
