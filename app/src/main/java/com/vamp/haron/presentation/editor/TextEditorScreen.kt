@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -431,119 +434,207 @@ fun TextEditorScreen(
                     )
                 }
                 else -> {
-                    val verticalScroll = rememberScrollState()
-                    val density = LocalDensity.current
-                    val imeBottom = WindowInsets.ime.getBottom(density)
-
-                    // Restore scroll position
-                    LaunchedEffect(savedScrollTarget) {
-                        if (savedScrollTarget > 0) {
-                            verticalScroll.scrollTo(savedScrollTarget)
-                        }
-                    }
-
-                    // Save scroll + cursor position (debounced)
-                    LaunchedEffect(filePath) {
-                        snapshotFlow {
-                            Triple(verticalScroll.value, textFieldValue.selection.start, fontSizeSp)
-                        }.collectLatest { (scroll, cursor, zoom) ->
-                            delay(1000)
-                            withContext(Dispatchers.IO) {
-                                ReadingPositionManager.save(filePath, cursor, scroll.toLong())
-                                ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
-                            }
-                        }
-                    }
-
-                    // Save on exit
-                    DisposableEffect(filePath) {
-                        onDispose {
-                            ReadingPositionManager.saveAsync(filePath, textFieldValue.selection.start, verticalScroll.value.toLong())
-                            ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
-                        }
-                    }
-
-                    // Scroll to cursor when keyboard appears or cursor moves
-                    LaunchedEffect(imeBottom, cursorLine) {
-                        if (imeBottom > 0 && verticalScroll.maxValue > 0 && totalLines > 0) {
-                            val lineHeight = verticalScroll.maxValue.toFloat() / totalLines.coerceAtLeast(1)
-                            val cursorY = (cursorLine - 1) * lineHeight
-                            val viewportHeight = verticalScroll.viewportSize.toFloat()
-                            val targetScroll = (cursorY - viewportHeight / 2).toInt()
-                                .coerceIn(0, verticalScroll.maxValue)
-                            verticalScroll.animateScrollTo(targetScroll)
-                        }
-                    }
-
-                    // Scroll to match: proportional position
-                    LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
-                        if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
-                            val pos = matchIndices[currentMatchIndex]
-                            val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
-                            val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
-                            verticalScroll.animateScrollTo(scrollTarget)
-                        }
-                    }
-
-                    // Auto-select first match on load
-                    LaunchedEffect(matchIndices) {
-                        if (matchIndices.isNotEmpty()) {
-                            currentMatchIndex = 0
-                            val pos = matchIndices[0]
-                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
-                        }
-                    }
-
                     val monoStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = fontSizeSp.sp,
                         lineHeight = (fontSizeSp * 1.54f).sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-
                     val highlightColor = MaterialTheme.colorScheme.primary
-                    val highlightTransformation = remember(highlightQuery, highlightColor) {
-                        if (highlightQuery.isNullOrBlank()) VisualTransformation.None
-                        else SearchHighlightTransformation(highlightQuery, highlightColor)
+
+                    // Pinch-to-zoom modifier (shared between modes)
+                    val pinchZoomModifier = Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            do {
+                                val event = awaitPointerEvent()
+                                if (event.changes.size >= 2) {
+                                    val zoom = event.calculateZoom()
+                                    fontSizeSp = (fontSizeSp * zoom).coerceIn(8f, 32f)
+                                    event.changes.forEach { it.consume() }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
                     }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .pointerInput(Unit) {
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    // Only process pinch-to-zoom (2+ fingers), let single taps through to TextField
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.size >= 2) {
-                                            val zoom = event.calculateZoom()
-                                            fontSizeSp = (fontSizeSp * zoom).coerceIn(8f, 32f)
-                                            event.changes.forEach { it.consume() }
-                                        }
-                                    } while (event.changes.any { it.pressed })
+
+                    if (isEditMode) {
+                        // === EDIT MODE: BasicTextField with verticalScroll ===
+                        val verticalScroll = rememberScrollState()
+                        val density = LocalDensity.current
+                        val imeBottom = WindowInsets.ime.getBottom(density)
+                        val highlightTransformation = remember(highlightQuery, highlightColor) {
+                            if (highlightQuery.isNullOrBlank()) VisualTransformation.None
+                            else SearchHighlightTransformation(highlightQuery, highlightColor)
+                        }
+
+                        LaunchedEffect(savedScrollTarget) {
+                            if (savedScrollTarget > 0) verticalScroll.scrollTo(savedScrollTarget)
+                        }
+
+                        LaunchedEffect(filePath) {
+                            snapshotFlow {
+                                Triple(verticalScroll.value, textFieldValue.selection.start, fontSizeSp)
+                            }.collectLatest { (scroll, cursor, zoom) ->
+                                delay(1000)
+                                withContext(Dispatchers.IO) {
+                                    ReadingPositionManager.save(filePath, cursor, scroll.toLong())
+                                    ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
                                 }
                             }
-                            .verticalScroll(verticalScroll)
-                    ) {
-                        BasicTextField(
-                            value = textFieldValue,
-                            onValueChange = { newValue ->
-                                if (newValue.text != textFieldValue.text) {
-                                    pushUndo(textFieldValue)
-                                    isModified = newValue.text != savedText
-                                }
-                                textFieldValue = newValue
-                            },
-                            readOnly = !isEditMode,
-                            textStyle = monoStyle,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            visualTransformation = highlightTransformation,
+                        }
+
+                        DisposableEffect(filePath) {
+                            onDispose {
+                                ReadingPositionManager.saveAsync(filePath, textFieldValue.selection.start, verticalScroll.value.toLong())
+                                ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
+                            }
+                        }
+
+                        LaunchedEffect(imeBottom, cursorLine) {
+                            if (imeBottom > 0 && verticalScroll.maxValue > 0 && totalLines > 0) {
+                                val lineHeight = verticalScroll.maxValue.toFloat() / totalLines.coerceAtLeast(1)
+                                val cursorY = (cursorLine - 1) * lineHeight
+                                val viewportHeight = verticalScroll.viewportSize.toFloat()
+                                val targetScroll = (cursorY - viewportHeight / 2).toInt()
+                                    .coerceIn(0, verticalScroll.maxValue)
+                                verticalScroll.animateScrollTo(targetScroll)
+                            }
+                        }
+
+                        LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
+                            if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
+                                val pos = matchIndices[currentMatchIndex]
+                                val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
+                                val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
+                                verticalScroll.animateScrollTo(scrollTarget)
+                            }
+                        }
+
+                        LaunchedEffect(matchIndices) {
+                            if (matchIndices.isNotEmpty()) {
+                                currentMatchIndex = 0
+                                val pos = matchIndices[0]
+                                textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            }
+                        }
+
+                        Box(
                             modifier = Modifier
+                                .weight(1f)
                                 .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                        )
+                                .then(pinchZoomModifier)
+                                .verticalScroll(verticalScroll)
+                        ) {
+                            BasicTextField(
+                                value = textFieldValue,
+                                onValueChange = { newValue ->
+                                    if (newValue.text != textFieldValue.text) {
+                                        pushUndo(textFieldValue)
+                                        isModified = newValue.text != savedText
+                                    }
+                                    textFieldValue = newValue
+                                },
+                                readOnly = false,
+                                textStyle = monoStyle,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                visualTransformation = highlightTransformation,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester)
+                                    .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                            )
+                        }
+                    } else {
+                        // === VIEW MODE: LazyColumn for performance (large files without ANR) ===
+                        val lines = remember(textFieldValue.text) {
+                            textFieldValue.text.split('\n')
+                        }
+                        val lazyListState = rememberLazyListState()
+
+                        // Restore position from saved cursor offset
+                        LaunchedEffect(textFieldValue.text) {
+                            if (textFieldValue.text.isNotEmpty()) {
+                                val cursorPos = textFieldValue.selection.start.coerceIn(0, textFieldValue.text.length)
+                                val lineIdx = textFieldValue.text.substring(0, cursorPos).count { it == '\n' }
+                                if (lineIdx > 0) {
+                                    lazyListState.scrollToItem(lineIdx.coerceAtMost(lines.size - 1))
+                                }
+                            }
+                        }
+
+                        // Save position (debounced)
+                        LaunchedEffect(filePath) {
+                            snapshotFlow {
+                                Triple(lazyListState.firstVisibleItemIndex, lazyListState.firstVisibleItemScrollOffset, fontSizeSp)
+                            }.collectLatest { (lineIdx, offset, zoom) ->
+                                delay(1000)
+                                val charPos = if (lineIdx < lines.size) {
+                                    lines.take(lineIdx).sumOf { it.length + 1 }
+                                } else 0
+                                withContext(Dispatchers.IO) {
+                                    ReadingPositionManager.save(filePath, charPos, offset.toLong())
+                                    ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
+                                }
+                            }
+                        }
+
+                        // Save on exit
+                        DisposableEffect(filePath) {
+                            onDispose {
+                                val lineIdx = lazyListState.firstVisibleItemIndex
+                                val charPos = if (lineIdx < lines.size) {
+                                    lines.take(lineIdx).sumOf { it.length + 1 }
+                                } else 0
+                                ReadingPositionManager.saveAsync(filePath, charPos, lazyListState.firstVisibleItemScrollOffset.toLong())
+                                ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
+                            }
+                        }
+
+                        // Scroll to search match
+                        LaunchedEffect(currentMatchIndex, matchIndices) {
+                            if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices) {
+                                val charPos = matchIndices[currentMatchIndex].coerceIn(0, textFieldValue.text.length)
+                                val lineIdx = textFieldValue.text.substring(0, charPos).count { it == '\n' }
+                                lazyListState.animateScrollToItem(lineIdx.coerceAtMost(lines.size - 1))
+                            }
+                        }
+
+                        // Auto-select first match
+                        LaunchedEffect(matchIndices) {
+                            if (matchIndices.isNotEmpty()) {
+                                currentMatchIndex = 0
+                                val pos = matchIndices[0]
+                                textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            }
+                        }
+
+                        LazyColumn(
+                            state = lazyListState,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .then(pinchZoomModifier)
+                        ) {
+                            itemsIndexed(lines) { index, line ->
+                                val annotatedLine = if (!highlightQuery.isNullOrBlank()) {
+                                    buildHighlightedLine(line, highlightQuery, highlightColor)
+                                } else {
+                                    AnnotatedString(line)
+                                }
+                                Text(
+                                    text = annotatedLine,
+                                    style = monoStyle,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            start = 4.dp,
+                                            end = 8.dp,
+                                            top = if (index == 0) 8.dp else 0.dp,
+                                            bottom = if (index == lines.lastIndex) 8.dp else 0.dp
+                                        )
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -806,6 +897,28 @@ fun TextEditorScreen(
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface CloudManagerEntryPoint {
     fun cloudManager(): com.vamp.haron.data.cloud.CloudManager
+}
+
+private fun buildHighlightedLine(
+    line: String,
+    query: String,
+    color: androidx.compose.ui.graphics.Color
+): AnnotatedString {
+    val builder = AnnotatedString.Builder(line)
+    val lower = line.lowercase()
+    val lq = query.lowercase()
+    var pos = 0
+    while (pos < lower.length) {
+        val idx = lower.indexOf(lq, pos)
+        if (idx < 0) break
+        builder.addStyle(
+            SpanStyle(fontWeight = FontWeight.Bold, color = color),
+            idx,
+            idx + query.length
+        )
+        pos = idx + query.length
+    }
+    return builder.toAnnotatedString()
 }
 
 private class SearchHighlightTransformation(
