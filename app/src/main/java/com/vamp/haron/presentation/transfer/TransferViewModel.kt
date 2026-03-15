@@ -744,6 +744,8 @@ class TransferViewModel @Inject constructor(
         stopDiscovery()
         // Don't stop global receiving — it's managed by MainActivity
         receiveJob?.cancel()
+        // Stop hotspot if still running
+        hotspotManager.stop()
         super.onCleared()
     }
 
