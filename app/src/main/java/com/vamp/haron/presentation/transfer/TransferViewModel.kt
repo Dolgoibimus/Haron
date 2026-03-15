@@ -396,7 +396,21 @@ class TransferViewModel @Inject constructor(
     }
 
     fun dismissQrDialog() {
-        _state.update { it.copy(showQrDialog = false) }
+        // Stop hotspot when dialog is dismissed (server keeps running on Wi-Fi)
+        if (_state.value.isHotspotMode) {
+            hotspotManager.stop()
+            _state.update {
+                it.copy(
+                    showQrDialog = false,
+                    isHotspotMode = false,
+                    hotspotSsid = null,
+                    hotspotPassword = null,
+                    hotspotUrl = null
+                )
+            }
+        } else {
+            _state.update { it.copy(showQrDialog = false) }
+        }
     }
 
     fun dismissWifiOffDialog() {
