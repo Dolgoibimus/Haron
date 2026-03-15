@@ -536,6 +536,7 @@ class TransferViewModel @Inject constructor(
             android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
             "Haron"
         )
+        if (!dir.exists()) dir.mkdirs()
         return dir.absolutePath
     }
 
