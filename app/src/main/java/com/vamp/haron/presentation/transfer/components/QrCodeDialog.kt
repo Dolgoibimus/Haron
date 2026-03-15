@@ -221,14 +221,16 @@ private fun HaronTabContent(
     url: String,
     onTapQr: () -> Unit
 ) {
-    // Build combined JSON for Haron-to-Haron auto-connect
+    // Build compact JSON for Haron-to-Haron auto-connect
+    // Short keys to minimize QR density: h=haron, s=ssid, p=pass, u=url (without http://)
+    val shortUrl = url.removePrefix("http://").removePrefix("https://")
     val combinedJson = buildString {
-        append("{\"haron\":1,\"ssid\":\"")
+        append("{\"h\":1,\"s\":\"")
         append(ssid.replace("\"", "\\\""))
-        append("\",\"pass\":\"")
+        append("\",\"p\":\"")
         append((password ?: "").replace("\"", "\\\""))
-        append("\",\"url\":\"")
-        append(url.replace("\"", "\\\""))
+        append("\",\"u\":\"")
+        append(shortUrl.replace("\"", "\\\""))
         append("\"}")
     }
 
@@ -238,7 +240,7 @@ private fun HaronTabContent(
             bitmap = qrBitmap.asImageBitmap(),
             contentDescription = "Haron QR",
             modifier = Modifier
-                .size(200.dp)
+                .size(240.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable { onTapQr() }
         )
@@ -396,9 +398,12 @@ private fun generateQrBitmap(text: String): Bitmap? {
         val writer = QRCodeWriter()
         val bitMatrix = writer.encode(text, BarcodeFormat.QR_CODE, size, size)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        // Dark navy dots on warm cream background — reduces screen glare vs pure black/white
+        val darkColor = Color.rgb(28, 40, 65)    // #1C2841
+        val lightColor = Color.rgb(250, 245, 230) // #FAF5E6
         for (x in 0 until size) {
             for (y in 0 until size) {
-                bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+                bitmap.setPixel(x, y, if (bitMatrix[x, y]) darkColor else lightColor)
             }
         }
         bitmap

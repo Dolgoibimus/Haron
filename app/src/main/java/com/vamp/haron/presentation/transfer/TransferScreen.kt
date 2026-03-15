@@ -802,27 +802,42 @@ private fun isLocalNetworkUrl(url: String): Boolean {
 private data class HaronQrData(val ssid: String, val password: String?, val url: String)
 
 /**
- * Try to parse a Haron combined QR code JSON: {"haron":1,"ssid":"...","pass":"...","url":"..."}
- * Returns null if the string is not a valid Haron QR.
+ * Try to parse a Haron combined QR code JSON.
+ * Short keys: {"h":1,"s":"SSID","p":"pass","u":"192.168.x.x:8080"}
+ * Legacy long keys: {"haron":1,"ssid":"...","pass":"...","url":"..."}
  */
 private fun tryParseHaronQr(text: String): HaronQrData? {
     val trimmed = text.trim()
-    if (!trimmed.startsWith("{") || !trimmed.contains("\"haron\"")) return null
+    if (!trimmed.startsWith("{")) return null
+    if (!trimmed.contains("\"h\"") && !trimmed.contains("\"haron\"")) return null
     return try {
-        // Minimal JSON parsing without a library
-        val haronMatch = """"haron"\s*:\s*1""".toRegex().find(trimmed) ?: return null
-        if (haronMatch.value.isEmpty()) return null
+        // Check haron marker (short "h":1 or long "haron":1)
+        val hasMarker = """"h"\s*:\s*1""".toRegex().find(trimmed) != null ||
+            """"haron"\s*:\s*1""".toRegex().find(trimmed) != null
+        if (!hasMarker) return null
 
-        val ssid = """"ssid"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
-            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+        // SSID (short "s" or long "ssid")
+        val ssid = (""""s"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed)
+            ?: """"ssid"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed))
+            ?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
             ?: return null
 
-        val pass = """"pass"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
-            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+        // Password (short "p" or long "pass")
+        val pass = (""""p"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed)
+            ?: """"pass"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed))
+            ?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
 
-        val url = """"url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
-            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+        // URL (short "u" or long "url") — may lack http:// prefix
+        val rawUrl = (""""u"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed)
+            ?: """"url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex().find(trimmed))
+            ?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
             ?: return null
+
+        val url = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+            rawUrl
+        } else {
+            "http://$rawUrl"
+        }
 
         HaronQrData(ssid = ssid, password = pass?.ifEmpty { null }, url = url)
     } catch (_: Exception) {
