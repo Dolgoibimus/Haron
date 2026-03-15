@@ -46,7 +46,8 @@ private data class SplitPreset(val label: String, val sizeMb: Int)
 @Composable
 fun CreateArchiveDialog(
     onConfirm: (archiveName: String, password: String?, splitSizeMb: Int) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOneToOne: (() -> Unit)? = null
 ) {
     var archiveName by remember { mutableStateOf("archive") }
     var password by remember { mutableStateOf("") }
@@ -179,20 +180,26 @@ fun CreateArchiveDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    val pwd = password.ifEmpty { null }
-                    val splitMb = if (splitEnabled) splitSizeText.toIntOrNull() ?: 0 else 0
-                    onConfirm(archiveName.trim(), pwd, splitMb)
-                },
-                enabled = archiveName.trim().isNotEmpty()
-            ) {
-                Text(stringResource(R.string.create))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                if (onOneToOne != null) {
+                    TextButton(onClick = onOneToOne) {
+                        Text(stringResource(R.string.archive_one_to_one))
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
+                TextButton(
+                    onClick = {
+                        val pwd = password.ifEmpty { null }
+                        val splitMb = if (splitEnabled) splitSizeText.toIntOrNull() ?: 0 else 0
+                        onConfirm(archiveName.trim(), pwd, splitMb)
+                    },
+                    enabled = archiveName.trim().isNotEmpty()
+                ) {
+                    Text(stringResource(R.string.create))
+                }
             }
         }
     )

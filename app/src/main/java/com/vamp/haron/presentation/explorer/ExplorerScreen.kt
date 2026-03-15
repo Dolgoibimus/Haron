@@ -594,6 +594,7 @@ fun ExplorerScreen(
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.topPanel.currentPath),
+                archiveThumbnailCache = viewModel.archiveThumbnailCache,
                 onSizeClick = { viewModel.showStorageSizeInfo(PanelId.TOP) },
                 modifier = modifier
             )
@@ -752,6 +753,7 @@ fun ExplorerScreen(
                 folderSizeCache = state.folderSizeCache,
                 hasSelectionBar = hasSelection && !isDragging,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.bottomPanel.currentPath),
+                archiveThumbnailCache = viewModel.archiveThumbnailCache,
                 onSizeClick = { viewModel.showStorageSizeInfo(PanelId.BOTTOM) },
                 modifier = modifier
             )
@@ -1249,7 +1251,10 @@ private fun ExplorerDialogs(
                 onConfirm = { archiveName, password, splitSizeMb ->
                     viewModel.confirmCreateArchive(dialog.selectedPaths, archiveName, password, splitSizeMb)
                 },
-                onDismiss = viewModel::dismissDialog
+                onDismiss = viewModel::dismissDialog,
+                onOneToOne = if (dialog.selectedPaths.size >= 2) {
+                    { viewModel.createArchiveOneToOne(dialog.selectedPaths) }
+                } else null
             )
         }
         is DialogState.FilePropertiesState -> {

@@ -224,6 +224,12 @@
     <string name="trash_no_limit">No limit</string>
     <string name="trash_info">0 = no limit. When exceeded, oldest files are deleted automatically.</string>
 
+    <!-- Archive Thumbnail Cache -->
+    <string name="archive_thumbs_section">Thumbnail cache</string>
+    <string name="archive_thumbs_cache_limit">Cache limit: %s</string>
+    <string name="archive_thumbs_cache_clear">Clear cache</string>
+    <string name="archive_thumbs_no_limit">No limit</string>
+
     <!-- Cast -->
     <string name="cast_section">Cast</string>
     <string name="transcode_cache_ttl_label">Transcode cache lifetime</string>
@@ -385,6 +391,8 @@
     <string name="deleted_count">Deleted: %d</string>
     <string name="renamed_to">Renamed to %s</string>
     <string name="archive_created">Archive created: %s</string>
+    <string name="archive_one_to_one">1 to 1</string>
+    <string name="archive_one_to_one_done">Archives created: %d</string>
     <string name="no_files_selected">No files selected</string>
     <string name="added_to_shelf">Added to shelf: %d</string>
     <string name="file_operation_progress_format">%1$s: %2$d file(s)…</string>

@@ -49,6 +49,7 @@ import com.vamp.haron.domain.usecase.GetFilePropertiesUseCase
 import com.vamp.haron.domain.usecase.CalculateHashUseCase
 import com.vamp.haron.domain.usecase.BrowseArchiveUseCase
 import com.vamp.haron.domain.usecase.ExtractArchiveUseCase
+import com.vamp.haron.domain.usecase.ReadArchiveEntryUseCase
 import com.vamp.haron.domain.usecase.FindEmptyFoldersUseCase
 import com.vamp.haron.domain.usecase.LoadApkInstallInfoUseCase
 import com.vamp.haron.common.util.HapticManager
@@ -156,7 +157,9 @@ class ExplorerViewModel @Inject constructor(
     val shizukuManager: ShizukuManager,
     private val cloudManager: CloudManager,
     private val httpFileServer: com.vamp.haron.data.transfer.HttpFileServer,
-    private val ftpClientManager: FtpClientManager
+    private val ftpClientManager: FtpClientManager,
+    val archiveThumbnailCache: com.vamp.haron.common.util.ArchiveThumbnailCache,
+    private val readArchiveEntryUseCase: ReadArchiveEntryUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -1803,6 +1806,10 @@ class ExplorerViewModel @Inject constructor(
             val virtualPath = entry.path.substringAfter("!/", "")
             navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
             return
+        } else if (panel.isArchiveMode && !entry.isDirectory) {
+            // Inside archive: all file taps open QuickPreview (no external apps/players)
+            onIconClick(panelId, entry)
+            return
         } else if (entry.isProtected && !entry.isDirectory) {
             onProtectedFileClick(entry)
             return
@@ -2059,7 +2066,7 @@ class ExplorerViewModel @Inject constructor(
         when {
             panel.isSelectionMode -> toggleSelection(panelId, entry.path)
             entry.isDirectory -> navigateTo(panelId, entry.path)
-            entry.iconRes() == "apk" && !entry.isProtected -> showApkInstallDialog(entry)
+            entry.iconRes() == "apk" && !entry.isProtected && !entry.path.contains("!/") -> showApkInstallDialog(entry)
             else -> {
                 val allFiles = panel.files.filter { !it.isDirectory }
                 val fileIndex = allFiles.indexOfFirst { it.path == entry.path }
@@ -3484,6 +3491,59 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    fun createArchiveOneToOne(selectedPaths: List<String>) {
+        dismissDialog()
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+
+        EcosystemLogger.d(HaronConstants.TAG, "createArchiveOneToOne: ${selectedPaths.size} files, panel=$activeId")
+
+        if (panel.isArchiveMode) {
+            _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, "Cannot create archive from archive view"))
+            return
+        }
+
+        viewModelScope.launch {
+            clearSelection(activeId)
+            var created = 0
+            try {
+                for ((index, srcPath) in selectedPaths.withIndex()) {
+                    val srcFile = File(srcPath)
+                    if (!srcFile.exists()) {
+                        EcosystemLogger.e(HaronConstants.TAG, "createArchiveOneToOne: source missing: $srcPath")
+                        continue
+                    }
+                    val parentDir = srcFile.parent ?: continue
+                    var outputPath = "$parentDir/${srcFile.nameWithoutExtension}.zip"
+                    if (File(outputPath).exists()) {
+                        outputPath = CreateZipUseCase.findUniqueZipPath(outputPath)
+                    }
+                    EcosystemLogger.d(HaronConstants.TAG, "createArchiveOneToOne: [${index + 1}/${selectedPaths.size}] ${srcFile.name} -> ${File(outputPath).name}")
+
+                    _uiState.update {
+                        it.copy(operationProgress = OperationProgress(
+                            current = index + 1,
+                            total = selectedPaths.size,
+                            currentFileName = srcFile.name,
+                            type = OperationType.ARCHIVE
+                        ))
+                    }
+
+                    createZipUseCase(listOf(srcPath), outputPath).collect { /* consume flow */ }
+                    created++
+                }
+                hapticManager.success()
+                _toastMessage.tryEmit(appContext.getString(R.string.archive_one_to_one_done, created))
+                refreshBothIfSamePath(activeId)
+            } catch (e: Exception) {
+                hapticManager.error()
+                _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, e.message ?: ""))
+                EcosystemLogger.e(HaronConstants.TAG, "createArchiveOneToOne: failed — ${e.javaClass.simpleName}: ${e.message}")
+            }
+            _uiState.update { it.copy(operationProgress = null) }
+        }
+    }
+
     fun onPreviewFileChanged(newIndex: Int) {
         // Cancel pending preloads from previous page to avoid OOM / race conditions
         preloadJobs.forEach { it.cancel() }
@@ -3688,6 +3748,10 @@ class ExplorerViewModel @Inject constructor(
 
     /** Resolve a FileEntry for preview: download cloud thumbnail / decrypt protected → return entry with local path. */
     private suspend fun resolvePreviewEntry(entry: FileEntry): FileEntry {
+        // Archive entries: extract to temp file for preview
+        if (entry.path.contains("!/")) {
+            return resolveArchiveEntryForPreview(entry)
+        }
         // Cloud files: download full file for archives, thumbnail for images
         if (isCloudPath(entry.path)) {
             val type = entry.iconRes()
@@ -3784,6 +3848,61 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /** Download cloud file to cache for preview. Atomic write (temp + rename) to avoid race conditions. */
+    /**
+     * Extract an archive entry to a temp file so standard preview pipeline can handle it.
+     * Uses ReadArchiveEntryUseCase for files ≤10MB (in-memory),
+     * ExtractArchiveUseCase for larger files.
+     */
+    private suspend fun resolveArchiveEntryForPreview(entry: FileEntry): FileEntry {
+        val archivePath = entry.path.substringBefore("!/")
+        val entryFullPath = entry.path.substringAfter("!/")
+        // Find password from active panel state
+        val panel = getPanel(_uiState.value.activePanel)
+        val password = panel.archivePassword
+
+        val cacheDir = File(appContext.cacheDir, "archive_preview")
+        cacheDir.mkdirs()
+        val ext = entry.extension.ifEmpty { "bin" }
+        val cacheKey = (archivePath + "!" + entryFullPath).hashCode().toUInt().toString(16)
+        val tempFile = File(cacheDir, "${cacheKey}.$ext")
+
+        // Reuse cached file if recent (< 5 min)
+        if (tempFile.exists() && tempFile.length() > 0 &&
+            System.currentTimeMillis() - tempFile.lastModified() < 5 * 60 * 1000) {
+            return entry.copy(path = tempFile.absolutePath)
+        }
+
+        return try {
+            if (entry.size <= 10L * 1024 * 1024) {
+                // Small file — read into memory and write to temp
+                val bytes = readArchiveEntryUseCase(archivePath, entryFullPath, password)
+                if (bytes != null && bytes.isNotEmpty()) {
+                    tempFile.writeBytes(bytes)
+                    entry.copy(path = tempFile.absolutePath)
+                } else {
+                    EcosystemLogger.e(HaronConstants.TAG, "resolveArchiveEntryForPreview: no bytes for $entryFullPath")
+                    entry
+                }
+            } else {
+                // Large file — extract to temp via ExtractArchiveUseCase
+                val setOf = setOf(entryFullPath)
+                extractArchiveUseCase(archivePath, cacheDir.absolutePath, setOf, password)
+                    .collect { /* wait for completion */ }
+                val extracted = File(cacheDir, entryFullPath)
+                if (extracted.exists()) {
+                    // Move to stable cache name
+                    extracted.renameTo(tempFile)
+                    entry.copy(path = tempFile.absolutePath)
+                } else {
+                    entry
+                }
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "resolveArchiveEntryForPreview failed: ${e.message}")
+            entry
+        }
+    }
+
     private suspend fun resolveCloudArchiveForPreview(entry: FileEntry): FileEntry {
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return entry
         val (provider, cloudFileId) = parsed

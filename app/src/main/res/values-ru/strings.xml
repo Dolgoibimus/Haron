@@ -224,6 +224,12 @@
     <string name="trash_no_limit">Без лимита</string>
     <string name="trash_info">0 = без лимита. При превышении старые файлы удаляются автоматически.</string>
 
+    <!-- Archive Thumbnail Cache -->
+    <string name="archive_thumbs_section">Кеш миниатюр</string>
+    <string name="archive_thumbs_cache_limit">Лимит кеша: %s</string>
+    <string name="archive_thumbs_cache_clear">Очистить кеш</string>
+    <string name="archive_thumbs_no_limit">Без ограничений</string>
+
     <!-- Cast -->
     <string name="cast_section">Трансляция</string>
     <string name="transcode_cache_ttl_label">Время хранения кеша транскодирования</string>
@@ -384,6 +390,8 @@
     <string name="deleted_count">Удалено: %d</string>
     <string name="renamed_to">Переименовано в %s</string>
     <string name="archive_created">Архив создан: %s</string>
+    <string name="archive_one_to_one">1 в 1</string>
+    <string name="archive_one_to_one_done">Архивов создано: %d</string>
     <string name="no_files_selected">Файлы не выделены</string>
     <string name="added_to_shelf">Добавлено на полку: %d</string>
     <string name="file_operation_progress_format">%1$s: %2$d файл(ов)…</string>

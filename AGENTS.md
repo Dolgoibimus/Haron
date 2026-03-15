@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.76 (Phase 4, Batch 76)
+**Текущая версия:** 0.78 (Phase 4, Batch 78)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,58 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 78 — Кнопка "1 в 1" — индивидуальная архивация ⚠️ не проверено
+
+**Цель:** При выборе нескольких файлов → "Архив" → кнопка "1 в 1" создаёт отдельный ZIP для каждого файла.
+
+#### Что реализовано
+- **Кнопка "1 в 1"** в `CreateArchiveDialog`: показывается только при 2+ выбранных файлах, расположена слева от "Отмена". Все три кнопки ("1 в 1", "Отмена", "Создать") в одном ряду.
+- **`createArchiveOneToOne()`** в ViewModel: для каждого выбранного файла создаёт отдельный ZIP (имя = имя файла без расширения). При конфликте имён — `findUniqueZipPath()`. Прогресс: файл N из M. Toast с количеством созданных архивов.
+- **Локализация**: EN + RU строки (`archive_one_to_one`, `archive_one_to_one_done`).
+
+#### Затронутые файлы
+- `presentation/explorer/components/CreateArchiveDialog.kt` — параметр `onOneToOne`, кнопка в ряд с остальными
+- `presentation/explorer/ExplorerViewModel.kt` — метод `createArchiveOneToOne()`
+- `presentation/explorer/ExplorerScreen.kt` — прокидка callback (2+ файлов)
+- `res/values/strings.xml` — 2 строки EN
+- `res/values-ru/strings.xml` — 2 строки RU
+
+---
+
+### Batch 77 — Эскизы картинок внутри архивов + настройка кеша ✅ проверено
+
+**Цель:** При навигации внутри архива (ZIP/7z/RAR) показывать превью картинок вместо дефолтной иконки.
+
+#### Что реализовано
+- **ReadArchiveEntryUseCase**: чтение байтов одного entry из архива в ByteArray без записи на диск (ZIP/7z/RAR, включая RAR5 через 7-Zip-JBinding). Лимит 10MB на entry.
+- **ArchiveThumbnailCache** (@Singleton): двухуровневый кеш — LruCache (memory, 1/8 maxMemory) + disk cache (`cacheDir/archive_thumbs/`). JPEG quality 85, max 256×256, MD5 cache key. Eviction по lastModified при превышении лимита.
+- **Настройка в HaronPreferences**: `archiveThumbCacheSizeMb` (default 100, 0 = без лимита).
+- **UI интеграция**: FileListItem показывает эскиз для архивных картинок (entry.path содержит `!/` и fileType == "image"). Параметры `archiveThumbnailCache`, `archivePath`, `archivePassword` прокинуты через FilePanel → ExplorerScreen.
+- **Settings секция**: "Кеш миниатюр" с иконкой Image, справа — текущий размер кеша. Слайдер 0–500 MB (шаг 50). Кнопка "Очистить кеш".
+- **Превью по тапу на иконку**: `resolvePreviewEntry` обрабатывает архивные пути (`!/`). Файлы ≤10MB — через `ReadArchiveEntryUseCase` в память → temp file. Файлы >10MB — через `ExtractArchiveUseCase`. Temp-кеш в `cacheDir/archive_preview/`, 5 мин TTL. Работает для **всех** типов файлов (картинки, текст, PDF, видео, документы).
+- **Эскизы для всех типов в архиве**: расширен `isArchivePreviewable` на image, video, audio, text, code, apk, document, pdf. Для не-image типов используется `loadOrGenerateThumbnail()` (извлечение во temp → ThumbnailCache).
+- **Аудио-превью (обложка альбома)**: `ThumbnailCache.loadAudioThumbnail()` извлекает embedded album art через MediaMetadataRetriever. Работает и для обычных, и для архивных аудиофайлов.
+- **Фикс гонки LaunchedEffect**: добавлен флаг `isArchiveEntry` — архивные записи исключены из `showLocalThumbnail`, предотвращая перезапись bitmap от ArchiveThumbnailCache нулём от ThumbnailCache.
+- **APK превью внутри архива**: тап на иконку APK в архиве теперь открывает QuickPreview (иконка приложения + инфо) вместо install dialog.
+- **Все файлы в архиве → QuickPreview**: тап на любой файл внутри архива открывает превью вместо внешнего приложения (видеоплеер, галерея и т.д.). Навигация по папкам архива работает как раньше.
+- **Локализация**: EN + RU строки.
+
+#### Затронутые файлы
+- `domain/usecase/ReadArchiveEntryUseCase.kt` — **новый**
+- `common/util/ArchiveThumbnailCache.kt` — **новый**
+- `common/util/ThumbnailCache.kt` — добавлен `loadAudioThumbnail()` (обложка альбома)
+- `data/datastore/HaronPreferences.kt` — добавлен `archiveThumbCacheSizeMb`
+- `presentation/explorer/ExplorerViewModel.kt` — inject ArchiveThumbnailCache
+- `presentation/explorer/components/FileListItem.kt` — archive thumbnail loading
+- `presentation/explorer/components/FilePanel.kt` — прокидка archiveThumbnailCache
+- `presentation/explorer/ExplorerScreen.kt` — прокидка archiveThumbnailCache в оба FilePanel
+- `presentation/settings/SettingsViewModel.kt` — inject ArchiveThumbnailCache, методы set/refresh/clear
+- `presentation/settings/SettingsScreen.kt` — секция "Кеш миниатюр"
+- `res/values/strings.xml` — 4 строки EN
+- `res/values-ru/strings.xml` — 4 строки RU
 
 ---
 
