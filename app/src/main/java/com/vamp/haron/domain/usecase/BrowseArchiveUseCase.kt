@@ -16,8 +16,14 @@ import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import javax.inject.Inject
@@ -32,12 +38,13 @@ class BrowseArchiveUseCase @Inject constructor(
     ): Result<List<ArchiveEntry>> = withContext(Dispatchers.IO) {
         try {
             val isContentUri = archivePath.startsWith("content://")
-            val extension = archivePath.substringAfterLast('.').lowercase()
+            val extension = archiveType(archivePath)
             EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: opening type=$extension, virtualPath=$virtualPath")
             val entries = when (extension) {
                 "zip" -> browseZip(archivePath, virtualPath, isContentUri, password)
                 "7z" -> browse7z(archivePath, virtualPath, isContentUri, password)
                 "rar" -> browseRar(archivePath, virtualPath, isContentUri, password)
+                "tar", "tar.gz", "tar.bz2", "tar.xz" -> browseTar(archivePath, virtualPath, isContentUri, extension)
                 else -> emptyList()
             }
             EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: found ${entries.size} entries")
@@ -201,6 +208,38 @@ class BrowseArchiveUseCase @Inject constructor(
         }
     }
 
+    private fun browseTar(archivePath: String, virtualPath: String, isContentUri: Boolean, type: String): List<ArchiveEntry> {
+        val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
+        try {
+            val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
+            val rawStream = BufferedInputStream(FileInputStream(file))
+            val decompressedStream = when (type) {
+                "tar.gz" -> GzipCompressorInputStream(rawStream)
+                "tar.bz2" -> BZip2CompressorInputStream(rawStream)
+                "tar.xz" -> XZCompressorInputStream(rawStream)
+                else -> rawStream // plain tar
+            }
+            TarArchiveInputStream(decompressedStream).use { tar ->
+                val all = mutableListOf<ArchiveEntry>()
+                var entry = tar.nextEntry
+                while (entry != null) {
+                    all.add(ArchiveEntry(
+                        name = entry.name.trimEnd('/').substringAfterLast('/'),
+                        fullPath = entry.name.trimEnd('/'),
+                        size = entry.size.coerceAtLeast(0),
+                        isDirectory = entry.isDirectory,
+                        compressedSize = 0,
+                        lastModified = entry.lastModifiedDate?.time ?: 0
+                    ))
+                    entry = tar.nextEntry
+                }
+                return filterDirectChildren(all, prefix)
+            }
+        } finally {
+            if (isContentUri) file.delete()
+        }
+    }
+
     /**
      * From a flat list of all archive entries, filter to show only direct children of [prefix].
      * Also synthesizes virtual directories for entries that have intermediate paths.
@@ -209,6 +248,16 @@ class BrowseArchiveUseCase @Inject constructor(
         Companion.filterDirectChildren(allEntries, prefix)
 
     companion object {
+        fun archiveType(path: String): String {
+            val lower = path.lowercase()
+            return when {
+                lower.endsWith(".tar.gz") || lower.endsWith(".tgz") || lower.endsWith(".tgz.gtar") -> "tar.gz"
+                lower.endsWith(".tar.bz2") || lower.endsWith(".tbz2") -> "tar.bz2"
+                lower.endsWith(".tar.xz") || lower.endsWith(".txz") -> "tar.xz"
+                lower.endsWith(".tar") || lower.endsWith(".gtar") -> "tar"
+                else -> lower.substringAfterLast('.')
+            }
+        }
         internal fun filterDirectChildren(allEntries: List<ArchiveEntry>, prefix: String): List<ArchiveEntry> {
         val directChildren = mutableMapOf<String, ArchiveEntry>()
 

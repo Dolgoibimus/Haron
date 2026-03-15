@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.TextFields
@@ -68,6 +69,10 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.refreshArchiveThumbCacheSize()
+    }
 
     // PIN setup dialog
     if (state.showPinSetupDialog) {
@@ -399,6 +404,49 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Archive Thumbnail Cache ---
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionHeader(
+                    icon = Icons.Filled.Image,
+                    title = stringResource(R.string.archive_thumbs_section)
+                )
+                Spacer(Modifier.weight(1f))
+                val currentSizeMb = state.archiveThumbCacheCurrentSizeMb
+                Text(
+                    text = if (currentSizeMb < 1f) "%.1f %s".format(currentSizeMb, stringResource(R.string.size_mb))
+                           else "%.0f %s".format(currentSizeMb, stringResource(R.string.size_mb)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            val archiveThumbLabel = if (state.archiveThumbCacheSizeMb == 0) stringResource(R.string.archive_thumbs_no_limit)
+                else "${state.archiveThumbCacheSizeMb} ${stringResource(R.string.size_mb)}"
+            Text(stringResource(R.string.archive_thumbs_cache_limit, archiveThumbLabel))
+            Slider(
+                value = state.archiveThumbCacheSizeMb.toFloat(),
+                onValueChange = { viewModel.setArchiveThumbCacheSizeMb(it.toInt()) },
+                valueRange = 0f..500f,
+                steps = 9,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedButton(
+                onClick = {
+                    viewModel.clearArchiveThumbCache()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.archive_thumbs_cache_clear))
+            }
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()

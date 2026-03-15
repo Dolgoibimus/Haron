@@ -22,6 +22,26 @@
 
 ---
 
+### Batch 79 — Поддержка tar/tar.gz/tar.bz2/tar.xz архивов ✅ проверено
+
+**Цель:** Добавить просмотр, извлечение и чтение одиночных entry для tar-форматов (.tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz).
+
+**Что сделано:**
+- `BrowseArchiveUseCase` — добавлен `archiveType()` (определяет составные расширения), `browseTar()` (TarArchiveInputStream + декомпрессия)
+- `ExtractArchiveUseCase` — добавлен `extractTar()` с двухпроходной логикой (подсчёт + извлечение), `createTarStream()` хелпер
+- `ReadArchiveEntryUseCase` — добавлен `readFromTar()` для чтения одиночного entry
+- `LoadPreviewUseCase` — добавлен `loadTar()` для QuickPreview
+- `FileUtils.kt` — расширен `iconRes()`: добавлены `xz`, `tgz`, `tbz2`, `txz`
+- `ContentExtractor.kt` — расширен `ARCHIVE_EXTENSIONS`, добавлен `extractTarEntries()`, обновлён `isArchiveFile()`
+- `SearchScreen.kt` — обновлены списки расширений архивов
+- `HaronNavigation.kt` — обновлён список расширений для навигации в архив
+- `ExplorerScreen.kt` — обновлён `archiveExtsForSelection`
+- Все use cases используют общий `BrowseArchiveUseCase.archiveType()` вместо `substringAfterLast('.')`
+- `.gtar` расширение — распознаётся как tar-архив
+- **Bugfix**: `onIconClick()` не проверял `isArchiveMode` для папок → клик по иконке папки внутри архива вызывал `navigateTo()` вместо `navigateIntoArchive()`, показывая "Путь не существует". Исправлено для всех типов архивов (ZIP/7z/RAR/tar)
+
+---
+
 ### Batch 78 — Кнопка "1 в 1" — индивидуальная архивация ⚠️ не проверено
 
 **Цель:** При выборе нескольких файлов → "Архив" → кнопка "1 в 1" создаёт отдельный ZIP для каждого файла.

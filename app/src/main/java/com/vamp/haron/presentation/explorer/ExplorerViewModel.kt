@@ -2065,6 +2065,10 @@ class ExplorerViewModel @Inject constructor(
         val panel = getPanel(panelId)
         when {
             panel.isSelectionMode -> toggleSelection(panelId, entry.path)
+            panel.isArchiveMode && entry.isDirectory -> {
+                val virtualPath = entry.path.substringAfter("!/", "")
+                navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
+            }
             entry.isDirectory -> navigateTo(panelId, entry.path)
             entry.iconRes() == "apk" && !entry.isProtected && !entry.path.contains("!/") -> showApkInstallDialog(entry)
             else -> {

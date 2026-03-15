@@ -18,10 +18,16 @@ import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import android.os.StatFs
 import com.vamp.core.logger.EcosystemLogger
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import javax.inject.Inject
@@ -66,12 +72,13 @@ class ExtractArchiveUseCase @Inject constructor(
             }
 
             val isContentUri = archivePath.startsWith("content://")
-            val extension = archivePath.substringAfterLast('.').lowercase()
+            val extension = BrowseArchiveUseCase.archiveType(archivePath)
             EcosystemLogger.d(TAG, "Extracting $extension: ${archivePath.takeLast(60)} → $destinationDir")
             when (extension) {
                 "zip" -> extractZip(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
                 "7z" -> extract7z(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
                 "rar" -> extractRar(archivePath, destinationDir, selectedEntries, isContentUri, password, basePrefix)
+                "tar", "tar.gz", "tar.bz2", "tar.xz" -> extractTar(archivePath, destinationDir, selectedEntries, isContentUri, basePrefix, extension)
                 else -> emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_unsupported_format)))
             }
         } catch (e: Throwable) {
@@ -278,6 +285,69 @@ class ExtractArchiveUseCase @Inject constructor(
             stream.close()
             raf.close()
         }
+    }
+
+    private suspend fun FlowCollector<ExtractProgress>.extractTar(
+        archivePath: String,
+        destinationDir: String,
+        selectedEntries: Set<String>?,
+        isContentUri: Boolean,
+        basePrefix: String,
+        type: String
+    ) {
+        val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
+        try {
+            // First pass: count entries to extract
+            val toExtract = mutableListOf<String>()
+            createTarStream(file, type).use { tar ->
+                var entry = tar.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        val name = entry.name.trimEnd('/')
+                        if (selectedEntries == null || selectedEntries.any { sel -> name.startsWith(sel) }) {
+                            toExtract.add(name)
+                        }
+                    }
+                    entry = tar.nextEntry
+                }
+            }
+            val total = toExtract.size
+            val selectedNames = toExtract.toSet()
+
+            // Second pass: extract
+            var current = 0
+            createTarStream(file, type).use { tar ->
+                var entry = tar.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.trimEnd('/') in selectedNames) {
+                        val fileName = entry.name.trimEnd('/').substringAfterLast('/')
+                        emit(ExtractProgress(current, total, fileName))
+                        val outputName = stripPrefix(entry.name.trimEnd('/'), basePrefix)
+                        val outFile = File(destinationDir, outputName)
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { output ->
+                            tar.copyTo(output)
+                        }
+                        current++
+                    }
+                    entry = tar.nextEntry
+                }
+            }
+            emit(ExtractProgress(total, total, "", isComplete = true))
+        } finally {
+            if (isContentUri) file.delete()
+        }
+    }
+
+    private fun createTarStream(file: File, type: String): TarArchiveInputStream {
+        val rawStream = BufferedInputStream(FileInputStream(file))
+        val decompressedStream = when (type) {
+            "tar.gz" -> GzipCompressorInputStream(rawStream)
+            "tar.bz2" -> BZip2CompressorInputStream(rawStream)
+            "tar.xz" -> XZCompressorInputStream(rawStream)
+            else -> rawStream
+        }
+        return TarArchiveInputStream(decompressedStream)
     }
 
     internal fun stripPrefix(path: String, prefix: String): String =

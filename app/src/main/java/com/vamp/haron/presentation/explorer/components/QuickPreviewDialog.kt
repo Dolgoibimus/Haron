@@ -944,64 +944,65 @@ private fun ArchivePreviewContent(data: PreviewData.ArchivePreview) {
 
 @Composable
 private fun ApkPreviewContent(data: PreviewData.ApkPreview) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (data.icon != null) {
             Image(
                 bitmap = data.icon.asImageBitmap(),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(128.dp)
+                    .clip(RoundedCornerShape(20.dp))
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(128.dp)
                     .background(
                         MaterialTheme.colorScheme.surfaceContainerLow,
-                        RoundedCornerShape(12.dp)
+                        RoundedCornerShape(20.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.InsertDriveFile,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(64.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.height(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text = data.appName ?: data.fileName,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        if (data.packageName != null) {
             Text(
-                text = data.appName ?: data.fileName,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                text = data.packageName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
             )
-            if (data.packageName != null) {
-                Text(
-                    text = data.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (data.versionName != null) {
-                Text(
-                    text = "v${data.versionName} (${data.versionCode})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        }
+        if (data.versionName != null) {
+            Text(
+                text = "v${data.versionName} (${data.versionCode})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

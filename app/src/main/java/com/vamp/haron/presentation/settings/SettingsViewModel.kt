@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.settings
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.vamp.haron.common.util.ArchiveThumbnailCache
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.security.AuthManager
 import com.vamp.haron.data.shizuku.ShizukuManager
@@ -28,6 +29,9 @@ data class SettingsUiState(
     val hapticEnabled: Boolean = true,
     val marqueeEnabled: Boolean = true,
     val trashMaxSizeMb: Int = 500,
+    // Cache
+    val archiveThumbCacheSizeMb: Int = 100,
+    val archiveThumbCacheCurrentSizeMb: Float = 0f,
     // Cast
     val transcodeCacheTtlHours: Int = 24,
     // Security
@@ -48,7 +52,8 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val preferences: HaronPreferences,
     private val authManager: AuthManager,
-    val shizukuManager: ShizukuManager
+    val shizukuManager: ShizukuManager,
+    private val archiveThumbnailCache: ArchiveThumbnailCache
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -63,6 +68,8 @@ class SettingsViewModel @Inject constructor(
             hapticEnabled = preferences.hapticEnabled,
             marqueeEnabled = preferences.marqueeEnabled,
             trashMaxSizeMb = preferences.trashMaxSizeMb,
+            archiveThumbCacheSizeMb = preferences.archiveThumbCacheSizeMb,
+            archiveThumbCacheCurrentSizeMb = archiveThumbnailCache.getCacheSizeBytes() / (1024f * 1024f),
             transcodeCacheTtlHours = preferences.transcodeCacheTtlHours,
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
@@ -122,6 +129,24 @@ class SettingsViewModel @Inject constructor(
     fun setTranscodeCacheTtlHours(hours: Int) {
         preferences.transcodeCacheTtlHours = hours
         _state.update { it.copy(transcodeCacheTtlHours = hours) }
+    }
+
+    // --- Archive Thumbnail Cache ---
+
+    fun setArchiveThumbCacheSizeMb(sizeMb: Int) {
+        val clamped = sizeMb.coerceIn(0, 500)
+        preferences.archiveThumbCacheSizeMb = clamped
+        _state.update { it.copy(archiveThumbCacheSizeMb = clamped) }
+    }
+
+    fun refreshArchiveThumbCacheSize() {
+        val sizeMb = archiveThumbnailCache.getCacheSizeBytes() / (1024f * 1024f)
+        _state.update { it.copy(archiveThumbCacheCurrentSizeMb = sizeMb) }
+    }
+
+    fun clearArchiveThumbCache() {
+        archiveThumbnailCache.clearCache()
+        _state.update { it.copy(archiveThumbCacheCurrentSizeMb = 0f) }
     }
 
     // --- Security ---

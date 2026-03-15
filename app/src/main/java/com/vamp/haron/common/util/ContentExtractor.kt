@@ -10,7 +10,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.util.zip.ZipFile
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -57,7 +63,7 @@ class ContentExtractor @Inject constructor(
             "heic", "heif", "raw", "cr2", "nef", "arw"
         )
 
-        val ARCHIVE_EXTENSIONS = setOf("zip", "7z", "rar")
+        val ARCHIVE_EXTENSIONS = setOf("zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "gtar")
 
         private const val MAX_INNER_FILE_SIZE = 64 * 1024L // 64KB — extract small text files inside ZIP
     }
@@ -190,7 +196,8 @@ class ContentExtractor @Inject constructor(
     }
 
     fun isArchiveFile(file: File): Boolean {
-        return file.extension.lowercase() in ARCHIVE_EXTENSIONS
+        val type = archiveTypeForFile(file)
+        return type in ARCHIVE_EXTENSIONS || type.startsWith("tar")
     }
 
     /**
@@ -199,11 +206,12 @@ class ContentExtractor @Inject constructor(
      */
     fun extractArchiveEntries(file: File): String {
         return try {
-            val ext = file.extension.lowercase()
-            when (ext) {
+            val type = archiveTypeForFile(file)
+            when (type) {
                 "zip" -> extractZipEntries(file)
                 "7z" -> extract7zEntries(file)
                 "rar" -> extractRarEntries(file)
+                "tar", "tar.gz", "tar.bz2", "tar.xz" -> extractTarEntries(file, type)
                 else -> ""
             }
         } catch (_: OutOfMemoryError) {
@@ -212,6 +220,36 @@ class ContentExtractor @Inject constructor(
         } catch (_: Exception) {
             ""
         }
+    }
+
+    private fun archiveTypeForFile(file: File): String {
+        val lower = file.name.lowercase()
+        return when {
+            lower.endsWith(".tar.gz") || lower.endsWith(".tgz") -> "tar.gz"
+            lower.endsWith(".tar.bz2") || lower.endsWith(".tbz2") -> "tar.bz2"
+            lower.endsWith(".tar.xz") || lower.endsWith(".txz") -> "tar.xz"
+            lower.endsWith(".tar") -> "tar"
+            else -> file.extension.lowercase()
+        }
+    }
+
+    private fun extractTarEntries(file: File, type: String): String {
+        val sb = StringBuilder()
+        val rawStream = BufferedInputStream(FileInputStream(file))
+        val decompressedStream = when (type) {
+            "tar.gz" -> GzipCompressorInputStream(rawStream)
+            "tar.bz2" -> BZip2CompressorInputStream(rawStream)
+            "tar.xz" -> XZCompressorInputStream(rawStream)
+            else -> rawStream
+        }
+        TarArchiveInputStream(decompressedStream).use { tar ->
+            var entry = tar.nextEntry
+            while (entry != null) {
+                sb.appendLine(entry.name)
+                entry = tar.nextEntry
+            }
+        }
+        return sb.toString().take(MAX_FULL_TEXT)
     }
 
     private fun extractZipEntries(file: File): String {

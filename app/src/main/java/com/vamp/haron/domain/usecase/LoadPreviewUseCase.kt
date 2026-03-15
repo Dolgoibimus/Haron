@@ -288,10 +288,12 @@ class LoadPreviewUseCase @Inject constructor(
     }
 
     private fun loadArchive(entry: FileEntry): PreviewData {
-        return when (entry.extension) {
+        val type = BrowseArchiveUseCase.archiveType(entry.path)
+        return when (type) {
             "zip" -> loadZip(entry)
             "7z" -> load7z(entry)
             "rar" -> loadRar(entry)
+            "tar", "tar.gz", "tar.bz2", "tar.xz" -> loadTar(entry, type)
             else -> PreviewData.UnsupportedPreview(
                 fileName = entry.name,
                 fileSize = entry.size,
@@ -453,6 +455,43 @@ class LoadPreviewUseCase @Inject constructor(
             archive.close()
             stream.close()
             raf.close()
+        }
+    }
+
+    private fun loadTar(entry: FileEntry, type: String): PreviewData {
+        val file = if (entry.isContentUri) copyToTemp(entry) else File(entry.path)
+        try {
+            val rawStream = java.io.BufferedInputStream(java.io.FileInputStream(file))
+            val decompressedStream: java.io.InputStream = when (type) {
+                "tar.gz" -> org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream(rawStream)
+                "tar.bz2" -> org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream(rawStream)
+                "tar.xz" -> org.apache.commons.compress.compressors.xz.XZCompressorInputStream(rawStream)
+                else -> rawStream
+            }
+            org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressedStream).use { tar ->
+                val allEntries = mutableListOf<ArchiveEntryInfo>()
+                var totalSize = 0L
+                var e = tar.nextEntry
+                while (e != null) {
+                    totalSize += e.size.coerceAtLeast(0)
+                    if (allEntries.size < MAX_ARCHIVE_ENTRIES) {
+                        allEntries.add(
+                            ArchiveEntryInfo(e.name.trimEnd('/').substringAfterLast('/'), e.size.coerceAtLeast(0), e.isDirectory)
+                        )
+                    }
+                    e = tar.nextEntry
+                }
+                return PreviewData.ArchivePreview(
+                    fileName = entry.name,
+                    fileSize = entry.size,
+                    lastModified = entry.lastModified,
+                    entries = allEntries,
+                    totalEntries = allEntries.size,
+                    totalUncompressedSize = totalSize
+                )
+            }
+        } finally {
+            if (entry.isContentUri) file.delete()
         }
     }
 

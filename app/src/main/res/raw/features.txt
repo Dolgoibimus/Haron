@@ -110,7 +110,7 @@
 - Position saved between sessions
 
 # Archives
-- View ZIP, 7z, RAR (including RAR5)
+- View ZIP, 7z, RAR (including RAR5), TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ [NEW]
 - Inline viewing in panel like regular folder
 - Navigate folders inside archive
 - Selective extraction

@@ -628,7 +628,7 @@ private fun openFileByType(
         ext in listOf("doc", "docx", "odt", "rtf", "fb2") -> {
             onOpenDocumentViewer(entry.path, entry.name)
         }
-        ext in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> {
+        ext in listOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz", "gtar") -> {
             onOpenArchiveViewer(entry.path, entry.name)
         }
     }
@@ -776,7 +776,7 @@ private fun getFileIcon(entity: FileIndexEntity) = when {
     entity.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "wma", "m4a", "opus") -> Icons.Filled.AudioFile
     entity.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "3gp") -> Icons.Filled.VideoFile
     entity.extension in listOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "rtf") -> Icons.Filled.Description
-    entity.extension in listOf("zip", "rar", "7z", "tar", "gz", "apk") -> Icons.Filled.Archive
+    entity.extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz", "gtar", "apk") -> Icons.Filled.Archive
     else -> Icons.AutoMirrored.Filled.InsertDriveFile
 }
 

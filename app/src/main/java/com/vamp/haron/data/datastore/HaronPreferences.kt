@@ -606,6 +606,11 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_TRANSCODE_CACHE_TTL_HOURS, 24)
         set(value) = prefs.edit().putInt(KEY_TRANSCODE_CACHE_TTL_HOURS, value).apply()
 
+    /** Archive thumbnail cache max size in MB (0 = no limit). Default 100 MB. */
+    var archiveThumbCacheSizeMb: Int
+        get() = prefs.getInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, 100)
+        set(value) = prefs.edit().putInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, value.coerceAtLeast(0)).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -654,6 +659,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_HOTSPOT_SSID = "hotspot_ssid"
         const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
         const val KEY_TRANSCODE_CACHE_TTL_HOURS = "transcode_cache_ttl_hours"
+        const val KEY_ARCHIVE_THUMB_CACHE_SIZE_MB = "archive_thumb_cache_size_mb"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }

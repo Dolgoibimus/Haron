@@ -750,7 +750,7 @@ private fun openReceivedFile(
         name.lowercase().let { it.endsWith(".fb2.zip") || (it.endsWith(".zip") && it.contains(".fb2")) } -> {
             navController.navigate(HaronRoutes.documentViewer(path, name))
         }
-        ext in listOf("zip", "rar", "7z", "tar", "gz") -> {
+        ext in listOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz", "gtar") -> {
             navController.navigate(HaronRoutes.archiveViewer(path, name))
         }
         ext in listOf("doc", "docx", "odt", "rtf", "fb2", "xls", "xlsx", "csv", "tsv") -> {

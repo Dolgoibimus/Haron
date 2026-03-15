@@ -327,7 +327,7 @@ fun ExplorerScreen(
     val selectedEntries = selectionPanelState.files.filter { it.path in selectionPanelState.selectedPaths }
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
-    val archiveExtsForSelection = remember { setOf("zip", "7z", "rar") }
+    val archiveExtsForSelection = remember { setOf("zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz", "gtar") }
     val allSelectedAreArchives = selectedEntries.isNotEmpty() && !selectionPanelState.isArchiveMode &&
         selectedEntries.all { !it.isDirectory && it.name.substringAfterLast('.').lowercase() in archiveExtsForSelection }
     // Cache selection-derived values — avoid repeated .filter() on every recomposition

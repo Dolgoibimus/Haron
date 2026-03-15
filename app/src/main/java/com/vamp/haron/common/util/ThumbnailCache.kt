@@ -130,6 +130,7 @@ object ThumbnailCache {
                 isFb2Zip -> loadFb2ZipThumbnail(context, path, isContentUri)
                 type == "image" -> loadImageThumbnail(context, path, isContentUri)
                 type == "video" -> loadVideoThumbnail(context, path, isContentUri)
+                type == "audio" -> loadAudioThumbnail(context, path, isContentUri)
                 type in listOf("text", "code") -> loadTextThumbnail(context, path, isContentUri)
                 type == "document" -> loadDocumentThumbnail(context, path, isContentUri)
                 type == "pdf" -> loadPdfThumbnail(context, path, isContentUri)
@@ -224,6 +225,36 @@ object ThumbnailCache {
                 retriever.setDataSource(path)
             }
             retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        } catch (_: Exception) {
+            null
+        } finally {
+            retriever.release()
+        }
+    }
+
+    // ── Audio → album art ──
+
+    private fun loadAudioThumbnail(
+        context: Context,
+        path: String,
+        isContentUri: Boolean
+    ): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            if (isContentUri) {
+                retriever.setDataSource(context, Uri.parse(path))
+            } else {
+                retriever.setDataSource(path)
+            }
+            val artBytes = retriever.embeddedPicture ?: return null
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, opts)
+            if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
+            val sampleSize = calculateInSampleSize(
+                opts.outWidth, opts.outHeight, THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE
+            )
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, decodeOpts)
         } catch (_: Exception) {
             null
         } finally {
@@ -493,6 +524,8 @@ object ThumbnailCache {
             drawable.draw(canvas)
             bmp
         } catch (_: Exception) {
+            null
+        } catch (_: Error) {
             null
         } finally {
             if (isContentUri) file.delete()

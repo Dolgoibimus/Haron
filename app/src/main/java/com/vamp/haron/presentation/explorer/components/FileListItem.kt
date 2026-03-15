@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.vamp.haron.R
 import androidx.compose.material.icons.filled.Lock
+import com.vamp.haron.common.util.ArchiveThumbnailCache
 import com.vamp.haron.common.util.ThumbnailCache
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.toFileSize
@@ -98,6 +99,9 @@ fun FileListItem(
     marqueeEnabled: Boolean = true,
     folderSize: Long? = null,
     cloudAuthHeader: String? = null,
+    archiveThumbnailCache: ArchiveThumbnailCache? = null,
+    archivePath: String? = null,
+    archivePassword: String? = null,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -144,8 +148,9 @@ fun FileListItem(
     val isYandexDisk = entry.path.startsWith("cloud://yandex/")
     val cloudThumbIsImage = isGoogleDrive || isYandexDisk || fileType == "image"
     val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
-    val showLocalThumbnail = !isCloudFile &&
-        (fileType in listOf("image", "video", "text", "code", "apk", "document", "pdf") || isFb2Zip)
+    val isArchiveEntry = entry.path.contains("!/")
+    val showLocalThumbnail = !isCloudFile && !isArchiveEntry &&
+        (fileType in listOf("image", "video", "audio", "text", "code", "apk", "document", "pdf") || isFb2Zip)
     var thumbnail by remember(entry.path) {
         mutableStateOf<Bitmap?>(ThumbnailCache.get(entry.path))
     }
@@ -170,6 +175,36 @@ fun FileListItem(
             thumbnail = ThumbnailCache.loadThumbnail(
                 context, entry.path, entry.isContentUri, fileType
             )
+        }
+    }
+
+    // Archive thumbnail loading: for all previewable types inside archives
+    val isArchivePreviewable = archivePath != null && archiveThumbnailCache != null &&
+        isArchiveEntry && !entry.isDirectory &&
+        fileType in listOf("image", "video", "audio", "text", "code", "apk", "document", "pdf")
+    if (isArchivePreviewable && thumbnail == null) {
+        val entryFullPath = entry.path.substringAfter("!/")
+        val context = LocalContext.current
+        LaunchedEffect(entry.path) {
+            // For images — use ArchiveThumbnailCache (disk+memory cache with downsampling)
+            // For other types — extract to temp, generate via ThumbnailCache
+            if (fileType == "image") {
+                thumbnail = archiveThumbnailCache!!.loadThumbnail(
+                    archivePath = archivePath!!,
+                    entryFullPath = entryFullPath,
+                    entrySize = entry.size,
+                    password = archivePassword
+                )
+            } else {
+                thumbnail = archiveThumbnailCache!!.loadOrGenerateThumbnail(
+                    context = context,
+                    archivePath = archivePath!!,
+                    entryFullPath = entryFullPath,
+                    entrySize = entry.size,
+                    password = archivePassword,
+                    fileType = fileType
+                )
+            }
         }
     }
 

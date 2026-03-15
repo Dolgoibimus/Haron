@@ -188,6 +188,7 @@ fun FilePanel(
     folderSizeCache: Map<String, Long> = emptyMap(),
     hasSelectionBar: Boolean = false,
     cloudAuthHeader: String? = null,
+    archiveThumbnailCache: com.vamp.haron.common.util.ArchiveThumbnailCache? = null,
     onSizeClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1440,7 +1441,10 @@ fun FilePanel(
                             isDragHovered = hoveredFolderPath == entry.path && entry.isDirectory,
                             marqueeEnabled = marqueeEnabled,
                             folderSize = if (entry.isDirectory) folderSizeCache[entry.path] else null,
-                            cloudAuthHeader = cloudAuthHeader
+                            cloudAuthHeader = cloudAuthHeader,
+                            archiveThumbnailCache = archiveThumbnailCache,
+                            archivePath = state.archivePath,
+                            archivePassword = state.archivePassword
                         )
                     }
                 }
