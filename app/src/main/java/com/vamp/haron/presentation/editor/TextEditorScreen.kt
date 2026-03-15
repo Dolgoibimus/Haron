@@ -89,6 +89,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private const val MAX_FILE_SIZE = 1024 * 1024 // 1 MB
+private const val DISPLAY_CHUNK_SIZE = 4096 // max chars per LazyColumn item
 private const val MAX_UNDO_STACK = 50
 private const val UNDO_DEBOUNCE_MS = 500L
 
@@ -131,7 +132,8 @@ fun TextEditorScreen(
 
     // === State: raw text for view mode, TextFieldValue only for edit mode ===
     var rawText by remember { mutableStateOf("") }
-    var textLines by remember { mutableStateOf(emptyList<String>()) }
+    var textLines by remember { mutableStateOf(emptyList<String>()) } // display chunks for LazyColumn
+    var totalLineCount by remember { mutableIntStateOf(1) } // actual \n count for status bar
     var savedText by remember { mutableStateOf("") }
     var savedCursorPos by remember { mutableIntStateOf(0) }
     // TextFieldValue created ONLY when entering edit mode (avoids 600KB on main thread)
@@ -195,13 +197,14 @@ fun TextEditorScreen(
         }
     }
 
-    val totalLines = textLines.size.coerceAtLeast(1)
+    val totalLines = totalLineCount
 
     // Load file
     LaunchedEffect(filePath) {
         data class LoadResult(
             val content: String? = null,
-            val lines: List<String> = emptyList(),
+            val chunks: List<String> = emptyList(),
+            val lineCount: Int = 1,
             val error: String? = null,
             val truncated: Boolean = false,
             val cursorPos: Int = 0,
@@ -235,8 +238,23 @@ fun TextEditorScreen(
                         file.readText(Charsets.UTF_8)
                     }
                 }
-                // Split into lines on IO thread (avoids main thread work)
-                val lines = content.split('\n')
+                // Split into display chunks on IO thread (handles single-line files)
+                val splitLines = content.split('\n')
+                val lineCount = splitLines.size
+                val chunks = buildList {
+                    for (line in splitLines) {
+                        if (line.length <= DISPLAY_CHUNK_SIZE) {
+                            add(line)
+                        } else {
+                            var i = 0
+                            while (i < line.length) {
+                                add(line.substring(i, minOf(i + DISPLAY_CHUNK_SIZE, line.length)))
+                                i += DISPLAY_CHUNK_SIZE
+                            }
+                        }
+                    }
+                    if (isEmpty()) add("")
+                }
                 val saved = ReadingPositionManager.get(filePath)
                 val cursor = if (!highlightQuery.isNullOrBlank()) 0
                     else saved?.position?.coerceIn(0, content.length) ?: 0
@@ -244,7 +262,7 @@ fun TextEditorScreen(
                 val zoomSaved = ReadingPositionManager.get("zoom:$filePath")
                 val zoom = if (zoomSaved != null && zoomSaved.position > 0)
                     (zoomSaved.position.toFloat() / 100f).coerceIn(8f, 32f) else 0f
-                LoadResult(content = content, lines = lines, truncated = isTruncated, cursorPos = cursor, scrollTarget = scroll, zoomSp = zoom)
+                LoadResult(content = content, chunks = chunks, lineCount = lineCount, truncated = isTruncated, cursorPos = cursor, scrollTarget = scroll, zoomSp = zoom)
             } catch (e: Exception) {
                 LoadResult(error = e.message ?: context.getString(R.string.read_file_error))
             }
@@ -252,7 +270,8 @@ fun TextEditorScreen(
         val t1 = System.currentTimeMillis()
         if (result.content != null) {
             rawText = result.content
-            textLines = result.lines
+            textLines = result.chunks
+            totalLineCount = result.lineCount
             savedCursorPos = result.cursorPos
             savedScrollTarget = result.scrollTarget
             if (result.zoomSp > 0f) fontSizeSp = result.zoomSp
@@ -260,7 +279,7 @@ fun TextEditorScreen(
             isLoading = false
             com.vamp.core.logger.EcosystemLogger.d(
                 com.vamp.haron.common.constants.HaronConstants.TAG,
-                "TextEditor: loaded ${result.content.length} chars, ${result.lines.size} lines in ${t1 - t0}ms"
+                "TextEditor: loaded ${result.content.length} chars, ${result.lineCount} lines, ${result.chunks.size} chunks in ${t1 - t0}ms"
             )
         } else {
             loadError = result.error
@@ -281,7 +300,8 @@ fun TextEditorScreen(
                     File(filePath).writeText(content, Charsets.UTF_8)
                 }
                 rawText = content
-                textLines = content.split('\n')
+                textLines = splitTextToChunks(content)
+                totalLineCount = content.count { it == '\n' } + 1
                 savedText = content
                 isModified = false
                 com.vamp.core.logger.EcosystemLogger.d(
@@ -585,12 +605,14 @@ fun TextEditorScreen(
                         // === VIEW MODE: LazyColumn for performance (no TextFieldValue on main thread) ===
                         val lazyListState = rememberLazyListState()
 
-                        // Restore position from saved cursor offset
+                        // Restore position from saved cursor offset (ratio-based for chunk compatibility)
                         LaunchedEffect(textLines) {
-                            if (textLines.isNotEmpty() && savedCursorPos > 0) {
-                                val lineIdx = rawText.substring(0, savedCursorPos.coerceIn(0, rawText.length)).count { it == '\n' }
-                                if (lineIdx > 0) {
-                                    lazyListState.scrollToItem(lineIdx.coerceAtMost(textLines.size - 1))
+                            if (textLines.isNotEmpty() && savedCursorPos > 0 && rawText.isNotEmpty()) {
+                                val ratio = savedCursorPos.toFloat() / rawText.length
+                                val chunkIdx = (ratio * textLines.size).toInt()
+                                    .coerceIn(0, textLines.size - 1)
+                                if (chunkIdx > 0) {
+                                    lazyListState.scrollToItem(chunkIdx)
                                 }
                             }
                         }
@@ -599,10 +621,11 @@ fun TextEditorScreen(
                         LaunchedEffect(filePath) {
                             snapshotFlow {
                                 Triple(lazyListState.firstVisibleItemIndex, lazyListState.firstVisibleItemScrollOffset, fontSizeSp)
-                            }.collectLatest { (lineIdx, offset, zoom) ->
+                            }.collectLatest { (chunkIdx, offset, zoom) ->
                                 delay(1000)
-                                val charPos = if (lineIdx < textLines.size) {
-                                    textLines.take(lineIdx).sumOf { it.length + 1 }
+                                // Ratio-based char position for chunk compatibility
+                                val charPos = if (textLines.isNotEmpty() && rawText.isNotEmpty()) {
+                                    (chunkIdx.toFloat() / textLines.size * rawText.length).toInt()
                                 } else 0
                                 withContext(Dispatchers.IO) {
                                     ReadingPositionManager.save(filePath, charPos, offset.toLong())
@@ -614,21 +637,23 @@ fun TextEditorScreen(
                         // Save on exit
                         DisposableEffect(filePath) {
                             onDispose {
-                                val lineIdx = lazyListState.firstVisibleItemIndex
-                                val charPos = if (lineIdx < textLines.size) {
-                                    textLines.take(lineIdx).sumOf { it.length + 1 }
+                                val chunkIdx = lazyListState.firstVisibleItemIndex
+                                val charPos = if (textLines.isNotEmpty() && rawText.isNotEmpty()) {
+                                    (chunkIdx.toFloat() / textLines.size * rawText.length).toInt()
                                 } else 0
                                 ReadingPositionManager.saveAsync(filePath, charPos, lazyListState.firstVisibleItemScrollOffset.toLong())
                                 ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
                             }
                         }
 
-                        // Scroll to search match
+                        // Scroll to search match (ratio-based for chunk compatibility)
                         LaunchedEffect(currentMatchIndex, matchIndices) {
-                            if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices) {
+                            if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && textLines.isNotEmpty() && rawText.isNotEmpty()) {
                                 val charPos = matchIndices[currentMatchIndex].coerceIn(0, rawText.length)
-                                val lineIdx = rawText.substring(0, charPos).count { it == '\n' }
-                                lazyListState.animateScrollToItem(lineIdx.coerceAtMost(textLines.size - 1))
+                                val ratio = charPos.toFloat() / rawText.length
+                                val chunkIdx = (ratio * textLines.size).toInt()
+                                    .coerceIn(0, textLines.size - 1)
+                                lazyListState.animateScrollToItem(chunkIdx)
                             }
                         }
 
@@ -883,7 +908,8 @@ fun TextEditorScreen(
                         isEditMode = false
                         isModified = false
                         rawText = savedText
-                        textLines = savedText.split('\n')
+                        textLines = splitTextToChunks(savedText)
+                        totalLineCount = savedText.count { it == '\n' } + 1
                         textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
                     }) {
                         Text(stringResource(R.string.cloud_save_discard))
@@ -932,6 +958,22 @@ fun TextEditorScreen(
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface CloudManagerEntryPoint {
     fun cloudManager(): com.vamp.haron.data.cloud.CloudManager
+}
+
+/** Split text into display chunks: keeps short lines as-is, breaks long lines into DISPLAY_CHUNK_SIZE pieces */
+private fun splitTextToChunks(text: String): List<String> = buildList {
+    for (line in text.split('\n')) {
+        if (line.length <= DISPLAY_CHUNK_SIZE) {
+            add(line)
+        } else {
+            var i = 0
+            while (i < line.length) {
+                add(line.substring(i, minOf(i + DISPLAY_CHUNK_SIZE, line.length)))
+                i += DISPLAY_CHUNK_SIZE
+            }
+        }
+    }
+    if (isEmpty()) add("")
 }
 
 private fun buildHighlightedLine(
