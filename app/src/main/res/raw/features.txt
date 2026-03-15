@@ -122,6 +122,7 @@
 - Tap pulsing icon → choose destination: next to archive / current panel / other panel [NEW]
 - Each archive extracts into a subfolder with the archive name (auto-created) [NEW]
 - Works with single or multiple archives at once [NEW]
+- "1 to 1" archiving: select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP [NEW]
 
 # Text Editor
 - View and edit TXT/MD files
