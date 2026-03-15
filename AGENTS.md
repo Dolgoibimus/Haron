@@ -24,29 +24,23 @@
 
 ### Batch 74 — Принудительный хотспот + авто-подключение по QR ⚠️ не проверено
 
-**Цель:** Возможность передавать файлы через хотспот даже когда есть Wi-Fi (для устройств не в одной сети). Второй Haron сканирует QR → автоматически подключается к хотспоту → скачивает файлы.
+**Цель:** Передача файлов через хотспот даже когда есть Wi-Fi. Два режима: Wi-Fi (одна сеть) и Точка доступа (разные сети). Для Haron-to-Haron и для Haron-to-любое-устройство.
 
 #### Что реализовано
-- **WifiConnector.kt** (новый файл) — программное подключение к Wi-Fi:
-  - API 29+ (Android 10+): `WifiNetworkSpecifier` + `ConnectivityManager.requestNetwork()` + `bindProcessToNetwork()`
-  - API 26-28: `WifiManager.addNetwork()` + `enableNetwork()` (deprecated но работает)
-  - `connect(ssid, password, timeout)` — suspend, возвращает true при успехе
-  - `disconnect()` — отключение от запрошенной сети
-- **TransferViewModel** — новые поля и методы:
-  - `isHotspotMode`, `hotspotUrl` в `TransferUiState`
-  - `toggleHotspotMode()` — вкл/выкл хотспот при активном сервере, обновление URL
-  - `connectAndDownload(ssid, pass, url)` — подключение к хотспоту + скачивание файлов
-  - `stopHttpServer()` — сброс `isHotspotMode`/`hotspotUrl`
-- **QrCodeDialog** — полная переработка UI:
-  - Тап по QR переключает режим Wi-Fi ↔ Точка доступа
-  - Режим Wi-Fi: один QR с URL, подпись "Оба устройства в одной сети"
-  - Режим Точка доступа: два таба — «Haron» (combined JSON QR) и «Другие» (два QR: WIFI: + URL как раньше)
-  - Таб «Haron»: один QR с JSON `{"haron":1,"ssid":"...","pass":"...","url":"..."}`
-- **TransferScreen** — парсинг Haron QR:
-  - `tryParseHaronQr()` — парсит combined JSON QR
-  - При обнаружении Haron QR → вызывает `connectAndDownload()`
-- **AndroidManifest.xml** — добавлен `CHANGE_NETWORK_STATE`
-- **Строки** — EN + RU для всех новых элементов UI
+- **WifiConnector.kt** (новый) — программное подключение к Wi-Fi (API 29+: WifiNetworkSpecifier, API 26-28: addNetwork)
+- **TransferViewModel** — `toggleHotspotMode()`, `connectAndDownload()`, автоостановка хотспота при закрытии диалога и при onCleared()
+- **QrCodeDialog** — тап по QR переключает Wi-Fi ↔ Точка доступа:
+  - Wi-Fi: один QR с URL
+  - Точка доступа, таб «Haron»: combined JSON QR (авто-подключение + скачивание)
+  - Точка доступа, таб «Другие»: два QR для устройств без Haron (Wi-Fi + URL в браузере)
+  - Цвета QR: тёмно-синий на кремовом (уменьшены блики с экрана)
+- **TransferScreen** — `tryParseHaronQr()` с поддержкой коротких ключей (h/s/p/u) + автодобавление http://
+- **Фиксы:**
+  - Хотспот автостоп при «Готово», уходе с экрана, закрытии приложения
+  - `.fb2.zip` открывается как книга даже с переименованным файлом (fb2_(1).zip)
+  - Папка Downloads/Haron создаётся перед навигацией (фикс «кидает в корень»)
+- **AndroidManifest.xml** — `CHANGE_NETWORK_STATE`, `application/x-zip-compressed`
+- **features.txt** — обновлено описание передачи (EN + RU)
 
 ---
 

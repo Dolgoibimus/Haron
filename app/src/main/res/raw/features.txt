@@ -211,11 +211,14 @@
 # File Transfer
 - Wi-Fi Direct + NSD (LAN)
 - Auto-select best protocol
-- QR code transfer (any device, no app needed):
-  1. Select files → Transfer → "HTTP / QR code"
-  2. App creates a local Wi-Fi hotspot (or uses current network)
-  3. First QR code: Wi-Fi connection details (scan on receiving device)
-  4. Second QR code: download link — opens in browser, files download instantly
+- QR code transfer — two modes (tap QR to switch): [NEW]
+  Wi-Fi mode (both devices on the same network): [NEW]
+  1. Select files → Transfer → "HTTP / QR code" [NEW]
+  2. QR code with download link — scan on the other device [NEW]
+  Hotspot mode (devices on different networks or no Wi-Fi): [NEW]
+  - Tab "Haron": one QR code — second Haron scans it, auto-connects to hotspot and downloads [NEW]
+  - Tab "Others": two QR codes for any device without Haron — first for Wi-Fi connection, second for download link in browser [NEW]
+  - Hotspot is temporary, stops automatically when dialog is closed [NEW]
 - Progress, resume, retry on disconnect
 - Foreground Service + WakeLock
 
