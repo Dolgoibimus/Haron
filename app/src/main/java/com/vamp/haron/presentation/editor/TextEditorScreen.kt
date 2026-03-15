@@ -129,8 +129,15 @@ fun TextEditorScreen(
         )
     }
 
-    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    // === State: raw text for view mode, TextFieldValue only for edit mode ===
+    var rawText by remember { mutableStateOf("") }
+    var textLines by remember { mutableStateOf(emptyList<String>()) }
     var savedText by remember { mutableStateOf("") }
+    var savedCursorPos by remember { mutableIntStateOf(0) }
+    // TextFieldValue created ONLY when entering edit mode (avoids 600KB on main thread)
+    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    var editModeInitialized by remember { mutableStateOf(false) }
+
     var isModified by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -139,12 +146,20 @@ fun TextEditorScreen(
     var showCloudSaveDialog by remember { mutableStateOf(false) }
     var savedScrollTarget by remember { mutableIntStateOf(0) }
 
-    // Search match navigation
-    val matchIndices = remember(textFieldValue.text, highlightQuery) {
-        if (highlightQuery.isNullOrBlank()) emptyList()
+    // Initialize TextFieldValue when entering edit mode
+    LaunchedEffect(isEditMode) {
+        if (isEditMode && !editModeInitialized && rawText.isNotEmpty()) {
+            textFieldValue = TextFieldValue(rawText, TextRange(savedCursorPos.coerceIn(0, rawText.length)))
+            editModeInitialized = true
+        }
+    }
+
+    // Search match navigation (uses rawText, not textFieldValue)
+    val matchIndices = remember(rawText, highlightQuery) {
+        if (highlightQuery.isNullOrBlank() || rawText.isEmpty()) emptyList()
         else {
             val indices = mutableListOf<Int>()
-            val lower = textFieldValue.text.lowercase()
+            val lower = rawText.lowercase()
             val lq = highlightQuery.lowercase()
             var pos = 0
             while (pos < lower.length) {
@@ -166,27 +181,34 @@ fun TextEditorScreen(
     var redoStack by remember { mutableStateOf(listOf<TextFieldValue>()) }
     var lastUndoTime by remember { mutableStateOf(0L) }
 
-    // Cursor line
-    val cursorLine = remember(textFieldValue.selection) {
-        val text = textFieldValue.text
-        val pos = textFieldValue.selection.start.coerceIn(0, text.length)
-        text.substring(0, pos).count { it == '\n' } + 1
+    // Cursor line / total lines (lightweight: use textLines.size, savedCursorPos in view mode)
+    val cursorLine = if (isEditMode && editModeInitialized) {
+        remember(textFieldValue.selection) {
+            val text = textFieldValue.text
+            val pos = textFieldValue.selection.start.coerceIn(0, text.length)
+            text.substring(0, pos).count { it == '\n' } + 1
+        }
+    } else {
+        remember(savedCursorPos, rawText) {
+            if (rawText.isEmpty()) 1
+            else rawText.substring(0, savedCursorPos.coerceIn(0, rawText.length)).count { it == '\n' } + 1
+        }
     }
 
-    val totalLines = remember(textFieldValue.text) {
-        textFieldValue.text.count { it == '\n' } + 1
-    }
+    val totalLines = textLines.size.coerceAtLeast(1)
 
     // Load file
     LaunchedEffect(filePath) {
         data class LoadResult(
             val content: String? = null,
+            val lines: List<String> = emptyList(),
             val error: String? = null,
             val truncated: Boolean = false,
             val cursorPos: Int = 0,
             val scrollTarget: Int = 0,
             val zoomSp: Float = 0f
         )
+        val t0 = System.currentTimeMillis()
         val result = withContext(Dispatchers.IO) {
             try {
                 val content = if (filePath.startsWith("content://")) {
@@ -213,6 +235,8 @@ fun TextEditorScreen(
                         file.readText(Charsets.UTF_8)
                     }
                 }
+                // Split into lines on IO thread (avoids main thread work)
+                val lines = content.split('\n')
                 val saved = ReadingPositionManager.get(filePath)
                 val cursor = if (!highlightQuery.isNullOrBlank()) 0
                     else saved?.position?.coerceIn(0, content.length) ?: 0
@@ -220,17 +244,24 @@ fun TextEditorScreen(
                 val zoomSaved = ReadingPositionManager.get("zoom:$filePath")
                 val zoom = if (zoomSaved != null && zoomSaved.position > 0)
                     (zoomSaved.position.toFloat() / 100f).coerceIn(8f, 32f) else 0f
-                LoadResult(content = content, truncated = isTruncated, cursorPos = cursor, scrollTarget = scroll, zoomSp = zoom)
+                LoadResult(content = content, lines = lines, truncated = isTruncated, cursorPos = cursor, scrollTarget = scroll, zoomSp = zoom)
             } catch (e: Exception) {
                 LoadResult(error = e.message ?: context.getString(R.string.read_file_error))
             }
         }
+        val t1 = System.currentTimeMillis()
         if (result.content != null) {
-            textFieldValue = TextFieldValue(result.content, TextRange(result.cursorPos))
+            rawText = result.content
+            textLines = result.lines
+            savedCursorPos = result.cursorPos
             savedScrollTarget = result.scrollTarget
             if (result.zoomSp > 0f) fontSizeSp = result.zoomSp
             savedText = result.content
             isLoading = false
+            com.vamp.core.logger.EcosystemLogger.d(
+                com.vamp.haron.common.constants.HaronConstants.TAG,
+                "TextEditor: loaded ${result.content.length} chars, ${result.lines.size} lines in ${t1 - t0}ms"
+            )
         } else {
             loadError = result.error
             isLoading = false
@@ -240,7 +271,7 @@ fun TextEditorScreen(
     fun saveFile() {
         scope.launch(Dispatchers.IO) {
             try {
-                val content = textFieldValue.text
+                val content = if (isEditMode) textFieldValue.text else rawText
                 if (filePath.startsWith("content://")) {
                     val uri = Uri.parse(filePath)
                     context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
@@ -249,6 +280,8 @@ fun TextEditorScreen(
                 } else {
                     File(filePath).writeText(content, Charsets.UTF_8)
                 }
+                rawText = content
+                textLines = content.split('\n')
                 savedText = content
                 isModified = false
                 com.vamp.core.logger.EcosystemLogger.d(
@@ -332,16 +365,20 @@ fun TextEditorScreen(
                         IconButton(onClick = {
                             val newIdx = if (currentMatchIndex > 0) currentMatchIndex - 1 else matchIndices.size - 1
                             currentMatchIndex = newIdx
-                            val pos = matchIndices[newIdx]
-                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            if (isEditMode) {
+                                val pos = matchIndices[newIdx]
+                                textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            }
                         }) {
                             Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                         IconButton(onClick = {
                             val newIdx = if (currentMatchIndex < matchIndices.size - 1) currentMatchIndex + 1 else 0
                             currentMatchIndex = newIdx
-                            val pos = matchIndices[newIdx]
-                            textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            if (isEditMode) {
+                                val pos = matchIndices[newIdx]
+                                textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
+                            }
                         }) {
                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
@@ -504,7 +541,7 @@ fun TextEditorScreen(
                         LaunchedEffect(currentMatchIndex, matchIndices, verticalScroll.maxValue) {
                             if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices && verticalScroll.maxValue > 0) {
                                 val pos = matchIndices[currentMatchIndex]
-                                val fraction = pos.toFloat() / textFieldValue.text.length.coerceAtLeast(1)
+                                val fraction = pos.toFloat() / rawText.length.coerceAtLeast(1)
                                 val scrollTarget = (fraction * verticalScroll.maxValue - verticalScroll.viewportSize / 2f).toInt().coerceIn(0, verticalScroll.maxValue)
                                 verticalScroll.animateScrollTo(scrollTarget)
                             }
@@ -545,19 +582,15 @@ fun TextEditorScreen(
                             )
                         }
                     } else {
-                        // === VIEW MODE: LazyColumn for performance (large files without ANR) ===
-                        val lines = remember(textFieldValue.text) {
-                            textFieldValue.text.split('\n')
-                        }
+                        // === VIEW MODE: LazyColumn for performance (no TextFieldValue on main thread) ===
                         val lazyListState = rememberLazyListState()
 
                         // Restore position from saved cursor offset
-                        LaunchedEffect(textFieldValue.text) {
-                            if (textFieldValue.text.isNotEmpty()) {
-                                val cursorPos = textFieldValue.selection.start.coerceIn(0, textFieldValue.text.length)
-                                val lineIdx = textFieldValue.text.substring(0, cursorPos).count { it == '\n' }
+                        LaunchedEffect(textLines) {
+                            if (textLines.isNotEmpty() && savedCursorPos > 0) {
+                                val lineIdx = rawText.substring(0, savedCursorPos.coerceIn(0, rawText.length)).count { it == '\n' }
                                 if (lineIdx > 0) {
-                                    lazyListState.scrollToItem(lineIdx.coerceAtMost(lines.size - 1))
+                                    lazyListState.scrollToItem(lineIdx.coerceAtMost(textLines.size - 1))
                                 }
                             }
                         }
@@ -568,8 +601,8 @@ fun TextEditorScreen(
                                 Triple(lazyListState.firstVisibleItemIndex, lazyListState.firstVisibleItemScrollOffset, fontSizeSp)
                             }.collectLatest { (lineIdx, offset, zoom) ->
                                 delay(1000)
-                                val charPos = if (lineIdx < lines.size) {
-                                    lines.take(lineIdx).sumOf { it.length + 1 }
+                                val charPos = if (lineIdx < textLines.size) {
+                                    textLines.take(lineIdx).sumOf { it.length + 1 }
                                 } else 0
                                 withContext(Dispatchers.IO) {
                                     ReadingPositionManager.save(filePath, charPos, offset.toLong())
@@ -582,8 +615,8 @@ fun TextEditorScreen(
                         DisposableEffect(filePath) {
                             onDispose {
                                 val lineIdx = lazyListState.firstVisibleItemIndex
-                                val charPos = if (lineIdx < lines.size) {
-                                    lines.take(lineIdx).sumOf { it.length + 1 }
+                                val charPos = if (lineIdx < textLines.size) {
+                                    textLines.take(lineIdx).sumOf { it.length + 1 }
                                 } else 0
                                 ReadingPositionManager.saveAsync(filePath, charPos, lazyListState.firstVisibleItemScrollOffset.toLong())
                                 ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
@@ -593,18 +626,16 @@ fun TextEditorScreen(
                         // Scroll to search match
                         LaunchedEffect(currentMatchIndex, matchIndices) {
                             if (matchIndices.isNotEmpty() && currentMatchIndex in matchIndices.indices) {
-                                val charPos = matchIndices[currentMatchIndex].coerceIn(0, textFieldValue.text.length)
-                                val lineIdx = textFieldValue.text.substring(0, charPos).count { it == '\n' }
-                                lazyListState.animateScrollToItem(lineIdx.coerceAtMost(lines.size - 1))
+                                val charPos = matchIndices[currentMatchIndex].coerceIn(0, rawText.length)
+                                val lineIdx = rawText.substring(0, charPos).count { it == '\n' }
+                                lazyListState.animateScrollToItem(lineIdx.coerceAtMost(textLines.size - 1))
                             }
                         }
 
-                        // Auto-select first match
+                        // Auto-select first match (just set index, no TextFieldValue update)
                         LaunchedEffect(matchIndices) {
                             if (matchIndices.isNotEmpty()) {
                                 currentMatchIndex = 0
-                                val pos = matchIndices[0]
-                                textFieldValue = textFieldValue.copy(selection = TextRange(pos, pos + (highlightQuery?.length ?: 0)))
                             }
                         }
 
@@ -615,7 +646,7 @@ fun TextEditorScreen(
                                 .fillMaxWidth()
                                 .then(pinchZoomModifier)
                         ) {
-                            itemsIndexed(lines) { index, line ->
+                            itemsIndexed(textLines) { index, line ->
                                 val annotatedLine = if (!highlightQuery.isNullOrBlank()) {
                                     buildHighlightedLine(line, highlightQuery, highlightColor)
                                 } else {
@@ -630,7 +661,7 @@ fun TextEditorScreen(
                                             start = 4.dp,
                                             end = 8.dp,
                                             top = if (index == 0) 8.dp else 0.dp,
-                                            bottom = if (index == lines.lastIndex) 8.dp else 0.dp
+                                            bottom = if (index == textLines.lastIndex) 8.dp else 0.dp
                                         )
                                 )
                             }
@@ -851,6 +882,8 @@ fun TextEditorScreen(
                         showExitDialog = false
                         isEditMode = false
                         isModified = false
+                        rawText = savedText
+                        textLines = savedText.split('\n')
                         textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
                     }) {
                         Text(stringResource(R.string.cloud_save_discard))
@@ -882,6 +915,8 @@ fun TextEditorScreen(
                             showExitDialog = false
                             isEditMode = false
                             isModified = false
+                            rawText = savedText
+                            textLines = savedText.split('\n')
                             textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
                         }) {
                             Text(stringResource(R.string.dont_save))
