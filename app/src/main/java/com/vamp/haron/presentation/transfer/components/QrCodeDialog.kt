@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,20 +17,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,53 +41,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.vamp.haron.R
-import com.vamp.haron.data.datastore.HaronPreferences
 
 @Composable
 fun QrCodeDialog(
     url: String,
     hotspotSsid: String? = null,
     hotspotPassword: String? = null,
+    hotspotUrl: String? = null,
+    isHotspotMode: Boolean = false,
+    onToggleHotspot: () -> Unit = {},
     onDismiss: () -> Unit,
     onStopServer: () -> Unit
 ) {
-    val context = LocalContext.current
-    val prefs = remember { HaronPreferences(context) }
+    // In hotspot mode: tab 0 = Haron, tab 1 = Others
+    var hotspotTab by remember { mutableIntStateOf(0) }
+    // For "Others" tab: step 1 = Wi-Fi QR, step 2 = URL QR
+    var othersActiveStep by remember { mutableIntStateOf(1) }
 
-    // Determine Wi-Fi QR source: auto-hotspot or manual settings
-    val autoHotspot = hotspotSsid != null
-    var savedSsid by remember { mutableStateOf(prefs.hotspotSsid) }
-    var savedPassword by remember { mutableStateOf(prefs.hotspotPassword) }
-    var editingSsid by remember { mutableStateOf(prefs.hotspotSsid) }
-    var editingPassword by remember { mutableStateOf(prefs.hotspotPassword) }
-    var showManualSetup by remember { mutableStateOf(false) }
-    var passwordVisible by remember { mutableStateOf(false) }
-
-    val wifiSsid = if (autoHotspot) hotspotSsid else savedSsid.ifEmpty { null }
-    val wifiPassword = if (autoHotspot) hotspotPassword else savedPassword.ifEmpty { null }
-
-    val wifiQrContent = wifiSsid?.let { ssid ->
-        if (!wifiPassword.isNullOrBlank()) {
-            "WIFI:T:WPA;S:$ssid;P:$wifiPassword;;"
-        } else {
-            "WIFI:T:nopass;S:$ssid;;"
-        }
-    }
-
-    val hasTwoQr = wifiQrContent != null && !showManualSetup
-    // Step 1 = Wi-Fi QR active (download blurred), Step 2 = Download QR active (Wi-Fi blurred)
-    var activeStep by remember { mutableIntStateOf(1) }
+    // The URL to display: in hotspot mode use hotspotUrl, otherwise regular url
+    val displayUrl = if (isHotspotMode && hotspotUrl != null) hotspotUrl else url
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -104,217 +81,71 @@ fun QrCodeDialog(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // --- Wi-Fi QR section ---
-                if (hasTwoQr && !showManualSetup) {
-                    // --- Wi-Fi QR with inline edit ---
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            stringResource(R.string.qr_step1_wifi),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (activeStep == 1) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        if (!autoHotspot) {
-                            IconButton(
-                                onClick = {
-                                    editingSsid = savedSsid
-                                    editingPassword = savedPassword
-                                    showManualSetup = true
-                                },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.Edit,
-                                    contentDescription = stringResource(R.string.qr_hotspot_setup),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        wifiSsid!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                // Title
+                Text(
+                    stringResource(R.string.transfer_qr_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (!isHotspotMode) {
+                    // ========== Wi-Fi MODE ==========
+                    WifiModeContent(
+                        url = displayUrl,
+                        onTapQr = onToggleHotspot
                     )
-                    Spacer(Modifier.height(2.dp))
+                } else {
+                    // ========== HOTSPOT MODE ==========
+                    // Mode indicator
                     Text(
-                        stringResource(R.string.qr_wifi_hint),
+                        stringResource(R.string.qr_mode_hotspot),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Text(
+                        stringResource(R.string.qr_tap_to_switch),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                     Spacer(Modifier.height(8.dp))
 
-                    val wifiBitmap = remember(wifiQrContent) { generateQrBitmap(wifiQrContent!!) }
-                    if (wifiBitmap != null) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(160.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        ) {
-                            Image(
-                                bitmap = wifiBitmap.asImageBitmap(),
-                                contentDescription = "Wi-Fi QR",
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .then(if (activeStep != 1) Modifier.blur(16.dp) else Modifier)
-                            )
-                            if (activeStep != 1) {
-                                Box(
-                                    Modifier
-                                        .matchParentSize()
-                                        .background(
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-                                        )
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    // Toggle button
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    // Tabs: Haron / Others
+                    TabRow(
+                        selectedTabIndex = hotspotTab,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        HorizontalDivider(modifier = Modifier.weight(1f))
-                        IconButton(
-                            onClick = { activeStep = if (activeStep == 1) 2 else 1 },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.SwapVert,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.weight(1f))
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-                }
-
-                // --- Manual setup form (shown when no Wi-Fi QR or editing) ---
-                if (showManualSetup || (!autoHotspot && wifiQrContent == null)) {
-                    Text(
-                        stringResource(R.string.qr_hotspot_setup),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = editingSsid,
-                        onValueChange = { editingSsid = it },
-                        label = { Text(stringResource(R.string.qr_hotspot_ssid)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = editingPassword,
-                        onValueChange = { editingPassword = it },
-                        label = { Text(stringResource(R.string.qr_hotspot_password)) },
-                        singleLine = true,
-                        visualTransformation = if (passwordVisible) VisualTransformation.None
-                            else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    if (passwordVisible) Icons.Filled.Visibility
-                                    else Icons.Filled.VisibilityOff,
-                                    contentDescription = null
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    TextButton(
-                        onClick = {
-                            prefs.hotspotSsid = editingSsid
-                            prefs.hotspotPassword = editingPassword
-                            savedSsid = editingSsid
-                            savedPassword = editingPassword
-                            showManualSetup = false
-                        },
-                        enabled = editingSsid.isNotBlank()
-                    ) {
-                        Text(stringResource(R.string.qr_hotspot_save))
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                // --- Download QR section ---
-                Text(
-                    if (hasTwoQr) stringResource(R.string.qr_step2_download)
-                    else stringResource(R.string.transfer_qr_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (!hasTwoQr || activeStep == 2) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.transfer_qr_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(8.dp))
-
-                val qrBitmap = remember(url) { generateQrBitmap(url) }
-                if (qrBitmap != null) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(200.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    ) {
-                        Image(
-                            bitmap = qrBitmap.asImageBitmap(),
-                            contentDescription = "QR Code",
-                            modifier = Modifier
-                                .size(200.dp)
-                                .then(
-                                    if (hasTwoQr && activeStep != 2) Modifier.blur(16.dp)
-                                    else Modifier
-                                )
+                        Tab(
+                            selected = hotspotTab == 0,
+                            onClick = { hotspotTab = 0 },
+                            text = { Text("Haron") }
                         )
-                        if (hasTwoQr && activeStep != 2) {
-                            Box(
-                                Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-                                    )
-                            )
-                        }
+                        Tab(
+                            selected = hotspotTab == 1,
+                            onClick = { hotspotTab = 1 },
+                            text = { Text(stringResource(R.string.qr_tab_others)) }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    when (hotspotTab) {
+                        0 -> HaronTabContent(
+                            ssid = hotspotSsid ?: "",
+                            password = hotspotPassword,
+                            url = displayUrl,
+                            onTapQr = onToggleHotspot
+                        )
+                        1 -> OthersTabContent(
+                            ssid = hotspotSsid ?: "",
+                            password = hotspotPassword,
+                            url = displayUrl,
+                            activeStep = othersActiveStep,
+                            onStepChange = { othersActiveStep = it },
+                            onTapQr = onToggleHotspot
+                        )
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    url,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (!hasTwoQr || activeStep == 2) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Spacer(Modifier.height(12.dp))
                 Row {
                     TextButton(onClick = onStopServer) {
@@ -328,6 +159,235 @@ fun QrCodeDialog(
             }
         }
     }
+}
+
+/**
+ * Wi-Fi mode: single QR with URL. Tap to switch to hotspot.
+ */
+@Composable
+private fun WifiModeContent(
+    url: String,
+    onTapQr: () -> Unit
+) {
+    // Mode indicator
+    Text(
+        stringResource(R.string.qr_mode_wifi),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Text(
+        stringResource(R.string.qr_mode_wifi_hint),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(8.dp))
+
+    val qrBitmap = remember(url) { generateQrBitmap(url) }
+    if (qrBitmap != null) {
+        Image(
+            bitmap = qrBitmap.asImageBitmap(),
+            contentDescription = "QR Code",
+            modifier = Modifier
+                .size(200.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onTapQr() }
+        )
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Text(
+        url,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.primary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.qr_tap_to_switch),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    )
+}
+
+/**
+ * Haron tab in hotspot mode: combined JSON QR with ssid+pass+url.
+ */
+@Composable
+private fun HaronTabContent(
+    ssid: String,
+    password: String?,
+    url: String,
+    onTapQr: () -> Unit
+) {
+    // Build combined JSON for Haron-to-Haron auto-connect
+    val combinedJson = buildString {
+        append("{\"haron\":1,\"ssid\":\"")
+        append(ssid.replace("\"", "\\\""))
+        append("\",\"pass\":\"")
+        append((password ?: "").replace("\"", "\\\""))
+        append("\",\"url\":\"")
+        append(url.replace("\"", "\\\""))
+        append("\"}")
+    }
+
+    val qrBitmap = remember(combinedJson) { generateQrBitmap(combinedJson) }
+    if (qrBitmap != null) {
+        Image(
+            bitmap = qrBitmap.asImageBitmap(),
+            contentDescription = "Haron QR",
+            modifier = Modifier
+                .size(200.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onTapQr() }
+        )
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.qr_mode_hotspot_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/**
+ * Others tab in hotspot mode: two QR codes (WIFI: + URL) with SwapVert toggle.
+ * Same as the old two-step layout.
+ */
+@Composable
+private fun OthersTabContent(
+    ssid: String,
+    password: String?,
+    url: String,
+    activeStep: Int,
+    onStepChange: (Int) -> Unit,
+    onTapQr: () -> Unit
+) {
+    val wifiQrContent = if (!password.isNullOrBlank()) {
+        "WIFI:T:WPA;S:$ssid;P:$password;;"
+    } else {
+        "WIFI:T:nopass;S:$ssid;;"
+    }
+
+    // Step 1: Wi-Fi QR
+    Text(
+        stringResource(R.string.qr_step1_wifi),
+        style = MaterialTheme.typography.titleSmall,
+        color = if (activeStep == 1) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    )
+    Spacer(Modifier.height(2.dp))
+    Text(
+        ssid,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(4.dp))
+
+    val wifiBitmap = remember(wifiQrContent) { generateQrBitmap(wifiQrContent) }
+    if (wifiBitmap != null) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(160.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onTapQr() }
+        ) {
+            Image(
+                bitmap = wifiBitmap.asImageBitmap(),
+                contentDescription = "Wi-Fi QR",
+                modifier = Modifier
+                    .size(160.dp)
+                    .then(if (activeStep != 1) Modifier.blur(16.dp) else Modifier)
+            )
+            if (activeStep != 1) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(4.dp))
+
+    // Toggle between steps
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f))
+        IconButton(
+            onClick = { onStepChange(if (activeStep == 1) 2 else 1) },
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                Icons.Filled.SwapVert,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        HorizontalDivider(modifier = Modifier.weight(1f))
+    }
+
+    Spacer(Modifier.height(4.dp))
+
+    // Step 2: Download QR
+    Text(
+        stringResource(R.string.qr_step2_download),
+        style = MaterialTheme.typography.titleSmall,
+        color = if (activeStep == 2) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    )
+    Spacer(Modifier.height(2.dp))
+    Text(
+        stringResource(R.string.transfer_qr_subtitle),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(4.dp))
+
+    val urlBitmap = remember(url) { generateQrBitmap(url) }
+    if (urlBitmap != null) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(160.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onTapQr() }
+        ) {
+            Image(
+                bitmap = urlBitmap.asImageBitmap(),
+                contentDescription = "URL QR",
+                modifier = Modifier
+                    .size(160.dp)
+                    .then(if (activeStep != 2) Modifier.blur(16.dp) else Modifier)
+            )
+            if (activeStep != 2) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Text(
+        url,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (activeStep == 2) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 private fun generateQrBitmap(text: String): Bitmap? {

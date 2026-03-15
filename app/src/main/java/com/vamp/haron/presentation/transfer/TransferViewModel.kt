@@ -9,6 +9,7 @@ import com.vamp.haron.R
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.data.transfer.HotspotManager
 import com.vamp.haron.data.transfer.HttpFileServer
+import com.vamp.haron.data.transfer.WifiConnector
 import com.vamp.haron.domain.model.DiscoveredDevice
 import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.domain.model.TransferProgressInfo
@@ -53,6 +54,8 @@ data class TransferUiState(
     val todayReceivedCount: Int = 0,
     val hotspotSsid: String? = null,
     val hotspotPassword: String? = null,
+    val isHotspotMode: Boolean = false,
+    val hotspotUrl: String? = null,
     val showWifiOffDialog: Boolean = false
 )
 
@@ -63,6 +66,7 @@ class TransferViewModel @Inject constructor(
     private val sendFilesUseCase: SendFilesUseCase,
     private val httpFileServer: HttpFileServer,
     private val hotspotManager: HotspotManager,
+    private val wifiConnector: WifiConnector,
     private val transferRepository: TransferRepository,
     private val preferences: HaronPreferences
 ) : ViewModel() {
@@ -306,6 +310,73 @@ class TransferViewModel @Inject constructor(
         return parts[0] == 100 && parts[1] in 64..127
     }
 
+    fun toggleHotspotMode() {
+        viewModelScope.launch {
+            val current = _state.value
+            if (current.isHotspotMode) {
+                // Switch back to Wi-Fi mode
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.toggleHotspotMode: switching to Wi-Fi mode")
+                hotspotManager.stop()
+                val wifiIp = httpFileServer.getLocalIpAddress()
+                val wifiUrl = if (wifiIp != null) "http://$wifiIp:${httpFileServer.actualPort}" else current.serverUrl
+                _state.update {
+                    it.copy(
+                        isHotspotMode = false,
+                        hotspotSsid = null,
+                        hotspotPassword = null,
+                        hotspotUrl = null,
+                        serverUrl = wifiUrl
+                    )
+                }
+            } else {
+                // Switch to hotspot mode
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.toggleHotspotMode: switching to hotspot mode")
+                val info = hotspotManager.start()
+                if (info != null && info.ip.isNotEmpty()) {
+                    val hotspotUrl = "http://${info.ip}:${httpFileServer.actualPort}"
+                    EcosystemLogger.d(HaronConstants.TAG, "TransferVM.toggleHotspotMode: hotspot started, url=$hotspotUrl, ssid=${info.ssid}")
+                    _state.update {
+                        it.copy(
+                            isHotspotMode = true,
+                            hotspotSsid = info.ssid,
+                            hotspotPassword = info.password.ifEmpty { null },
+                            hotspotUrl = hotspotUrl
+                        )
+                    }
+                } else {
+                    EcosystemLogger.e(HaronConstants.TAG, "TransferVM.toggleHotspotMode: hotspot failed to start")
+                    _toastMessage.emit(appContext.getString(R.string.transfer_hotspot_connect_failed))
+                }
+            }
+        }
+    }
+
+    fun connectAndDownload(ssid: String, password: String?, url: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "TransferVM.connectAndDownload: ssid=$ssid, url=$url")
+        _state.update {
+            it.copy(
+                transferState = TransferState.CONNECTING,
+                isReceiveTransfer = true
+            )
+        }
+
+        viewModelScope.launch {
+            val connected = wifiConnector.connect(ssid, password)
+            if (connected) {
+                EcosystemLogger.d(HaronConstants.TAG, "TransferVM.connectAndDownload: connected to hotspot, starting download")
+                downloadFromQr(url)
+            } else {
+                EcosystemLogger.e(HaronConstants.TAG, "TransferVM.connectAndDownload: failed to connect to hotspot")
+                _state.update {
+                    it.copy(
+                        transferState = TransferState.FAILED,
+                        errorMessage = appContext.getString(R.string.transfer_hotspot_connect_failed)
+                    )
+                }
+            }
+        }
+    }
+
     fun stopHttpServer() {
         EcosystemLogger.d(HaronConstants.TAG, "TransferVM: stopping HTTP server")
         httpFileServer.stop()
@@ -317,7 +388,9 @@ class TransferViewModel @Inject constructor(
                 showQrDialog = false,
                 transferState = TransferState.IDLE,
                 hotspotSsid = null,
-                hotspotPassword = null
+                hotspotPassword = null,
+                isHotspotMode = false,
+                hotspotUrl = null
             )
         }
     }

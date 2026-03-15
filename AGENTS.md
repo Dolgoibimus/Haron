@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.70 (Phase 4, Batch 70)
+**Текущая версия:** 0.72 (Phase 4, Batch 72)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -22,7 +22,123 @@
 
 ---
 
-### Batch 70 — DnD Copy/Move полоска на дивайдере ⚠️ не проверено
+### Batch 74 — Принудительный хотспот + авто-подключение по QR ⚠️ не проверено
+
+**Цель:** Возможность передавать файлы через хотспот даже когда есть Wi-Fi (для устройств не в одной сети). Второй Haron сканирует QR → автоматически подключается к хотспоту → скачивает файлы.
+
+#### Что реализовано
+- **WifiConnector.kt** (новый файл) — программное подключение к Wi-Fi:
+  - API 29+ (Android 10+): `WifiNetworkSpecifier` + `ConnectivityManager.requestNetwork()` + `bindProcessToNetwork()`
+  - API 26-28: `WifiManager.addNetwork()` + `enableNetwork()` (deprecated но работает)
+  - `connect(ssid, password, timeout)` — suspend, возвращает true при успехе
+  - `disconnect()` — отключение от запрошенной сети
+- **TransferViewModel** — новые поля и методы:
+  - `isHotspotMode`, `hotspotUrl` в `TransferUiState`
+  - `toggleHotspotMode()` — вкл/выкл хотспот при активном сервере, обновление URL
+  - `connectAndDownload(ssid, pass, url)` — подключение к хотспоту + скачивание файлов
+  - `stopHttpServer()` — сброс `isHotspotMode`/`hotspotUrl`
+- **QrCodeDialog** — полная переработка UI:
+  - Тап по QR переключает режим Wi-Fi ↔ Точка доступа
+  - Режим Wi-Fi: один QR с URL, подпись "Оба устройства в одной сети"
+  - Режим Точка доступа: два таба — «Haron» (combined JSON QR) и «Другие» (два QR: WIFI: + URL как раньше)
+  - Таб «Haron»: один QR с JSON `{"haron":1,"ssid":"...","pass":"...","url":"..."}`
+- **TransferScreen** — парсинг Haron QR:
+  - `tryParseHaronQr()` — парсит combined JSON QR
+  - При обнаружении Haron QR → вызывает `connectAndDownload()`
+- **AndroidManifest.xml** — добавлен `CHANGE_NETWORK_STATE`
+- **Строки** — EN + RU для всех новых элементов UI
+
+---
+
+### Batch 73 — Wi-Fi Direct: полноценное P2P-соединение и передача файлов ⚠️ не проверено
+
+**Цель:** Исправить Wi-Fi Direct — `connect()` возвращался до установления P2P-группы, `sendFiles()` пытался открыть TCP сразу → timeout. Теперь полноценный P2P flow.
+
+#### Что реализовано
+- **WifiDirectManager** — полный рефакторинг:
+  - `_p2pInfo: MutableStateFlow<WifiP2pInfo?>` — отслеживание состояния P2P-соединения
+  - `isInitiator` флаг — отличает отправителя от получателя
+  - `CONNECTION_CHANGED_ACTION` обработка в BroadcastReceiver — обновляет _p2pInfo, на стороне получателя запускает P2P receive server
+  - `connectAndWait(address, timeout)` — suspend, connect() + ожидание groupFormed через StateFlow
+  - `startP2pReceiveServer(info)` — group owner слушает ServerSocket(8988), non-owner коннектится к group owner; сокеты эмитятся в `incomingP2pSocket`
+  - `sendFiles(info, files)` — принимает `WifiP2pInfo` вместо `hostAddress`/`isGroupOwner`, использует реальный P2P IP
+  - `disconnect()` — полная очистка: isInitiator, _p2pInfo, p2pServerJob, removeGroup
+  - `incomingP2pSocket: SharedFlow<Socket>` — ReceiveFileManager подписывается
+- **TransferRepositoryImpl.sendViaWifiDirect()** — использует `connectAndWait()` + передаёт `WifiP2pInfo` в `sendFiles()`
+- **ReceiveFileManager**:
+  - Добавлен `WifiDirectManager` в constructor injection
+  - Извлечён `handleIncomingSocket(socket)` — единый обработчик для TCP и P2P сокетов (REQUEST, QUICK_SEND, DROP_REQUEST)
+  - `p2pJob` — подписка на `wifiDirectManager.incomingP2pSocket` в `ensureListening()`
+  - `stopListening()` — отмена p2pJob
+- Подробное логирование на каждом шаге P2P flow
+
+#### Изменённые файлы
+- `data/transfer/WifiDirectManager.kt` — полный рефакторинг
+- `data/repository/TransferRepositoryImpl.kt` — sendViaWifiDirect fix
+- `data/transfer/ReceiveFileManager.kt` — handleIncomingSocket extraction + P2P subscription
+
+---
+
+### Batch 72 — SFTP в FTP-таб + WebDAV-браузер ✅ проверено
+
+**Цель:** SFTP через JSch в существующий FTP-таб (переключатель протокола) + WebDAV как новый 4-й таб.
+
+#### Что реализовано
+- **SFTP data layer**: `SftpFileInfo.kt`, `SftpClientManager.kt` — JSch Session + ChannelSftp, connect/listFiles/download/upload/mkdir/delete/rename
+- **FtpViewModel** модифицирован: `isSftp` в state, `SftpClientManager` + `SshCredentialStore` в конструктор, ветвление во всех операциях (connect, loadFiles, download, upload, mkdir, delete, rename, disconnect)
+- **FtpBrowserTab** модифицирован: список серверов показывает FTP/SFTP/FTPS метки протокола, manual connect dialog с переключателем FTP/SFTP + автосмена порта (21⇄22)
+- **FtpAuthDialog** модифицирован: в SFTP-режиме скрывает FTPS checkbox и кнопку Anonymous, заголовок показывает "SFTP — host:port"
+- **WebDAV data layer**: `WebDavFileInfo.kt`, `WebDavCredential.kt`, `WebDavCredentialStore.kt` (AES-256-GCM), `WebDavManager.kt` (OkHttp PROPFIND/GET/PUT/MKCOL/DELETE/MOVE + XmlPullParser)
+- **WebDavViewModel**: полная копия структуры FtpViewModel — URL-based навигация, breadcrumbs, download/upload/mkdir/delete/rename, dual-panel с local files
+- **WebDavBrowserTab**: auth dialog (URL + user + password), server list, dual-panel layout, file operations
+- **TransferScreen**: 4 таба (Transfer, SMB, S(FTP), WebDAV), BackHandler для tab 3, TopBar навигация для tab 3, toast collector для WebDAV
+- **Строки**: EN + RU для webdav_tab_title, webdav_connect, webdav_disconnect, webdav_url_hint, webdav_saved_servers, webdav_add_server, webdav_connection_error
+- **Константы**: WEBDAV_CREDENTIAL_FILE, WEBDAV_CREDENTIAL_KEYSTORE_ALIAS
+- FTP tab title переименован в "S(FTP)"
+- Сохранённые SFTP-серверы хранятся в SshCredentialStore (уже существовал), FTP — в FtpCredentialStore
+
+#### Новые файлы
+- `data/sftp/SftpFileInfo.kt`
+- `data/sftp/SftpClientManager.kt`
+- `data/webdav/WebDavFileInfo.kt`
+- `data/webdav/WebDavCredential.kt`
+- `data/webdav/WebDavCredentialStore.kt`
+- `data/webdav/WebDavManager.kt`
+- `presentation/transfer/WebDavViewModel.kt`
+- `presentation/transfer/components/WebDavBrowserTab.kt`
+
+#### Изменённые файлы
+- `presentation/transfer/FtpViewModel.kt` — +SFTP поддержка
+- `presentation/transfer/components/FtpBrowserTab.kt` — +SFTP в UI
+- `presentation/transfer/components/FtpAuthDialog.kt` — +SFTP режим
+- `presentation/transfer/TransferScreen.kt` — +WebDAV tab
+- `common/constants/HaronConstants.kt` — +WebDAV константы
+- `res/values/strings.xml` — +WebDAV строки, ftp_tab_title → "S(FTP)"
+- `res/values-ru/strings.xml` — +WebDAV строки, ftp_tab_title → "S(FTP)"
+
+---
+
+### Batch 71 — Shizuku: файловые операции + Android/media ✅ проверено
+
+**Цель:** Включить копирование/вставку/удаление/переименование в Android/data, Android/obb, Android/media через Shizuku. Ранее Shizuku использовался только для чтения (listFiles).
+
+#### Что реализовано
+- **Android/media** добавлена в `isRestrictedAndroidPath()` (FileRepositoryImpl) и `isRestrictedAndroidDir()` (ExplorerViewModel) — теперь файлы в `/Android/media` читаются через Shizuku, как data и obb
+- **AIDL расширен**: `IShizukuFileService` — добавлены `isDirectory`, `copyFile`, `copyDirectoryRecursively`, `deleteRecursively`, `renameTo`, `mkdirs`
+- **ShizukuFileService** — реализация всех новых методов (UID 2000 / shell)
+- **ShizukuManager** — обёртки для всех новых IPC-методов + `exists()`, `isDirectory()`
+- **FileRepositoryImpl**:
+  - `copyFilesWithResolutions` — ветка File→File: если src или dst restricted → Shizuku copy
+  - `moveFilesWithResolutions` — аналогично, Shizuku renameTo + fallback copy+delete
+  - `deleteFiles` — restricted paths → `shizukuManager.deleteRecursively()`
+  - `renameFile` — restricted paths → `shizukuManager.renameTo()`
+  - `createDirectory` — restricted paths → `shizukuManager.mkdirs()`
+  - `resolveConflictViaShizuku()` — разрешение конфликтов имён через Shizuku `exists()`
+  - Валидация dest dir пропускает `File.isDirectory` для restricted paths (FUSE блокирует)
+
+---
+
+### Batch 70 — DnD Copy/Move полоска на дивайдере ✅ проверено
 
 **Цель:** При перетаскивании файлов между панелями — на дивайдере появляется полоска Copy | Move для выбора операции.
 

@@ -806,6 +806,14 @@
     <string name="qr_hotspot_setup">Настроить QR точки доступа</string>
     <string name="qr_hotspot_save">Сохранить</string>
     <string name="qr_hotspot_no_password">Открытая сеть</string>
+    <string name="qr_mode_wifi">Wi-Fi</string>
+    <string name="qr_mode_hotspot">Точка доступа</string>
+    <string name="qr_mode_wifi_hint">Оба устройства должны быть в одной сети</string>
+    <string name="qr_mode_hotspot_hint">Сканируй этот QR в Haron для подключения и скачивания</string>
+    <string name="qr_tap_to_switch">Нажми на QR для переключения</string>
+    <string name="qr_tab_others">Другие</string>
+    <string name="transfer_connecting_hotspot">Подключение к точке доступа…</string>
+    <string name="transfer_hotspot_connect_failed">Не удалось подключиться к точке доступа</string>
     <string name="transfer_accept_title">Входящая передача</string>
     <string name="transfer_accept_message">%1$s хочет отправить %2$d файлов</string>
     <string name="transfer_accept">Принять</string>
@@ -1299,7 +1307,7 @@
     <string name="cloud_move_not_supported">Перемещение между хранилищами не поддерживается</string>
 
     <!-- FTP (Batch 68) -->
-    <string name="ftp_tab_title">FTP</string>
+    <string name="ftp_tab_title">S(FTP)</string>
     <string name="ftp_connect">Подключить</string>
     <string name="ftp_disconnect">Отключить</string>
     <string name="ftp_username">Имя пользователя</string>
@@ -1330,4 +1338,13 @@
     <string name="ftp_server_credentials">Учётные данные сервера</string>
     <string name="dnd_copy">Копировать</string>
     <string name="dnd_move">Переместить</string>
+
+    <!-- WebDAV (Batch 72) -->
+    <string name="webdav_tab_title">WebDAV</string>
+    <string name="webdav_connect">Подключение к WebDAV</string>
+    <string name="webdav_disconnect">Отключить</string>
+    <string name="webdav_url_hint">URL WebDAV</string>
+    <string name="webdav_saved_servers">Сохранённые</string>
+    <string name="webdav_add_server">Добавить WebDAV-сервер</string>
+    <string name="webdav_connection_error">Ошибка подключения: %s</string>
 </resources>

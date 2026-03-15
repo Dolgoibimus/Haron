@@ -806,6 +806,14 @@
     <string name="qr_hotspot_setup">Set up hotspot QR</string>
     <string name="qr_hotspot_save">Save</string>
     <string name="qr_hotspot_no_password">Open network</string>
+    <string name="qr_mode_wifi">Wi-Fi</string>
+    <string name="qr_mode_hotspot">Hotspot</string>
+    <string name="qr_mode_wifi_hint">Both devices must be on the same network</string>
+    <string name="qr_mode_hotspot_hint">Scan this QR in Haron to connect and download</string>
+    <string name="qr_tap_to_switch">Tap QR to switch mode</string>
+    <string name="qr_tab_others">Others</string>
+    <string name="transfer_connecting_hotspot">Connecting to hotspot…</string>
+    <string name="transfer_hotspot_connect_failed">Failed to connect to hotspot</string>
     <string name="transfer_accept_title">Incoming transfer</string>
     <string name="transfer_accept_message">%1$s wants to send %2$d files</string>
     <string name="transfer_accept">Accept</string>
@@ -1300,7 +1308,7 @@
     <string name="cloud_move_not_supported">Cross-storage move not supported</string>
 
     <!-- FTP (Batch 68) -->
-    <string name="ftp_tab_title">FTP</string>
+    <string name="ftp_tab_title">S(FTP)</string>
     <string name="ftp_connect">Connect</string>
     <string name="ftp_disconnect">Disconnect</string>
     <string name="ftp_username">Username</string>
@@ -1331,4 +1339,13 @@
     <string name="ftp_server_credentials">Server credentials</string>
     <string name="dnd_copy">Copy</string>
     <string name="dnd_move">Move</string>
+
+    <!-- WebDAV (Batch 72) -->
+    <string name="webdav_tab_title">WebDAV</string>
+    <string name="webdav_connect">Connect to WebDAV</string>
+    <string name="webdav_disconnect">Disconnect</string>
+    <string name="webdav_url_hint">WebDAV URL</string>
+    <string name="webdav_saved_servers">Saved</string>
+    <string name="webdav_add_server">Add WebDAV server</string>
+    <string name="webdav_connection_error">Connection failed: %s</string>
 </resources>

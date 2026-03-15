@@ -78,6 +78,7 @@ import androidx.compose.material3.Switch
 import com.vamp.haron.presentation.transfer.components.FtpBrowserTab
 import com.vamp.haron.presentation.transfer.components.SmbBrowserTab
 import com.vamp.haron.presentation.transfer.components.TransferProgressCard
+import com.vamp.haron.presentation.transfer.components.WebDavBrowserTab
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 
@@ -90,12 +91,14 @@ fun TransferScreen(
     viewModel: TransferViewModel = hiltViewModel(),
     smbViewModel: SmbViewModel = hiltViewModel(),
     ftpViewModel: FtpViewModel = hiltViewModel(),
-    ftpServerViewModel: FtpServerViewModel = hiltViewModel()
+    ftpServerViewModel: FtpServerViewModel = hiltViewModel(),
+    webDavViewModel: WebDavViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val smbState by smbViewModel.state.collectAsState()
     val ftpState by ftpViewModel.state.collectAsState()
     val ftpServerState by ftpServerViewModel.state.collectAsState()
+    val webDavState by webDavViewModel.state.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(openScanner) }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -122,6 +125,12 @@ fun TransferScreen(
 
     LaunchedEffect(Unit) {
         ftpViewModel.toastMessage.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        webDavViewModel.toastMessage.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -181,6 +190,21 @@ fun TransferScreen(
         }
     }
 
+    // Back button for WebDAV tab
+    BackHandler(enabled = selectedTab == 3 && !webDavState.serverListMode) {
+        if (webDavState.activePanel == PanelId.BOTTOM && webDavState.localPanel.selectedPaths.isNotEmpty()) {
+            webDavViewModel.clearLocalSelection()
+        } else if (webDavState.activePanel == PanelId.TOP && webDavState.selectedFiles.isNotEmpty()) {
+            webDavViewModel.clearSelection()
+        } else if (!webDavViewModel.onNavigateUpActivePanel()) {
+            if (webDavState.activePanel == PanelId.BOTTOM) {
+                webDavViewModel.setActivePanel(PanelId.TOP)
+            } else {
+                webDavViewModel.onNavigateUp()
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
@@ -197,6 +221,8 @@ fun TransferScreen(
                                     smbViewModel.onNavigateUpActivePanel()
                                 selectedTab == 2 && !ftpState.serverListMode ->
                                     ftpViewModel.onNavigateUpActivePanel()
+                                selectedTab == 3 && !webDavState.serverListMode ->
+                                    webDavViewModel.onNavigateUpActivePanel()
                                 else -> {
                                     viewModel.cancelTransfer()
                                     onBack()
@@ -284,6 +310,11 @@ fun TransferScreen(
                     onClick = { selectedTab = 2 },
                     text = { Text(stringResource(R.string.ftp_tab_title)) }
                 )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text(stringResource(R.string.webdav_tab_title)) }
+                )
             }
 
             when (selectedTab) {
@@ -300,6 +331,9 @@ fun TransferScreen(
                 2 -> FtpBrowserTab(
                     viewModel = ftpViewModel
                 )
+                3 -> WebDavBrowserTab(
+                    viewModel = webDavViewModel
+                )
             }
         }
     }
@@ -310,6 +344,9 @@ fun TransferScreen(
             url = state.serverUrl!!,
             hotspotSsid = state.hotspotSsid,
             hotspotPassword = state.hotspotPassword,
+            hotspotUrl = state.hotspotUrl,
+            isHotspotMode = state.isHotspotMode,
+            onToggleHotspot = { viewModel.toggleHotspotMode() },
             onDismiss = { viewModel.dismissQrDialog() },
             onStopServer = { viewModel.stopHttpServer() }
         )
@@ -361,6 +398,15 @@ fun TransferScreen(
             onResult = { result ->
                 showScanner = false
                 EcosystemLogger.d(HaronConstants.TAG, "QR scanned: result='$result', isLocalNetwork=${isLocalNetworkUrl(result)}")
+
+                // Check for Haron combined QR (hotspot auto-connect)
+                val haronQr = tryParseHaronQr(result)
+                if (haronQr != null) {
+                    EcosystemLogger.d(HaronConstants.TAG, "QR: Haron combined QR detected, ssid=${haronQr.ssid}, url=${haronQr.url}")
+                    viewModel.connectAndDownload(haronQr.ssid, haronQr.password, haronQr.url)
+                    return@QrScannerDialog
+                }
+
                 when {
                     // Local network URL → Haron-to-Haron transfer download
                     (result.startsWith("http://") || result.startsWith("https://")) &&
@@ -751,4 +797,35 @@ private fun isLocalNetworkUrl(url: String): Boolean {
         host.startsWith("10.") ||
         host.matches(Regex("172\\.(1[6-9]|2[0-9]|3[01])\\..*"))
     return isLocal
+}
+
+private data class HaronQrData(val ssid: String, val password: String?, val url: String)
+
+/**
+ * Try to parse a Haron combined QR code JSON: {"haron":1,"ssid":"...","pass":"...","url":"..."}
+ * Returns null if the string is not a valid Haron QR.
+ */
+private fun tryParseHaronQr(text: String): HaronQrData? {
+    val trimmed = text.trim()
+    if (!trimmed.startsWith("{") || !trimmed.contains("\"haron\"")) return null
+    return try {
+        // Minimal JSON parsing without a library
+        val haronMatch = """"haron"\s*:\s*1""".toRegex().find(trimmed) ?: return null
+        if (haronMatch.value.isEmpty()) return null
+
+        val ssid = """"ssid"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
+            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+            ?: return null
+
+        val pass = """"pass"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
+            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+
+        val url = """"url"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""".toRegex()
+            .find(trimmed)?.groupValues?.get(1)?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+            ?: return null
+
+        HaronQrData(ssid = ssid, password = pass?.ifEmpty { null }, url = url)
+    } catch (_: Exception) {
+        null
+    }
 }
