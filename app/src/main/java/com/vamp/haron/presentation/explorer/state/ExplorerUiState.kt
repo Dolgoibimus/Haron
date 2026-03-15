@@ -185,6 +185,26 @@ sealed interface DialogState {
         val panelId: PanelId,
         val cloudPath: String
     ) : DialogState
+    data class DuplicateDialog(
+        val paths: List<String>,
+        val sourcePanelId: PanelId
+    ) : DialogState
+    data class ExtractArchivesDialog(
+        val archivePaths: List<String>,
+        val sourcePanelId: PanelId
+    ) : DialogState
+}
+
+enum class DuplicateDestination {
+    SAME_SUBFOLDER,
+    OTHER_PANEL_SUBFOLDER,
+    OTHER_PANEL_DIRECT
+}
+
+enum class ExtractDestination {
+    NEXT_TO_ARCHIVE,
+    SAME_PANEL,
+    OTHER_PANEL
 }
 
 enum class FileTemplate(val labelRes: Int, val extension: String) {

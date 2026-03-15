@@ -31,6 +31,12 @@
 - Batch rename: template, numbering, find & replace
 - Drag-and-Drop between panels (single and group)
 - Copy or Move chooser: drag file across divider — left side copies, right side moves [NEW]
+- Duplicate files: long tap Copy → dialog with number of copies and 3 destinations [NEW]
+  - To subfolder here: creates folder named after file, copies inside [NEW]
+  - To other panel (subfolder): same but in the other panel's folder [NEW]
+  - To other panel (open folder): copies directly into the other panel's current folder [NEW]
+  - Copy names: filename(1).ext, filename(2).ext, etc. [NEW]
+  - Folder size updates in real time during duplication [NEW]
 - Conflict dialog: replace / rename / skip
 
 # Trash
@@ -112,6 +118,10 @@
 - Conflict dialog on create: replace / rename / cancel
 - Extract options: extract here or into subfolder by archive name
 - Smart detection: if archive has single root folder — extract as-is without dialog
+- Quick extract from file list: select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract [NEW]
+- Tap pulsing icon → choose destination: next to archive / current panel / other panel [NEW]
+- Each archive extracts into a subfolder with the archive name (auto-created) [NEW]
+- Works with single or multiple archives at once [NEW]
 
 # Text Editor
 - View and edit TXT/MD files

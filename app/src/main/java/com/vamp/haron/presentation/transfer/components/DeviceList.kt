@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -90,7 +89,6 @@ private fun DeviceItem(
     ) {
         val icon = when {
             TransferProtocol.WIFI_DIRECT in device.supportedProtocols -> Icons.Filled.Wifi
-            TransferProtocol.BLUETOOTH in device.supportedProtocols -> Icons.Filled.Bluetooth
             else -> Icons.Filled.PhoneAndroid
         }
         val tint = if (device.isHaron) MaterialTheme.colorScheme.primary

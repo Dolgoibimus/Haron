@@ -56,17 +56,15 @@ class TransferRepositoryImpl @Inject constructor(
     override fun discoverDevices(): Flow<List<DiscoveredDevice>> {
         return combine(
             wifiDirectManager.discoverPeers(),
-            nsdDiscoveryManager.discoverServices(),
-            bluetoothTransferManager.discoverDevices()
-        ) { wifiDevices, nsdDevices, btDevices ->
-            mergeDevices(wifiDevices, nsdDevices, btDevices)
+            nsdDiscoveryManager.discoverServices()
+        ) { wifiDevices, nsdDevices ->
+            mergeDevices(wifiDevices, nsdDevices)
         }
     }
 
     override fun stopDiscovery() {
         wifiDirectManager.stopDiscovery()
         nsdDiscoveryManager.stopDiscovery()
-        bluetoothTransferManager.stopDiscovery()
     }
 
     override suspend fun sendFiles(
@@ -154,17 +152,13 @@ class TransferRepositoryImpl @Inject constructor(
         files: List<File>,
         device: DiscoveredDevice
     ): Flow<TransferProgressInfo> = flow {
-        wifiDirectManager.connect(device.address) { info ->
-            // Connection info is handled asynchronously
-        }
-        emitAll(
-            wifiDirectManager.sendFiles(
-                hostAddress = device.address,
-                isGroupOwner = false,
-                files = files
-            )
+        val info = wifiDirectManager.connectAndWait(device.address)
+        EcosystemLogger.d(
+            HaronConstants.TAG,
+            "P2P connected: groupOwner=${info.isGroupOwner}, ownerAddr=${info.groupOwnerAddress?.hostAddress}"
         )
-    }
+        emitAll(wifiDirectManager.sendFiles(info, files))
+    }.flowOn(Dispatchers.IO)
 
     private fun sendViaHttp(files: List<File>): Flow<TransferProgressInfo> = flow {
         val port = httpFileServer.start(files)
@@ -323,8 +317,7 @@ class TransferRepositoryImpl @Inject constructor(
 
     private fun mergeDevices(
         wifi: List<DiscoveredDevice>,
-        nsd: List<DiscoveredDevice>,
-        bt: List<DiscoveredDevice>
+        nsd: List<DiscoveredDevice>
     ): List<DiscoveredDevice> {
         val merged = mutableMapOf<String, DiscoveredDevice>()
 
@@ -337,22 +330,6 @@ class TransferRepositoryImpl @Inject constructor(
             if (existing != null) {
                 merged[device.address] = existing.copy(
                     supportedProtocols = existing.supportedProtocols + device.supportedProtocols
-                )
-            } else {
-                merged[device.id] = device
-            }
-        }
-
-        bt.forEach { device ->
-            // NSD names have "Haron-MODEL-ID" format, BT names are raw device model
-            val existingByName = merged.values.find { existing ->
-                existing.name.equals(device.name, ignoreCase = true) ||
-                        existing.name.equals("Haron-${device.name}", ignoreCase = true) ||
-                        (existing.name.startsWith("Haron-${device.name}", ignoreCase = true))
-            }
-            if (existingByName != null) {
-                merged[existingByName.id] = existingByName.copy(
-                    supportedProtocols = existingByName.supportedProtocols + TransferProtocol.BLUETOOTH
                 )
             } else {
                 merged[device.id] = device

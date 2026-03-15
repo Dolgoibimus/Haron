@@ -175,6 +175,88 @@ class ShizukuManager @Inject constructor(
         }
     }
 
+    fun exists(path: String): Boolean? {
+        val svc = service ?: return null
+        return try {
+            svc.exists(path)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: exists($path) error: ${e.message}")
+            null
+        }
+    }
+
+    fun isDirectory(path: String): Boolean? {
+        val svc = service ?: return null
+        return try {
+            svc.isDirectory(path)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: isDirectory($path) error: ${e.message}")
+            null
+        }
+    }
+
+    fun copyFile(srcPath: String, destPath: String, overwrite: Boolean = false): Boolean {
+        val svc = service ?: return false
+        return try {
+            svc.copyFile(srcPath, destPath, overwrite)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: copyFile($srcPath → $destPath) error: ${e.message}")
+            false
+        }
+    }
+
+    fun copyDirectoryRecursively(srcPath: String, destPath: String, overwrite: Boolean = false): Boolean {
+        val svc = service ?: return false
+        return try {
+            svc.copyDirectoryRecursively(srcPath, destPath, overwrite)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: copyDir($srcPath → $destPath) error: ${e.message}")
+            false
+        }
+    }
+
+    fun deleteRecursively(path: String): Boolean {
+        val svc = service ?: return false
+        return try {
+            svc.deleteRecursively(path)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: delete($path) error: ${e.message}")
+            false
+        }
+    }
+
+    fun renameTo(srcPath: String, destPath: String): Boolean {
+        val svc = service ?: return false
+        return try {
+            svc.renameTo(srcPath, destPath)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: rename($srcPath → $destPath) error: ${e.message}")
+            false
+        }
+    }
+
+    fun mkdirs(path: String): Boolean {
+        val svc = service ?: return false
+        return try {
+            svc.mkdirs(path)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: mkdirs($path) error: ${e.message}")
+            false
+        }
+    }
+
+    fun isServiceBound(): Boolean = isBound && service != null
+
+    fun calculateDirSize(path: String): Long? {
+        val svc = service ?: return null
+        return try {
+            svc.calculateDirSize(path)
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ShizukuManager: calculateDirSize($path) error: ${e.message}")
+            null
+        }
+    }
+
     private fun serviceArgs(): Shizuku.UserServiceArgs {
         return Shizuku.UserServiceArgs(
             ComponentName(

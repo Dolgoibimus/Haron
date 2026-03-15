@@ -34,9 +34,12 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +52,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,203 +61,44 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
-import com.vamp.haron.data.ftp.FtpFileInfo
 import com.vamp.haron.data.ftp.FtpTransferProgress
+import com.vamp.haron.data.webdav.WebDavFileInfo
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.PanelDivider
-import com.vamp.haron.presentation.transfer.FtpSavedServer
-import com.vamp.haron.presentation.transfer.FtpServerUiState
-import com.vamp.haron.presentation.transfer.FtpServerViewModel
-import com.vamp.haron.presentation.transfer.FtpUiState
-import com.vamp.haron.presentation.transfer.FtpViewModel
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Switch
-import androidx.compose.material.icons.filled.Storage
+import com.vamp.haron.presentation.transfer.WebDavSavedServer
+import com.vamp.haron.presentation.transfer.WebDavUiState
+import com.vamp.haron.presentation.transfer.WebDavViewModel
 
 @Composable
-fun FtpBrowserTab(
-    viewModel: FtpViewModel,
-    ftpServerViewModel: FtpServerViewModel
+fun WebDavBrowserTab(
+    viewModel: WebDavViewModel
 ) {
-    var selectedSubTab by remember { mutableIntStateOf(0) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedSubTab) {
-            Tab(
-                selected = selectedSubTab == 0,
-                onClick = { selectedSubTab = 0 },
-                text = { Text(stringResource(R.string.ftp_tab_client)) }
-            )
-            Tab(
-                selected = selectedSubTab == 1,
-                onClick = { selectedSubTab = 1 },
-                text = { Text(stringResource(R.string.ftp_tab_server)) }
-            )
-        }
-
-        when (selectedSubTab) {
-            0 -> FtpClientContent(viewModel = viewModel)
-            1 -> {
-                val ftpServerState by ftpServerViewModel.state.collectAsState()
-                FtpServerContent(
-                    state = ftpServerState,
-                    onStart = { ftpServerViewModel.startServer() },
-                    onStop = { ftpServerViewModel.stopServer() },
-                    onAnonymousChanged = { ftpServerViewModel.setAnonymousAccess(it) },
-                    onReadOnlyChanged = { ftpServerViewModel.setReadOnly(it) },
-                    onUsernameChanged = { ftpServerViewModel.setUsername(it) },
-                    onPasswordChanged = { ftpServerViewModel.setPassword(it) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FtpClientContent(viewModel: FtpViewModel) {
     val state by viewModel.state.collectAsState()
 
     if (state.serverListMode) {
-        FtpServerList(
+        WebDavServerList(
             savedServers = state.savedServers,
             isConnecting = state.isConnecting,
             onSavedServerTap = { viewModel.onSavedServerTap(it) },
-            onRemoveSaved = { viewModel.onRemoveSavedServer(it) },
-            onManualConnect = { viewModel.onShowManualConnect() }
+            onRemoveSaved = { viewModel.onRemoveSavedServer(it.url) },
+            onAddServer = { viewModel.onShowAuthDialog() }
         )
     } else {
-        FtpDualPanelLayout(state = state, viewModel = viewModel)
+        WebDavDualPanelLayout(state = state, viewModel = viewModel)
     }
 
-    FtpDialogs(state = state, viewModel = viewModel)
+    WebDavDialogs(state = state, viewModel = viewModel)
 }
 
 @Composable
-private fun FtpServerContent(
-    state: FtpServerUiState,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onAnonymousChanged: (Boolean) -> Unit,
-    onReadOnlyChanged: (Boolean) -> Unit,
-    onUsernameChanged: (String) -> Unit,
-    onPasswordChanged: (String) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (state.isRunning) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Filled.Storage,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.ftp_server_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(
-                        onClick = { if (state.isRunning) onStop() else onStart() }
-                    ) {
-                        Text(
-                            stringResource(
-                                if (state.isRunning) R.string.ftp_server_stop
-                                else R.string.ftp_server_start
-                            )
-                        )
-                    }
-                }
-
-                if (state.isRunning && state.serverUrl != null) {
-                    Text(
-                        state.serverUrl,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 28.dp, top = 4.dp)
-                    )
-                }
-
-                if (!state.isRunning) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp, top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            stringResource(R.string.ftp_server_anonymous),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = state.anonymousAccess,
-                            onCheckedChange = onAnonymousChanged
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            stringResource(R.string.ftp_server_read_only),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = state.readOnly,
-                            onCheckedChange = onReadOnlyChanged
-                        )
-                    }
-                    if (!state.anonymousAccess) {
-                        OutlinedTextField(
-                            value = state.username,
-                            onValueChange = onUsernameChanged,
-                            label = { Text(stringResource(R.string.ftp_username)) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 28.dp, end = 4.dp, top = 4.dp)
-                        )
-                        OutlinedTextField(
-                            value = state.password,
-                            onValueChange = onPasswordChanged,
-                            label = { Text(stringResource(R.string.ftp_password)) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 28.dp, end = 4.dp, top = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FtpDualPanelLayout(
-    state: FtpUiState,
-    viewModel: FtpViewModel
+private fun WebDavDualPanelLayout(
+    state: WebDavUiState,
+    viewModel: WebDavViewModel
 ) {
     var totalHeightPx by remember { mutableStateOf(0f) }
 
@@ -265,8 +108,8 @@ private fun FtpDualPanelLayout(
                 .fillMaxSize()
                 .onSizeChanged { totalHeightPx = it.height.toFloat() }
         ) {
-            // Top panel (FTP)
-            FtpPanel(
+            // Top panel (WebDAV)
+            WebDavPanel(
                 state = state,
                 viewModel = viewModel,
                 isActive = state.activePanel == PanelId.TOP,
@@ -312,7 +155,7 @@ private fun FtpDualPanelLayout(
 
         // Transfer progress overlay
         if (state.transferProgress != null) {
-            FtpTransferProgressCard(
+            WebDavTransferProgressCard(
                 progress = state.transferProgress,
                 onCancel = { viewModel.cancelTransfer() },
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -322,9 +165,9 @@ private fun FtpDualPanelLayout(
 }
 
 @Composable
-private fun FtpPanel(
-    state: FtpUiState,
-    viewModel: FtpViewModel,
+private fun WebDavPanel(
+    state: WebDavUiState,
+    viewModel: WebDavViewModel,
     isActive: Boolean,
     onPanelTap: () -> Unit,
     modifier: Modifier = Modifier
@@ -340,13 +183,13 @@ private fun FtpPanel(
             .border(borderWidth, borderColor, RoundedCornerShape(4.dp))
     ) {
         // Breadcrumb
-        FtpBreadcrumb(
+        WebDavBreadcrumb(
             crumbs = viewModel.getBreadcrumbs(),
             onCrumbTap = { onPanelTap(); viewModel.navigateToBreadcrumb(it) }
         )
 
         // Action bar
-        FtpActionBar(
+        WebDavActionBar(
             hasSelection = state.selectedFiles.isNotEmpty(),
             selectionCount = state.selectedFiles.size,
             onDownloadToLocal = { onPanelTap(); viewModel.downloadToLocalPanel() },
@@ -355,8 +198,8 @@ private fun FtpPanel(
             onRefresh = { onPanelTap(); viewModel.refreshFiles() },
             onDeleteSelected = { onPanelTap(); viewModel.onDeleteSelected() },
             onRenameSelected = {
-                val path = state.selectedFiles.firstOrNull() ?: return@FtpActionBar
-                val name = path.substringAfterLast("/")
+                val path = state.selectedFiles.firstOrNull() ?: return@WebDavActionBar
+                val name = java.net.URLDecoder.decode(path.trimEnd('/').substringAfterLast("/"), "UTF-8")
                 onPanelTap()
                 viewModel.showRenameDialog(path, name)
             },
@@ -393,7 +236,7 @@ private fun FtpPanel(
         }
 
         // File list
-        FtpFileList(
+        WebDavFileList(
             files = state.files,
             selectedFiles = state.selectedFiles,
             onFileTap = { onPanelTap(); viewModel.onFileTap(it) },
@@ -403,25 +246,16 @@ private fun FtpPanel(
 }
 
 @Composable
-private fun FtpDialogs(
-    state: FtpUiState,
-    viewModel: FtpViewModel
+private fun WebDavDialogs(
+    state: WebDavUiState,
+    viewModel: WebDavViewModel
 ) {
     // Auth dialog
-    if (state.showAuthDialog && state.authDialogHost != null) {
-        FtpAuthDialog(
-            host = state.authDialogHost,
-            port = state.authDialogPort,
+    if (state.showAuthDialog) {
+        WebDavAuthDialog(
             isConnecting = state.isConnecting,
             error = state.error,
-            isSftp = state.isSftp,
-            onConnect = { cred, save -> viewModel.onConnect(cred, save) },
-            onConnectSftp = { host, port, user, pass, save ->
-                viewModel.onConnectSftp(host, port, user, pass, save)
-            },
-            onConnectAnonymous = {
-                viewModel.onConnectAnonymous(state.authDialogHost, state.authDialogPort)
-            },
+            onConnect = { url, user, pass, save -> viewModel.onConnect(url, user, pass, save) },
             onDismiss = { viewModel.dismissAuthDialog() }
         )
     }
@@ -488,113 +322,29 @@ private fun FtpDialogs(
             }
         )
     }
-
-    // Manual connect dialog
-    if (state.showManualConnectDialog) {
-        var ipAddress by remember { mutableStateOf("") }
-        var isSftpManual by remember { mutableStateOf(false) }
-        var portText by remember { mutableStateOf("21") }
-        AlertDialog(
-            onDismissRequest = { viewModel.onDismissManualConnect() },
-            title = { Text(stringResource(R.string.ftp_manual_connect)) },
-            text = {
-                Column {
-                    // Protocol toggle: FTP / SFTP
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    if (isSftpManual) {
-                                        isSftpManual = false
-                                        portText = "21"
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = !isSftpManual,
-                                onClick = { isSftpManual = false; portText = "21" }
-                            )
-                            Text("FTP", style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    if (!isSftpManual) {
-                                        isSftpManual = true
-                                        portText = "22"
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = isSftpManual,
-                                onClick = { isSftpManual = true; portText = "22" }
-                            )
-                            Text("SFTP", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = ipAddress,
-                        onValueChange = { ipAddress = it },
-                        label = { Text(stringResource(R.string.ftp_host)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = portText,
-                        onValueChange = { portText = it },
-                        label = { Text(stringResource(R.string.ftp_port)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val defaultPort = if (isSftpManual) 22 else 21
-                        viewModel.onManualConnect(ipAddress, portText.toIntOrNull() ?: defaultPort, isSftpManual)
-                    },
-                    enabled = ipAddress.isNotBlank()
-                ) {
-                    Text(stringResource(R.string.ftp_connect))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.onDismissManualConnect() }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        )
-    }
 }
 
 // --- Server list ---
 
 @Composable
-private fun FtpServerList(
-    savedServers: List<FtpSavedServer>,
+private fun WebDavServerList(
+    savedServers: List<WebDavSavedServer>,
     isConnecting: Boolean,
-    onSavedServerTap: (FtpSavedServer) -> Unit,
-    onRemoveSaved: (FtpSavedServer) -> Unit,
-    onManualConnect: () -> Unit
+    onSavedServerTap: (WebDavSavedServer) -> Unit,
+    onRemoveSaved: (WebDavSavedServer) -> Unit,
+    onAddServer: () -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         if (savedServers.isNotEmpty()) {
             item {
                 Text(
-                    stringResource(R.string.ftp_saved_servers),
+                    stringResource(R.string.webdav_saved_servers),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
-            items(savedServers, key = { "${it.host}:${it.port}" }) { server ->
+            items(savedServers, key = { it.url }) { server ->
                 Card(
                     onClick = { onSavedServerTap(server) },
                     modifier = Modifier
@@ -616,14 +366,11 @@ private fun FtpServerList(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(server.name, style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                "${server.host}:${server.port}" +
-                                    when {
-                                        server.isSftp -> " (SFTP)"
-                                        server.useFtps -> " (FTPS)"
-                                        else -> " (FTP)"
-                                    },
+                                server.url,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         IconButton(onClick = { onRemoveSaved(server) }) {
@@ -640,21 +387,133 @@ private fun FtpServerList(
 
         item {
             TextButton(
-                onClick = onManualConnect,
+                onClick = onAddServer,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.ftp_manual_connect))
+                Text(stringResource(R.string.webdav_add_server))
             }
         }
     }
 }
 
-// --- FTP panel internals ---
+// --- Auth dialog ---
 
 @Composable
-private fun FtpBreadcrumb(
+private fun WebDavAuthDialog(
+    isConnecting: Boolean,
+    error: String?,
+    onConnect: (String, String, String, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var url by remember { mutableStateOf("https://") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var saveCredentials by remember { mutableStateOf(true) }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isConnecting) onDismiss() },
+        title = { Text(stringResource(R.string.webdav_connect)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text(stringResource(R.string.webdav_url_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isConnecting
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text(stringResource(R.string.ftp_username)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isConnecting
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(stringResource(R.string.ftp_password)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isConnecting,
+                    visualTransformation = if (passwordVisible)
+                        VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Filled.VisibilityOff
+                                else Icons.Filled.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = saveCredentials,
+                        onCheckedChange = { saveCredentials = it },
+                        enabled = !isConnecting
+                    )
+                    Text(
+                        stringResource(R.string.ftp_save_credentials),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                if (isConnecting) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.ftp_connecting),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConnect(url, username, password, saveCredentials) },
+                enabled = !isConnecting && url.isNotBlank() && url.length > 8
+            ) {
+                Text(stringResource(R.string.webdav_connect))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isConnecting
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+// --- WebDAV panel internals ---
+
+@Composable
+private fun WebDavBreadcrumb(
     crumbs: List<String>,
     onCrumbTap: (Int) -> Unit
 ) {
@@ -696,7 +555,7 @@ private fun FtpBreadcrumb(
 }
 
 @Composable
-private fun FtpActionBar(
+private fun WebDavActionBar(
     hasSelection: Boolean,
     selectionCount: Int,
     onDownloadToLocal: () -> Unit,
@@ -743,7 +602,7 @@ private fun FtpActionBar(
                 Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
             }
             IconButton(onClick = onDisconnect) {
-                Icon(Icons.Filled.LinkOff, contentDescription = stringResource(R.string.ftp_disconnect))
+                Icon(Icons.Filled.LinkOff, contentDescription = stringResource(R.string.webdav_disconnect))
             }
         }
     }
@@ -751,11 +610,11 @@ private fun FtpActionBar(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FtpFileList(
-    files: List<FtpFileInfo>,
+private fun WebDavFileList(
+    files: List<WebDavFileInfo>,
     selectedFiles: Set<String>,
-    onFileTap: (FtpFileInfo) -> Unit,
-    onFileLongPress: (FtpFileInfo) -> Unit
+    onFileTap: (WebDavFileInfo) -> Unit,
+    onFileLongPress: (WebDavFileInfo) -> Unit
 ) {
     if (files.isEmpty()) {
         Box(
@@ -807,9 +666,9 @@ private fun FtpFileList(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (!file.isDirectory) {
+                        if (!file.isDirectory && file.size > 0) {
                             Text(
-                                formatSize(file.size),
+                                formatWebDavSize(file.size),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -829,7 +688,7 @@ private fun FtpFileList(
 }
 
 @Composable
-private fun FtpTransferProgressCard(
+private fun WebDavTransferProgressCard(
     progress: FtpTransferProgress,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
@@ -865,7 +724,7 @@ private fun FtpTransferProgressCard(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "${formatSize(progress.bytesTransferred)} / ${formatSize(progress.totalBytes)}",
+                    "${formatWebDavSize(progress.bytesTransferred)} / ${formatWebDavSize(progress.totalBytes)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(top = 2.dp)
@@ -877,7 +736,7 @@ private fun FtpTransferProgressCard(
     }
 }
 
-private fun formatSize(bytes: Long): String {
+private fun formatWebDavSize(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
     val kb = bytes / 1024.0
     if (kb < 1024) return "%.1f KB".format(kb)

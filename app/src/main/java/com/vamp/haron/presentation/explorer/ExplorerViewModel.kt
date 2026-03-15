@@ -78,6 +78,8 @@ import com.vamp.haron.domain.usecase.ForceDeleteUseCase
 import com.vamp.haron.presentation.explorer.state.DragOperation
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
+import com.vamp.haron.presentation.explorer.state.DuplicateDestination
+import com.vamp.haron.presentation.explorer.state.ExtractDestination
 import com.vamp.haron.presentation.explorer.state.ExplorerUiState
 import com.vamp.haron.presentation.explorer.state.FileTemplate
 import com.vamp.haron.presentation.explorer.state.PanelUiState
@@ -5420,6 +5422,193 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    // --- Self-copy (duplicate) ---
+
+    fun showDuplicateDialog() {
+        EcosystemLogger.d(HaronConstants.TAG, "showDuplicateDialog: called")
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val sourcePanel = getPanel(activeId)
+        val paths = sourcePanel.selectedPaths.toList()
+        EcosystemLogger.d(HaronConstants.TAG, "showDuplicateDialog: activePanel=$activeId, paths=${paths.size}")
+        if (paths.isEmpty()) return
+        _uiState.update {
+            it.copy(dialogState = DialogState.DuplicateDialog(
+                paths = paths,
+                sourcePanelId = activeId
+            ))
+        }
+    }
+
+    fun executeDuplicate(count: Int, destination: DuplicateDestination) {
+        val state = _uiState.value
+        val dialog = state.dialogState as? DialogState.DuplicateDialog ?: return
+        val sourcePanelId = dialog.sourcePanelId
+        val paths = dialog.paths
+        val sourcePanel = getPanel(sourcePanelId)
+        val targetPanelId = if (sourcePanelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val targetPanel = getPanel(targetPanelId)
+
+        dismissDialog()
+        clearSelection(sourcePanelId)
+
+        // Determine which panel(s) will show new files
+        val affectedPanelId = when (destination) {
+            DuplicateDestination.SAME_SUBFOLDER -> sourcePanelId
+            DuplicateDestination.OTHER_PANEL_SUBFOLDER, DuplicateDestination.OTHER_PANEL_DIRECT -> targetPanelId
+        }
+        val createsSubfolder = destination != DuplicateDestination.OTHER_PANEL_DIRECT
+
+        viewModelScope.launch {
+            // Track created subfolders → accumulated size for real-time cache updates
+            val subfolderSizes = mutableMapOf<String, Long>()
+
+            withContext(Dispatchers.IO) {
+                for (srcPath in paths) {
+                    val srcFile = File(srcPath)
+                    val nameNoExt = srcFile.nameWithoutExtension
+                    val ext = srcFile.extension
+                    val isDir = srcFile.isDirectory
+                    val srcSize = if (isDir) {
+                        srcFile.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    } else {
+                        srcFile.length()
+                    }
+
+                    val destBaseDir = when (destination) {
+                        DuplicateDestination.SAME_SUBFOLDER -> {
+                            val subDir = File(sourcePanel.currentPath, if (isDir) srcFile.name else nameNoExt)
+                            subDir.mkdirs()
+                            subDir.absolutePath
+                        }
+                        DuplicateDestination.OTHER_PANEL_SUBFOLDER -> {
+                            val subDir = File(targetPanel.currentPath, if (isDir) srcFile.name else nameNoExt)
+                            subDir.mkdirs()
+                            subDir.absolutePath
+                        }
+                        DuplicateDestination.OTHER_PANEL_DIRECT -> {
+                            targetPanel.currentPath
+                        }
+                    }
+
+                    for (i in 1..count) {
+                        val copyName = if (isDir) {
+                            "${srcFile.name}($i)"
+                        } else {
+                            if (ext.isNotEmpty()) "$nameNoExt($i).$ext" else "$nameNoExt($i)"
+                        }
+                        val destPath = File(destBaseDir, copyName).absolutePath
+                        try {
+                            if (isDir) {
+                                srcFile.copyRecursively(File(destPath), overwrite = false)
+                            } else {
+                                srcFile.copyTo(File(destPath), overwrite = false)
+                            }
+                            // Update subfolder size in real time
+                            if (createsSubfolder) {
+                                val accumulated = (subfolderSizes[destBaseDir] ?: 0L) + srcSize
+                                subfolderSizes[destBaseDir] = accumulated
+                            }
+                        } catch (e: Exception) {
+                            EcosystemLogger.e(HaronConstants.TAG, "executeDuplicate: failed to copy $srcPath -> $destPath: ${e.message}")
+                        }
+                    }
+                }
+            }
+            // Refresh panel + set accurate folder sizes
+            refreshPanel(affectedPanelId)
+            for ((folder, size) in subfolderSizes) {
+                _uiState.update { s ->
+                    s.copy(folderSizeCache = s.folderSizeCache + (folder to size))
+                }
+            }
+            hapticManager.success()
+            _toastMessage.tryEmit(appContext.getString(R.string.duplicate_create) + ": $count")
+        }
+    }
+
+    // --- Extract archives to subfolders ---
+
+    fun showExtractArchivesDialog(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val archiveExts = com.vamp.haron.common.util.ContentExtractor.ARCHIVE_EXTENSIONS
+        val selectedArchives = panel.files
+            .filter { it.path in panel.selectedPaths && it.name.substringAfterLast('.').lowercase() in archiveExts }
+        if (selectedArchives.isEmpty()) {
+            _toastMessage.tryEmit(appContext.getString(R.string.not_in_archive))
+            return
+        }
+        _uiState.update {
+            it.copy(dialogState = DialogState.ExtractArchivesDialog(
+                archivePaths = selectedArchives.map { a -> a.path },
+                sourcePanelId = panelId
+            ))
+        }
+    }
+
+    fun executeExtractArchives(destination: ExtractDestination) {
+        val state = _uiState.value
+        val dialog = state.dialogState as? DialogState.ExtractArchivesDialog ?: return
+        val panelId = dialog.sourcePanelId
+        val archivePaths = dialog.archivePaths
+        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+
+        dismissDialog()
+        clearSelection(panelId)
+
+        viewModelScope.launch {
+            for (archivePath in archivePaths) {
+                val archiveFile = File(archivePath)
+                val archiveName = archiveFile.nameWithoutExtension
+
+                val baseDir = when (destination) {
+                    ExtractDestination.NEXT_TO_ARCHIVE ->
+                        archiveFile.parent ?: getPanel(panelId).currentPath
+                    ExtractDestination.SAME_PANEL ->
+                        getPanel(panelId).currentPath
+                    ExtractDestination.OTHER_PANEL ->
+                        getPanel(otherId).currentPath
+                }
+                val destDir = File(baseDir, archiveName).absolutePath
+                withContext(Dispatchers.IO) { File(destDir).mkdirs() }
+
+                extractArchiveUseCase(
+                    archivePath = archivePath,
+                    destinationDir = destDir
+                ).collect { progress ->
+                    updatePanel(panelId) { it.copy(archiveExtractProgress = progress) }
+                    if (progress.isComplete) {
+                        delay(300)
+                        updatePanel(panelId) { it.copy(archiveExtractProgress = null) }
+                        if (progress.error != null) {
+                            _toastMessage.tryEmit(progress.error)
+                        } else {
+                            _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destDir))
+                        }
+                    }
+                }
+            }
+            // Refresh & invalidate folder size cache
+            invalidateFolderSizeCache(panelId)
+            refreshPanel(panelId)
+            if (destination == ExtractDestination.OTHER_PANEL) {
+                invalidateFolderSizeCache(otherId)
+                refreshPanel(otherId)
+            }
+        }
+    }
+
+    private fun invalidateFolderSizeCache(panelId: PanelId) {
+        val path = getPanel(panelId).currentPath
+        if (path.isNotEmpty()) {
+            folderSizeJobs[path]?.cancel()
+            folderSizeJobs.remove(path)
+            _uiState.update { state ->
+                state.copy(folderSizeCache = state.folderSizeCache - path)
+            }
+        }
+    }
+
     private fun showStatusMessage(panelId: PanelId, message: String) {
         updatePanel(panelId) { it.copy(statusMessage = message) }
         viewModelScope.launch {
@@ -6273,7 +6462,33 @@ class ExplorerViewModel @Inject constructor(
     private fun calculateFolderSize(folderPath: String) {
         val job = viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val size = File(folderPath).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                val size = when {
+                    // Root: StorageStatsManager — used space on user partition (excludes OS ~24 GB)
+                    folderPath == HaronConstants.ROOT_PATH -> {
+                        try {
+                            val ssm = appContext.getSystemService(android.content.Context.STORAGE_STATS_SERVICE) as android.app.usage.StorageStatsManager
+                            val totalBytes = ssm.getTotalBytes(android.os.storage.StorageManager.UUID_DEFAULT)
+                            val freeBytes = ssm.getFreeBytes(android.os.storage.StorageManager.UUID_DEFAULT)
+                            totalBytes - freeBytes
+                        } catch (_: Exception) {
+                            try {
+                                val statFs = android.os.StatFs(folderPath)
+                                statFs.totalBytes - statFs.availableBytes
+                            } catch (_: Exception) {
+                                File(folderPath).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                            }
+                        }
+                    }
+                    // Shizuku available: use shell access for accurate sizes (handles Android/data, Android/obb)
+                    shizukuManager.isServiceBound() -> {
+                        shizukuManager.calculateDirSize(folderPath)
+                            ?: File(folderPath).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    }
+                    // Fallback: regular walkTopDown
+                    else -> {
+                        File(folderPath).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    }
+                }
                 _uiState.update { state ->
                     state.copy(folderSizeCache = state.folderSizeCache + (folderPath to size))
                 }
@@ -6281,6 +6496,24 @@ class ExplorerViewModel @Inject constructor(
         }
         folderSizeJobs[folderPath] = job
         job.invokeOnCompletion { folderSizeJobs.remove(folderPath) }
+    }
+
+    fun showStorageSizeInfo(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val path = panel.currentPath
+        if (path == HaronConstants.ROOT_PATH) {
+            try {
+                val ssm = appContext.getSystemService(android.content.Context.STORAGE_STATS_SERVICE) as android.app.usage.StorageStatsManager
+                val totalBytes = ssm.getTotalBytes(android.os.storage.StorageManager.UUID_DEFAULT)
+                val freeBytes = ssm.getFreeBytes(android.os.storage.StorageManager.UUID_DEFAULT)
+                val usedBytes = totalBytes - freeBytes
+                _toastMessage.tryEmit(appContext.getString(
+                    R.string.storage_size_info,
+                    usedBytes.toFileSize(appContext),
+                    totalBytes.toFileSize(appContext)
+                ))
+            } catch (_: Exception) { /* ignore */ }
+        }
     }
 
     fun clearFolderSizeCache() {

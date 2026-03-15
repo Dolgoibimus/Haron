@@ -12,6 +12,9 @@ import com.vamp.haron.data.ftp.FtpCredential
 import com.vamp.haron.data.ftp.FtpCredentialStore
 import com.vamp.haron.data.ftp.FtpFileInfo
 import com.vamp.haron.data.ftp.FtpTransferProgress
+import com.vamp.haron.data.sftp.SftpClientManager
+import com.vamp.haron.data.terminal.SshCredential
+import com.vamp.haron.data.terminal.SshCredentialStore
 import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.transfer.state.LocalFileEntry
 import com.vamp.haron.presentation.transfer.state.LocalPanelState
@@ -33,7 +36,8 @@ data class FtpSavedServer(
     val host: String,
     val port: Int = 21,
     val name: String = host,
-    val useFtps: Boolean = false
+    val useFtps: Boolean = false,
+    val isSftp: Boolean = false
 )
 
 data class FtpUiState(
@@ -54,6 +58,7 @@ data class FtpUiState(
     val showCreateFolderDialog: Boolean = false,
     val showRenameDialog: Pair<String, String>? = null,
     val showManualConnectDialog: Boolean = false,
+    val isSftp: Boolean = false,
     // Dual-panel
     val localPanel: LocalPanelState = LocalPanelState(),
     val activePanel: PanelId = PanelId.TOP,
@@ -64,7 +69,9 @@ data class FtpUiState(
 class FtpViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val ftpClientManager: FtpClientManager,
-    private val credentialStore: FtpCredentialStore
+    private val credentialStore: FtpCredentialStore,
+    private val sftpClientManager: SftpClientManager,
+    private val sshCredentialStore: SshCredentialStore
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FtpUiState())
@@ -81,27 +88,50 @@ class FtpViewModel @Inject constructor(
 
     private fun loadSavedServers() {
         viewModelScope.launch {
-            val creds = credentialStore.listAll()
+            val ftpServers = credentialStore.listAll().map { c ->
+                FtpSavedServer(c.host, c.port, c.displayName, c.useFtps, isSftp = false)
+            }
+            val sftpServers = sshCredentialStore.listAll().map { c ->
+                FtpSavedServer(c.host, c.port, "${c.user}@${c.host}", isSftp = true)
+            }
             _state.update {
-                it.copy(savedServers = creds.map { c ->
-                    FtpSavedServer(c.host, c.port, c.displayName, c.useFtps)
-                })
+                it.copy(savedServers = ftpServers + sftpServers)
             }
         }
     }
 
     fun onSavedServerTap(server: FtpSavedServer) {
-        val savedCred = credentialStore.load(server.host, server.port)
-        if (savedCred != null) {
-            connectWithCredential(savedCred, save = false)
+        if (server.isSftp) {
+            // SFTP server — find credential from SshCredentialStore
+            val allSsh = sshCredentialStore.listAll()
+            val sshCred = allSsh.find { it.host == server.host && it.port == server.port }
+            if (sshCred != null) {
+                connectWithSshCredential(sshCred, save = false)
+            } else {
+                _state.update {
+                    it.copy(
+                        showAuthDialog = true,
+                        authDialogHost = server.host,
+                        authDialogPort = server.port,
+                        isSftp = true,
+                        error = null
+                    )
+                }
+            }
         } else {
-            _state.update {
-                it.copy(
-                    showAuthDialog = true,
-                    authDialogHost = server.host,
-                    authDialogPort = server.port,
-                    error = null
-                )
+            val savedCred = credentialStore.load(server.host, server.port)
+            if (savedCred != null) {
+                connectWithCredential(savedCred, save = false)
+            } else {
+                _state.update {
+                    it.copy(
+                        showAuthDialog = true,
+                        authDialogHost = server.host,
+                        authDialogPort = server.port,
+                        isSftp = false,
+                        error = null
+                    )
+                }
             }
         }
     }
@@ -114,13 +144,14 @@ class FtpViewModel @Inject constructor(
         _state.update { it.copy(showManualConnectDialog = false) }
     }
 
-    fun onManualConnect(host: String, port: Int) {
+    fun onManualConnect(host: String, port: Int, isSftp: Boolean = false) {
         _state.update {
             it.copy(
                 showManualConnectDialog = false,
                 showAuthDialog = true,
                 authDialogHost = host.trim(),
                 authDialogPort = port,
+                isSftp = isSftp,
                 error = null
             )
         }
@@ -128,6 +159,11 @@ class FtpViewModel @Inject constructor(
 
     fun onConnect(credential: FtpCredential, save: Boolean) {
         connectWithCredential(credential, save)
+    }
+
+    fun onConnectSftp(host: String, port: Int, username: String, password: String, save: Boolean) {
+        val cred = SshCredential(user = username, host = host, port = port, password = password)
+        connectWithSshCredential(cred, save)
     }
 
     fun onConnectAnonymous(host: String, port: Int) {
@@ -235,8 +271,10 @@ class FtpViewModel @Inject constructor(
         val s = _state.value
         val crumbs = mutableListOf<String>()
         val host = s.connectedHost ?: return crumbs
-        val portSuffix = if (s.connectedPort != HaronConstants.FTP_DEFAULT_PORT) ":${s.connectedPort}" else ""
-        crumbs.add("$host$portSuffix")
+        val defaultPort = if (s.isSftp) 22 else HaronConstants.FTP_DEFAULT_PORT
+        val portSuffix = if (s.connectedPort != defaultPort) ":${s.connectedPort}" else ""
+        val prefix = if (s.isSftp) "sftp://" else ""
+        crumbs.add("$prefix$host$portSuffix")
         if (s.currentPath.isNotEmpty() && s.currentPath != "/") {
             crumbs.addAll(s.currentPath.split("/").filter { it.isNotEmpty() })
         }
@@ -250,18 +288,24 @@ class FtpViewModel @Inject constructor(
         val selected = s.selectedFiles.toList()
         val destDir = File(s.localPanel.currentPath)
 
-        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: download to local panel ${selected.size} files")
+        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: download to local panel ${selected.size} files (sftp=${s.isSftp})")
         transferJob = viewModelScope.launch {
             for (remotePath in selected) {
                 val fileName = remotePath.substringAfterLast("/")
                 val localDest = File(destDir, fileName)
-                ftpClientManager.downloadFile(host, port, remotePath, localDest)
-                    .catch { e ->
-                        _toastMessage.emit(e.localizedMessage ?: "Download error")
-                    }
-                    .collect { progress ->
-                        _state.update { it.copy(transferProgress = progress) }
-                    }
+                if (s.isSftp) {
+                    sftpClientManager.downloadFile(remotePath, localDest)
+                        .catch { e -> _toastMessage.emit(e.localizedMessage ?: "Download error") }
+                        .collect { progress ->
+                            _state.update { it.copy(transferProgress = FtpTransferProgress(progress.fileName, progress.bytesTransferred, progress.totalBytes, progress.isUpload)) }
+                        }
+                } else {
+                    ftpClientManager.downloadFile(host, port, remotePath, localDest)
+                        .catch { e -> _toastMessage.emit(e.localizedMessage ?: "Download error") }
+                        .collect { progress ->
+                            _state.update { it.copy(transferProgress = progress) }
+                        }
+                }
             }
             _state.update { it.copy(transferProgress = null, selectedFiles = emptySet()) }
             _toastMessage.emit(appContext.getString(R.string.ftp_download) + ": ${selected.size}")
@@ -276,19 +320,25 @@ class FtpViewModel @Inject constructor(
         val remoteDirPath = s.currentPath
         val selected = s.localPanel.selectedPaths.toList()
 
-        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: upload from local panel ${selected.size} files")
+        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: upload from local panel ${selected.size} files (sftp=${s.isSftp})")
         transferJob = viewModelScope.launch {
             for (path in selected) {
                 val file = File(path)
                 if (!file.exists()) continue
                 val remotePath = "$remoteDirPath/${file.name}".replace("//", "/")
-                ftpClientManager.uploadFile(host, port, remotePath, file)
-                    .catch { e ->
-                        _toastMessage.emit(e.localizedMessage ?: "Upload error")
-                    }
-                    .collect { progress ->
-                        _state.update { it.copy(transferProgress = progress) }
-                    }
+                if (s.isSftp) {
+                    sftpClientManager.uploadFile(file, remotePath)
+                        .catch { e -> _toastMessage.emit(e.localizedMessage ?: "Upload error") }
+                        .collect { progress ->
+                            _state.update { it.copy(transferProgress = FtpTransferProgress(progress.fileName, progress.bytesTransferred, progress.totalBytes, progress.isUpload)) }
+                        }
+                } else {
+                    ftpClientManager.uploadFile(host, port, remotePath, file)
+                        .catch { e -> _toastMessage.emit(e.localizedMessage ?: "Upload error") }
+                        .collect { progress ->
+                            _state.update { it.copy(transferProgress = progress) }
+                        }
+                }
             }
             _state.update { it.copy(transferProgress = null) }
             _toastMessage.emit(appContext.getString(R.string.ftp_upload) + ": ${selected.size}")
@@ -303,10 +353,14 @@ class FtpViewModel @Inject constructor(
         val port = s.connectedPort
         val folderPath = "${s.currentPath}/$name".replace("//", "/")
 
-        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: create folder $folderPath on $host:$port")
+        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: create folder $folderPath on $host:$port (sftp=${s.isSftp})")
         _state.update { it.copy(showCreateFolderDialog = false) }
         viewModelScope.launch {
-            val result = ftpClientManager.createDirectory(host, port, folderPath)
+            val result = if (s.isSftp) {
+                sftpClientManager.createDirectory(folderPath)
+            } else {
+                ftpClientManager.createDirectory(host, port, folderPath)
+            }
             if (result.isSuccess) {
                 _toastMessage.emit(appContext.getString(R.string.folder_created))
                 refreshFiles()
@@ -323,13 +377,17 @@ class FtpViewModel @Inject constructor(
         val selected = s.selectedFiles.toList()
         val filesList = s.files
 
-        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: delete ${selected.size} items on $host:$port")
+        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: delete ${selected.size} items on $host:$port (sftp=${s.isSftp})")
         viewModelScope.launch {
             var deletedCount = 0
             for (path in selected) {
                 val fileInfo = filesList.find { it.path == path }
                 val isDir = fileInfo?.isDirectory ?: false
-                val result = ftpClientManager.delete(host, port, path, isDir)
+                val result = if (s.isSftp) {
+                    sftpClientManager.delete(path, isDir)
+                } else {
+                    ftpClientManager.delete(host, port, path, isDir)
+                }
                 if (result.isSuccess) deletedCount++
             }
             _state.update { it.copy(selectedFiles = emptySet()) }
@@ -345,7 +403,11 @@ class FtpViewModel @Inject constructor(
 
         _state.update { it.copy(showRenameDialog = null) }
         viewModelScope.launch {
-            val result = ftpClientManager.rename(host, port, path, newName)
+            val result = if (s.isSftp) {
+                sftpClientManager.rename(path, newName)
+            } else {
+                ftpClientManager.rename(host, port, path, newName)
+            }
             if (result.isSuccess) {
                 _toastMessage.emit(appContext.getString(R.string.renamed_to, newName))
                 refreshFiles()
@@ -372,11 +434,16 @@ class FtpViewModel @Inject constructor(
     }
 
     fun onDisconnect() {
-        val host = _state.value.connectedHost
-        val port = _state.value.connectedPort
+        val s = _state.value
+        val host = s.connectedHost
+        val port = s.connectedPort
         if (host != null) {
-            EcosystemLogger.d(HaronConstants.TAG, "FtpVM: disconnect from $host:$port")
-            ftpClientManager.disconnect(host, port)
+            EcosystemLogger.d(HaronConstants.TAG, "FtpVM: disconnect from $host:$port (sftp=${s.isSftp})")
+            if (s.isSftp) {
+                sftpClientManager.disconnect()
+            } else {
+                ftpClientManager.disconnect(host, port)
+            }
         }
         _state.update {
             it.copy(
@@ -387,6 +454,7 @@ class FtpViewModel @Inject constructor(
                 selectedFiles = emptySet(),
                 transferProgress = null,
                 error = null,
+                isSftp = false,
                 localPanel = LocalPanelState(),
                 activePanel = PanelId.TOP,
                 panelRatio = 0.5f
@@ -394,8 +462,17 @@ class FtpViewModel @Inject constructor(
         }
     }
 
-    fun onRemoveSavedServer(host: String, port: Int) {
-        credentialStore.remove(host, port)
+    fun onRemoveSavedServer(server: FtpSavedServer) {
+        if (server.isSftp) {
+            // Find the SSH credential to get user for removal key
+            val allSsh = sshCredentialStore.listAll()
+            val sshCred = allSsh.find { it.host == server.host && it.port == server.port }
+            if (sshCred != null) {
+                sshCredentialStore.remove(sshCred.user, sshCred.host, sshCred.port)
+            }
+        } else {
+            credentialStore.remove(server.host, server.port)
+        }
         loadSavedServers()
     }
 
@@ -616,6 +693,47 @@ class FtpViewModel @Inject constructor(
         }
     }
 
+    private fun connectWithSshCredential(credential: SshCredential, save: Boolean) {
+        EcosystemLogger.d(HaronConstants.TAG, "FtpVM: SFTP connect to ${credential.host}:${credential.port} user=${credential.user}")
+        _state.update { it.copy(isConnecting = true, showAuthDialog = false, error = null) }
+        viewModelScope.launch {
+            val result = sftpClientManager.connect(credential)
+            if (result.isSuccess) {
+                EcosystemLogger.d(HaronConstants.TAG, "FtpVM: SFTP connected to ${credential.host}")
+                if (save) {
+                    sshCredentialStore.save(credential)
+                    loadSavedServers()
+                }
+                _state.update {
+                    it.copy(
+                        isConnecting = false,
+                        connectedHost = credential.host,
+                        connectedPort = credential.port,
+                        serverListMode = false,
+                        currentPath = "/",
+                        isSftp = true
+                    )
+                }
+                loadFiles(credential.host, credential.port, "/")
+                loadLocalFiles()
+            } else {
+                val msg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                EcosystemLogger.e(HaronConstants.TAG, "FtpVM: SFTP connect failed: $msg")
+                _state.update {
+                    it.copy(
+                        isConnecting = false,
+                        error = msg,
+                        showAuthDialog = true,
+                        authDialogHost = credential.host,
+                        authDialogPort = credential.port,
+                        isSftp = true
+                    )
+                }
+                _toastMessage.emit(appContext.getString(R.string.ftp_connection_failed, msg))
+            }
+        }
+    }
+
     private fun connectWithCredential(credential: FtpCredential, save: Boolean) {
         EcosystemLogger.d(HaronConstants.TAG, "FtpVM: connect to ${credential.host}:${credential.port} user=${credential.username}")
         _state.update { it.copy(isConnecting = true, showAuthDialog = false, error = null) }
@@ -658,18 +776,34 @@ class FtpViewModel @Inject constructor(
     private fun loadFiles(host: String, port: Int, path: String) {
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            val result = ftpClientManager.listFiles(host, port, path)
-            if (result.isSuccess) {
-                _state.update {
-                    it.copy(
-                        isLoading = false,
-                        files = result.getOrDefault(emptyList()),
-                        selectedFiles = emptySet()
-                    )
+            if (_state.value.isSftp) {
+                val result = sftpClientManager.listFiles(path)
+                if (result.isSuccess) {
+                    val sftpFiles = result.getOrDefault(emptyList())
+                    val ftpFiles = sftpFiles.map { sf ->
+                        FtpFileInfo(sf.name, sf.isDirectory, sf.size, sf.lastModified, sf.path, sf.permissions)
+                    }
+                    _state.update {
+                        it.copy(isLoading = false, files = ftpFiles, selectedFiles = emptySet())
+                    }
+                } else {
+                    val msg = result.exceptionOrNull()?.localizedMessage ?: "Error"
+                    _state.update { it.copy(isLoading = false, error = msg) }
                 }
             } else {
-                val msg = result.exceptionOrNull()?.localizedMessage ?: "Error"
-                _state.update { it.copy(isLoading = false, error = msg) }
+                val result = ftpClientManager.listFiles(host, port, path)
+                if (result.isSuccess) {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            files = result.getOrDefault(emptyList()),
+                            selectedFiles = emptySet()
+                        )
+                    }
+                } else {
+                    val msg = result.exceptionOrNull()?.localizedMessage ?: "Error"
+                    _state.update { it.copy(isLoading = false, error = msg) }
+                }
             }
         }
     }
@@ -689,14 +823,25 @@ class FtpViewModel @Inject constructor(
         val localDest = File(destDir, file.name)
 
         transferJob = viewModelScope.launch {
-            ftpClientManager.downloadFile(host, port, file.path, localDest)
-                .catch { e ->
-                    _toastMessage.emit(e.localizedMessage ?: "Download error")
-                    _state.update { it.copy(transferProgress = null) }
-                }
-                .collect { progress ->
-                    _state.update { it.copy(transferProgress = progress) }
-                }
+            if (s.isSftp) {
+                sftpClientManager.downloadFile(file.path, localDest)
+                    .catch { e ->
+                        _toastMessage.emit(e.localizedMessage ?: "Download error")
+                        _state.update { it.copy(transferProgress = null) }
+                    }
+                    .collect { progress ->
+                        _state.update { it.copy(transferProgress = FtpTransferProgress(progress.fileName, progress.bytesTransferred, progress.totalBytes, progress.isUpload)) }
+                    }
+            } else {
+                ftpClientManager.downloadFile(host, port, file.path, localDest)
+                    .catch { e ->
+                        _toastMessage.emit(e.localizedMessage ?: "Download error")
+                        _state.update { it.copy(transferProgress = null) }
+                    }
+                    .collect { progress ->
+                        _state.update { it.copy(transferProgress = progress) }
+                    }
+            }
             _state.update { it.copy(transferProgress = null) }
             _toastMessage.emit(appContext.getString(R.string.ftp_download) + ": ${file.name}")
         }
@@ -705,5 +850,6 @@ class FtpViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         ftpClientManager.disconnectAll()
+        sftpClientManager.disconnect()
     }
 }

@@ -39,7 +39,9 @@ fun FtpAuthDialog(
     port: Int,
     isConnecting: Boolean,
     error: String?,
+    isSftp: Boolean = false,
     onConnect: (FtpCredential, Boolean) -> Unit,
+    onConnectSftp: (String, Int, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onConnectAnonymous: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -49,10 +51,12 @@ fun FtpAuthDialog(
     var passwordVisible by remember { mutableStateOf(false) }
     var useFtps by remember { mutableStateOf(false) }
 
+    val titlePrefix = if (isSftp) "SFTP" else "FTP"
+
     AlertDialog(
         onDismissRequest = { if (!isConnecting) onDismiss() },
         title = {
-            Text(stringResource(R.string.ftp_auth_title, host))
+            Text("$titlePrefix — $host:$port")
         },
         text = {
             Column {
@@ -86,13 +90,16 @@ fun FtpAuthDialog(
                 )
                 Spacer(Modifier.height(8.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = useFtps,
-                        onCheckedChange = { useFtps = it },
-                        enabled = !isConnecting
-                    )
-                    Text("FTPS", style = MaterialTheme.typography.bodyMedium)
+                // FTPS option only for FTP mode
+                if (!isSftp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = useFtps,
+                            onCheckedChange = { useFtps = it },
+                            enabled = !isConnecting
+                        )
+                        Text("FTPS", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,16 +139,20 @@ fun FtpAuthDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onConnect(
-                        FtpCredential(
-                            host = host,
-                            port = port,
-                            username = username,
-                            password = password,
-                            useFtps = useFtps
-                        ),
-                        saveCredentials
-                    )
+                    if (isSftp) {
+                        onConnectSftp(host, port, username, password, saveCredentials)
+                    } else {
+                        onConnect(
+                            FtpCredential(
+                                host = host,
+                                port = port,
+                                username = username,
+                                password = password,
+                                useFtps = useFtps
+                            ),
+                            saveCredentials
+                        )
+                    }
                 },
                 enabled = !isConnecting && username.isNotBlank()
             ) {
@@ -150,11 +161,13 @@ fun FtpAuthDialog(
         },
         dismissButton = {
             Row {
-                TextButton(
-                    onClick = onConnectAnonymous,
-                    enabled = !isConnecting
-                ) {
-                    Text(stringResource(R.string.ftp_anonymous))
+                if (!isSftp) {
+                    TextButton(
+                        onClick = onConnectAnonymous,
+                        enabled = !isConnecting
+                    ) {
+                        Text(stringResource(R.string.ftp_anonymous))
+                    }
                 }
                 TextButton(
                     onClick = onDismiss,

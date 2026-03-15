@@ -1337,6 +1337,8 @@
     <string name="ftp_server_anonymous">Anonymous access</string>
     <string name="ftp_server_read_only">Read only</string>
     <string name="ftp_server_credentials">Server credentials</string>
+    <string name="ftp_tab_client">Client</string>
+    <string name="ftp_tab_server">Server</string>
     <string name="dnd_copy">Copy</string>
     <string name="dnd_move">Move</string>
 
@@ -1348,4 +1350,23 @@
     <string name="webdav_saved_servers">Saved</string>
     <string name="webdav_add_server">Add WebDAV server</string>
     <string name="webdav_connection_error">Connection failed: %s</string>
+
+    <!-- Duplicate -->
+    <string name="duplicate_title">Duplicate files</string>
+    <string name="duplicate_count">Number of copies</string>
+    <string name="duplicate_to_subfolder_here">To subfolder here</string>
+    <string name="duplicate_to_other_subfolder">To other panel (subfolder)</string>
+    <string name="duplicate_to_other_direct">To other panel (open folder)</string>
+    <string name="duplicate_create">Create</string>
+
+    <!-- Extract archives -->
+    <string name="extract_archives">Extract archives</string>
+    <string name="extract_destination_title">Extract to</string>
+    <string name="extract_next_to_archive">Next to archive (subfolder)</string>
+    <string name="extract_to_current_panel">Current panel (subfolder)</string>
+    <string name="extract_to_other_panel">Other panel (subfolder)</string>
+    <string name="extract_button">Extract</string>
+
+    <!-- Storage size info -->
+    <string name="storage_size_info">Used %1$s of %2$s (user partition, excludes Android OS ~24 GB)</string>
 </resources>

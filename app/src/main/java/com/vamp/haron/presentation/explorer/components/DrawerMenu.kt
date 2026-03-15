@@ -533,13 +533,14 @@ fun DrawerMenu(
                     onClick = { onOpenTerminal(); onDismiss() }
                 )
             }
-            item {
-                DrawerItem(
-                    icon = { Icon(Icons.Filled.Computer, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
-                    title = stringResource(R.string.tv_remote_title),
-                    onClick = { onOpenTvRemote(); onDismiss() }
-                )
-            }
+            // TV Remote — temporarily hidden from menu (code preserved)
+            // item {
+            //     DrawerItem(
+            //         icon = { Icon(Icons.Filled.Computer, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
+            //         title = stringResource(R.string.tv_remote_title),
+            //         onClick = { onOpenTvRemote(); onDismiss() }
+            //     )
+            // }
             item {
                 DrawerItem(
                     icon = { Icon(Icons.Filled.Bluetooth, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },

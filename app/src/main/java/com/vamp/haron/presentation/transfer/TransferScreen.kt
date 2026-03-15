@@ -72,9 +72,6 @@ import com.vamp.haron.presentation.transfer.components.QrCodeDialog
 import com.vamp.haron.presentation.transfer.components.QrScannerDialog
 import com.vamp.haron.presentation.transfer.components.ReceiveDialog
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import com.vamp.haron.presentation.transfer.components.FtpBrowserTab
 import com.vamp.haron.presentation.transfer.components.SmbBrowserTab
 import com.vamp.haron.presentation.transfer.components.TransferProgressCard
@@ -97,7 +94,6 @@ fun TransferScreen(
     val state by viewModel.state.collectAsState()
     val smbState by smbViewModel.state.collectAsState()
     val ftpState by ftpViewModel.state.collectAsState()
-    val ftpServerState by ftpServerViewModel.state.collectAsState()
     val webDavState by webDavViewModel.state.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(openScanner) }
@@ -321,15 +317,14 @@ fun TransferScreen(
                 0 -> TransferTabContent(
                     state = state,
                     viewModel = viewModel,
-                    onOpenFolder = onOpenFolder,
-                    ftpServerViewModel = ftpServerViewModel,
-                    ftpServerState = ftpServerState
+                    onOpenFolder = onOpenFolder
                 )
                 1 -> SmbBrowserTab(
                     viewModel = smbViewModel
                 )
                 2 -> FtpBrowserTab(
-                    viewModel = ftpViewModel
+                    viewModel = ftpViewModel,
+                    ftpServerViewModel = ftpServerViewModel
                 )
                 3 -> WebDavBrowserTab(
                     viewModel = webDavViewModel
@@ -447,9 +442,7 @@ fun TransferScreen(
 private fun TransferTabContent(
     state: TransferUiState,
     viewModel: TransferViewModel,
-    onOpenFolder: (String) -> Unit,
-    ftpServerViewModel: FtpServerViewModel,
-    ftpServerState: FtpServerUiState
+    onOpenFolder: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
             // Battery saver warning
@@ -613,19 +606,6 @@ private fun TransferTabContent(
 
             Spacer(Modifier.height(8.dp))
 
-            // FTP Server section
-            FtpServerSection(
-                state = ftpServerState,
-                onStart = { ftpServerViewModel.startServer() },
-                onStop = { ftpServerViewModel.stopServer() },
-                onAnonymousChanged = { ftpServerViewModel.setAnonymousAccess(it) },
-                onReadOnlyChanged = { ftpServerViewModel.setReadOnly(it) },
-                onUsernameChanged = { ftpServerViewModel.setUsername(it) },
-                onPasswordChanged = { ftpServerViewModel.setPassword(it) }
-            )
-
-            Spacer(Modifier.height(4.dp))
-
             // Scanning indicator
             if (state.isScanning) {
                 Row(
@@ -673,120 +653,6 @@ private fun TransferTabContent(
             } else {
                 Spacer(Modifier.weight(1f))
             }
-    }
-}
-
-@Composable
-private fun FtpServerSection(
-    state: FtpServerUiState,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onAnonymousChanged: (Boolean) -> Unit,
-    onReadOnlyChanged: (Boolean) -> Unit,
-    onUsernameChanged: (String) -> Unit,
-    onPasswordChanged: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (state.isRunning) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Filled.Storage,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.ftp_server_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = { if (state.isRunning) onStop() else onStart() }
-                ) {
-                    Text(
-                        stringResource(
-                            if (state.isRunning) R.string.ftp_server_stop
-                            else R.string.ftp_server_start
-                        )
-                    )
-                }
-            }
-
-            if (state.isRunning && state.serverUrl != null) {
-                Text(
-                    state.serverUrl,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 28.dp, top = 4.dp)
-                )
-            }
-
-            if (!state.isRunning) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 28.dp, top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        stringResource(R.string.ftp_server_anonymous),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = state.anonymousAccess,
-                        onCheckedChange = onAnonymousChanged
-                    )
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 28.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        stringResource(R.string.ftp_server_read_only),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = state.readOnly,
-                        onCheckedChange = onReadOnlyChanged
-                    )
-                }
-                if (!state.anonymousAccess) {
-                    OutlinedTextField(
-                        value = state.username,
-                        onValueChange = onUsernameChanged,
-                        label = { Text(stringResource(R.string.ftp_username)) },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp, end = 4.dp, top = 4.dp)
-                    )
-                    OutlinedTextField(
-                        value = state.password,
-                        onValueChange = onPasswordChanged,
-                        label = { Text(stringResource(R.string.ftp_password)) },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp, end = 4.dp, top = 4.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

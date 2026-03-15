@@ -188,6 +188,7 @@ fun FilePanel(
     folderSizeCache: Map<String, Long> = emptyMap(),
     hasSelectionBar: Boolean = false,
     cloudAuthHeader: String? = null,
+    onSizeClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val borderColor = when {
@@ -945,6 +946,7 @@ fun FilePanel(
                     safVolumeLabel = safVolumeLabel,
                     folderSize = currentFolderSize ?: state.files.filter { !it.isDirectory }.sumOf { it.size },
                     onSegmentClick = onBreadcrumbClick,
+                    onSizeClick = onSizeClick,
                     cloudBreadcrumbs = state.cloudBreadcrumbs
                 )
             }

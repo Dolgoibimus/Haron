@@ -51,4 +51,8 @@ object HaronConstants {
     const val FTP_SO_TIMEOUT_MS = 30_000
     const val FTP_CREDENTIAL_KEYSTORE_ALIAS = "haron_ftp_cred_key"
     const val FTP_CREDENTIAL_FILE = "ftp_credentials.enc"
+
+    // WebDAV
+    const val WEBDAV_CREDENTIAL_FILE = "webdav_credentials.enc"
+    const val WEBDAV_CREDENTIAL_KEYSTORE_ALIAS = "haron_webdav_key"
 }

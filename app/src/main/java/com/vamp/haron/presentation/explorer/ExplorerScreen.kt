@@ -68,6 +68,10 @@ import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import com.vamp.haron.presentation.explorer.components.CreateArchiveDialog
 import com.vamp.haron.presentation.explorer.components.CreateFromTemplateDialog
@@ -323,6 +327,9 @@ fun ExplorerScreen(
     val selectedEntries = selectionPanelState.files.filter { it.path in selectionPanelState.selectedPaths }
     val selectedDirs = selectedEntries.count { it.isDirectory }
     val selectedFiles = selectedEntries.size - selectedDirs
+    val archiveExtsForSelection = remember { setOf("zip", "7z", "rar") }
+    val allSelectedAreArchives = selectedEntries.isNotEmpty() && !selectionPanelState.isArchiveMode &&
+        selectedEntries.all { !it.isDirectory && it.name.substringAfterLast('.').lowercase() in archiveExtsForSelection }
     // Cache selection-derived values — avoid repeated .filter() on every recomposition
     val topSelectedEntries = remember(state.topPanel.files, state.topPanel.selectedPaths) {
         state.topPanel.files.filter { it.path in state.topPanel.selectedPaths }
@@ -587,6 +594,7 @@ fun ExplorerScreen(
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.topPanel.currentPath),
+                onSizeClick = { viewModel.showStorageSizeInfo(PanelId.TOP) },
                 modifier = modifier
             )
         }
@@ -744,6 +752,7 @@ fun ExplorerScreen(
                 folderSizeCache = state.folderSizeCache,
                 hasSelectionBar = hasSelection && !isDragging,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.bottomPanel.currentPath),
+                onSizeClick = { viewModel.showStorageSizeInfo(PanelId.BOTTOM) },
                 modifier = modifier
             )
         }
@@ -846,16 +855,24 @@ fun ExplorerScreen(
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.onSendToTransfer(selectedEntries.map { it.path })
                 },
+                onCopyLongClick = {
+                    selectionPanelId?.let { viewModel.setActivePanel(it) }
+                    viewModel.showDuplicateDialog()
+                },
                 onCast = {
                     selectionPanelId?.let { viewModel.setActivePanel(it) }
                     viewModel.castSelected()
                 },
                 isArchiveMode = selectionPanelState.isArchiveMode,
+                allSelectedAreArchives = allSelectedAreArchives,
                 onExtract = {
                     selectionPanelId?.let { viewModel.extractFromArchive(it, selectedOnly = true) }
                 },
                 onExtractAll = {
                     selectionPanelId?.let { viewModel.extractFromArchive(it, selectedOnly = false) }
+                },
+                onExtractArchives = {
+                    selectionPanelId?.let { viewModel.showExtractArchivesDialog(it) }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -1450,8 +1467,148 @@ private fun ExplorerDialogs(
                 onDismiss = { viewModel.dismissDialog() }
             )
         }
+        is DialogState.DuplicateDialog -> {
+            DuplicateDialog(
+                paths = dialog.paths,
+                onDismiss = viewModel::dismissDialog,
+                onConfirm = { count, destination ->
+                    viewModel.executeDuplicate(count, destination)
+                }
+            )
+        }
+        is DialogState.ExtractArchivesDialog -> {
+            ExtractArchivesDialog(
+                archiveCount = dialog.archivePaths.size,
+                onDismiss = viewModel::dismissDialog,
+                onConfirm = { destination ->
+                    viewModel.executeExtractArchives(destination)
+                }
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
+}
+
+@Composable
+private fun ExtractArchivesDialog(
+    archiveCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (com.vamp.haron.presentation.explorer.state.ExtractDestination) -> Unit
+) {
+    var destination by remember { mutableStateOf(com.vamp.haron.presentation.explorer.state.ExtractDestination.NEXT_TO_ARCHIVE) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.extract_destination_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.vamp.haron.presentation.explorer.state.ExtractDestination.entries.forEach { dest ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { destination = dest }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = destination == dest,
+                            onClick = { destination = dest }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when (dest) {
+                                com.vamp.haron.presentation.explorer.state.ExtractDestination.NEXT_TO_ARCHIVE ->
+                                    stringResource(R.string.extract_next_to_archive)
+                                com.vamp.haron.presentation.explorer.state.ExtractDestination.SAME_PANEL ->
+                                    stringResource(R.string.extract_to_current_panel)
+                                com.vamp.haron.presentation.explorer.state.ExtractDestination.OTHER_PANEL ->
+                                    stringResource(R.string.extract_to_other_panel)
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(destination) }) {
+                Text(stringResource(R.string.extract_button))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun DuplicateDialog(
+    paths: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (count: Int, destination: com.vamp.haron.presentation.explorer.state.DuplicateDestination) -> Unit
+) {
+    var countText by remember { mutableStateOf("1") }
+    var destination by remember { mutableStateOf(com.vamp.haron.presentation.explorer.state.DuplicateDestination.SAME_SUBFOLDER) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.duplicate_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = countText,
+                    onValueChange = { newVal -> countText = newVal.filter { it.isDigit() }.take(4) },
+                    label = { Text(stringResource(R.string.duplicate_count)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                com.vamp.haron.presentation.explorer.state.DuplicateDestination.entries.forEach { dest ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { destination = dest }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = destination == dest,
+                            onClick = { destination = dest }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when (dest) {
+                                com.vamp.haron.presentation.explorer.state.DuplicateDestination.SAME_SUBFOLDER ->
+                                    stringResource(R.string.duplicate_to_subfolder_here)
+                                com.vamp.haron.presentation.explorer.state.DuplicateDestination.OTHER_PANEL_SUBFOLDER ->
+                                    stringResource(R.string.duplicate_to_other_subfolder)
+                                com.vamp.haron.presentation.explorer.state.DuplicateDestination.OTHER_PANEL_DIRECT ->
+                                    stringResource(R.string.duplicate_to_other_direct)
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val count = countText.toIntOrNull() ?: 1
+                    if (count > 0) onConfirm(count, destination)
+                }
+            ) {
+                Text(stringResource(R.string.duplicate_create))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }
 
 @Composable

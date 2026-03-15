@@ -97,7 +97,7 @@ class FileRepositoryImpl @Inject constructor(
         }
 
     fun isRestrictedAndroidPath(path: String): Boolean =
-        path.contains("/Android/data") || path.contains("/Android/obb")
+        path.contains("/Android/data") || path.contains("/Android/obb") || path.contains("/Android/media")
 
     fun filePathToDocId(filePath: String): String? {
         val internalPrefix = "/storage/emulated/0/"
@@ -230,12 +230,16 @@ class FileRepositoryImpl @Inject constructor(
         try {
             val isDstSaf = isContentUri(destinationDir)
             if (!isDstSaf) {
-                val destDir = File(destinationDir)
-                if (!destDir.isDirectory) {
-                    return@withContext Result.failure(
-                        IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
-                    )
+                val dstRestricted = isRestrictedAndroidPath(destinationDir)
+                if (!dstRestricted) {
+                    val destDir = File(destinationDir)
+                    if (!destDir.isDirectory) {
+                        return@withContext Result.failure(
+                            IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
+                        )
+                    }
                 }
+                // For restricted dest paths, skip File.isDirectory check (FUSE blocks it)
             }
             var count = 0
             for (srcPath in sourcePaths) {
@@ -249,24 +253,52 @@ class FileRepositoryImpl @Inject constructor(
 
                 when {
                     !isSrcSaf && !isDstSaf -> {
-                        // File → File
-                        val src = File(srcPath)
-                        if (!src.exists()) continue
-                        val destDir = File(destinationDir)
-                        val destFile = File(destDir, src.name)
-                        val dest = when {
-                            !destFile.exists() -> destFile
-                            resolution == ConflictResolution.REPLACE -> {
-                                destFile.deleteRecursively(); destFile
+                        val srcRestricted = isRestrictedAndroidPath(srcPath)
+                        val dstRestricted = isRestrictedAndroidPath(destinationDir)
+
+                        if ((srcRestricted || dstRestricted) && shizukuManager.ensureServiceBound()) {
+                            // Shizuku path — use IPC for restricted file operations
+                            val srcName = srcPath.substringAfterLast('/')
+                            val destPath = "$destinationDir/$srcName"
+                            val destExists = shizukuManager.exists(destPath) == true
+                            val resolvedDest = when {
+                                !destExists -> destPath
+                                resolution == ConflictResolution.REPLACE -> {
+                                    shizukuManager.deleteRecursively(destPath); destPath
+                                }
+                                resolution == ConflictResolution.RENAME -> resolveConflictViaShizuku(destinationDir, srcName)
+                                resolution == ConflictResolution.SKIP -> continue
+                                else -> continue
                             }
-                            resolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
-                            resolution == ConflictResolution.SKIP -> continue
-                            else -> continue
+                            val isDir = shizukuManager.isDirectory(srcPath) == true
+                            val isReplace = resolution == ConflictResolution.REPLACE
+                            val ok = if (isDir) {
+                                shizukuManager.copyDirectoryRecursively(srcPath, resolvedDest, isReplace)
+                            } else {
+                                shizukuManager.copyFile(srcPath, resolvedDest, isReplace)
+                            }
+                            if (ok) count++
+                            else EcosystemLogger.e(HaronConstants.TAG, "Shizuku copy failed: $srcPath → $resolvedDest")
+                        } else {
+                            // File → File (normal paths)
+                            val src = File(srcPath)
+                            if (!src.exists()) continue
+                            val destDir = File(destinationDir)
+                            val destFile = File(destDir, src.name)
+                            val dest = when {
+                                !destFile.exists() -> destFile
+                                resolution == ConflictResolution.REPLACE -> {
+                                    destFile.deleteRecursively(); destFile
+                                }
+                                resolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
+                                resolution == ConflictResolution.SKIP -> continue
+                                else -> continue
+                            }
+                            val isReplace = resolution == ConflictResolution.REPLACE
+                            if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
+                            else src.copyTo(dest, overwrite = isReplace)
+                            count++
                         }
-                        val isReplace = resolution == ConflictResolution.REPLACE
-                        if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
-                        else src.copyTo(dest, overwrite = isReplace)
-                        count++
                     }
                     isSrcSaf && !isDstSaf -> {
                         // SAF → File
@@ -340,11 +372,14 @@ class FileRepositoryImpl @Inject constructor(
         try {
             val isDstSaf = isContentUri(destinationDir)
             if (!isDstSaf) {
-                val destDir = File(destinationDir)
-                if (!destDir.isDirectory) {
-                    return@withContext Result.failure(
-                        IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
-                    )
+                val dstRestricted = isRestrictedAndroidPath(destinationDir)
+                if (!dstRestricted) {
+                    val destDir = File(destinationDir)
+                    if (!destDir.isDirectory) {
+                        return@withContext Result.failure(
+                            IllegalArgumentException(context.getString(R.string.error_dest_not_folder, destinationDir))
+                        )
+                    }
                 }
             }
             var count = 0
@@ -354,32 +389,71 @@ class FileRepositoryImpl @Inject constructor(
 
                 when {
                     !isSrcSaf && !isDstSaf -> {
-                        // File → File (original logic)
-                        val src = File(srcPath)
-                        if (!src.exists()) continue
-                        val destDir = File(destinationDir)
-                        val destFile = File(destDir, src.name)
-                        val dest = when {
-                            !destFile.exists() -> destFile
-                            resolution == ConflictResolution.REPLACE -> {
-                                destFile.deleteRecursively(); destFile
+                        val srcRestricted = isRestrictedAndroidPath(srcPath)
+                        val dstRestricted = isRestrictedAndroidPath(destinationDir)
+
+                        if ((srcRestricted || dstRestricted) && shizukuManager.ensureServiceBound()) {
+                            // Shizuku path — move via IPC
+                            val srcName = srcPath.substringAfterLast('/')
+                            val destPath = "$destinationDir/$srcName"
+                            val destExists = shizukuManager.exists(destPath) == true
+                            val resolvedDest = when {
+                                !destExists -> destPath
+                                resolution == ConflictResolution.REPLACE -> {
+                                    shizukuManager.deleteRecursively(destPath); destPath
+                                }
+                                resolution == ConflictResolution.RENAME -> resolveConflictViaShizuku(destinationDir, srcName)
+                                resolution == ConflictResolution.SKIP -> continue
+                                else -> continue
                             }
-                            resolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
-                            resolution == ConflictResolution.SKIP -> continue
-                            else -> continue
+                            // Guard: cannot move folder into itself
+                            val isDir = shizukuManager.isDirectory(srcPath) == true
+                            if (isDir && resolvedDest.startsWith("$srcPath/")) continue
+                            // Try rename first (atomic, same filesystem)
+                            val moved = shizukuManager.renameTo(srcPath, resolvedDest)
+                            if (!moved) {
+                                // Fallback: copy + delete
+                                val isReplace = resolution == ConflictResolution.REPLACE
+                                val copyOk = if (isDir) {
+                                    shizukuManager.copyDirectoryRecursively(srcPath, resolvedDest, isReplace)
+                                } else {
+                                    shizukuManager.copyFile(srcPath, resolvedDest, isReplace)
+                                }
+                                if (copyOk) shizukuManager.deleteRecursively(srcPath)
+                                else {
+                                    EcosystemLogger.e(HaronConstants.TAG, "Shizuku move failed: $srcPath → $resolvedDest")
+                                    continue
+                                }
+                            }
+                            count++
+                        } else {
+                            // File → File (normal paths)
+                            val src = File(srcPath)
+                            if (!src.exists()) continue
+                            val destDir = File(destinationDir)
+                            val destFile = File(destDir, src.name)
+                            val dest = when {
+                                !destFile.exists() -> destFile
+                                resolution == ConflictResolution.REPLACE -> {
+                                    destFile.deleteRecursively(); destFile
+                                }
+                                resolution == ConflictResolution.RENAME -> resolveConflict(destDir, src.name)
+                                resolution == ConflictResolution.SKIP -> continue
+                                else -> continue
+                            }
+                            // Guard: cannot move folder into itself
+                            if (src.isDirectory && dest.absolutePath.startsWith(src.absolutePath + File.separator)) {
+                                continue
+                            }
+                            val moved = src.renameTo(dest)
+                            if (!moved) {
+                                val isReplace = resolution == ConflictResolution.REPLACE
+                                if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
+                                else src.copyTo(dest, overwrite = isReplace)
+                                src.deleteRecursively()
+                            }
+                            count++
                         }
-                        // Guard: cannot move folder into itself
-                        if (src.isDirectory && dest.absolutePath.startsWith(src.absolutePath + File.separator)) {
-                            continue
-                        }
-                        val moved = src.renameTo(dest)
-                        if (!moved) {
-                            val isReplace = resolution == ConflictResolution.REPLACE
-                            if (src.isDirectory) safeCopyDirectory(src, dest, overwrite = isReplace)
-                            else src.copyTo(dest, overwrite = isReplace)
-                            src.deleteRecursively()
-                        }
-                        count++
                     }
                     else -> {
                         // Mixed SAF: copy + delete source
@@ -389,6 +463,8 @@ class FileRepositoryImpl @Inject constructor(
                         if (copyResult.isSuccess && (copyResult.getOrNull() ?: 0) > 0) {
                             if (isSrcSaf) {
                                 safFileOperations.deleteFile(Uri.parse(srcPath))
+                            } else if (isRestrictedAndroidPath(srcPath) && shizukuManager.ensureServiceBound()) {
+                                shizukuManager.deleteRecursively(srcPath)
                             } else {
                                 File(srcPath).deleteRecursively()
                             }
@@ -412,6 +488,9 @@ class FileRepositoryImpl @Inject constructor(
                 for (path in paths) {
                     if (isContentUri(path)) {
                         if (safFileOperations.deleteFile(Uri.parse(path))) count++
+                    } else if (isRestrictedAndroidPath(path) && shizukuManager.ensureServiceBound()) {
+                        if (shizukuManager.deleteRecursively(path)) count++
+                        else EcosystemLogger.e(HaronConstants.TAG, "Shizuku delete failed: $path")
                     } else {
                         val file = File(path)
                         if (!file.exists()) continue
@@ -433,6 +512,23 @@ class FileRepositoryImpl @Inject constructor(
                 return@withContext renameSafFile(path, newName)
             }
             try {
+                if (isRestrictedAndroidPath(path) && shizukuManager.ensureServiceBound()) {
+                    // Shizuku rename for restricted paths
+                    val parentDir = path.substringBeforeLast('/')
+                    val destPath = "$parentDir/$newName"
+                    if (shizukuManager.exists(destPath) == true) {
+                        return@withContext Result.failure(
+                            IllegalArgumentException(context.getString(R.string.error_file_name_exists, newName))
+                        )
+                    }
+                    val success = shizukuManager.renameTo(path, destPath)
+                    return@withContext if (success) {
+                        EcosystemLogger.d(HaronConstants.TAG, "Shizuku переименовано: $path → $newName")
+                        Result.success(destPath)
+                    } else {
+                        Result.failure(Exception(context.getString(R.string.error_rename_failed)))
+                    }
+                }
                 val file = File(path)
                 if (!file.exists()) {
                     return@withContext Result.failure(
@@ -481,6 +577,22 @@ class FileRepositoryImpl @Inject constructor(
                 }
             }
             try {
+                val dirPath = "$parentPath/$name"
+                if (isRestrictedAndroidPath(parentPath) && shizukuManager.ensureServiceBound()) {
+                    // Shizuku mkdir for restricted paths
+                    if (shizukuManager.exists(dirPath) == true) {
+                        return@withContext Result.failure(
+                            IllegalArgumentException(context.getString(R.string.error_folder_exists, name))
+                        )
+                    }
+                    val created = shizukuManager.mkdirs(dirPath)
+                    return@withContext if (created) {
+                        EcosystemLogger.d(HaronConstants.TAG, "Shizuku создана папка: $dirPath")
+                        Result.success(dirPath)
+                    } else {
+                        Result.failure(Exception(context.getString(R.string.error_create_folder)))
+                    }
+                }
                 val dir = File(parentPath, name)
                 if (dir.exists()) {
                     return@withContext Result.failure(
@@ -548,6 +660,20 @@ class FileRepositoryImpl @Inject constructor(
             counter++
         }
         return target
+    }
+
+    /** Resolve name conflict via Shizuku exists() for restricted paths */
+    private fun resolveConflictViaShizuku(destDir: String, name: String): String {
+        var targetPath = "$destDir/$name"
+        if (shizukuManager.exists(targetPath) != true) return targetPath
+        val baseName = name.substringBeforeLast('.', name)
+        val ext = if ('.' in name) ".${name.substringAfterLast('.')}" else ""
+        var counter = 1
+        while (shizukuManager.exists(targetPath) == true) {
+            targetPath = "$destDir/${baseName}($counter)$ext"
+            counter++
+        }
+        return targetPath
     }
 
     /**

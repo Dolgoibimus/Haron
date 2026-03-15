@@ -64,7 +64,8 @@ class ReceiveFileManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val nsdDiscoveryManager: NsdDiscoveryManager,
     private val preferences: HaronPreferences,
-    private val bluetoothTransferManager: BluetoothTransferManager
+    private val bluetoothTransferManager: BluetoothTransferManager,
+    private val wifiDirectManager: WifiDirectManager
 ) {
     /** Own CoroutineScope — server lives independently of any Activity/ViewModel */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -74,6 +75,7 @@ class ReceiveFileManager @Inject constructor(
     private var listening = false
     private var serverJob: Job? = null
     private var btJob: Job? = null
+    private var p2pJob: Job? = null
 
     private var pendingRequest: IncomingTransferRequest? = null
 
@@ -137,67 +139,8 @@ class ReceiveFileManager @Inject constructor(
                         continue
                     }
 
-                    EcosystemLogger.d(HaronConstants.TAG, "Incoming connection from ${socket.remoteSocketAddress}")
-
-                    // Read the REQUEST message
-                    val input = DataInputStream(socket.getInputStream())
-                    val requestJson = input.readUTF()
-                    val type = TransferProtocolNegotiator.parseType(requestJson)
-
-                    if (type == TransferProtocolNegotiator.TYPE_REQUEST) {
-                        val requestData = TransferProtocolNegotiator.parseRequest(requestJson)
-                        val deviceName = socket.inetAddress?.hostAddress ?: "Unknown"
-                        val request = IncomingTransferRequest(
-                            deviceName = deviceName,
-                            files = requestData.files,
-                            protocol = requestData.protocol,
-                            socket = socket
-                        )
-                        pendingRequest = request
-                        _incomingRequests.tryEmit(request)
-                    } else if (type == TransferProtocolNegotiator.TYPE_QUICK_SEND) {
-                        val senderName = TransferProtocolNegotiator.parseQuickSendSender(requestJson)
-                        if (senderName != null && preferences.isDeviceTrusted(senderName)) {
-                            // Trusted (friend): auto-accept
-                            handleQuickSend(socket, requestJson)
-                        } else {
-                            // Untrusted: confirm via dialog, but keep socket on IO thread
-                            val requestData = TransferProtocolNegotiator.parseRequest(requestJson)
-                            val deviceName = senderName ?: socket.inetAddress?.hostAddress ?: "Unknown"
-                            val pending = QuickSendPending(
-                                senderName = deviceName,
-                                fileCount = requestData.files.size
-                            )
-                            _quickSendPending.tryEmit(pending)
-                            // Wait for user decision (30 sec timeout)
-                            val accepted = withTimeoutOrNull(30_000L) {
-                                pending.response.await()
-                            } ?: false
-                            if (accepted) {
-                                handleQuickSend(socket, requestJson)
-                            } else {
-                                try {
-                                    val output = PrintWriter(socket.getOutputStream(), true)
-                                    output.println(TransferProtocolNegotiator.buildDecline("User declined"))
-                                } catch (_: Exception) { }
-                                socket.close()
-                            }
-                        }
-                    } else if (type == TransferProtocolNegotiator.TYPE_DROP_REQUEST) {
-                        val dropData = TransferProtocolNegotiator.parseDropRequest(requestJson)
-                        val address = socket.inetAddress?.hostAddress ?: "Unknown"
-                        _dropRequests.tryEmit(
-                            DropRequestInfo(
-                                deviceName = dropData.senderName,
-                                deviceAddress = address,
-                                devicePort = dropData.senderPort
-                            )
-                        )
-                        EcosystemLogger.d(HaronConstants.TAG, "DROP_REQUEST from ${dropData.senderName} ($address:${dropData.senderPort})")
-                        socket.close()
-                    } else {
-                        socket.close()
-                    }
+                    EcosystemLogger.d(HaronConstants.TAG, "Incoming TCP connection from ${socket.remoteSocketAddress}")
+                    handleIncomingSocket(socket)
                 } catch (_: SocketException) {
                     break // Server socket closed
                 } catch (e: Exception) {
@@ -219,6 +162,81 @@ class ReceiveFileManager @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "BT listener error: ${e.message}")
                 }
             }
+        }
+
+        // Subscribe to incoming Wi-Fi Direct P2P sockets
+        p2pJob = scope.launch {
+            wifiDirectManager.incomingP2pSocket.collect { socket ->
+                EcosystemLogger.d(HaronConstants.TAG, "Incoming P2P socket from ${socket.remoteSocketAddress}")
+                handleIncomingSocket(socket)
+            }
+        }
+    }
+
+    /**
+     * Handle an incoming socket (TCP or P2P). Reads the protocol message,
+     * dispatches to REQUEST / QUICK_SEND / DROP_REQUEST handlers.
+     */
+    private suspend fun handleIncomingSocket(socket: Socket) {
+        try {
+            val input = DataInputStream(socket.getInputStream())
+            val requestJson = input.readUTF()
+            val type = TransferProtocolNegotiator.parseType(requestJson)
+
+            if (type == TransferProtocolNegotiator.TYPE_REQUEST) {
+                val requestData = TransferProtocolNegotiator.parseRequest(requestJson)
+                val deviceName = socket.inetAddress?.hostAddress ?: "Unknown"
+                val request = IncomingTransferRequest(
+                    deviceName = deviceName,
+                    files = requestData.files,
+                    protocol = requestData.protocol,
+                    socket = socket
+                )
+                pendingRequest = request
+                _incomingRequests.tryEmit(request)
+            } else if (type == TransferProtocolNegotiator.TYPE_QUICK_SEND) {
+                val senderName = TransferProtocolNegotiator.parseQuickSendSender(requestJson)
+                if (senderName != null && preferences.isDeviceTrusted(senderName)) {
+                    handleQuickSend(socket, requestJson)
+                } else {
+                    val requestData = TransferProtocolNegotiator.parseRequest(requestJson)
+                    val deviceName = senderName ?: socket.inetAddress?.hostAddress ?: "Unknown"
+                    val pending = QuickSendPending(
+                        senderName = deviceName,
+                        fileCount = requestData.files.size
+                    )
+                    _quickSendPending.tryEmit(pending)
+                    val accepted = withTimeoutOrNull(30_000L) {
+                        pending.response.await()
+                    } ?: false
+                    if (accepted) {
+                        handleQuickSend(socket, requestJson)
+                    } else {
+                        try {
+                            val output = PrintWriter(socket.getOutputStream(), true)
+                            output.println(TransferProtocolNegotiator.buildDecline("User declined"))
+                        } catch (_: Exception) { }
+                        socket.close()
+                    }
+                }
+            } else if (type == TransferProtocolNegotiator.TYPE_DROP_REQUEST) {
+                val dropData = TransferProtocolNegotiator.parseDropRequest(requestJson)
+                val address = socket.inetAddress?.hostAddress ?: "Unknown"
+                _dropRequests.tryEmit(
+                    DropRequestInfo(
+                        deviceName = dropData.senderName,
+                        deviceAddress = address,
+                        devicePort = dropData.senderPort
+                    )
+                )
+                EcosystemLogger.d(HaronConstants.TAG, "DROP_REQUEST from ${dropData.senderName} ($address:${dropData.senderPort})")
+                socket.close()
+            } else {
+                socket.close()
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "handleIncomingSocket error: ${e.message}")
+            try { socket.close() } catch (_: Exception) { }
         }
     }
 
@@ -351,6 +369,8 @@ class ReceiveFileManager @Inject constructor(
         serverJob = null
         btJob?.cancel()
         btJob = null
+        p2pJob?.cancel()
+        p2pJob = null
         bluetoothTransferManager.stopListening()
         nsdDiscoveryManager.unregisterService()
         try {

@@ -1336,6 +1336,8 @@
     <string name="ftp_server_anonymous">Анонимный доступ</string>
     <string name="ftp_server_read_only">Только чтение</string>
     <string name="ftp_server_credentials">Учётные данные сервера</string>
+    <string name="ftp_tab_client">Клиент</string>
+    <string name="ftp_tab_server">Сервер</string>
     <string name="dnd_copy">Копировать</string>
     <string name="dnd_move">Переместить</string>
 
@@ -1347,4 +1349,23 @@
     <string name="webdav_saved_servers">Сохранённые</string>
     <string name="webdav_add_server">Добавить WebDAV-сервер</string>
     <string name="webdav_connection_error">Ошибка подключения: %s</string>
+
+    <!-- Duplicate -->
+    <string name="duplicate_title">Дублирование файлов</string>
+    <string name="duplicate_count">Количество копий</string>
+    <string name="duplicate_to_subfolder_here">В подпапку здесь</string>
+    <string name="duplicate_to_other_subfolder">В другую панель (подпапка)</string>
+    <string name="duplicate_to_other_direct">В другую панель (открытая папка)</string>
+    <string name="duplicate_create">Создать</string>
+
+    <!-- Extract archives -->
+    <string name="extract_archives">Извлечь архивы</string>
+    <string name="extract_destination_title">Извлечь в</string>
+    <string name="extract_next_to_archive">Рядом с архивом (подпапка)</string>
+    <string name="extract_to_current_panel">Текущая панель (подпапка)</string>
+    <string name="extract_to_other_panel">Другая панель (подпапка)</string>
+    <string name="extract_button">Извлечь</string>
+
+    <!-- Storage size info -->
+    <string name="storage_size_info">Занято %1$s из %2$s (раздел данных, без ОС Android ~24 ГБ)</string>
 </resources>

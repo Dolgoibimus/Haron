@@ -27,6 +27,7 @@ fun BreadcrumbBar(
     safVolumeLabel: String = "",
     folderSize: Long = 0L,
     onSegmentClick: (String) -> Unit = {},
+    onSizeClick: () -> Unit = {},
     cloudBreadcrumbs: List<Pair<String, String>> = emptyList(),
     modifier: Modifier = Modifier
 ) {
@@ -187,7 +188,8 @@ fun BreadcrumbBar(
             text = folderSize.toFileSize(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            maxLines = 1
+            maxLines = 1,
+            modifier = Modifier.clickable { onSizeClick() }
         )
     }
 }

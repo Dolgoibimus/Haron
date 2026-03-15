@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.72 (Phase 4, Batch 72)
+**Текущая версия:** 0.75 (Phase 4, Batch 75)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,33 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 75 — Self-copy (дублирование) + Извлечение архивов с пульсирующей иконкой ⚠️ не проверено
+
+**Цель:** Две новых функции в панели выделения.
+
+#### Что реализовано
+- **Self-copy (дублирование файлов)**: долгий тап по Copy → диалог с количеством копий и 3 вариантами назначения (подпапка здесь / подпапка в другой панели / открытая папка другой панели). Имена копий: `file(1).ext`, `file(2).ext`. Для каталогов: `dirname(1)`, `dirname(2)`.
+- **Извлечение архивов с пульсирующей иконкой**: при выделении только архивов (zip/7z/rar) в обычной папке иконка Archive заменяется на пульсирующую Unarchive. Тап → диалог с выбором куда: рядом с архивом / текущая панель / другая панель. Всегда в подпапку с именем архива.
+- **Размер папки при дублировании**: кеш размеров обновляется в реальном времени после каждой копии.
+- **Размер корня**: StorageStatsManager (точный размер пользовательского раздела) вместо walkTopDown. Тап на размер в корне → тост с пояснением.
+- **Shizuku calculateDirSize**: AIDL метод для подсчёта размера restricted-папок (Android/data, obb).
+- **features.txt** — описания дублирования и извлечения архивов (EN + RU).
+
+#### Затронутые файлы
+- `ExplorerUiState.kt` — `DialogState.DuplicateDialog`, `DialogState.ExtractArchivesDialog`, `DuplicateDestination`, `ExtractDestination` enums
+- `SelectionActionBar.kt` — `onCopyLongClick`, `allSelectedAreArchives`, `onExtractArchives`, пульсация Unarchive
+- `ExplorerViewModel.kt` — `showDuplicateDialog()`, `executeDuplicate()`, `showExtractArchivesDialog()`, `executeExtractArchives()`, `invalidateFolderSizeCache()`
+- `ExplorerScreen.kt` — `allSelectedAreArchives` вычисление, `DuplicateDialog` + `ExtractArchivesDialog` composables, передача параметров
+- `BreadcrumbBar.kt` — `onSizeClick` callback, клик по размеру
+- `FilePanel.kt` — `onSizeClick` параметр
+- `IShizukuFileService.aidl` — `calculateDirSize(path)` метод
+- `ShizukuFileService.kt` — реализация calculateDirSize
+- `ShizukuManager.kt` — `isServiceBound()`, `calculateDirSize()` wrapper
+- `strings.xml` (EN + RU) — строки для дублирования, извлечения и storage info
+- `features.txt` (EN + RU) — описания новых функций
 
 ---
 

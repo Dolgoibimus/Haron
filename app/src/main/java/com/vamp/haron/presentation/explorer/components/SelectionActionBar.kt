@@ -24,14 +24,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -54,11 +61,14 @@ fun SelectionActionBar(
     onTag: () -> Unit,
     onSend: () -> Unit = {},
     onSendLongClick: () -> Unit = {},
+    onCopyLongClick: () -> Unit = {},
     onCast: () -> Unit = {},
     isSizeCalculating: Boolean = false,
     isArchiveMode: Boolean = false,
+    allSelectedAreArchives: Boolean = false,
     onExtract: () -> Unit = {},
     onExtractAll: () -> Unit = {},
+    onExtractArchives: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val totalCount = dirCount + fileCount
@@ -130,7 +140,15 @@ fun SelectionActionBar(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .combinedClickable(
+                                onClick = onCopy,
+                                onLongClick = onCopyLongClick
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_action), modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = onMove, modifier = Modifier.size(36.dp)) {
@@ -150,8 +168,26 @@ fun SelectionActionBar(
                     ) {
                         Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.rename_action), modifier = Modifier.size(20.dp))
                     }
-                    IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.zip_action), modifier = Modifier.size(20.dp))
+                    if (allSelectedAreArchives) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "extractPulse")
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 0.4f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+                            label = "extractAlpha"
+                        )
+                        IconButton(onClick = onExtractArchives, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Filled.Unarchive,
+                                contentDescription = stringResource(R.string.extract_archives),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onZip, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.zip_action), modifier = Modifier.size(20.dp))
+                        }
                     }
                     IconButton(onClick = onAddToShelf, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Filled.Inventory2, contentDescription = stringResource(R.string.to_shelf_action), modifier = Modifier.size(20.dp))

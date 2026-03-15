@@ -132,6 +132,7 @@ class DelegatingUseCasesTest {
         override suspend fun searchContentInFolder(folderPath: String, query: String): Map<String, String> = emptyMap()
         override suspend fun indexFolderContent(folderPath: String, force: Boolean, onProgress: (Int, Int) -> Unit) {}
         override suspend fun isFolderContentIndexed(folderPath: String): Boolean = false
+        override fun cancelGlobalIndexing() {}
     }
 
     private class FakeSteganographyRepository : SteganographyRepository {
