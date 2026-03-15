@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.75 (Phase 4, Batch 75)
+**Текущая версия:** 0.76 (Phase 4, Batch 76)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,27 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 76 — ANR fix + Sora Editor для больших файлов ⚠️ не проверено
+
+**Цель:** Исправить ANR при открытии/редактировании больших текстовых файлов (600KB+).
+
+#### Что реализовано
+- **Просмотр больших файлов**: LazyColumn + чанки вместо BasicTextField. Длинные строки (>4096 символов) разбиваются на куски. Файл 655KB/1 строка открывается за 14мс без ANR.
+- **Sora Editor** (библиотека): подключена `io.github.Rosemoe.sora-editor:editor:0.23.6` для редактирования файлов >256KB. Рендерит только видимые строки через Canvas.drawText().
+- **Гибридный режим**: файлы ≤256KB → BasicTextField (нативный Compose), >256KB → Sora Editor через AndroidView.
+- **Предобработка длинных строк**: строки >400 символов разбиваются по 200 для Sora Editor (word wrap не справляется с 655K-символьной строкой). При сохранении вставленные переносы убираются.
+- **TextFieldValue deferred init**: инициализация перенесена из LaunchedEffect в onClick кнопки Edit. Убрана пустая первая рамка при входе в редактор.
+- **Undo/Redo для Sora**: реактивные state-переменные `soraCanUndo`/`soraCanRedo`, обновляются при ContentChangeEvent и после undo/redo.
+- **Скрытие клавиатуры**: InputMethodManager при выходе из Sora Editor (Android View клава не управляется Compose keyboardController).
+- **Визуал Sora**: Material 3 цвета (фон, текст, курсор, выделение), убраны номера строк и разделитель, 10dp внутренние отступы.
+- **Отступы читалки**: 2dp слева и справа.
+
+#### Затронутые файлы
+- `TextEditorScreen.kt` — полная переработка: view mode (LazyColumn+chunks), edit mode (BasicTextField для маленьких / Sora Editor для больших), keyboard hide
+- `build.gradle.kts` — зависимость sora-editor BOM 0.23.6
 
 ---
 

@@ -256,6 +256,7 @@
     <string name="read_file_error">File read error</string>
     <string name="line_format">Line %d</string>
     <string name="file_truncated">File truncated (>1 MB)</string>
+    <string name="file_too_large_to_edit">File too large for editing (%d KB limit)</string>
     <string name="modified">Modified</string>
     <string name="saved">Saved</string>
     <string name="unsaved_changes_title">Unsaved Changes</string>

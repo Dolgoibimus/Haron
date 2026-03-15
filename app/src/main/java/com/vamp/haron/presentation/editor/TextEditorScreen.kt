@@ -1,6 +1,9 @@
 package com.vamp.haron.presentation.editor
 
 import android.net.Uri
+import android.graphics.Typeface
+import android.view.inputmethod.InputMethodManager
+import androidx.compose.ui.draw.clipToBounds
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -60,6 +63,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -77,11 +81,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material.icons.filled.Edit
 import com.vamp.haron.R
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.TransferHolder
+import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
+import io.github.rosemoe.sora.event.ContentChangeEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -90,6 +98,7 @@ import java.io.File
 
 private const val MAX_FILE_SIZE = 1024 * 1024 // 1 MB
 private const val DISPLAY_CHUNK_SIZE = 4096 // max chars per LazyColumn item
+private const val MAX_EDIT_SIZE = 256 * 1024 // max chars for edit mode (BasicTextField limit)
 private const val MAX_UNDO_STACK = 50
 private const val UNDO_DEBOUNCE_MS = 500L
 
@@ -110,14 +119,33 @@ fun TextEditorScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // Whether file is too large for BasicTextField (use Sora Editor instead)
+    val useSoraEditor = remember { mutableStateOf(false) }
+    // Whether the original file had no newlines (need to strip inserted \n on save)
+    var soraInsertedNewlines by remember { mutableStateOf(false) }
+    // Reference to Sora CodeEditor instance for large files
+    var soraEditorRef by remember { mutableStateOf<CodeEditor?>(null) }
+    // Reactive state for Sora undo/redo (plain method calls don't trigger recomposition)
+    var soraCanUndo by remember { mutableStateOf(false) }
+    var soraCanRedo by remember { mutableStateOf(false) }
+
     // VoiceFab: visible in view mode, hidden in edit mode
     LaunchedEffect(isEditMode) {
         TransferHolder.voiceFabVisible.value = !isEditMode
-        if (isEditMode) {
+        if (isEditMode && !useSoraEditor.value) {
             // Small delay to let recomposition apply readOnly=false before requesting focus
             delay(100)
             focusRequester.requestFocus()
             keyboardController?.show()
+        }
+        if (!isEditMode) {
+            // Hide keyboard (works for both Compose BasicTextField and Sora Editor View)
+            keyboardController?.hide()
+            val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            val view = soraEditorRef ?: (context as? android.app.Activity)?.currentFocus
+            if (view != null) {
+                imm?.hideSoftInputFromWindow(view.windowToken, 0)
+            }
         }
     }
     DisposableEffect(Unit) { onDispose { TransferHolder.voiceFabVisible.value = true } }
@@ -148,13 +176,8 @@ fun TextEditorScreen(
     var showCloudSaveDialog by remember { mutableStateOf(false) }
     var savedScrollTarget by remember { mutableIntStateOf(0) }
 
-    // Initialize TextFieldValue when entering edit mode
-    LaunchedEffect(isEditMode) {
-        if (isEditMode && !editModeInitialized && rawText.isNotEmpty()) {
-            textFieldValue = TextFieldValue(rawText, TextRange(savedCursorPos.coerceIn(0, rawText.length)))
-            editModeInitialized = true
-        }
-    }
+    // TextFieldValue is initialized in the Edit button onClick (not in LaunchedEffect)
+    // to avoid empty first frame and to check file size before entering edit mode
 
     // Search match navigation (uses rawText, not textFieldValue)
     val matchIndices = remember(rawText, highlightQuery) {
@@ -290,7 +313,13 @@ fun TextEditorScreen(
     fun saveFile() {
         scope.launch(Dispatchers.IO) {
             try {
-                val content = if (isEditMode) textFieldValue.text else rawText
+                var content = if (isEditMode && useSoraEditor.value) {
+                    val soraText = soraEditorRef?.text?.toString() ?: rawText
+                    // If we inserted newlines for display, strip them on save
+                    if (soraInsertedNewlines) soraText.replace("\n", "") else soraText
+                } else if (isEditMode) {
+                    textFieldValue.text
+                } else rawText
                 if (filePath.startsWith("content://")) {
                     val uri = Uri.parse(filePath)
                     context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
@@ -404,31 +433,69 @@ fun TextEditorScreen(
                         }
                     }
                     if (isEditMode) {
-                        IconButton(
-                            onClick = { undo() },
-                            enabled = undoStack.isNotEmpty()
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Undo,
-                                contentDescription = stringResource(R.string.undo),
-                                tint = if (undoStack.isNotEmpty())
-                                    MaterialTheme.colorScheme.onSurface
-                                else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                            )
-                        }
-                        IconButton(
-                            onClick = { redo() },
-                            enabled = redoStack.isNotEmpty()
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Redo,
-                                contentDescription = stringResource(R.string.redo),
-                                tint = if (redoStack.isNotEmpty())
-                                    MaterialTheme.colorScheme.onSurface
-                                else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                            )
+                        if (useSoraEditor.value) {
+                            // Sora Editor has built-in undo/redo
+                            IconButton(
+                                onClick = {
+                                    soraEditorRef?.undo()
+                                    soraCanUndo = soraEditorRef?.canUndo() == true
+                                    soraCanRedo = soraEditorRef?.canRedo() == true
+                                },
+                                enabled = soraCanUndo
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = stringResource(R.string.undo),
+                                    tint = if (soraCanUndo)
+                                        MaterialTheme.colorScheme.onSurface
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    soraEditorRef?.redo()
+                                    soraCanUndo = soraEditorRef?.canUndo() == true
+                                    soraCanRedo = soraEditorRef?.canRedo() == true
+                                },
+                                enabled = soraCanRedo
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Redo,
+                                    contentDescription = stringResource(R.string.redo),
+                                    tint = if (soraCanRedo)
+                                        MaterialTheme.colorScheme.onSurface
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { undo() },
+                                enabled = undoStack.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = stringResource(R.string.undo),
+                                    tint = if (undoStack.isNotEmpty())
+                                        MaterialTheme.colorScheme.onSurface
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
+                            IconButton(
+                                onClick = { redo() },
+                                enabled = redoStack.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Redo,
+                                    contentDescription = stringResource(R.string.redo),
+                                    tint = if (redoStack.isNotEmpty())
+                                        MaterialTheme.colorScheme.onSurface
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
                         }
                         IconButton(
                             onClick = {
@@ -451,7 +518,21 @@ fun TextEditorScreen(
                             )
                         }
                     } else {
-                        IconButton(onClick = { isEditMode = true }) {
+                        IconButton(onClick = {
+                            if (rawText.length > MAX_EDIT_SIZE) {
+                                // Large file → use Sora Editor
+                                useSoraEditor.value = true
+                            } else {
+                                // Small file → BasicTextField
+                                useSoraEditor.value = false
+                                textFieldValue = TextFieldValue(
+                                    rawText,
+                                    TextRange(savedCursorPos.coerceIn(0, rawText.length))
+                                )
+                                editModeInitialized = true
+                            }
+                            isEditMode = true
+                        }) {
                             Icon(
                                 Icons.Filled.Edit,
                                 contentDescription = stringResource(R.string.edit),
@@ -514,8 +595,106 @@ fun TextEditorScreen(
                         }
                     }
 
-                    if (isEditMode) {
-                        // === EDIT MODE: BasicTextField with verticalScroll ===
+                    if (isEditMode && useSoraEditor.value) {
+                        // === EDIT MODE (large file): Sora Editor via AndroidView ===
+                        val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+                        val bgColor = MaterialTheme.colorScheme.surface.toArgb()
+                        val cursorColor = MaterialTheme.colorScheme.primary.toArgb()
+                        val lineNumColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+                        val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f).toArgb()
+
+                        DisposableEffect(filePath) {
+                            onDispose {
+                                val editor = soraEditorRef
+                                if (editor != null) {
+                                    val cursor = editor.cursor
+                                    // Save line-based position (approximate char offset)
+                                    val lines = editor.text
+                                    var charPos = 0
+                                    for (i in 0 until cursor.leftLine.coerceAtMost(lines.lineCount - 1)) {
+                                        charPos += lines.getColumnCount(i) + 1 // +1 for \n
+                                    }
+                                    charPos += cursor.leftColumn
+                                    ReadingPositionManager.saveAsync(filePath, charPos, 0L)
+                                    ReadingPositionManager.saveAsync("zoom:$filePath", (fontSizeSp * 100).toInt())
+                                    editor.release()
+                                    soraEditorRef = null
+                                }
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(start = 10.dp, end = 10.dp)
+                                .clipToBounds()
+                        ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                CodeEditor(ctx).apply {
+                                    typefaceText = Typeface.MONOSPACE
+                                    setTextSize(fontSizeSp)
+                                    setWordwrap(true)
+                                    isLineNumberEnabled = false
+                                    isScalable = true
+                                    // Remove left divider line
+                                    setDividerWidth(0f)
+                                    // Colors
+                                    val scheme = EditorColorScheme()
+                                    scheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, bgColor)
+                                    scheme.setColor(EditorColorScheme.TEXT_NORMAL, textColor)
+                                    scheme.setColor(EditorColorScheme.LINE_NUMBER, lineNumColor)
+                                    scheme.setColor(EditorColorScheme.SELECTION_INSERT, cursorColor)
+                                    scheme.setColor(EditorColorScheme.SELECTED_TEXT_BACKGROUND, selectionColor)
+                                    scheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, bgColor)
+                                    scheme.setColor(EditorColorScheme.CURRENT_LINE, bgColor)
+                                    scheme.setColor(EditorColorScheme.LINE_DIVIDER, bgColor)
+                                    setColorScheme(scheme)
+                                    // Pre-process: break long lines for Sora (can't word-wrap 655K-char lines)
+                                    val maxLineLen = 200
+                                    val needsBreaking = rawText.lines().any { it.length > maxLineLen * 2 }
+                                    val editorText = if (needsBreaking) {
+                                        soraInsertedNewlines = true
+                                        buildString {
+                                            for (line in rawText.split('\n')) {
+                                                if (line.length <= maxLineLen) {
+                                                    append(line)
+                                                    append('\n')
+                                                } else {
+                                                    var i = 0
+                                                    while (i < line.length) {
+                                                        val end = minOf(i + maxLineLen, line.length)
+                                                        append(line, i, end)
+                                                        append('\n')
+                                                        i = end
+                                                    }
+                                                }
+                                            }
+                                        }.trimEnd('\n')
+                                    } else {
+                                        soraInsertedNewlines = false
+                                        rawText
+                                    }
+                                    setText(editorText)
+                                    // Track modifications
+                                    subscribeAlways(ContentChangeEvent::class.java) {
+                                        isModified = true
+                                        soraCanUndo = canUndo()
+                                        soraCanRedo = canRedo()
+                                    }
+                                    soraEditorRef = this
+                                    com.vamp.core.logger.EcosystemLogger.d(
+                                        com.vamp.haron.common.constants.HaronConstants.TAG,
+                                        "TextEditor: Sora Editor initialized for ${rawText.length} chars"
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        } // end Box
+                    } else if (isEditMode) {
+                        // === EDIT MODE (small file): BasicTextField with verticalScroll ===
                         val verticalScroll = rememberScrollState()
                         val density = LocalDensity.current
                         val imeBottom = WindowInsets.ime.getBottom(density)
@@ -683,8 +862,8 @@ fun TextEditorScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
-                                            start = 4.dp,
-                                            end = 8.dp,
+                                            start = 2.dp,
+                                            end = 2.dp,
                                             top = if (index == 0) 8.dp else 0.dp,
                                             bottom = if (index == textLines.lastIndex) 8.dp else 0.dp
                                         )
@@ -910,7 +1089,11 @@ fun TextEditorScreen(
                         rawText = savedText
                         textLines = splitTextToChunks(savedText)
                         totalLineCount = savedText.count { it == '\n' } + 1
-                        textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                        if (!useSoraEditor.value) {
+                            textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                        }
+                        soraEditorRef?.release()
+                        soraEditorRef = null
                     }) {
                         Text(stringResource(R.string.cloud_save_discard))
                     }
@@ -942,8 +1125,13 @@ fun TextEditorScreen(
                             isEditMode = false
                             isModified = false
                             rawText = savedText
-                            textLines = savedText.split('\n')
-                            textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                            textLines = splitTextToChunks(savedText)
+                            totalLineCount = savedText.count { it == '\n' } + 1
+                            if (!useSoraEditor.value) {
+                                textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                            }
+                            soraEditorRef?.release()
+                            soraEditorRef = null
                         }) {
                             Text(stringResource(R.string.dont_save))
                         }
