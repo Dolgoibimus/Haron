@@ -1820,12 +1820,12 @@ class ExplorerViewModel @Inject constructor(
                 return
             }
             // Cloud archive — download to cache and navigate into
-            if (type == "archive" && !nameLc.endsWith(".fb2.zip")) {
+            if (type == "archive" && !(nameLc.endsWith(".fb2.zip") || (nameLc.endsWith(".zip") && nameLc.contains(".fb2")))) {
                 cloudDownloadAndNavigateArchive(panelId, entry)
                 return
             }
             // Cloud fb2/fb2.zip — download to cache and open in DocumentViewer
-            if (nameLc.endsWith(".fb2") || nameLc.endsWith(".fb2.zip")) {
+            if (nameLc.endsWith(".fb2") || nameLc.endsWith(".fb2.zip") || (nameLc.endsWith(".zip") && nameLc.contains(".fb2"))) {
                 cloudDownloadAndOpenDocument(entry)
                 return
             }
@@ -1837,7 +1837,7 @@ class ExplorerViewModel @Inject constructor(
             // Other cloud files — download to cache first, then open
             cloudDownloadAndOpen(entry)
             return
-        } else if (entry.name.lowercase().endsWith(".fb2.zip")) {
+        } else if (entry.name.lowercase().let { it.endsWith(".fb2.zip") || (it.endsWith(".zip") && it.contains(".fb2")) }) {
             preferences.lastDocumentFile = entry.path
             _navigationEvent.tryEmit(NavigationEvent.OpenDocumentViewer(entry.path, entry.name))
         } else {
@@ -2239,7 +2239,7 @@ class ExplorerViewModel @Inject constructor(
     }
 
     private fun isRestrictedAndroidDir(path: String): Boolean =
-        path.contains("/Android/data") || path.contains("/Android/obb")
+        path.contains("/Android/data") || path.contains("/Android/obb") || path.contains("/Android/media")
 
     private fun hasRestrictedPathSafAccess(path: String): Boolean {
         val docId = filePathToDocId(path) ?: return false
