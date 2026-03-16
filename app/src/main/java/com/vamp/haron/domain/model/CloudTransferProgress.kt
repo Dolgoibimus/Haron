@@ -5,7 +5,8 @@ data class CloudTransferProgress(
     val bytesTransferred: Long,
     val totalBytes: Long,
     val isComplete: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val speedBytesPerSec: Long = 0L
 ) {
     val percent: Int
         get() = if (totalBytes > 0) ((bytesTransferred * 100) / totalBytes).toInt() else 0

@@ -89,6 +89,7 @@ class VoiceCommandManager @Inject constructor(
         if (beepMuted) return
         try {
             audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+            audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0)
             beepMuted = true
         } catch (_: Exception) {}
     }
@@ -97,6 +98,7 @@ class VoiceCommandManager @Inject constructor(
         if (!beepMuted) return
         try {
             audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0)
             beepMuted = false
         } catch (_: Exception) {}
     }
@@ -117,8 +119,9 @@ class VoiceCommandManager @Inject constructor(
         override fun onReadyForSpeech(params: Bundle?) {
             EcosystemLogger.d(TAG, "onReadyForSpeech (wake=${_wakeWordEnabled.value}, activated=$wakeActivated, manual=$manualMode)")
             busyRetryCount = 0
-            // Unmute after beep window is over (~500ms after startListening)
-            if (beepMuted) {
+            // In wake mode keep muted the entire time — no unmute between restarts.
+            // Only unmute for manual mode (FAB tap) after beep window passes.
+            if (beepMuted && manualMode) {
                 mainHandler.postDelayed({ unmuteBeep() }, 500)
             }
         }

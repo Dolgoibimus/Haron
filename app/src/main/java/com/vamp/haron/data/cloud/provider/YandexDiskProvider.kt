@@ -281,6 +281,7 @@ class YandexDiskProvider(
                     val totalSize = conn.contentLengthLong.let { if (it < 0) 0L else it }
                     send(CloudTransferProgress(fileName, 0, totalSize))
 
+                    val startTime = System.currentTimeMillis()
                     BufferedInputStream(conn.inputStream, 262144).use { input ->
                         BufferedOutputStream(FileOutputStream(File(localPath)), 262144).use { fos ->
                             val buffer = ByteArray(262144)
@@ -292,7 +293,9 @@ class YandexDiskProvider(
                                 totalRead += bytesRead
                                 val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
                                 if (percent != lastEmitPercent) {
-                                    trySend(CloudTransferProgress(fileName, totalRead, totalSize))
+                                    val elapsed = System.currentTimeMillis() - startTime
+                                    val speed = if (elapsed > 500) totalRead * 1000 / elapsed else 0L
+                                    trySend(CloudTransferProgress(fileName, totalRead, totalSize, speedBytesPerSec = speed))
                                     lastEmitPercent = percent
                                 }
                             }
@@ -431,9 +434,10 @@ class YandexDiskProvider(
 
                     offset = end + 1
                     val elapsed = System.currentTimeMillis() - startTime
+                    val speed = if (elapsed > 500) offset * 1000 / elapsed else 0L
                     val percent = ((offset * 100) / totalSize).toInt()
                     EcosystemLogger.d(HaronConstants.TAG, "YandexDisk upload: chunk $chunkNum/$totalChunks OK, $percent% (${offset / 1024}KB/${totalSize / 1024}KB) ${elapsed}ms")
-                    trySend(CloudTransferProgress(fileName, offset, totalSize))
+                    trySend(CloudTransferProgress(fileName, offset, totalSize, speedBytesPerSec = speed))
                 }
 
                 // Step 3: rename .tmp → real name (if throttling bypass was used)
@@ -613,6 +617,7 @@ class YandexDiskProvider(
                 var offset = 0L
                 var chunkNum = 0
                 val totalChunks = ((totalSize + chunkSize - 1) / chunkSize).toInt()
+                val updateStartTime = System.currentTimeMillis()
 
                 while (offset < totalSize) {
                     chunkNum++
@@ -663,7 +668,9 @@ class YandexDiskProvider(
                     if (!chunkSuccess) throw Exception("Chunk $chunkNum failed after 5 attempts")
 
                     offset = end + 1
-                    trySend(CloudTransferProgress(fileName, offset, totalSize))
+                    val elapsed = System.currentTimeMillis() - updateStartTime
+                    val speed = if (elapsed > 500) offset * 1000 / elapsed else 0L
+                    trySend(CloudTransferProgress(fileName, offset, totalSize, speedBytesPerSec = speed))
                     EcosystemLogger.d(HaronConstants.TAG, "YandexDisk updateFileContent: chunk $chunkNum/$totalChunks OK, ${(offset * 100 / totalSize)}%")
                 }
 

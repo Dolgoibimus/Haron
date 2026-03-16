@@ -106,16 +106,16 @@ fun MediaRemotePanel(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
                     )
                 } else {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
                     )
                 }
                 ProgressInfoRow(

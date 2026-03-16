@@ -184,8 +184,8 @@ fun StorageAnalysisScreen(
                         LinearProgressIndicator(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
                         )
                     }
                 }

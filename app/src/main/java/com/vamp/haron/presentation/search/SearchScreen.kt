@@ -55,6 +55,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
@@ -372,6 +373,8 @@ private fun DeviceSearchTab(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 4.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
         )
         val modeText = when (state.indexProgress.mode) {
             IndexMode.BASIC -> stringResource(R.string.indexing_basic)
@@ -780,9 +783,17 @@ private fun DownloadProgressItem(dl: DownloadProgress) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 2.dp)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
                 )
             } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                )
             }
             ProgressInfoRow(
                 speed = if (dl.speed > 0) "${dl.speed.toFileSize()}/s" else "",

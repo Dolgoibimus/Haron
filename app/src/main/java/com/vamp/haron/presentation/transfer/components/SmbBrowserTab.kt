@@ -781,37 +781,52 @@ private fun SmbTransferProgressCard(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (progress.isUpload) stringResource(R.string.smb_uploading)
-                    else stringResource(R.string.smb_downloading),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = onCancel) {
-                    Text(stringResource(R.string.cancel))
+        Row(
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, end = 4.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (progress.isUpload) stringResource(R.string.smb_uploading)
+                        else stringResource(R.string.smb_downloading),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        progress.fileName,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                if (progress.totalBytes > 0) {
+                    val fraction = progress.bytesTransferred.toFloat() / progress.totalBytes
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                    )
+                    ProgressInfoRow(
+                        speed = if (progress.speedBytesPerSec > 0) "${progress.speedBytesPerSec.toFileSize()}/s" else "",
+                        counter = "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
+                        percent = "${(fraction * 100).toInt()}%"
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                    )
                 }
             }
-            Text(
-                progress.fileName,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(4.dp))
-            if (progress.totalBytes > 0) {
-                val fraction = progress.bytesTransferred.toFloat() / progress.totalBytes
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                ProgressInfoRow(
-                    counter = "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
-                    percent = "${(fraction * 100).toInt()}%"
-                )
-            } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cancel))
             }
         }
     }

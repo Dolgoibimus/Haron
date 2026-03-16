@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.84 (Phase 4, Batch 84)
+**Текущая версия:** 0.85 (Phase 4, Batch 85)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,69 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 86 — Размер выделенных файлов в дивайдере ✅ проверено
+
+**Цель:** Показывать суммарный размер выделенных файлов прямо в дивайдере между панелями.
+
+**Что сделано:**
+- `ExplorerViewModel.getSelectedTotalSizeForPanel(panelId)` — аналог `getSelectedTotalSizeWithFolders()`, но для конкретной панели (TOP/BOTTOM)
+- `PanelDivider` — новые параметры `topSelectedSize` / `bottomSelectedSize`, зоны размера между счётчиком файлов и центром (занимают место COPY/MOVE при отсутствии drag)
+- `ExplorerScreen.Divider()` — вычисление размеров при `isSelectionMode` + передача в PanelDivider
+- Portrait и Landscape поддержаны
+- При drag&drop размеры исчезают, показываются COPY/MOVE иконки
+
+**Файлы:** `ExplorerViewModel.kt`, `PanelDivider.kt`, `ExplorerScreen.kt`
+
+---
+
+### Batch 85 — Полная стандартизация прогресс-баров ⚠️ не проверено
+
+**Цель:** Все прогресс-бары в приложении приведены к единому стандарту: скорость (кроме удаления), пофайловый прогресс, кнопка отмены (IconButton с крестиком), визуальный стандарт (6.dp, RoundedCornerShape(3.dp)).
+
+**Что сделано:**
+- **Скорость передачи добавлена во все провайдеры:**
+  - `FtpClientManager` — speed calc в download/upload
+  - `SmbManager` — speed calc в download/upload
+  - `WebDavManager` — speed calc в download/upload
+  - `DropboxProvider` — speed calc в download/upload/updateFileContent
+  - `GoogleDriveProvider` — speed calc в download/upload
+  - `YandexDiskProvider` — speed calc в download/upload/updateFileContent
+- **Модели данных расширены:**
+  - `FtpTransferProgress` — `speedBytesPerSec: Long = 0L`
+  - `SmbTransferProgress` — `speedBytesPerSec: Long = 0L`
+  - `WebDavTransferProgress` — `speedBytesPerSec: Long = 0L`
+  - `CloudTransferProgress` — `speedBytesPerSec: Long = 0L`
+  - `CloudTransferEntry` — `bytesTransferred`, `totalBytes`, `speedBytesPerSec`
+  - `CloudTransferItem` — `bytesTransferred`, `totalBytes`, `speedBytesPerSec`
+- **UI стандартизирован — все TransferProgressCard'ы:**
+  - `FtpBrowserTab` — Row(Column + IconButton(Close)), speed + counter + percent, 6.dp bar
+  - `SmbBrowserTab` — аналогично FTP (было: Column + TextButton)
+  - `WebDavBrowserTab` — аналогично FTP (было: Column + TextButton)
+  - `CloudTransferDialog` — speed + counter + percent, 6.dp bar
+  - `TransferProgressCard` (BT/WiFi Direct) — 6.dp bar (было: без height/clip)
+- **Пофайловый прогресс для папок:**
+  - `FileOperationService.executeOperation()` — pre-count файлов, прогресс по каждому файлу
+  - `safeCopyDirectory()` — callback `onFileCopied` для каждого файла
+  - `executeDelete()` — pre-count, walkBottomUp пофайлово
+- **Отмена операций:**
+  - `scope.isActive` checks во всех циклах: copy/move, safeCopyDirectory, delete, delete folder, archive 1:1
+- **Скорость в FileOperationService:**
+  - `executeOperation()` — bytesDone + calcSpeed()
+  - `executeDelete()` — bytesDone + calcSpeed()
+- **Cloud download цепочка:** `updateTransferProgress()` → `CloudTransferEntry` → `CloudTransferItem` → `TransferRow` — передаются bytes/speed
+- **Визуальная унификация всех LinearProgressIndicator → 6.dp + clip(3.dp):**
+  - QuickSendOverlay/QuickReceiveOverlay (было 4.dp/2.dp)
+  - MediaRemotePanel (было 4.dp/2.dp)
+  - StorageAnalysisScreen scan bar (было 4.dp/2.dp)
+  - FilePropertiesDialog hash bar (было 4.dp/2.dp)
+  - TrashDialog (было 4.dp, без clip)
+  - SteganographyScreen (было без height/clip)
+  - ComparisonScreen (было без height/clip)
+  - SearchScreen index + download (было без height/clip)
+  - ArchiveViewerScreen extract bar (было без height/clip)
 
 ---
 
@@ -1676,7 +1739,7 @@ RU:
 
 **Файлы:** `TranscodeVideoUseCase.kt`, `CastViewModel.kt`, `HttpFileServer.kt`, `GoogleCastManager.kt`, `MediaRemotePanel.kt`, `HaronApp.kt`, `FileIndexWorker.kt`, `WorkerModule.kt` (новый), `HaronPreferences.kt`, `SettingsViewModel.kt`, `SettingsScreen.kt`, `strings.xml` (EN+RU), `app/build.gradle.kts`
 
-### Голосовые команды Level 1 + Level 2 ⚠️ не проверено
+### Голосовые команды Level 1 + Level 2 ✅ проверено
 
 - **FuzzyMatch** (`common\util\FuzzyMatch.kt`): Levenshtein distance O(n*m), normalized similarity 0..1, `findBestMatch(query, candidates, threshold)` — exact > contains > startsWith > fuzzy.
 - **14 GestureAction**: NAVIGATE_BACK, NAVIGATE_FORWARD, NAVIGATE_UP, DELETE_SELECTED, COPY_SELECTED, MOVE_SELECTED, RENAME, CREATE_ARCHIVE, EXTRACT_ARCHIVE, FILE_PROPERTIES, DESELECT_ALL, NAVIGATE_TO_FOLDER, REFRESH_FOLDER_CACHE, OPEN_SECURE_FOLDER.
@@ -1922,7 +1985,7 @@ RU:
 - **Корзина — обновление панелей**: `deleteFromTrashPermanently()` и `emptyTrash()` теперь вызывают `refreshPanel(TOP)` + `refreshPanel(BOTTOM)` после удаления (как `restoreFromTrash`).
 - **Тап на пустом месте**: `findItemIndexAtPosition()` в FilePanel — убран fallback, который возвращал индекс ближайшего элемента при тапе на пустое пространство. Теперь возвращает `-1`, обработчик игнорирует.
 
-### Транскодирование видео для Chromecast ⚠️ не проверено (качество `experimentalSetEnableHighQualityTargeting`)
+### Транскодирование видео для Chromecast ✅ проверено (качество `experimentalSetEnableHighQualityTargeting`)
 - **TranscodeVideoUseCase.kt**: `domain/usecase/TranscodeVideoUseCase.kt` — транскодирование через Media3 Transformer. AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 (H.264 + AAC). Кеширование: `getCacheFile()` генерирует `cast_transcode_{hash}_q3.mp4` из имени+размера файла, при повторном вызове возвращает кешированный. AC3/DTS fallback: при ошибке аудиокодека автоматический retry с `setRemoveAudio(true)`. `fastStartMp4()` — перемещение moov box перед mdat для Chromecast progressive download. `cleanupTempFiles()` удаляет все `cast_transcode_*` файлы.
 - **Качество кодирования**: `experimentalSetEnableHighQualityTargeting(true)` — автоматический подбор оптимального битрейта (вместо фиксированных 8 Mbps). Нельзя совмещать с `setBitrate()`. Кеш инвалидирован: `_q2` → `_q3`.
 - **CastViewModel.kt**: `castMedia()` проверяет формат: Chromecast + неподдерживаемый → `startTranscodedCast()`, DLNA → как есть. `_transcodeProgress: StateFlow<TranscodeProgress?>`. Реконнект при disconnect во время транскода. `castTranscodedFile()` — HTTP-сервер + каст. `_browserUrl` для зеркалирования/инфо. `_debugCastInfo` — StateFlow для отладки. Кеш не удаляется при disconnect/onCleared (только при `cancelTranscode()`).

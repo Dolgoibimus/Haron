@@ -37,6 +37,8 @@ fun PanelDivider(
     isLandscape: Boolean = false,
     isDragging: Boolean = false,
     dragOperation: DragOperation = DragOperation.MOVE,
+    topSelectedSize: String = "",
+    bottomSelectedSize: String = "",
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDoubleTap: () -> Unit,
@@ -99,19 +101,25 @@ fun PanelDivider(
                     )
                 }
 
-                if (isDragging) {
-                    // COPY zone
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .width(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // Top size / COPY zone (always present for stable layout)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isDragging) {
                         Icon(
                             Icons.Filled.ContentCopy,
                             contentDescription = stringResource(R.string.dnd_copy),
                             modifier = Modifier.size(14.dp),
                             tint = copyColor.copy(alpha = copyActiveAlpha)
+                        )
+                    } else if (topSelectedSize.isNotEmpty()) {
+                        Text(
+                            text = topSelectedSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isTopActive) activeColor else inactiveColor
                         )
                     }
                 }
@@ -127,19 +135,25 @@ fun PanelDivider(
                     contentAlignment = Alignment.Center
                 ) { }
 
-                if (isDragging) {
-                    // MOVE zone
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .width(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // Bottom size / MOVE zone (always present for stable layout)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isDragging) {
                         Icon(
                             Icons.AutoMirrored.Filled.DriveFileMove,
                             contentDescription = stringResource(R.string.dnd_move),
                             modifier = Modifier.size(14.dp),
                             tint = moveColor.copy(alpha = moveActiveAlpha)
+                        )
+                    } else if (bottomSelectedSize.isNotEmpty()) {
+                        Text(
+                            text = bottomSelectedSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (!isTopActive) activeColor else inactiveColor
                         )
                     }
                 }
@@ -197,19 +211,25 @@ fun PanelDivider(
                     )
                 }
 
-                if (isDragging) {
-                    // COPY zone
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // Top size / COPY zone (always present for stable layout)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isDragging) {
                         Icon(
                             Icons.Filled.ContentCopy,
                             contentDescription = stringResource(R.string.dnd_copy),
                             modifier = Modifier.size(14.dp),
                             tint = copyColor.copy(alpha = copyActiveAlpha)
+                        )
+                    } else if (topSelectedSize.isNotEmpty()) {
+                        Text(
+                            text = topSelectedSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isTopActive) activeColor else inactiveColor
                         )
                     }
                 }
@@ -225,19 +245,25 @@ fun PanelDivider(
                     contentAlignment = Alignment.Center
                 ) { }
 
-                if (isDragging) {
-                    // MOVE zone
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // Bottom size / MOVE zone (always present for stable layout)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isDragging) {
                         Icon(
                             Icons.AutoMirrored.Filled.DriveFileMove,
                             contentDescription = stringResource(R.string.dnd_move),
                             modifier = Modifier.size(14.dp),
                             tint = moveColor.copy(alpha = moveActiveAlpha)
+                        )
+                    } else if (bottomSelectedSize.isNotEmpty()) {
+                        Text(
+                            text = bottomSelectedSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (!isTopActive) activeColor else inactiveColor
                         )
                     }
                 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,15 +22,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.common.ProgressInfoRow
 
 data class CloudTransferItem(
     val id: String,
     val fileName: String,
     val percent: Int = 0,
-    val isUpload: Boolean = false
+    val isUpload: Boolean = false,
+    val bytesTransferred: Long = 0L,
+    val totalBytes: Long = 0L,
+    val speedBytesPerSec: Long = 0L
 )
 
 @Composable
@@ -109,12 +115,22 @@ private fun TransferRow(
         if (transfer.percent > 0) {
             LinearProgressIndicator(
                 progress = { transfer.percent / 100f },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
             )
         } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+            )
         }
         ProgressInfoRow(
+            speed = if (transfer.speedBytesPerSec > 0) "${transfer.speedBytesPerSec.toFileSize()}/s" else "",
+            counter = if (transfer.totalBytes > 0) "${transfer.bytesTransferred.toFileSize()} / ${transfer.totalBytes.toFileSize()}" else "",
             percent = if (transfer.percent > 0) "${transfer.percent}%" else ""
         )
     }

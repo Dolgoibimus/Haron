@@ -185,8 +185,16 @@ class FileOperationService : Service() {
     // ==================== DELETE ====================
 
     private suspend fun executeDelete(paths: List<String>, useTrash: Boolean) {
-        val total = paths.size
-        _progress.value = OperationProgress(0, total, "", OperationType.DELETE)
+        // Pre-count total files (flatten folders)
+        val totalFiles = paths.sumOf { path ->
+            if (path.startsWith("content://")) 1
+            else {
+                val f = File(path)
+                if (f.isDirectory) f.walkTopDown().count { it.isFile }
+                else 1
+            }
+        }
+        _progress.value = OperationProgress(0, totalFiles, "", OperationType.DELETE)
 
         // Pre-calculate trash eviction
         if (useTrash) {
@@ -209,37 +217,78 @@ class FileOperationService : Service() {
             }
         }
 
-        var completed = 0
+        var filesDone = 0
+        var bytesDone = 0L
+        val startMs = SystemClock.elapsedRealtime()
         var lastError: String? = null
-        for ((index, path) in paths.withIndex()) {
+
+        fun delSpeed(): Long {
+            val elapsed = SystemClock.elapsedRealtime() - startMs
+            return if (elapsed > 500) bytesDone * 1000 / elapsed else 0L
+        }
+
+        for (path in paths) {
+            if (!scope.isActive) break
             val isSaf = path.startsWith("content://")
             val fileName = if (isSaf) {
                 Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
             } else {
                 File(path).name
             }
-            _progress.value = OperationProgress(index, total, fileName, OperationType.DELETE)
-            lastProgressTime = SystemClock.elapsedRealtime()
-            withContext(Dispatchers.Main) { updateNotification(fileName, index, total) }
 
             try {
                 if (isSaf) {
-                    fileRepository.deleteFiles(listOf(path)).onSuccess { completed++ }
+                    fileRepository.deleteFiles(listOf(path)).onSuccess {
+                        filesDone++
+                        _progress.value = OperationProgress(filesDone, totalFiles, fileName, OperationType.DELETE, speedBytesPerSec = delSpeed())
+                        lastProgressTime = SystemClock.elapsedRealtime()
+                    }
                 } else if (useTrash) {
+                    val f = File(path)
+                    val filesInItem = if (f.isDirectory) f.walkTopDown().count { it.isFile } else 1
+                    val bytesInItem = if (f.isDirectory) f.walkTopDown().filter { it.isFile }.sumOf { it.length() } else f.length()
+                    _progress.value = OperationProgress(filesDone, totalFiles, fileName, OperationType.DELETE, speedBytesPerSec = delSpeed())
+                    lastProgressTime = SystemClock.elapsedRealtime()
+                    withContext(Dispatchers.Main) { updateNotification(fileName, filesDone, totalFiles) }
                     trashRepository.moveToTrash(listOf(path))
-                        .onSuccess { count -> completed += count }
+                        .onSuccess { filesDone += filesInItem; bytesDone += bytesInItem }
                         .onFailure { e -> lastError = e.message }
+                    _progress.value = OperationProgress(filesDone, totalFiles, fileName, OperationType.DELETE, speedBytesPerSec = delSpeed())
+                    lastProgressTime = SystemClock.elapsedRealtime()
                 } else {
                     val f = File(path)
-                    if (f.deleteRecursively()) completed++ else lastError = "Failed to delete $fileName"
+                    if (f.isDirectory) {
+                        val files = f.walkBottomUp().toList()
+                        for (file in files) {
+                            if (!scope.isActive) break
+                            val name = file.name
+                            if (file.isFile) {
+                                val sz = file.length()
+                                file.delete()
+                                filesDone++
+                                bytesDone += sz
+                                _progress.value = OperationProgress(filesDone, totalFiles, name, OperationType.DELETE, speedBytesPerSec = delSpeed())
+                            } else {
+                                file.delete()
+                            }
+                            lastProgressTime = SystemClock.elapsedRealtime()
+                        }
+                    } else {
+                        val sz = f.length()
+                        _progress.value = OperationProgress(filesDone, totalFiles, fileName, OperationType.DELETE, speedBytesPerSec = delSpeed())
+                        lastProgressTime = SystemClock.elapsedRealtime()
+                        if (f.delete()) { filesDone++; bytesDone += sz }
+                        else lastError = "Failed to delete $fileName"
+                    }
                 }
             } catch (e: Exception) {
                 lastError = e.message
                 EcosystemLogger.e(HaronConstants.TAG, "FileOperationService delete error: $fileName: ${e.message}")
             }
+            withContext(Dispatchers.Main) { updateNotification(fileName, filesDone, totalFiles) }
         }
 
-        finishOperation(completed, total, OperationType.DELETE, lastError)
+        finishOperation(filesDone, totalFiles, OperationType.DELETE, lastError)
     }
 
     // ==================== ARCHIVE ====================
@@ -276,6 +325,7 @@ class FileOperationService : Service() {
         var created = 0
         try {
             for ((index, srcPath) in paths.withIndex()) {
+                if (!scope.isActive) break
                 val srcFile = File(srcPath)
                 if (!srcFile.exists()) continue
                 val parentDir = srcFile.parent ?: continue
@@ -342,14 +392,47 @@ class FileOperationService : Service() {
         isMove: Boolean,
         conflictResolution: ConflictResolution = ConflictResolution.RENAME
     ) {
-        val total = sourcePaths.size
         val type = if (isMove) OperationType.MOVE else OperationType.COPY
         val isDstSaf = destinationDir.startsWith("content://")
 
-        _progress.value = OperationProgress(current = 0, total = total, currentFileName = "", type = type)
+        // Pre-count total files (flatten folders into individual files)
+        val totalFiles = sourcePaths.sumOf { path ->
+            if (path.startsWith("content://")) 1
+            else {
+                val f = File(path)
+                if (f.isDirectory) f.walkTopDown().count { it.isFile }
+                else 1
+            }
+        }
 
-        var completed = 0
-        for ((index, srcPath) in sourcePaths.withIndex()) {
+        _progress.value = OperationProgress(current = 0, total = totalFiles, currentFileName = "", type = type)
+
+        var filesDone = 0
+        var itemsCompleted = 0
+        var bytesDone = 0L
+        val startMs = SystemClock.elapsedRealtime()
+
+        fun calcSpeed(): Long {
+            val elapsed = SystemClock.elapsedRealtime() - startMs
+            return if (elapsed > 500) bytesDone * 1000 / elapsed else 0L
+        }
+
+        fun updateFileProgress(fileName: String, fileSize: Long = 0L) {
+            filesDone++
+            bytesDone += fileSize
+            _progress.value = OperationProgress(
+                current = filesDone,
+                total = totalFiles,
+                currentFileName = fileName,
+                type = type,
+                speedBytesPerSec = calcSpeed()
+            )
+            lastProgressTime = SystemClock.elapsedRealtime()
+        }
+
+        for (srcPath in sourcePaths) {
+            if (!scope.isActive) break
+
             val isSrcSaf = srcPath.startsWith("content://")
             val fileName = if (isSrcSaf) {
                 Uri.parse(srcPath).lastPathSegment?.substringAfterLast('/') ?: "file"
@@ -358,15 +441,15 @@ class FileOperationService : Service() {
             }
 
             _progress.value = OperationProgress(
-                current = index,
-                total = total,
+                current = filesDone,
+                total = totalFiles,
                 currentFileName = fileName,
                 type = type
             )
             lastProgressTime = SystemClock.elapsedRealtime()
 
             withContext(Dispatchers.Main) {
-                updateNotification(fileName, index, total)
+                updateNotification(fileName, filesDone, totalFiles)
             }
 
             try {
@@ -384,15 +467,21 @@ class FileOperationService : Service() {
                         if (isMove) {
                             val moved = src.renameTo(dest)
                             if (!moved) {
-                                if (src.isDirectory) safeCopyDirectory(src, dest)
-                                else src.copyTo(dest, overwrite = false)
+                                if (src.isDirectory) safeCopyDirectory(src, dest) { name, size -> updateFileProgress(name, size) }
+                                else { val sz = src.length(); src.copyTo(dest, overwrite = false); updateFileProgress(src.name, sz) }
                                 src.deleteRecursively()
+                            } else {
+                                // renameTo succeeded — count all files inside
+                                val movedCount = if (src.isDirectory) dest.walkTopDown().count { it.isFile } else 1
+                                filesDone += movedCount
+                                _progress.value = OperationProgress(filesDone, totalFiles, fileName, type)
+                                lastProgressTime = SystemClock.elapsedRealtime()
                             }
                         } else {
-                            if (src.isDirectory) safeCopyDirectory(src, dest)
-                            else src.copyTo(dest, overwrite = false)
+                            if (src.isDirectory) safeCopyDirectory(src, dest) { name, size -> updateFileProgress(name, size) }
+                            else { val sz = src.length(); src.copyTo(dest, overwrite = false); updateFileProgress(src.name, sz) }
                         }
-                        completed++
+                        itemsCompleted++
                     }
                     isSrcSaf && !isDstSaf -> {
                         val destDir = File(destinationDir)
@@ -406,7 +495,8 @@ class FileOperationService : Service() {
                                 android.provider.DocumentsContract.deleteDocument(contentResolver, Uri.parse(srcPath))
                             } catch (_: Exception) { }
                         }
-                        completed++
+                        updateFileProgress(fileName, dest.length())
+                        itemsCompleted++
                     }
                     !isSrcSaf && isDstSaf -> {
                         val src = File(srcPath)
@@ -422,7 +512,8 @@ class FileOperationService : Service() {
                             src.inputStream().use { input -> input.copyTo(output) }
                         }
                         if (isMove) src.deleteRecursively()
-                        completed++
+                        updateFileProgress(fileName, src.length())
+                        itemsCompleted++
                     }
                     else -> {
                         val srcUri = Uri.parse(srcPath)
@@ -442,14 +533,15 @@ class FileOperationService : Service() {
                                 android.provider.DocumentsContract.deleteDocument(contentResolver, srcUri)
                             } catch (_: Exception) { }
                         }
-                        completed++
+                        updateFileProgress(fileName)
+                        itemsCompleted++
                     }
                 }
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "Ошибка операции с $fileName: ${e.message}")
                 _progress.value = OperationProgress(
-                    current = index,
-                    total = total,
+                    current = filesDone,
+                    total = totalFiles,
                     currentFileName = fileName,
                     type = type,
                     error = e.message
@@ -457,7 +549,7 @@ class FileOperationService : Service() {
             }
         }
 
-        finishOperation(completed, total, type, null)
+        finishOperation(filesDone, totalFiles, type, null)
     }
 
     // ==================== Common helpers ====================
@@ -616,16 +708,19 @@ class FileOperationService : Service() {
         manager.notify(NOTIFICATION_ID + 1, notification)
     }
 
-    private fun safeCopyDirectory(src: File, dest: File) {
+    private fun safeCopyDirectory(src: File, dest: File, onFileCopied: ((String, Long) -> Unit)? = null) {
         val snapshot = src.walkTopDown().toList()
         for (file in snapshot) {
+            if (!scope.isActive) break
             val relPath = file.toRelativeString(src)
             val dstFile = File(dest, relPath)
             if (file.isDirectory) {
                 dstFile.mkdirs()
             } else {
                 dstFile.parentFile?.mkdirs()
+                val size = file.length()
                 file.copyTo(dstFile, overwrite = false)
+                onFileCopied?.invoke(file.name, size)
             }
         }
     }
@@ -679,6 +774,7 @@ class FileOperationService : Service() {
             conflictResolution: ConflictResolution = ConflictResolution.RENAME
         ) {
             val type = if (isMove) OperationType.MOVE else OperationType.COPY
+            // Show item count initially; service will recalculate with per-file total
             _progress.value = OperationProgress(
                 current = 0,
                 total = sourcePaths.size,

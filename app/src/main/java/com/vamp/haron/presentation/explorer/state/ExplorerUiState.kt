@@ -181,7 +181,10 @@ sealed interface DialogState {
             val id: String,
             val fileName: String,
             val percent: Int = 0,
-            val isUpload: Boolean = false
+            val isUpload: Boolean = false,
+            val bytesTransferred: Long = 0L,
+            val totalBytes: Long = 0L,
+            val speedBytesPerSec: Long = 0L
         )
     }
     data class CloudCreateFolder(

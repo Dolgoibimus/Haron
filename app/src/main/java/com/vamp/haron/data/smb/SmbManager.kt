@@ -50,7 +50,8 @@ data class SmbTransferProgress(
     val fileName: String,
     val bytesTransferred: Long,
     val totalBytes: Long,
-    val isUpload: Boolean
+    val isUpload: Boolean,
+    val speedBytesPerSec: Long = 0L
 )
 
 private data class SmbConnection(
@@ -207,10 +208,13 @@ class SmbManager @Inject constructor(
                 val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
                 var transferred = 0L
                 var read: Int
+                val startTime = System.currentTimeMillis()
                 while (input.read(buffer).also { read = it } != -1) {
                     output.write(buffer, 0, read)
                     transferred += read
-                    emit(SmbTransferProgress(fileName, transferred, totalSize, isUpload = false))
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                    emit(SmbTransferProgress(fileName, transferred, totalSize, isUpload = false, speedBytesPerSec = speed))
                 }
             }
         }
@@ -240,10 +244,13 @@ class SmbManager @Inject constructor(
                 val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
                 var transferred = 0L
                 var read: Int
+                val startTime = System.currentTimeMillis()
                 while (input.read(buffer).also { read = it } != -1) {
                     output.write(buffer, 0, read)
                     transferred += read
-                    emit(SmbTransferProgress(fileName, transferred, totalSize, isUpload = true))
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                    emit(SmbTransferProgress(fileName, transferred, totalSize, isUpload = true, speedBytesPerSec = speed))
                 }
             }
         }

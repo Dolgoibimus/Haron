@@ -29,5 +29,6 @@ data class FtpTransferProgress(
     val fileName: String,
     val bytesTransferred: Long,
     val totalBytes: Long,
-    val isUpload: Boolean
+    val isUpload: Boolean,
+    val speedBytesPerSec: Long = 0L
 )

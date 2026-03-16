@@ -138,10 +138,13 @@ class FtpClientManager @Inject constructor(
                     val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
                     var transferred = 0L
                     var read: Int
+                    val startTime = System.currentTimeMillis()
                     while (input.read(buffer).also { read = it } != -1) {
                         output.write(buffer, 0, read)
                         transferred += read
-                        emit(FtpTransferProgress(fileName, transferred, totalSize, isUpload = false))
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                        emit(FtpTransferProgress(fileName, transferred, totalSize, isUpload = false, speedBytesPerSec = speed))
                     }
                 } ?: throw IllegalStateException("Cannot open remote file: $remotePath")
             }
@@ -166,10 +169,13 @@ class FtpClientManager @Inject constructor(
                     val buffer = ByteArray(HaronConstants.TRANSFER_BUFFER_SIZE)
                     var transferred = 0L
                     var read: Int
+                    val startTime = System.currentTimeMillis()
                     while (input.read(buffer).also { read = it } != -1) {
                         output.write(buffer, 0, read)
                         transferred += read
-                        emit(FtpTransferProgress(fileName, transferred, totalSize, isUpload = true))
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                        emit(FtpTransferProgress(fileName, transferred, totalSize, isUpload = true, speedBytesPerSec = speed))
                     }
                 }
             } ?: throw IllegalStateException("Cannot store remote file: $remotePath")

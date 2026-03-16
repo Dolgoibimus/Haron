@@ -603,6 +603,15 @@ fun ExplorerScreen(
 
         @Composable
         fun Divider() {
+            val topSizeStr = if (state.topPanel.isSelectionMode) {
+                val (size, calculating) = viewModel.getSelectedTotalSizeForPanel(PanelId.TOP)
+                if (calculating && size == 0L) "…" else size.toFileSize()
+            } else ""
+            val bottomSizeStr = if (state.bottomPanel.isSelectionMode) {
+                val (size, calculating) = viewModel.getSelectedTotalSizeForPanel(PanelId.BOTTOM)
+                if (calculating && size == 0L) "…" else size.toFileSize()
+            } else ""
+
             PanelDivider(
                 totalSize = totalSizePx,
                 topFileCount = state.topPanel.files.size,
@@ -611,6 +620,8 @@ fun ExplorerScreen(
                 isLandscape = isLandscape,
                 isDragging = isDragging,
                 dragOperation = if (dragState is DragState.Dragging) dragState.dragOperation else DragOperation.MOVE,
+                topSelectedSize = topSizeStr,
+                bottomSelectedSize = bottomSizeStr,
                 onDrag = { delta ->
                     viewModel.updatePanelRatio(state.panelRatio + delta)
                 },
@@ -1449,7 +1460,7 @@ private fun ExplorerDialogs(
             if (dialog.transfers.isNotEmpty()) {
                 com.vamp.haron.presentation.cloud.CloudTransferDialog(
                     transfers = dialog.transfers.map {
-                        com.vamp.haron.presentation.cloud.CloudTransferItem(it.id, it.fileName, it.percent, it.isUpload)
+                        com.vamp.haron.presentation.cloud.CloudTransferItem(it.id, it.fileName, it.percent, it.isUpload, it.bytesTransferred, it.totalBytes, it.speedBytesPerSec)
                     },
                     onCancel = { transferId -> viewModel.cancelSingleCloudTransfer(transferId) },
                     onCancelAll = { viewModel.cancelCloudTransfer() }

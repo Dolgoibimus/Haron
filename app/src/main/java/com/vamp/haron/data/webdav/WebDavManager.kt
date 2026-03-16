@@ -124,6 +124,7 @@ class WebDavManager @Inject constructor() {
             val totalSize = response.body?.contentLength() ?: -1L
             val actualDest = resolveConflict(localDest)
             var transferred = 0L
+            val startTime = System.currentTimeMillis()
 
             response.body?.byteStream()?.use { input ->
                 actualDest.outputStream().use { output ->
@@ -132,7 +133,9 @@ class WebDavManager @Inject constructor() {
                     while (input.read(buffer).also { read = it } != -1) {
                         output.write(buffer, 0, read)
                         transferred += read
-                        emit(WebDavTransferProgress(fileName, transferred, totalSize, isUpload = false))
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                        emit(WebDavTransferProgress(fileName, transferred, totalSize, isUpload = false, speedBytesPerSec = speed))
                     }
                 }
             }
@@ -147,6 +150,7 @@ class WebDavManager @Inject constructor() {
             val totalSize = localSrc.length()
             EcosystemLogger.d(HaronConstants.TAG, "WebDavManager: upload started $fileName -> $remoteUrl")
 
+            val startTime = System.currentTimeMillis()
             val body = object : RequestBody() {
                 override fun contentType() = "application/octet-stream".toMediaType()
                 override fun contentLength() = totalSize
@@ -172,7 +176,9 @@ class WebDavManager @Inject constructor() {
             if (!response.isSuccessful && response.code != 201 && response.code != 204) {
                 throw IllegalStateException("Upload failed: ${response.code}")
             }
-            emit(WebDavTransferProgress(fileName, totalSize, totalSize, isUpload = true))
+            val elapsed = System.currentTimeMillis() - startTime
+            val speed = if (elapsed > 500) totalSize * 1000 / elapsed else 0L
+            emit(WebDavTransferProgress(fileName, totalSize, totalSize, isUpload = true, speedBytesPerSec = speed))
             EcosystemLogger.d(HaronConstants.TAG, "WebDavManager: upload completed $fileName")
         }
     }.flowOn(Dispatchers.IO)

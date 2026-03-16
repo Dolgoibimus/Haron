@@ -19,7 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.vamp.haron.R
 import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
@@ -71,7 +73,10 @@ fun TransferProgressCard(
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { progress.fraction },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
             )

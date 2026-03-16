@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -108,7 +110,10 @@ fun ComparisonScreen(
                             Spacer(Modifier.height(12.dp))
                             LinearProgressIndicator(
                                 progress = { cmpFraction },
-                                modifier = Modifier.width(200.dp)
+                                modifier = Modifier
+                                    .width(200.dp)
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
                             )
                             ProgressInfoRow(
                                 counter = "${state.progressCurrent}/${state.progressTotal}",

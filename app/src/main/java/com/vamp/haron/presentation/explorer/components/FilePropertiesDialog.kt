@@ -255,8 +255,8 @@ fun FilePropertiesDialog(
                                         progress = { hashProgress },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(4.dp)
-                                            .clip(RoundedCornerShape(2.dp))
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
                                     )
                                     ProgressInfoRow(
                                         percent = if (hashProgress > 0f) "${(hashProgress * 100).toInt()}%" else ""

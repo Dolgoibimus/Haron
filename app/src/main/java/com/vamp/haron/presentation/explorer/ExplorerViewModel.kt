@@ -255,12 +255,19 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /** Update progress for a specific transfer */
-    private fun updateTransferProgress(transferId: String, fileName: String, percent: Int, isUpload: Boolean) {
+    private fun updateTransferProgress(
+        transferId: String, fileName: String, percent: Int, isUpload: Boolean,
+        bytesTransferred: Long = 0L, totalBytes: Long = 0L, speedBytesPerSec: Long = 0L
+    ) {
         _uiState.update { state ->
             val current = state.dialogState
             if (current is DialogState.CloudTransfer) {
                 val updated = current.transfers.map {
-                    if (it.id == transferId) it.copy(fileName = fileName, percent = percent) else it
+                    if (it.id == transferId) it.copy(
+                        fileName = fileName, percent = percent,
+                        bytesTransferred = bytesTransferred, totalBytes = totalBytes,
+                        speedBytesPerSec = speedBytesPerSec
+                    ) else it
                 }
                 state.copy(dialogState = current.copy(
                     fileName = updated.firstOrNull()?.fileName ?: fileName,
@@ -383,7 +390,7 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false, progress.bytesTransferred, progress.totalBytes, progress.speedBytesPerSec)
                         if (progress.isComplete) {
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
@@ -414,7 +421,7 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false, progress.bytesTransferred, progress.totalBytes, progress.speedBytesPerSec)
                         if (progress.isComplete) {
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
@@ -470,7 +477,7 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false, progress.bytesTransferred, progress.totalBytes, progress.speedBytesPerSec)
                         if (progress.isComplete) {
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
@@ -498,7 +505,7 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false, progress.bytesTransferred, progress.totalBytes, progress.speedBytesPerSec)
                         if (progress.isComplete) {
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
@@ -529,7 +536,7 @@ class ExplorerViewModel @Inject constructor(
 
                 cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
                     .collect { progress ->
-                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false)
+                        updateTransferProgress(transferId, progress.fileName.ifEmpty { entry.name }, progress.percent, false, progress.bytesTransferred, progress.totalBytes, progress.speedBytesPerSec)
                         if (progress.isComplete) {
                             if (progress.error != null) {
                                 _toastMessage.tryEmit(progress.error)
@@ -6321,6 +6328,30 @@ class ExplorerViewModel @Inject constructor(
     }
 
     // --- Folder Size Calculation ---
+
+    fun getSelectedTotalSizeForPanel(panelId: PanelId): Pair<Long, Boolean> {
+        val state = _uiState.value
+        val panel = getPanel(panelId)
+        val selected = panel.files.filter { it.path in panel.selectedPaths }
+        var total = 0L
+        var calculating = false
+        for (entry in selected) {
+            if (entry.isDirectory) {
+                val cached = state.folderSizeCache[entry.path]
+                if (cached != null) {
+                    total += cached
+                } else {
+                    calculating = true
+                    if (!folderSizeJobs.containsKey(entry.path)) {
+                        calculateFolderSize(entry.path)
+                    }
+                }
+            } else {
+                total += entry.size
+            }
+        }
+        return total to calculating
+    }
 
     fun getSelectedTotalSizeWithFolders(): Pair<Long, Boolean> {
         val state = _uiState.value

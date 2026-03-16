@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -158,8 +159,8 @@ fun TrashDialog(
                     progress = { deleteProgress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(4.dp)
-                        .padding(horizontal = 0.dp),
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
                 )
                 ProgressInfoRow(
                     percent = "${(deleteProgress * 100).toInt()}%"

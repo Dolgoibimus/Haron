@@ -217,6 +217,7 @@ class GoogleDriveProvider(
             val outputFile = File(localPath)
 
             // Stream download with manual progress tracking
+            val startTime = System.currentTimeMillis()
             val inputStream = service.files().get(cloudFileId).executeMediaAsInputStream()
             BufferedOutputStream(FileOutputStream(outputFile), 262144).use { fos ->
                 val buffer = ByteArray(262144)
@@ -229,7 +230,9 @@ class GoogleDriveProvider(
                     totalRead += read
                     val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
                     if (percent != lastEmitPercent) {
-                        emit(CloudTransferProgress(fileName, totalRead, totalSize))
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val speed = if (elapsed > 500) totalRead * 1000 / elapsed else 0L
+                        emit(CloudTransferProgress(fileName, totalRead, totalSize, speedBytesPerSec = speed))
                         lastEmitPercent = percent
                     }
                 }
@@ -258,6 +261,7 @@ class GoogleDriveProvider(
 
                 trySend(CloudTransferProgress(fileName, 0, totalSize))
 
+                val uploadStartTime = System.currentTimeMillis()
                 val parentId = if (cloudDirPath.isEmpty() || cloudDirPath == "/") "root" else cloudDirPath
                 val fileMetadata = com.google.api.services.drive.model.File().apply {
                     name = fileName
@@ -290,7 +294,9 @@ class GoogleDriveProvider(
                         else -> 0
                     }
                     val transferred = (totalSize * percent / 100)
-                    trySend(CloudTransferProgress(fileName, transferred, totalSize))
+                    val elapsed = System.currentTimeMillis() - uploadStartTime
+                    val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
+                    trySend(CloudTransferProgress(fileName, transferred, totalSize, speedBytesPerSec = speed))
                 }
 
                 withContext(Dispatchers.IO) { createReq.execute() }

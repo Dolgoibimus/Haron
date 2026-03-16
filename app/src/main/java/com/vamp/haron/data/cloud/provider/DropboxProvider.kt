@@ -205,6 +205,7 @@ class DropboxProvider(
 
             emit(CloudTransferProgress(fileName, 0, totalSize))
 
+            val startTime = System.currentTimeMillis()
             downloader.inputStream.use { inputStream ->
                 BufferedOutputStream(FileOutputStream(outputFile), 262144).use { fos ->
                     val buffer = ByteArray(262144)
@@ -217,7 +218,9 @@ class DropboxProvider(
                         totalRead += read
                         val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
                         if (percent != lastEmitPercent) {
-                            emit(CloudTransferProgress(fileName, totalRead, totalSize))
+                            val elapsed = System.currentTimeMillis() - startTime
+                            val speed = if (elapsed > 500) totalRead * 1000 / elapsed else 0L
+                            emit(CloudTransferProgress(fileName, totalRead, totalSize, speedBytesPerSec = speed))
                             lastEmitPercent = percent
                         }
                     }
@@ -269,6 +272,7 @@ class DropboxProvider(
                         EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: using single upload (size ${totalSize / 1024}KB <= ${SINGLE_UPLOAD_LIMIT / 1024 / 1024}MB limit)")
                         // Small file: single upload with CountingInputStream + polling
                         val bytesRead = AtomicLong(0L)
+                        val uploadStartTime = System.currentTimeMillis()
                         val uploadJob = withContext(Dispatchers.IO) {
                             async {
                                 FileInputStream(file).use { fis ->
@@ -292,7 +296,9 @@ class DropboxProvider(
                             val read = bytesRead.get()
                             val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
                             if (percent != lastEmitPercent) {
-                                emit(CloudTransferProgress(fileName, read, totalSize))
+                                val elapsed = System.currentTimeMillis() - uploadStartTime
+                                val speed = if (elapsed > 500) read * 1000 / elapsed else 0L
+                                emit(CloudTransferProgress(fileName, read, totalSize, speedBytesPerSec = speed))
                                 lastEmitPercent = percent
                                 if (percent % 10 == 0) {
                                     EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: progress $percent% ($read/$totalSize)")
@@ -310,6 +316,7 @@ class DropboxProvider(
                             .uploadAndFinish(java.io.ByteArrayInputStream(ByteArray(0)), 0)
                         val sessionId = startResult.sessionId
                         var offset = 0L
+                        val chunkedStartTime = System.currentTimeMillis()
                         EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: session started, sessionId=$sessionId")
 
                         // Upload all chunks with per-chunk retry
@@ -372,8 +379,10 @@ class DropboxProvider(
 
                             offset += thisChunk
                             val percent = ((offset * 100) / totalSize).toInt()
+                            val elapsed = System.currentTimeMillis() - chunkedStartTime
+                            val speed = if (elapsed > 500) offset * 1000 / elapsed else 0L
                             EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: chunk $chunkNum/$totalChunks OK, $percent%")
-                            emit(CloudTransferProgress(fileName, offset, totalSize))
+                            emit(CloudTransferProgress(fileName, offset, totalSize, speedBytesPerSec = speed))
                         }
                     }
 
@@ -503,6 +512,7 @@ class DropboxProvider(
 
                     if (totalSize <= SINGLE_UPLOAD_LIMIT) {
                         val bytesRead = AtomicLong(0L)
+                        val updateStartTime = System.currentTimeMillis()
                         val uploadJob = withContext(Dispatchers.IO) {
                             async {
                                 FileInputStream(file).use { fis ->
@@ -526,7 +536,9 @@ class DropboxProvider(
                             val read = bytesRead.get()
                             val percent = if (totalSize > 0) ((read * 100) / totalSize).toInt() else 0
                             if (percent != lastEmitPercent) {
-                                emit(CloudTransferProgress(fileName, read, totalSize))
+                                val elapsed = System.currentTimeMillis() - updateStartTime
+                                val speed = if (elapsed > 500) read * 1000 / elapsed else 0L
+                                emit(CloudTransferProgress(fileName, read, totalSize, speedBytesPerSec = speed))
                                 lastEmitPercent = percent
                             }
                         }
@@ -541,6 +553,7 @@ class DropboxProvider(
                             .uploadAndFinish(java.io.ByteArrayInputStream(ByteArray(0)), 0)
                         val sessionId = startResult.sessionId
                         var offset = 0L
+                        val chunkedUpdateStartTime = System.currentTimeMillis()
                         EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: session started, sessionId=$sessionId")
 
                         // Upload all chunks with per-chunk retry
@@ -601,8 +614,10 @@ class DropboxProvider(
 
                             offset += thisChunk
                             val percent = ((offset * 100) / totalSize).toInt()
+                            val elapsed = System.currentTimeMillis() - chunkedUpdateStartTime
+                            val speed = if (elapsed > 500) offset * 1000 / elapsed else 0L
                             EcosystemLogger.d(HaronConstants.TAG, "Dropbox updateFileContent: chunk $chunkNum/$totalChunks OK, $percent%")
-                            emit(CloudTransferProgress(fileName, offset, totalSize))
+                            emit(CloudTransferProgress(fileName, offset, totalSize, speedBytesPerSec = speed))
                         }
                     }
 

@@ -24,9 +24,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
+        // ndk abiFilters removed — splits.abi handles architecture filtering
     }
 
     signingConfigs {
@@ -37,6 +35,15 @@ android {
             storePassword = localProps.getProperty("STORE_PASSWORD")
             keyAlias = localProps.getProperty("KEY_ALIAS")
             keyPassword = localProps.getProperty("KEY_PASSWORD")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
         }
     }
 

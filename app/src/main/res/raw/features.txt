@@ -30,14 +30,7 @@
 - Inline renaming (like Windows)
 - Batch rename: template, numbering, find & replace
 - Drag-and-Drop between panels (single and group)
-- Copy or Move chooser: drag file across divider — left side copies, right side moves [NEW]
-- Duplicate files: long tap Copy → dialog with number of copies and 3 destinations [NEW]
-  - To subfolder here: creates folder named after file, copies inside [NEW]
-  - To other panel (subfolder): same but in the other panel's folder [NEW]
-  - To other panel (open folder): copies directly into the other panel's current folder [NEW]
-  - Copy names: filename(1).ext, filename(2).ext, etc. [NEW]
-  - Folder size updates in real time during duplication [NEW]
-- Conflict dialog: replace / rename / skip
+- Copy or Move chooser: drag file across divider — left side copies, right side moves- Duplicate files: long tap Copy → dialog with number of copies and 3 destinations  - To subfolder here: creates folder named after file, copies inside  - To other panel (subfolder): same but in the other panel's folder  - To other panel (open folder): copies directly into the other panel's current folder  - Copy names: filename(1).ext, filename(2).ext, etc.  - Folder size updates in real time during duplication- Conflict dialog: replace / rename / skip
 
 # Trash
 - Deleted files stored for 30 days
@@ -48,11 +41,11 @@
 - Auto-recovery of records from filesystem if metadata is corrupted
 
 # Background Operations
-- All file operations (copy, move, delete, archive, extract) run in Foreground Service [NEW]
-- Operations survive app swipe-kill — continue in background [NEW]
-- Notification with progress and cancel button
-- Progress bar at bottom of screen — visible on app return [NEW]
-
+- All file operations (copy, move, delete, archive, extract) run in Foreground Service- Operations survive app swipe-kill — continue in background- Notification with progress and cancel button
+- Progress bar at bottom of screen — visible on app return
+- Per-file progress for folder operations (copy, move, delete) [NEW]
+- Transfer speed display in all progress bars (except delete) [NEW]
+- Cancel button stops operation immediately [NEW]
 # Side Menu (Drawer)
 - Storages: internal + SD-cards
 - Favorites: favorite folders
@@ -70,15 +63,13 @@
 # Storage (SAF)
 - SD-card and external storage support
 - All file operations work with content:// URI
-- Access to Android/data and Android/obb via Shizuku (Android 11+) [NEW]
-
+- Access to Android/data and Android/obb via Shizuku (Android 11+)
 # Quick Preview
 - Tap file icon → preview dialog
 - Images, video, audio, text, PDF, archives, APK, documents, FB2
 - Play media in preview
 - Open in gallery / reader / archive buttons
-- Delete images directly from preview (trash button) — moves to next photo [NEW]
-
+- Delete images directly from preview (trash button) — moves to next photo
 # Media Player
 - Built-in VLC engine (LibVLC)
 - All popular codecs: MP3, FLAC, OGG, WAV, AVI, MKV, MP4, etc.
@@ -111,43 +102,26 @@
 - Position saved between sessions
 
 # Archives
-- View ZIP, 7z, RAR (including RAR5), TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ [NEW]
-- Inline viewing in panel like regular folder
+- View ZIP, 7z, RAR (including RAR5), TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ- Inline viewing in panel like regular folder
 - Navigate folders inside archive
 - Selective extraction
 - Create ZIP with optional password (AES-256) and split
 - Conflict dialog on create: replace / rename / cancel
 - Extract options: extract here or into subfolder by archive name
 - Smart detection: if archive has single root folder — extract as-is without dialog
-- Quick extract from file list: select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract [NEW]
-- Tap pulsing icon → choose destination: next to archive / current panel / other panel [NEW]
-- Each archive extracts into a subfolder with the archive name (auto-created) [NEW]
-- Works with single or multiple archives at once [NEW]
-- "1 to 1" archiving: select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP [NEW]
-
+- Quick extract from file list: select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract- Tap pulsing icon → choose destination: next to archive / current panel / other panel- Each archive extracts into a subfolder with the archive name (auto-created)- Works with single or multiple archives at once- "1 to 1" archiving: select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
 # Text Editor
 - View and edit TXT/MD files
 - View mode (default) and edit mode
 - Undo/Redo (up to 50 steps)
 - Save dialog on exit with unsaved changes
 - Cursor position saved between sessions
-- Large files (600KB+) open in Sora Editor without freezes [NEW]
-
+- Large files (600KB+) open in Sora Editor without freezes
 # File Properties
 - Name, path, size, date, MIME-type, permissions
 - Recursive folder size calculation
 - EXIF data for photos (with delete option)
-- Audio tags: title, artist, album, year, genre, duration, bitrate (editable) [NEW]
-- Save/edit audio tags directly in file properties [NEW]
-- Album cover search from internet (Deezer + iTunes) with save to file [NEW]
-- Search cover by filename — auto-parse artist and title [NEW]
-- Smart search: one search fills all missing tags (title, artist, album, year, genre) + cover [NEW]
-- "Save all" button: save tags and cover together in one tap [NEW]
-- PDF metadata: title, author, subject, keywords, creator, producer, creation date, page count [NEW]
-- FB2 metadata: title, author, genre, language, series, date, annotation [NEW]
-- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 [NEW]
-- Hash comparison: paste expected hash — instant match/mismatch check [NEW]
-
+- Audio tags: title, artist, album, year, genre, duration, bitrate (editable)- Save/edit audio tags directly in file properties- Album cover search from internet (Deezer + iTunes) with save to file- Search cover by filename — auto-parse artist and title- Smart search: one search fills all missing tags (title, artist, album, year, genre) + cover- "Save all" button: save tags and cover together in one tap- PDF metadata: title, author, subject, keywords, creator, producer, creation date, page count- FB2 metadata: title, author, genre, language, series, date, annotation- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512- Hash comparison: paste expected hash — instant match/mismatch check
 # Storage Analyzer
 - Pie chart by file type
 - Categories with size and file count
@@ -168,8 +142,7 @@
 - Security: PIN, biometric, security question
 - Require PIN on launch toggle
 - Trash size limit
-- Shizuku status and control (install, start, grant permission) [NEW]
-
+- Shizuku status and control (install, start, grant permission)
 # Tags (Labels)
 - Colored labels with text names (8 colors)
 - Assign to files and folders
@@ -233,15 +206,7 @@
 # File Transfer
 - Wi-Fi Direct + NSD (LAN)
 - Auto-select best protocol
-- QR code transfer — two modes (tap QR to switch): [NEW]
-  Wi-Fi mode (both devices on the same network): [NEW]
-  1. Select files → Transfer → "HTTP / QR code" [NEW]
-  2. QR code with download link — scan on the other device [NEW]
-  Hotspot mode (devices on different networks or no Wi-Fi): [NEW]
-  - Tab "Haron": one QR code — second Haron scans it, auto-connects to hotspot and downloads [NEW]
-  - Tab "Others": two QR codes for any device without Haron — first for Wi-Fi connection, second for download link in browser [NEW]
-  - Hotspot is temporary, stops automatically when dialog is closed [NEW]
-- Progress, resume, retry on disconnect
+- QR code transfer — two modes (tap QR to switch):  Wi-Fi mode (both devices on the same network):  1. Select files → Transfer → "HTTP / QR code"  2. QR code with download link — scan on the other device  Hotspot mode (devices on different networks or no Wi-Fi):  - Tab "Haron": one QR code — second Haron scans it, auto-connects to hotspot and downloads  - Tab "Others": two QR codes for any device without Haron — first for Wi-Fi connection, second for download link in browser  - Hotspot is temporary, stops automatically when dialog is closed- Progress, resume, retry on disconnect
 - Foreground Service + WakeLock
 
 # Cast to TV
@@ -252,27 +217,14 @@
 - Transcode caching — instant replay of previously transcoded files
 - Automatic audio fallback for unsupported codecs (AC3/DTS)
 
-# Bluetooth HID Remote [NEW]
-- Touchpad mode: move cursor on TV, tap, long press, scroll [NEW]
-- Virtual keyboard: type text on TV screen (Latin + Cyrillic) [NEW]
-- Connect to paired Bluetooth devices [NEW]
-
+# Bluetooth HID Remote- Touchpad mode: move cursor on TV, tap, long press, scroll- Virtual keyboard: type text on TV screen (Latin + Cyrillic)- Connect to paired Bluetooth devices
 # Network & SMB
 - Auto-discover devices on LAN
 - SMB browser with dual-panel mode
 - Upload/download with progress
 - Saved connections (encrypted)
 
-# FTP Client & Server [NEW]
-- Connect to remote FTP servers [NEW]
-- Browse, download, upload files with progress [NEW]
-- Dual-panel: FTP files on top, local files on bottom [NEW]
-- FTPS (TLS) support [NEW]
-- Saved FTP connections (encrypted credentials) [NEW]
-- Built-in FTP server: share phone files to PC [NEW]
-- Anonymous or password-protected access [NEW]
-- Read-only mode option [NEW]
-
+# FTP Client & Server- Connect to remote FTP servers- Browse, download, upload files with progress- Dual-panel: FTP files on top, local files on bottom- FTPS (TLS) support- Saved FTP connections (encrypted credentials)- Built-in FTP server: share phone files to PC- Anonymous or password-protected access- Read-only mode option
 # Quick Send
 - Long tap file → device circles → drag to send
 - Trusted devices auto-accept
@@ -376,25 +328,37 @@
 - Folder comparison
 - Auto mode detection
 
-# Cloud Storage [NEW]
-- Google Drive, Dropbox, Yandex Disk [NEW]
-- Secure OAuth2 authentication with PKCE [NEW]
-- Browse cloud files in dual-panel mode (just like local files) [NEW]
-- Clickable breadcrumbs for cloud folder navigation [NEW]
-- Folder item count displayed for cloud directories [NEW]
-- Quick Preview for cloud images with high-res thumbnails [NEW]
-- Cloud gallery: fullscreen viewing with swipe between photos [NEW]
-- Video and audio streaming from cloud (plays instantly, no full download) [NEW]
-- Open and edit text files from cloud [NEW]
-- Save edited files back to cloud, to local storage, or both [NEW]
-- Download cloud files to local storage [NEW]
-- Upload local files to cloud (files up to 500MB+) [NEW]
-- Reliable upload: 8-10MB chunks with automatic retry on network failure [NEW]
-- Rename files and folders in cloud [NEW]
-- Delete files from cloud (including from Quick Preview) [NEW]
-- Create folders in cloud [NEW]
-- Drag and drop files between local storage and cloud [NEW]
-- Parallel transfers with individual cancel for each [NEW]
+# Cloud Storage
+- Google Drive, Dropbox, Yandex Disk
+- Secure OAuth2 authentication with PKCE
+- Browse cloud files in dual-panel mode (just like local files)
+- Clickable breadcrumbs for cloud folder navigation
+- Folder item count displayed for cloud directories
+- Quick Preview for cloud images with high-res thumbnails
+- Cloud gallery: fullscreen viewing with swipe between photos
+- Video and audio streaming from cloud (plays instantly, no full download)
+- Open and edit text files from cloud
+- Save edited files back to cloud, to local storage, or both
+- Download cloud files to local storage
+- Upload local files to cloud (files up to 500MB+)
+- Reliable upload: 8-10MB chunks with automatic retry on network failure
+- Rename files and folders in cloud
+- Delete files from cloud (including from Quick Preview)
+- Create folders in cloud
+- Drag and drop files between local storage and cloud
+- Parallel transfers with individual cancel for each
+
+# Web Search [NEW]
+- Search files on the internet from three sources at once [NEW]
+- Open Directory: finds files in public web directories (via DuckDuckGo) [NEW]
+- Torrent: searches torrent databases, shows seeders count [NEW]
+- Internet Archive: searches archive.org (70M+ digitized items) [NEW]
+- Cyrillic transliteration: Russian queries automatically searched in both Cyrillic and Latin [NEW]
+- Extension filter: type ".pdf", ".mp3" etc. in query to filter by file type [NEW]
+- Tap result to download, long tap to copy link [NEW]
+- Torrent downloads in zero-upload mode (no seeding) [NEW]
+- Download progress with speed and percentage [NEW]
+- Downloads saved to /Downloads/Haron/ [NEW]
 
 # Appearance
 - Theme: system / light / dark
