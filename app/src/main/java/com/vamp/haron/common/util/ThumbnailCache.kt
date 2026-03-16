@@ -41,6 +41,8 @@ object ThumbnailCache {
 
     fun get(path: String): Bitmap? = cache.get(path)
 
+    fun remove(path: String) { cache.remove(path) }
+
     /** Load thumbnail from a URL (for cloud files with thumbnailUrl) */
     suspend fun loadFromUrl(cacheKey: String, url: String, authHeader: String? = null): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(cacheKey)?.let { return@withContext it }

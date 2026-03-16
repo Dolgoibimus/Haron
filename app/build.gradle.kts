@@ -154,6 +154,9 @@ dependencies {
     // OkHttp (reliable large file uploads — keepalive, write timeout, HTTP/2)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // JAudiotagger (write album art into ID3/Vorbis/M4A tags)
+    implementation("net.jthink:jaudiotagger:3.0.1")
+
     // Sora Editor (large file editing — renders only visible lines, handles MB-sized files)
     implementation(platform("io.github.Rosemoe.sora-editor:bom:0.23.6"))
     implementation("io.github.Rosemoe.sora-editor:editor")

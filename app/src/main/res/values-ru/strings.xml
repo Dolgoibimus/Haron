@@ -423,6 +423,10 @@
     <string name="error_name_empty">Имя не может быть пустым</string>
     <string name="error_name_slashes">Имя не может содержать / или \\</string>
     <string name="hash_error">Ошибка</string>
+    <string name="hash_compare">Сравнить</string>
+    <string name="hash_paste_hint">Вставьте хеш…</string>
+    <string name="hash_match">Совпадает</string>
+    <string name="hash_mismatch">Не совпадает</string>
 
     <!-- EXIF labels -->
     <string name="exif_manufacturer">Производитель</string>
@@ -1376,4 +1380,26 @@
 
     <!-- Storage size info -->
     <string name="storage_size_info">Занято %1$s из %2$s (раздел данных, без ОС Android ~24 ГБ)</string>
+
+    <!-- Audio tags -->
+    <string name="audio_section">Аудио теги</string>
+    <string name="audio_title">Название</string>
+    <string name="audio_artist">Исполнитель</string>
+    <string name="audio_album">Альбом</string>
+    <string name="audio_year">Год</string>
+    <string name="audio_genre">Жанр</string>
+    <string name="audio_duration">Длительность</string>
+    <string name="audio_bitrate">Битрейт</string>
+    <string name="audio_has_cover">Есть обложка</string>
+    <string name="audio_fetch_cover">Найти обложку</string>
+    <string name="audio_searching_cover">Поиск…</string>
+    <string name="audio_cover_not_found">Обложка не найдена</string>
+    <string name="audio_save_cover">Сохранить</string>
+    <string name="audio_cover_saved">Обложка сохранена</string>
+    <string name="audio_cover_save_error">Не удалось сохранить обложку</string>
+    <string name="audio_search_by_filename">Поиск по имени файла</string>
+    <string name="audio_save_tags">Сохранить теги</string>
+    <string name="audio_save_all">Сохранить всё</string>
+    <string name="audio_tags_saved">Теги сохранены</string>
+    <string name="audio_tags_save_error">Не удалось сохранить теги</string>
 </resources>

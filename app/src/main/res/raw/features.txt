@@ -130,12 +130,20 @@
 - Undo/Redo (up to 50 steps)
 - Save dialog on exit with unsaved changes
 - Cursor position saved between sessions
+- Large files (600KB+) open in Sora Editor without freezes [NEW]
 
 # File Properties
 - Name, path, size, date, MIME-type, permissions
 - Recursive folder size calculation
 - EXIF data for photos (with delete option)
-- MD5 and SHA-256 hashes
+- Audio tags: title, artist, album, year, genre, duration, bitrate (editable) [NEW]
+- Save/edit audio tags directly in file properties [NEW]
+- Album cover search from internet (Deezer + iTunes) with save to file [NEW]
+- Search cover by filename — auto-parse artist and title [NEW]
+- Smart search: one search fills all missing tags (title, artist, album, year, genre) + cover [NEW]
+- "Save all" button: save tags and cover together in one tap [NEW]
+- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 [NEW]
+- Hash comparison: paste expected hash — instant match/mismatch check [NEW]
 
 # Storage Analyzer
 - Pie chart by file type

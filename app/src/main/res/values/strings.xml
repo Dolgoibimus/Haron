@@ -424,6 +424,10 @@
     <string name="error_name_empty">Name cannot be empty</string>
     <string name="error_name_slashes">Name cannot contain / or \\</string>
     <string name="hash_error">Error</string>
+    <string name="hash_compare">Compare</string>
+    <string name="hash_paste_hint">Paste hash…</string>
+    <string name="hash_match">Match</string>
+    <string name="hash_mismatch">Mismatch</string>
 
     <!-- EXIF labels -->
     <string name="exif_manufacturer">Manufacturer</string>
@@ -1378,4 +1382,26 @@
 
     <!-- Storage size info -->
     <string name="storage_size_info">Used %1$s of %2$s (user partition, excludes Android OS ~24 GB)</string>
+
+    <!-- Audio tags -->
+    <string name="audio_section">Audio tags</string>
+    <string name="audio_title">Title</string>
+    <string name="audio_artist">Artist</string>
+    <string name="audio_album">Album</string>
+    <string name="audio_year">Year</string>
+    <string name="audio_genre">Genre</string>
+    <string name="audio_duration">Duration</string>
+    <string name="audio_bitrate">Bitrate</string>
+    <string name="audio_has_cover">Has cover</string>
+    <string name="audio_fetch_cover">Find cover</string>
+    <string name="audio_searching_cover">Searching…</string>
+    <string name="audio_cover_not_found">Cover not found</string>
+    <string name="audio_save_cover">Save</string>
+    <string name="audio_cover_saved">Cover saved</string>
+    <string name="audio_cover_save_error">Could not save cover</string>
+    <string name="audio_search_by_filename">Search by filename</string>
+    <string name="audio_save_tags">Save tags</string>
+    <string name="audio_save_all">Save all</string>
+    <string name="audio_tags_saved">Tags saved</string>
+    <string name="audio_tags_save_error">Could not save tags</string>
 </resources>

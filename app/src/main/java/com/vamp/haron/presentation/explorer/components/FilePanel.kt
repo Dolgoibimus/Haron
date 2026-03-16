@@ -1444,7 +1444,8 @@ fun FilePanel(
                             cloudAuthHeader = cloudAuthHeader,
                             archiveThumbnailCache = archiveThumbnailCache,
                             archivePath = state.archivePath,
-                            archivePassword = state.archivePassword
+                            archivePassword = state.archivePassword,
+                            thumbnailVersion = state.thumbnailVersion
                         )
                     }
                 }

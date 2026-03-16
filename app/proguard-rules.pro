@@ -163,3 +163,7 @@
 -dontwarn org.osgi.framework.BundleContext
 -dontwarn org.osgi.framework.FrameworkUtil
 -dontwarn org.osgi.framework.ServiceReference
+
+# ---------- JAudiotagger (audio tag writing) ----------
+-keep class org.jaudiotagger.** { *; }
+-dontwarn org.jaudiotagger.**

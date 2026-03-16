@@ -1262,6 +1262,7 @@ private fun ExplorerDialogs(
                 properties = dialog.properties,
                 hashResult = dialog.hashResult,
                 isHashCalculating = dialog.isHashCalculating,
+                coverResult = dialog.coverResult,
                 onCalculateHash = { viewModel.calculateHash() },
                 onCopyHash = { hash ->
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1269,6 +1270,8 @@ private fun ExplorerDialogs(
                     Toast.makeText(context, context.getString(R.string.hash_copied), Toast.LENGTH_SHORT).show()
                 },
                 onRemoveExif = { viewModel.removeExif() },
+                onFetchCover = { query -> viewModel.fetchAlbumCover(query) },
+                onSaveAll = { tags -> viewModel.saveAllAudioData(tags) },
                 onDismiss = viewModel::dismissDialog,
                 isContentUri = dialog.entry.isContentUri
             )

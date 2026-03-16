@@ -102,6 +102,7 @@ fun FileListItem(
     archiveThumbnailCache: ArchiveThumbnailCache? = null,
     archivePath: String? = null,
     archivePassword: String? = null,
+    thumbnailVersion: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -151,7 +152,7 @@ fun FileListItem(
     val isArchiveEntry = entry.path.contains("!/")
     val showLocalThumbnail = !isCloudFile && !isArchiveEntry &&
         (fileType in listOf("image", "video", "audio", "text", "code", "apk", "document", "pdf") || isFb2Zip)
-    var thumbnail by remember(entry.path) {
+    var thumbnail by remember(entry.path, thumbnailVersion) {
         mutableStateOf<Bitmap?>(ThumbnailCache.get(entry.path))
     }
 
@@ -171,7 +172,7 @@ fun FileListItem(
         }
     } else if (showLocalThumbnail && thumbnail == null) {
         val context = LocalContext.current
-        LaunchedEffect(entry.path) {
+        LaunchedEffect(entry.path, thumbnailVersion) {
             thumbnail = ThumbnailCache.loadThumbnail(
                 context, entry.path, entry.isContentUri, fileType
             )

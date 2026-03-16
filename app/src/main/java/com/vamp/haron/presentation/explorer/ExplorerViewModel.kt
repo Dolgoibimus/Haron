@@ -47,6 +47,10 @@ import com.vamp.haron.domain.usecase.RenameFileUseCase
 import com.vamp.haron.domain.usecase.RestoreFromTrashUseCase
 import com.vamp.haron.domain.usecase.GetFilePropertiesUseCase
 import com.vamp.haron.domain.usecase.CalculateHashUseCase
+import com.vamp.haron.domain.usecase.AudioTags
+import com.vamp.haron.domain.usecase.CoverResult
+import com.vamp.haron.domain.usecase.FetchAlbumCoverUseCase
+import com.vamp.haron.domain.usecase.SaveAudioTagsUseCase
 import com.vamp.haron.domain.usecase.BrowseArchiveUseCase
 import com.vamp.haron.domain.usecase.ExtractArchiveUseCase
 import com.vamp.haron.domain.usecase.ReadArchiveEntryUseCase
@@ -139,6 +143,8 @@ class ExplorerViewModel @Inject constructor(
     private val storageVolumeHelper: StorageVolumeHelper,
     private val getFilePropertiesUseCase: GetFilePropertiesUseCase,
     private val calculateHashUseCase: CalculateHashUseCase,
+    private val fetchAlbumCoverUseCase: FetchAlbumCoverUseCase,
+    private val saveAudioTagsUseCase: SaveAudioTagsUseCase,
     private val loadApkInstallInfoUseCase: LoadApkInstallInfoUseCase,
     private val hapticManager: HapticManager,
     private val forceDeleteUseCase: ForceDeleteUseCase,
@@ -5863,6 +5869,65 @@ class ExplorerViewModel @Inject constructor(
             } else {
                 _toastMessage.tryEmit(appContext.getString(R.string.exif_remove_error))
             }
+        }
+    }
+
+    fun fetchAlbumCover(manualQuery: String? = null) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.FilePropertiesState) return
+        val entry = dialog.entry
+
+        viewModelScope.launch {
+            fetchAlbumCoverUseCase(entry.path, manualQuery).collect { result ->
+                _uiState.update { state ->
+                    val d = state.dialogState
+                    if (d is DialogState.FilePropertiesState && d.entry.path == entry.path) {
+                        val pendingBytes = if (result is CoverResult.Found) result.imageBytes else d.pendingCoverBytes
+                        state.copy(dialogState = d.copy(coverResult = result, pendingCoverBytes = pendingBytes))
+                    } else state
+                }
+            }
+        }
+    }
+
+    fun saveAllAudioData(tags: AudioTags?) {
+        val dialog = _uiState.value.dialogState
+        if (dialog !is DialogState.FilePropertiesState) return
+        val entry = dialog.entry
+        val imageBytes = dialog.pendingCoverBytes
+
+        viewModelScope.launch {
+            // 1. Save tags first (sequential — avoid JAudiotagger race condition)
+            if (tags != null) {
+                val success = saveAudioTagsUseCase(entry.path, tags)
+                if (success) {
+                    _toastMessage.tryEmit(appContext.getString(R.string.audio_tags_saved))
+                } else {
+                    _toastMessage.tryEmit(appContext.getString(R.string.audio_tags_save_error))
+                }
+            }
+
+            // 2. Then save cover (after tags are committed)
+            if (imageBytes != null && imageBytes.isNotEmpty()) {
+                fetchAlbumCoverUseCase.saveCover(entry.path, imageBytes).collect { result ->
+                    _uiState.update { state ->
+                        val d = state.dialogState
+                        if (d is DialogState.FilePropertiesState && d.entry.path == entry.path) {
+                            state.copy(dialogState = d.copy(coverResult = result))
+                        } else state
+                    }
+                    if (result is CoverResult.Saved) {
+                        _toastMessage.tryEmit(appContext.getString(R.string.audio_cover_saved))
+                        val activeId = _uiState.value.activePanel
+                        updatePanel(activeId) { it.copy(thumbnailVersion = it.thumbnailVersion + 1) }
+                    } else if (result is CoverResult.Error) {
+                        _toastMessage.tryEmit(appContext.getString(R.string.audio_cover_save_error))
+                    }
+                }
+            }
+
+            // 3. Refresh properties once at the end
+            showFileProperties(entry)
         }
     }
 

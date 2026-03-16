@@ -1,7 +1,9 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import androidx.exifinterface.media.ExifInterface
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
@@ -14,6 +16,20 @@ import kotlinx.coroutines.flow.flowOn
 import java.io.File
 import javax.inject.Inject
 
+data class AudioTags(
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val year: String = "",
+    val genre: String = "",
+    val duration: String = "",  // read-only (formatted mm:ss)
+    val bitrate: String = ""    // read-only (e.g. "320 kbps")
+) {
+    val hasEditableTags: Boolean get() = title.isNotEmpty() || artist.isNotEmpty() ||
+        album.isNotEmpty() || year.isNotEmpty() || genre.isNotEmpty()
+    val hasAnyData: Boolean get() = hasEditableTags || duration.isNotEmpty() || bitrate.isNotEmpty()
+}
+
 data class FileProperties(
     val name: String,
     val path: String,
@@ -24,6 +40,9 @@ data class FileProperties(
     val childCount: Int = 0,
     val totalSize: Long = 0L,
     val exifData: Map<String, String> = emptyMap(),
+    val audioMetadata: Map<String, String> = emptyMap(),
+    val audioTags: AudioTags? = null,
+    val hasEmbeddedCover: Boolean = false,
     val permissions: String = ""
 )
 
@@ -71,6 +90,18 @@ class GetFilePropertiesUseCase @Inject constructor(
                 emit(base.copy(exifData = data))
             } catch (_: Exception) {
                 // No EXIF or unreadable
+            }
+        }
+
+        // For audio — read metadata tags
+        if (entry.iconRes() == "audio" && !entry.isContentUri) {
+            try {
+                val (audioData, audioTags) = buildAudioMetadata(entry.path)
+                val hasCover = checkEmbeddedCover(entry.path)
+                EcosystemLogger.d(TAG, "Audio metadata: ${audioData.size} tags, hasCover=$hasCover")
+                emit(base.copy(audioMetadata = audioData, audioTags = audioTags, hasEmbeddedCover = hasCover))
+            } catch (e: Exception) {
+                EcosystemLogger.e(TAG, "Failed to read audio metadata: ${e.message}")
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -125,7 +156,66 @@ class GetFilePropertiesUseCase @Inject constructor(
         return map
     }
 
+    private fun buildAudioMetadata(path: String): Pair<Map<String, String>, AudioTags> {
+        val map = linkedMapOf<String, String>()
+        val retriever = MediaMetadataRetriever()
+        var title = ""
+        var artist = ""
+        var album = ""
+        var year = ""
+        var genre = ""
+        var duration = ""
+        var bitrate = ""
+        try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.let {
+                title = it; map[context.getString(R.string.audio_title)] = it
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.let {
+                artist = it; map[context.getString(R.string.audio_artist)] = it
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.let {
+                album = it; map[context.getString(R.string.audio_album)] = it
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)?.let {
+                year = it; map[context.getString(R.string.audio_year)] = it
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)?.let {
+                genre = it; map[context.getString(R.string.audio_genre)] = it
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.let { ms ->
+                val totalSec = ms.toLongOrNull()?.div(1000) ?: return@let
+                val min = totalSec / 60
+                val sec = totalSec % 60
+                val fmt = "%d:%02d".format(min, sec)
+                duration = fmt; map[context.getString(R.string.audio_duration)] = fmt
+            }
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.let { bps ->
+                val kbps = (bps.toLongOrNull() ?: return@let) / 1000
+                val fmt = "$kbps kbps"
+                bitrate = fmt; map[context.getString(R.string.audio_bitrate)] = fmt
+            }
+        } finally {
+            retriever.release()
+        }
+        val tags = AudioTags(title, artist, album, year, genre, duration, bitrate)
+        return map to tags
+    }
+
+    private fun checkEmbeddedCover(path: String): Boolean {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(path)
+            retriever.embeddedPicture != null
+        } catch (_: Exception) {
+            false
+        } finally {
+            retriever.release()
+        }
+    }
+
     companion object {
+        private const val TAG = "Haron/FileProperties"
         private val EXIF_TAGS = listOf(
             ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL,
             ExifInterface.TAG_DATETIME, ExifInterface.TAG_DATETIME_ORIGINAL,

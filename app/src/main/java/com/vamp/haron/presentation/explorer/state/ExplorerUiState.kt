@@ -15,6 +15,7 @@ import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.domain.model.PreviewData
 import com.vamp.haron.domain.model.ShelfItem
 import com.vamp.haron.domain.model.TrashEntry
+import com.vamp.haron.domain.usecase.CoverResult
 import com.vamp.haron.domain.usecase.FileProperties
 import com.vamp.haron.domain.usecase.HashResult
 
@@ -100,7 +101,9 @@ sealed interface DialogState {
         val entry: FileEntry,
         val properties: FileProperties? = null,
         val hashResult: HashResult? = null,
-        val isHashCalculating: Boolean = false
+        val isHashCalculating: Boolean = false,
+        val coverResult: CoverResult? = null,
+        val pendingCoverBytes: ByteArray? = null
     ) : DialogState
     data class ApkInstallDialog(
         val entry: FileEntry,

@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.78 (Phase 4, Batch 78)
+**Текущая версия:** 0.80 (Phase 4, Batch 80)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,24 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 80 — Аудио теги + подгрузка обложки из интернета ✅ проверено
+
+**Цель:** Показывать аудио-теги (Artist, Album, Title и т.д.) в свойствах файла. Подгружать обложку из интернета по тегам и записывать в файл. Умный поиск — один запрос заполняет все недостающие теги + обложку.
+
+**Что сделано:**
+- `GetFilePropertiesUseCase` — добавлены `audioMetadata`, `audioTags: AudioTags?`, `hasEmbeddedCover` в `FileProperties`. Методы `buildAudioMetadata()` и `checkEmbeddedCover()`
+- `FetchAlbumCoverUseCase` — Deezer `/search/track` + `/album/{id}` (year, genre) → iTunes `entity=musicTrack` fallback. Возвращает все метаданные (title, artist, album, year, genre) + обложку. Сохранение через JAudiotagger
+- `SaveAudioTagsUseCase` — запись тегов через JAudiotagger (Title, Artist, Album, Year, Genre)
+- `FilePropertiesDialog` — секция "Аудио теги": плоские редактируемые поля (как PropertyRow), обложка, кнопка "Сохранить всё"
+- `AudioTagsEditor` — автозаполняет пустые поля при получении результата поиска (LaunchedEffect)
+- `AudioCoverSection` — кнопки "Поиск по имени файла" и ручной ввод Artist/Title
+- `ExplorerViewModel.saveAllAudioData()` — единый метод, пишет теги → обложку последовательно (без race condition)
+- `ThumbnailCache.remove()` + `PanelUiState.thumbnailVersion` — обновление иконок после сохранения обложки
+- `app/build.gradle.kts` — JAudiotagger 3.0.1, proguard keep-правила
+- Строки в strings.xml (EN + RU): 20 строк для аудио секции
 
 ---
 
@@ -39,6 +57,20 @@
 - Все use cases используют общий `BrowseArchiveUseCase.archiveType()` вместо `substringAfterLast('.')`
 - `.gtar` расширение — распознаётся как tar-архив
 - **Bugfix**: `onIconClick()` не проверял `isArchiveMode` для папок → клик по иконке папки внутри архива вызывал `navigateTo()` вместо `navigateIntoArchive()`, показывая "Путь не существует". Исправлено для всех типов архивов (ZIP/7z/RAR/tar)
+
+---
+
+### Batch 80 — Расширенные контрольные суммы ✅ проверено
+
+**Цель:** Добавить CRC32, SHA-1 и SHA-512 к существующим MD5 и SHA-256 в свойствах файла.
+
+**Что сделано:**
+- `CalculateHashUseCase` — добавлены CRC32 (`java.util.zip.CRC32`), SHA-1, SHA-512 в оба метода (`invoke` и `invokeFromUri`)
+- `HashResult` — расширен полями `crc32`, `sha1`, `sha512`
+- `FilePropertiesDialog` — отображает 5 строк хешей: CRC32, MD5, SHA-1, SHA-256, SHA-512
+- `HashRow` — кнопка сравнения (CompareArrows) рядом с копированием, поле ввода между именем и кнопками, цветовая индикация (зелёный = совпадает, красный = не совпадает)
+- Текст хеша укорочен на ширину одной кнопки (padding end 28dp)
+- `features.txt` EN/RU — обновлено описание
 
 ---
 
