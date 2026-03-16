@@ -1,11 +1,16 @@
 package com.vamp.haron.presentation.search
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.haron.data.db.entity.FileIndexEntity
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.SearchNavigationHolder
+import com.vamp.haron.domain.model.SearchSource
+import com.vamp.haron.domain.model.WebSearchResult
 import com.vamp.haron.domain.repository.DateFilter
 import com.vamp.haron.domain.repository.FileCategory
 import com.vamp.haron.domain.repository.IndexMode
@@ -15,13 +20,19 @@ import com.vamp.haron.domain.repository.SearchRepository
 import com.vamp.haron.domain.repository.SizeFilter
 import com.vamp.haron.domain.usecase.LoadPreviewUseCase
 import com.vamp.haron.domain.usecase.SearchFilesUseCase
+import com.vamp.haron.domain.usecase.websearch.InternetArchiveSearchUseCase
+import com.vamp.haron.domain.usecase.websearch.OpenDirectorySearchUseCase
+import com.vamp.haron.domain.usecase.websearch.TorrentSearchUseCase
 import com.vamp.haron.domain.model.PreviewData
+import com.vamp.haron.service.WebDownloadService
 import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,7 +61,13 @@ data class SearchUiState(
     val contentIndexSize: Long = 0L,
     val currentPage: Int = 0,
     val hasMore: Boolean = false,
-    val previewDialog: PreviewDialogState? = null
+    val previewDialog: PreviewDialogState? = null,
+    // Web search tab
+    val selectedTab: Int = 0,
+    val webQuery: String = "",
+    val webResults: List<WebSearchResult> = emptyList(),
+    val isWebSearching: Boolean = false,
+    val webError: String? = null
 )
 
 data class PreviewDialogState(
@@ -71,6 +88,9 @@ class SearchViewModel @Inject constructor(
     private val searchFilesUseCase: SearchFilesUseCase,
     private val searchRepository: SearchRepository,
     private val loadPreviewUseCase: LoadPreviewUseCase,
+    private val openDirectorySearch: OpenDirectorySearchUseCase,
+    private val torrentSearch: TorrentSearchUseCase,
+    private val archiveSearch: InternetArchiveSearchUseCase,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -82,6 +102,7 @@ class SearchViewModel @Inject constructor(
 
     private val _queryFlow = MutableStateFlow("")
     private var searchJob: Job? = null
+    private var webSearchJob: Job? = null
 
     companion object {
         private const val PAGE_SIZE = 200
@@ -221,6 +242,87 @@ class SearchViewModel @Inject constructor(
         _navigationEvent.tryEmit(
             SearchNavigationEvent.NavigateToFile(entity.parentPath, entity.path)
         )
+    }
+
+    // --- Web search tab ---
+
+    fun setSelectedTab(index: Int) {
+        _uiState.update { it.copy(selectedTab = index) }
+    }
+
+    fun setWebQuery(query: String) {
+        _uiState.update { it.copy(webQuery = query) }
+    }
+
+    fun searchWeb() {
+        val query = _uiState.value.webQuery.trim()
+        if (query.isBlank()) return
+
+        webSearchJob?.cancel()
+        EcosystemLogger.d(HaronConstants.TAG, "SearchVM: web search query=\"$query\"")
+        _uiState.update { it.copy(isWebSearching = true, webError = null, webResults = emptyList()) }
+
+        webSearchJob = viewModelScope.launch {
+            try {
+                val odDeferred = async { openDirectorySearch(query) }
+                val torrentDeferred = async { torrentSearch(query) }
+                val archiveDeferred = async { archiveSearch(query) }
+
+                val odResults = try { odDeferred.await() } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "SearchVM: OD search error: ${e.message}")
+                    emptyList()
+                }
+                val torrentResults = try { torrentDeferred.await() } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "SearchVM: Torrent search error: ${e.message}")
+                    emptyList()
+                }
+                val archiveResults = try { archiveDeferred.await() } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "SearchVM: Archive search error: ${e.message}")
+                    emptyList()
+                }
+
+                // Merge results: interleave sources for variety, OD first (direct downloads)
+                val merged = mutableListOf<WebSearchResult>()
+                merged.addAll(odResults.take(30))
+                merged.addAll(archiveResults.take(30))
+                merged.addAll(torrentResults.take(20))
+
+                // Deduplicate by URL
+                val seen = mutableSetOf<String>()
+                val deduped = merged.filter { seen.add(it.url) }
+
+                EcosystemLogger.i(HaronConstants.TAG, "SearchVM: web search done, ${deduped.size} results (OD=${odResults.size}, Torrent=${torrentResults.size}, Archive=${archiveResults.size})")
+
+                _uiState.update {
+                    it.copy(
+                        webResults = deduped,
+                        isWebSearching = false,
+                        webError = if (deduped.isEmpty()) appContext.getString(R.string.web_no_results) else null
+                    )
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "SearchVM: web search failed: ${e.message}")
+                _uiState.update {
+                    it.copy(isWebSearching = false, webError = e.message)
+                }
+            }
+        }
+    }
+
+    fun downloadFile(result: WebSearchResult) {
+        EcosystemLogger.d(HaronConstants.TAG, "SearchVM: download ${result.title} from ${result.source}")
+        WebDownloadService.startDownload(
+            context = appContext,
+            url = result.url,
+            fileName = result.title,
+            source = result.source,
+            isMagnet = result.isMagnet
+        )
+    }
+
+    fun copyLink(result: WebSearchResult) {
+        val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("link", result.url))
     }
 
     private fun performSearch(resetPage: Boolean) {

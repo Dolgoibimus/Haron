@@ -167,3 +167,7 @@
 # ---------- JAudiotagger (audio tag writing) ----------
 -keep class org.jaudiotagger.** { *; }
 -dontwarn org.jaudiotagger.**
+
+# ---------- libtorrent4j (torrent download) ----------
+-keep class org.libtorrent4j.** { *; }
+-dontwarn org.libtorrent4j.**

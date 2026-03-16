@@ -22,6 +22,52 @@
 
 ---
 
+### Batch 82 — Поиск файлов в интернете (второй таб в глобальном поиске) ⚠️ не проверено
+
+**Цель:** Второй таб "Интернет" в глобальном поиске. Три источника: Open Directory (DuckDuckGo), торренты (apibay.org + libtorrent4j, zero upload), Internet Archive. Результаты смешиваются, тап — скачивание в Downloads/Haron/.
+
+**Что сделано:**
+- `WebSearchResult` + `SearchSource` — модели (domain/model)
+- `Transliterator` — RU→EN транслитерация для двуязычного поиска (common/util)
+- `OpenDirectorySearchUseCase` — DuckDuckGo HTML → парсинг Apache/nginx listings → файлы
+- `TorrentSearchUseCase` — apibay.org API → JSON → magnet URI
+- `InternetArchiveSearchUseCase` — archive.org API → metadata → прямые ссылки
+- `TorrentEngine` — singleton, libtorrent4j, zero upload (uploadRateLimit=0, listen_interfaces=""), lazy init
+- `WebDownloadService` — Foreground Service (dataSync), HTTP + торрент, wake lock, wifi lock, progress через static StateFlow
+- `SearchViewModel` — расширен: selectedTab, webQuery, webResults, searchWeb(), downloadFile(), copyLink()
+- `SearchScreen` — PrimaryTabRow: "Устройство" / "Интернет". Device tab = существующий функционал без изменений. Internet tab: поле + кнопка "Искать", результаты с бейджами источника, тап = скачивание, лонг-тап = копировать ссылку, прогресс-бар активных закачек
+- AndroidManifest — зарегистрирован WebDownloadService
+- ProGuard — keep rules для libtorrent4j
+- build.gradle.kts — libtorrent4j зависимости
+- strings.xml (EN + RU) — 15 новых строк
+- features.txt (EN + RU) — убраны из описания, пойдут на Релиз 3
+
+**Строки для features.txt (Релиз 3):**
+```
+EN:
+- Internet search tab: find and download files from the web [NEW]
+- Three sources: Open Directory, Torrent (zero upload), Internet Archive [NEW]
+- Tap result to download to Downloads/Haron/ [NEW]
+- Long tap result to copy link [NEW]
+- Download progress in notification and on search screen [NEW]
+
+RU:
+- Поиск в интернете: поиск и скачивание файлов из сети [NEW]
+- Три источника: Open Directory, торренты (нулевая раздача), Internet Archive [NEW]
+- Тап по результату — скачивание в Downloads/Haron/ [NEW]
+- Долгий тап — копирование ссылки [NEW]
+- Прогресс скачивания в уведомлении и на экране поиска [NEW]
+```
+
+**Фикс релевантности (v2):**
+- `QueryParser` — парсинг запроса: извлечение расширения файла и ключевых слов. "it berufe pdf" → ext=pdf, keywords=[it, berufe]
+- `OpenDirectorySearchUseCase` — фильтрация по расширению + ключевым словам (файл должен содержать хотя бы одно слово из запроса)
+- `TorrentSearchUseCase` — фильтрация по расширению в названии торрента
+- `InternetArchiveSearchUseCase` — фильтрация по расширению + mediatype фильтр в API (texts/audio/movies)
+- Результаты: OD первыми (прямые ссылки), затем Archive, затем Torrent
+
+---
+
 ### Batch 80 — Аудио теги + подгрузка обложки из интернета ✅ проверено
 
 **Цель:** Показывать аудио-теги (Artist, Album, Title и т.д.) в свойствах файла. Подгружать обложку из интернета по тегам и записывать в файл. Умный поиск — один запрос заполняет все недостающие теги + обложку.
@@ -40,7 +86,7 @@
 
 ---
 
-### Batch 81 — Метаданные PDF и FB2 в свойствах файла ⚠️ не проверено
+### Batch 81 — Метаданные PDF и FB2 в свойствах файла ✅ проверено
 
 **Цель:** Показывать метаданные документов (PDF, FB2) в свойствах файла — аналогично EXIF для фото и тегам для аудио.
 
@@ -89,7 +135,7 @@
 
 ---
 
-### Batch 78 — Кнопка "1 в 1" — индивидуальная архивация ⚠️ не проверено
+### Batch 78 — Кнопка "1 в 1" — индивидуальная архивация ✅ проверено
 
 **Цель:** При выборе нескольких файлов → "Архив" → кнопка "1 в 1" создаёт отдельный ZIP для каждого файла.
 
@@ -141,7 +187,7 @@
 
 ---
 
-### Batch 76 — ANR fix + Sora Editor для больших файлов ⚠️ не проверено
+### Batch 76 — ANR fix + Sora Editor для больших файлов ✅ проверено
 
 **Цель:** Исправить ANR при открытии/редактировании больших текстовых файлов (600KB+).
 
@@ -162,7 +208,7 @@
 
 ---
 
-### Batch 75 — Self-copy (дублирование) + Извлечение архивов с пульсирующей иконкой ⚠️ не проверено
+### Batch 75 — Self-copy (дублирование) + Извлечение архивов с пульсирующей иконкой ✅ проверено
 
 **Цель:** Две новых функции в панели выделения.
 
@@ -189,7 +235,7 @@
 
 ---
 
-### Batch 74 — Принудительный хотспот + авто-подключение по QR ⚠️ не проверено
+### Batch 74 — Принудительный хотспот + авто-подключение по QR ✅ проверено
 
 **Цель:** Передача файлов через хотспот даже когда есть Wi-Fi. Два режима: Wi-Fi (одна сеть) и Точка доступа (разные сети). Для Haron-to-Haron и для Haron-to-любое-устройство.
 
@@ -211,7 +257,7 @@
 
 ---
 
-### Batch 73 — Wi-Fi Direct: полноценное P2P-соединение и передача файлов ⚠️ не проверено
+### Batch 73 — Wi-Fi Direct: полноценное P2P-соединение и передача файлов ✅ проверено
 
 **Цель:** Исправить Wi-Fi Direct — `connect()` возвращался до установления P2P-группы, `sendFiles()` пытался открыть TCP сразу → timeout. Теперь полноценный P2P flow.
 
@@ -421,7 +467,7 @@
 
 ---
 
-### Batch 67 — Батарейные оптимизации ⚠️ не проверено
+### Batch 67 — Батарейные оптимизации ✅ проверено
 
 **Цель:** Снизить расход батареи — idle timeout для сервисов, оптимизация поллинга, пропуск лишней работы.
 
@@ -1333,7 +1379,7 @@
 
 ### Phase 4 — Продвинутые функции
 
-#### Релиз 1.0 (текущий):
+#### Релиз 1.0 (versionCode=1, versionName=1.0):
 - [x] Счётчик на иконке приложения: badge через notification .setNumber(), activeOperations counter ← Batch 31
 - [x] Сетевое обнаружение: NSD (_haron._tcp. + _smb._tcp.) + subnet scan порт 445, секция "Сеть" в drawer ← Batch 31
 - [x] Встроенный терминал (простой): ProcessBuilder, ls/cp/mv/cat/grep, скролл, история команд ← Batch 32
@@ -1341,7 +1387,7 @@
 - [x] Система голосовых команд: те же action-коды, Android Speech Recognition офлайн ← Batch 34
 - [x] Полировка UI/UX — выполняется итеративно по обратной связи пользователя
 
-#### Следующий релиз (v2.0):
+#### Релиз 2 (versionCode=3, versionName=1.4) — текущий:
 - [x] Открывалка по умолчанию (регистрация как обработчик типов файлов) ← Batch 35
 - [x] Сравнение файлов и папок (java-diff-utils, две панели, синхронный скролл) ← Batch 36
 - [x] Встроенный терминал (полный): VT100/ANSI, цветной вывод, автодополнение, кликабельные пути ← Batch 37
@@ -1500,7 +1546,7 @@
 
 **Файлы:** `QuickSendOverlay.kt` (полная перезапись), `QuickSendState.kt` (+fromTopPanel), `ExplorerViewModel.kt` (startQuickSend + endQuickSendAtPosition), `ExplorerScreen.kt` (fromTopPanel=true/false)
 
-### R8 crash-аудит — Exception→Throwable ⚠️ не проверено
+### R8 crash-аудит — Exception→Throwable ✅ проверено
 
 **Проблема:** R8 стрипает зависимости библиотек → `NoClassDefFoundError` (extends Error, не Exception). `catch (Exception)` не ловит Error-подклассы → краш.
 - Apache POI: R8 убрал Apache Commons → `NoClassDefFoundError: HWPFDocument`
@@ -1537,7 +1583,7 @@
 
 **Файлы:** `SmbManager.kt` (ручной транспорт, close IPC$, close stale shares, логирование), `SmbViewModel.kt` (фильтр SMB_SCAN_)
 
-### R8/ProGuard + Release signing ⚠️ не проверено
+### R8/ProGuard + Release signing ✅ проверено
 
 **Что сделано:**
 - Включён R8: `isMinifyEnabled = true`, `isShrinkResources = true` в release build type
@@ -1548,7 +1594,7 @@
 
 **Файлы:** `app/build.gradle.kts` (signingConfig + R8), `app/proguard-rules.pro` (полные правила), `gradle.properties` (heap 4G), `local.properties` (keystore пароли, gitignored)
 
-### Batch 53 — HLS-транскодирование + прогрессивный каст ⚠️ не проверено
+### Batch 53 — HLS-транскодирование + прогрессивный каст ✅ проверено
 
 **Проблема:** Media3 Transformer (аппаратный MediaCodec) даёт артефакты и дёрганье при транскодировании AVI/MKV→MP4. Chromecast не поддерживает mpeg4 кодек, chunked transfer не работает (Chromecast ждёт Content-Length).
 
@@ -1605,7 +1651,7 @@
 - **VoiceFab**: индикатор wake mode (tertiary цвет для WAKE_LISTENING, primary для WAKE_ACTIVATED). Init wake word из preferences при первой композиции. Lifecycle observer: ON_STOP → pause, ON_START → resume.
 - **FuzzyMatchTest**: 11 тестов (levenshtein, similarity, findBestMatch).
 
-### Передача файлов — корпоративные сети, системная точка доступа, QR UX ⚠️ не проверено
+### Передача файлов — корпоративные сети, системная точка доступа, QR UX ✅ проверено
 
 **Проблема корпоративных сетей (CGNAT):**
 - `startLocalOnlyHotspot()` не может создать интерфейс SoftAP пока активен Wi-Fi клиент (HAL ошибка). `setWifiEnabled(false)` не работает на Android 10+ для не-системных приложений
@@ -1760,7 +1806,7 @@
 - **MainActivity**: `mediaProjectionLauncher` (ActivityResultLauncher) для MediaProjection consent → запуск ScreenMirrorService.
 - **AndroidManifest**: permission `FOREGROUND_SERVICE_MEDIA_PROJECTION`, service ScreenMirrorService с `foregroundServiceType="mediaProjection"`.
 
-### Batch 38 — Стеганография ⚠️ не проверено
+### Batch 38 — Стеганография ⏳ в ожидании (код будет закомментирован)
 - **SteganographyModels** (`domain/model/`): `StegoHeader`, `StegoResult` (sealed: Hidden, Extracted, Error), `StegoDetectResult`, `StegoProgress`, `StegoPhase` (COPYING_CARRIER, ENCRYPTING, APPENDING, DONE).
 - **StegoHolder** (`domain/model/StegoHolder.kt`): static holder для передачи carrierPath/payloadPath между экранами.
 - **SteganographyRepository** (`domain/repository/`): интерфейс с `hidePayload()` (Flow), `hidePayloadComplete()`, `detectHiddenData()`, `extractPayload()`.
@@ -1970,11 +2016,6 @@
 ### Batch 31 — Счётчик на иконке + Сетевое обнаружение ⚠️ не проверено
 - **Счётчик на иконке**: `FileOperationService.activeOperations` — `MutableStateFlow<Int>`, инкремент при `start()`, декремент при завершении/cancel/destroy. `.setNumber(count)` на notification → лаунчер показывает badge. TransferService тоже инкрементирует/декрементирует через тот же счётчик. ExplorerViewModel подписан на `activeOperationsCount` в UI state.
 - **Сетевое обнаружение**: `NetworkDeviceScanner` (@Singleton) — два NSD discovery параллельно: `_haron._tcp.` (другие Haron) и `_smb._tcp.` (SMB шары). Плюс subnet scan порт 445 (batch по 20 IP, timeout 300мс) для SMB без mDNS. `StateFlow<List<NetworkDevice>>` → DrawerMenu секция "Сеть" с кнопкой Refresh. Тап на Haron → открывает Transfer. Тап на SMB → toast с IP:port.
-
-### Batch 30 — Завершение Phase 2 ⚠️ не проверено
-- **Поиск внутри архивов**: `ContentExtractor.extractArchiveEntries()` — ZIP (`ZipFile.entries()`), 7Z (`SevenZFile`), RAR (`junrar Archive`). Для маленьких текстовых файлов внутри ZIP (<64KB) — извлечение содержимого. Интеграция в BASIC индексацию через `SearchRepositoryImpl`.
-- **OCR-поиск по фото**: `ImageLabeler.recognizeText()` — ML Kit Text Recognition (`com.google.mlkit:text-recognition:16.0.1`). Downscale до 1024px (больше чем для labeling — нужна читаемость). Timeout 10 сек/файл, только файлы <10MB. Результат объединяется с labels при VISUAL индексации.
-- **USB OTG**: `UsbStorageManager` — обнаружение removable volumes через `StorageVolumeHelper`, `BroadcastReceiver` на `ACTION_MEDIA_MOUNTED/UNMOUNTED/EJECT/BAD_REMOVAL`, `StateFlow<List<UsbVolume>>`. Безопасное извлечение: `sync` + reflection unmount через `StorageManager` hidden API, fallback. DrawerMenu — секция USB с иконкой, free/total space, кнопка Eject. ExplorerViewModel — toast при подключении, auto-navigate root при отключении.
 
 ### Batch 29 bugfix — Исправление передачи файлов ✅ проверено
 - **HTTP сервер недоступен**: `getLocalIpAddress()` возвращал IP мобильных данных (rmnet) вместо WiFi. Fix: сначала `ConnectivityManager.getLinkProperties()` (возвращает active network = WiFi), затем fallback на `NetworkInterface` с приоритетом `wlan*`. Добавлен `host = "0.0.0.0"` в Ktor `embeddedServer()`. Логирование выбранного IP.
@@ -3039,7 +3080,7 @@
 
 ---
 
-## Релиз 2 — Открытые вопросы
+## Релиз 2 (versionCode=3, versionName=1.4) — Открытые вопросы
 
 > Всё что требует доработки, проверки или решения во втором релизе.
 

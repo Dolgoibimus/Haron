@@ -1418,4 +1418,20 @@
     <string name="doc_series">Серия</string>
     <string name="doc_date">Дата</string>
     <string name="doc_annotation">Аннотация</string>
+
+    <!-- Web Search -->
+    <string name="search_tab_device">Устройство</string>
+    <string name="search_tab_internet">Интернет</string>
+    <string name="web_search_hint">Что ищем?</string>
+    <string name="web_search_button">Искать</string>
+    <string name="web_source_od">Директория</string>
+    <string name="web_source_torrent">Торрент</string>
+    <string name="web_source_archive">Архив</string>
+    <string name="web_searching">Поиск…</string>
+    <string name="web_no_results">Ничего не найдено</string>
+    <string name="web_download_started">Скачивание начато</string>
+    <string name="web_download_complete">Скачано: %s</string>
+    <string name="web_download_error">Ошибка скачивания</string>
+    <string name="web_link_copied">Ссылка скопирована</string>
+    <string name="web_seeders">%d сидов</string>
 </resources>

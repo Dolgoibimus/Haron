@@ -17,10 +17,10 @@ android {
 
     defaultConfig {
         applicationId = "com.vamp.haron"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -156,6 +156,11 @@ dependencies {
 
     // JAudiotagger (write album art into ID3/Vorbis/M4A tags)
     implementation("net.jthink:jaudiotagger:3.0.1")
+
+    // libtorrent4j (torrent download — zero upload mode)
+    implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-39")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-39")
 
     // Sora Editor (large file editing — renders only visible lines, handles MB-sized files)
     implementation(platform("io.github.Rosemoe.sora-editor:bom:0.23.6"))
