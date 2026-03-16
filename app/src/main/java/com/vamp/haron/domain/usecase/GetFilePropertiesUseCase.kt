@@ -8,12 +8,15 @@ import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.domain.model.FileEntry
+import com.tom_roush.pdfbox.pdmodel.PDDocument
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
 import javax.inject.Inject
 
 data class AudioTags(
@@ -43,6 +46,7 @@ data class FileProperties(
     val audioMetadata: Map<String, String> = emptyMap(),
     val audioTags: AudioTags? = null,
     val hasEmbeddedCover: Boolean = false,
+    val documentMetadata: Map<String, String> = emptyMap(),
     val permissions: String = ""
 )
 
@@ -102,6 +106,33 @@ class GetFilePropertiesUseCase @Inject constructor(
                 emit(base.copy(audioMetadata = audioData, audioTags = audioTags, hasEmbeddedCover = hasCover))
             } catch (e: Exception) {
                 EcosystemLogger.e(TAG, "Failed to read audio metadata: ${e.message}")
+            }
+        }
+
+        // For PDF — read document info
+        val ext = entry.name.substringAfterLast('.', "").lowercase()
+        if (ext == "pdf" && !entry.isContentUri) {
+            try {
+                val docMeta = buildPdfMetadata(entry.path)
+                if (docMeta.isNotEmpty()) {
+                    EcosystemLogger.d(TAG, "PDF metadata: ${docMeta.size} fields")
+                    emit(base.copy(documentMetadata = docMeta))
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(TAG, "Failed to read PDF metadata: ${e.message}")
+            }
+        }
+
+        // For FB2 — read book info
+        if ((ext == "fb2" || entry.name.lowercase().endsWith(".fb2.zip")) && !entry.isContentUri) {
+            try {
+                val docMeta = buildFb2Metadata(entry.path)
+                if (docMeta.isNotEmpty()) {
+                    EcosystemLogger.d(TAG, "FB2 metadata: ${docMeta.size} fields")
+                    emit(base.copy(documentMetadata = docMeta))
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(TAG, "Failed to read FB2 metadata: ${e.message}")
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -201,6 +232,120 @@ class GetFilePropertiesUseCase @Inject constructor(
         val tags = AudioTags(title, artist, album, year, genre, duration, bitrate)
         return map to tags
     }
+
+    private fun buildPdfMetadata(path: String): Map<String, String> {
+        val map = linkedMapOf<String, String>()
+        val file = File(path)
+        PDDocument.load(file).use { doc ->
+            val info = doc.documentInformation
+            map[context.getString(R.string.doc_pages)] = doc.numberOfPages.toString()
+            info?.title?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_title)] = it }
+            info?.author?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_author)] = it }
+            info?.subject?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_subject)] = it }
+            info?.keywords?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_keywords)] = it }
+            info?.creator?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_creator)] = it }
+            info?.producer?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_producer)] = it }
+            info?.creationDate?.let { cal ->
+                val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+                map[context.getString(R.string.doc_created)] = fmt.format(cal.time)
+            }
+        }
+        return map
+    }
+
+    private fun buildFb2Metadata(path: String): Map<String, String> {
+        val map = linkedMapOf<String, String>()
+        val file = File(path)
+
+        val text = if (path.lowercase().endsWith(".fb2.zip")) {
+            // Read .fb2 from inside ZIP
+            java.util.zip.ZipFile(file).use { zip ->
+                val fb2Entry = zip.entries().asSequence().firstOrNull {
+                    it.name.lowercase().endsWith(".fb2")
+                } ?: return map
+                zip.getInputStream(fb2Entry).bufferedReader().use { it.readText() }
+            }
+        } else {
+            // Limit read to first 50KB — description is always at the top
+            file.inputStream().bufferedReader().use {
+                val buf = CharArray(50_000)
+                val read = it.read(buf)
+                if (read > 0) String(buf, 0, read) else return map
+            }
+        }
+
+        // Extract <description> block
+        val descMatch = Regex("<description>(.*?)</description>", RegexOption.DOT_MATCHES_ALL).find(text)
+            ?: return map
+        val desc = descMatch.groupValues[1]
+
+        // Title
+        Regex("<book-title>([^<]+)</book-title>").find(desc)?.groupValues?.get(1)?.trim()?.let {
+            map[context.getString(R.string.doc_title)] = decodeXmlEntities(it)
+        }
+
+        // Author(s)
+        val authors = Regex("<author>(.*?)</author>", RegexOption.DOT_MATCHES_ALL).findAll(desc)
+        val authorNames = authors.map { authorMatch ->
+            val block = authorMatch.groupValues[1]
+            val first = Regex("<first-name>([^<]+)</first-name>").find(block)?.groupValues?.get(1)?.trim() ?: ""
+            val middle = Regex("<middle-name>([^<]+)</middle-name>").find(block)?.groupValues?.get(1)?.trim() ?: ""
+            val last = Regex("<last-name>([^<]+)</last-name>").find(block)?.groupValues?.get(1)?.trim() ?: ""
+            listOf(first, middle, last).filter { it.isNotEmpty() }.joinToString(" ")
+        }.filter { it.isNotEmpty() }.toList()
+        if (authorNames.isNotEmpty()) {
+            map[context.getString(R.string.doc_author)] = decodeXmlEntities(authorNames.joinToString(", "))
+        }
+
+        // Genre
+        val genres = Regex("<genre>([^<]+)</genre>").findAll(desc)
+            .map { it.groupValues[1].trim() }.toList()
+        if (genres.isNotEmpty()) {
+            map[context.getString(R.string.doc_genre)] = genres.joinToString(", ")
+        }
+
+        // Language
+        Regex("<lang>([^<]+)</lang>").find(desc)?.groupValues?.get(1)?.trim()?.let {
+            map[context.getString(R.string.doc_language)] = it.uppercase()
+        }
+
+        // Series
+        Regex("<sequence\\s+name=\"([^\"]+)\"(?:\\s+number=\"(\\d+)\")?", RegexOption.DOT_MATCHES_ALL)
+            .find(desc)?.let { m ->
+                val name = m.groupValues[1]
+                val num = m.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
+                val series = if (num != null) "$name #$num" else name
+                map[context.getString(R.string.doc_series)] = decodeXmlEntities(series)
+            }
+
+        // Date
+        Regex("<date[^>]*>([^<]+)</date>").find(desc)?.groupValues?.get(1)?.trim()?.let {
+            map[context.getString(R.string.doc_date)] = it
+        }
+
+        // Annotation (first 300 chars)
+        Regex("<annotation>(.*?)</annotation>", RegexOption.DOT_MATCHES_ALL).find(desc)?.let {
+            val raw = it.groupValues[1]
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            val decoded = decodeXmlEntities(raw)
+            if (decoded.isNotEmpty()) {
+                val truncated = if (decoded.length > 300) decoded.take(300) + "…" else decoded
+                map[context.getString(R.string.doc_annotation)] = truncated
+            }
+        }
+
+        return map
+    }
+
+    private fun decodeXmlEntities(s: String): String = s
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#160;", " ")
 
     private fun checkEmbeddedCover(path: String): Boolean {
         val retriever = MediaMetadataRetriever()

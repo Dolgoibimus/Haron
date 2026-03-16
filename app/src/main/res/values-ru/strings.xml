@@ -1402,4 +1402,20 @@
     <string name="audio_save_all">Сохранить всё</string>
     <string name="audio_tags_saved">Теги сохранены</string>
     <string name="audio_tags_save_error">Не удалось сохранить теги</string>
+
+    <!-- Document metadata (PDF, FB2) -->
+    <string name="doc_section">Документ</string>
+    <string name="doc_title">Название</string>
+    <string name="doc_author">Автор</string>
+    <string name="doc_subject">Тема</string>
+    <string name="doc_keywords">Ключевые слова</string>
+    <string name="doc_creator">Создатель</string>
+    <string name="doc_producer">Генератор</string>
+    <string name="doc_created">Создан</string>
+    <string name="doc_pages">Страниц</string>
+    <string name="doc_genre">Жанр</string>
+    <string name="doc_language">Язык</string>
+    <string name="doc_series">Серия</string>
+    <string name="doc_date">Дата</string>
+    <string name="doc_annotation">Аннотация</string>
 </resources>

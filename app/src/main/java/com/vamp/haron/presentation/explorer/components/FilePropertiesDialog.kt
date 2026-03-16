@@ -201,6 +201,20 @@ fun FilePropertiesDialog(
                         }
                     }
 
+                    // === Document metadata section (PDF, FB2) ===
+                    if (properties != null && properties.documentMetadata.isNotEmpty()) {
+                        item {
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider()
+                            SectionHeader(stringResource(R.string.doc_section))
+                        }
+
+                        val docEntries = properties.documentMetadata.entries.toList()
+                        items(docEntries, key = { it.key }) { (key, value) ->
+                            PropertyRow(key, value, maxLines = 5)
+                        }
+                    }
+
                     // === Hash section ===
                     if (properties != null && !properties.isDirectory) {
                         item {

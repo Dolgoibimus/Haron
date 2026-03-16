@@ -142,6 +142,8 @@
 - Search cover by filename — auto-parse artist and title [NEW]
 - Smart search: one search fills all missing tags (title, artist, album, year, genre) + cover [NEW]
 - "Save all" button: save tags and cover together in one tap [NEW]
+- PDF metadata: title, author, subject, keywords, creator, producer, creation date, page count [NEW]
+- FB2 metadata: title, author, genre, language, series, date, annotation [NEW]
 - Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 [NEW]
 - Hash comparison: paste expected hash — instant match/mismatch check [NEW]
 

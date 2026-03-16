@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.80 (Phase 4, Batch 80)
+**Текущая версия:** 0.81 (Phase 4, Batch 81)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -37,6 +37,21 @@
 - `ThumbnailCache.remove()` + `PanelUiState.thumbnailVersion` — обновление иконок после сохранения обложки
 - `app/build.gradle.kts` — JAudiotagger 3.0.1, proguard keep-правила
 - Строки в strings.xml (EN + RU): 20 строк для аудио секции
+
+---
+
+### Batch 81 — Метаданные PDF и FB2 в свойствах файла ⚠️ не проверено
+
+**Цель:** Показывать метаданные документов (PDF, FB2) в свойствах файла — аналогично EXIF для фото и тегам для аудио.
+
+**Что сделано:**
+- `FileProperties.documentMetadata` — новое поле для метаданных документов
+- `buildPdfMetadata()` — через PDFBox: title, author, subject, keywords, creator, producer, creation date, page count
+- `buildFb2Metadata()` — XML-парсинг `<description>`: title, author(s), genre, language, series+number, date, annotation (300 символов)
+- Поддержка `.fb2.zip` — автоматическое извлечение .fb2 из ZIP
+- `FilePropertiesDialog` — секция "Документ" с PropertyRow для каждого поля
+- Строки в strings.xml (EN + RU): 14 строк для документов (doc_section, doc_title, doc_author и т.д.)
+- features.txt (EN + RU) обновлён
 
 ---
 
