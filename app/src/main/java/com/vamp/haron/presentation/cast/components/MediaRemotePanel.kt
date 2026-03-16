@@ -39,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.domain.model.CastImageInfo
 import com.vamp.haron.domain.model.RemoteInputEvent
 
@@ -117,7 +118,10 @@ fun MediaRemotePanel(
                             .clip(RoundedCornerShape(2.dp)),
                     )
                 }
-                Spacer(Modifier.height(8.dp))
+                ProgressInfoRow(
+                    percent = if (transcodePercent > 0) "${transcodePercent.toInt()}%" else ""
+                )
+                Spacer(Modifier.height(4.dp))
             }
 
             Row(

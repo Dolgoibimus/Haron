@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.usecase.AudioTags
 import com.vamp.haron.domain.usecase.CoverResult
@@ -249,12 +250,16 @@ fun FilePropertiesDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Spacer(Modifier.height(4.dp))
+                                    val hashProgress = hashResult?.progress ?: 0f
                                     LinearProgressIndicator(
-                                        progress = { hashResult?.progress ?: 0f },
+                                        progress = { hashProgress },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(4.dp)
                                             .clip(RoundedCornerShape(2.dp))
+                                    )
+                                    ProgressInfoRow(
+                                        percent = if (hashProgress > 0f) "${(hashProgress * 100).toInt()}%" else ""
                                     )
                                 }
                             }

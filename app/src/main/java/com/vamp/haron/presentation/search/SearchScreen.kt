@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toRelativeDate
 import com.vamp.haron.data.db.entity.FileIndexEntity
 import com.vamp.haron.domain.model.FileEntry
@@ -783,24 +784,10 @@ private fun DownloadProgressItem(dl: DownloadProgress) {
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
             }
-            Row {
-                if (dl.total > 0) {
-                    val percent = (dl.current * 100 / dl.total).toInt()
-                    Text(
-                        text = "$percent%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                if (dl.speed > 0) {
-                    Text(
-                        text = "${dl.speed.toFileSize()}/s",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            ProgressInfoRow(
+                speed = if (dl.speed > 0) "${dl.speed.toFileSize()}/s" else "",
+                percent = if (dl.total > 0) "${(dl.current * 100 / dl.total).toInt()}%" else ""
+            )
         }
         if (dl.error != null) {
             Icon(

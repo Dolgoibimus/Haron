@@ -48,9 +48,10 @@
 - Auto-recovery of records from filesystem if metadata is corrupted
 
 # Background Operations
-- Foreground Service for large operations (>10 files or >50 MB)
+- All file operations (copy, move, delete, archive, extract) run in Foreground Service [NEW]
+- Operations survive app swipe-kill — continue in background [NEW]
 - Notification with progress and cancel button
-- Progress bar at bottom of screen
+- Progress bar at bottom of screen — visible on app return [NEW]
 
 # Side Menu (Drawer)
 - Storages: internal + SD-cards

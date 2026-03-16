@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.comparison.components.FolderDiffView
 import com.vamp.haron.presentation.comparison.components.TextDiffView
@@ -103,16 +104,16 @@ fun ComparisonScreen(
                     ) {
                         CircularProgressIndicator()
                         if (state.progressTotal > 0) {
+                            val cmpFraction = state.progressCurrent.toFloat() / state.progressTotal
                             Spacer(Modifier.height(12.dp))
                             LinearProgressIndicator(
-                                progress = { state.progressCurrent.toFloat() / state.progressTotal },
+                                progress = { cmpFraction },
                                 modifier = Modifier.width(200.dp)
                             )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "${state.progressCurrent} / ${state.progressTotal}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ProgressInfoRow(
+                                counter = "${state.progressCurrent}/${state.progressTotal}",
+                                percent = "${(cmpFraction * 100).toInt()}%",
+                                modifier = Modifier.width(200.dp)
                             )
                         }
                     }

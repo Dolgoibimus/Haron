@@ -64,6 +64,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.data.smb.SmbFileInfo
 import com.vamp.haron.data.smb.SmbShareInfo
@@ -799,15 +801,14 @@ private fun SmbTransferProgressCard(
             )
             Spacer(Modifier.height(4.dp))
             if (progress.totalBytes > 0) {
+                val fraction = progress.bytesTransferred.toFloat() / progress.totalBytes
                 LinearProgressIndicator(
-                    progress = { progress.bytesTransferred.toFloat() / progress.totalBytes },
+                    progress = { fraction },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(
-                    "${formatSize(progress.bytesTransferred)} / ${formatSize(progress.totalBytes)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.padding(top = 2.dp)
+                ProgressInfoRow(
+                    counter = "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
+                    percent = "${(fraction * 100).toInt()}%"
                 )
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

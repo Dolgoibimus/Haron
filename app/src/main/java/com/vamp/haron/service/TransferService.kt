@@ -311,6 +311,17 @@ class TransferService : Service() {
         manager.notify(NOTIFICATION_ID, notification)
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // If no active transfer — stop self; otherwise keep running
+        if (transferJob == null || transferJob?.isActive != true) {
+            EcosystemLogger.d(HaronConstants.TAG, "TransferService: onTaskRemoved — no active transfer, stopping")
+            stopSelf()
+        } else {
+            EcosystemLogger.d(HaronConstants.TAG, "TransferService: onTaskRemoved — transfer active, continuing")
+        }
+    }
+
     override fun onDestroy() {
         idleJob?.cancel()
         releaseWakeLock()

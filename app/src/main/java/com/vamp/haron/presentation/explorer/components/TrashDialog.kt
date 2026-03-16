@@ -43,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.common.util.toRelativeDate
@@ -160,7 +161,10 @@ fun TrashDialog(
                         .height(4.dp)
                         .padding(horizontal = 0.dp),
                 )
-                Spacer(Modifier.height(8.dp))
+                ProgressInfoRow(
+                    percent = "${(deleteProgress * 100).toInt()}%"
+                )
+                Spacer(Modifier.height(4.dp))
             }
 
             if (entries.isEmpty()) {

@@ -100,6 +100,7 @@ import com.vamp.haron.presentation.explorer.components.TrashDialog
 import com.vamp.haron.domain.model.GestureType
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.presentation.explorer.state.DragOperation
 import com.vamp.haron.presentation.explorer.state.DragState
 import com.vamp.haron.presentation.explorer.state.DialogState
@@ -902,12 +903,17 @@ fun ExplorerScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(6.dp))
+                    val archFraction = if (archiveProgress.total > 0) archiveProgress.current.toFloat() / archiveProgress.total else 0f
                     LinearProgressIndicator(
-                        progress = { if (archiveProgress.total > 0) archiveProgress.current.toFloat() / archiveProgress.total else 0f },
+                        progress = { archFraction },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
+                    )
+                    ProgressInfoRow(
+                        counter = if (archiveProgress.total > 0) "${archiveProgress.current}/${archiveProgress.total}" else "",
+                        percent = if (archiveProgress.total > 0) "${(archFraction * 100).toInt()}%" else ""
                     )
                 }
             }
@@ -985,38 +991,19 @@ fun ExplorerScreen(
                                 stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
                             else -> typeLabel
                         }
-                        val counterText = if (p.total > 1) "(${p.current}/${p.total})" else ""
-                        val percentText = if (hasFilePercent) "${p.filePercent}%" else ""
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = nameText,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (counterText.isNotEmpty()) {
-                                Text(
-                                    text = counterText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(start = 6.dp)
-                                )
-                            }
-                            if (percentText.isNotEmpty()) {
-                                Text(
-                                    text = percentText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 6.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = nameText,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Spacer(modifier = Modifier.height(6.dp))
                         val isIndeterminate = p.current == 0 && p.total > 0 && !hasFilePercent
+                        val barProgress = if (hasFilePercent) {
+                            p.filePercent / 100f
+                        } else {
+                            if (p.total > 0) p.current.toFloat() / p.total else 0f
+                        }
                         if (isIndeterminate) {
                             LinearProgressIndicator(
                                 modifier = Modifier
@@ -1025,11 +1012,6 @@ fun ExplorerScreen(
                                     .clip(RoundedCornerShape(3.dp))
                             )
                         } else {
-                            val barProgress = if (hasFilePercent) {
-                                p.filePercent / 100f
-                            } else {
-                                if (p.total > 0) p.current.toFloat() / p.total else 0f
-                            }
                             LinearProgressIndicator(
                                 progress = { barProgress },
                                 modifier = Modifier
@@ -1038,6 +1020,11 @@ fun ExplorerScreen(
                                     .clip(RoundedCornerShape(3.dp))
                             )
                         }
+                        ProgressInfoRow(
+                            speed = if (p.speedBytesPerSec > 0) "${p.speedBytesPerSec.toFileSize()}/s" else "",
+                            counter = if (p.total > 1) "${p.current}/${p.total}" else "",
+                            percent = if (!isIndeterminate && (hasFilePercent || p.total > 0)) "${(barProgress * 100).toInt()}%" else ""
+                        )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(

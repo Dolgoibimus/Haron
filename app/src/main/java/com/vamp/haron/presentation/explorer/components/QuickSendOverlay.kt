@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.data.network.NetworkDevice
 import com.vamp.haron.domain.model.TransferProgressInfo
@@ -286,22 +287,11 @@ private fun SendingOverlay(
                     )
                 }
                 if (progress != null && progress.totalBytes > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Row {
-                        Text(
-                            "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.weight(1f))
-                        if (progress.speedBytesPerSec > 0) {
-                            Text(
-                                stringResource(R.string.transfer_speed, progress.speedBytesPerSec.toFileSize()),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    ProgressInfoRow(
+                        speed = if (progress.speedBytesPerSec > 0) "${progress.speedBytesPerSec.toFileSize()}/s" else "",
+                        counter = "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
+                        percent = "${(progress.fraction * 100).toInt()}%"
+                    )
                 }
             }
         }
@@ -361,22 +351,11 @@ fun QuickReceiveOverlay(
                     color = MaterialTheme.colorScheme.tertiary,
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
-                Spacer(Modifier.height(4.dp))
-                Row {
-                    Text(
-                        "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (progress.speedBytesPerSec > 0) {
-                        Text(
-                            stringResource(R.string.transfer_speed, progress.speedBytesPerSec.toFileSize()),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                ProgressInfoRow(
+                    speed = if (progress.speedBytesPerSec > 0) "${progress.speedBytesPerSec.toFileSize()}/s" else "",
+                    counter = "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
+                    percent = "${(progress.fraction * 100).toInt()}%"
+                )
             } else {
                 LinearProgressIndicator(
                     modifier = Modifier

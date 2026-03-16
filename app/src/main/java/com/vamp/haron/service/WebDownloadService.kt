@@ -84,6 +84,16 @@ class WebDownloadService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (jobs.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "WebDownloadService: onTaskRemoved — no active downloads, stopping")
+            stopSelf()
+        } else {
+            EcosystemLogger.d(HaronConstants.TAG, "WebDownloadService: onTaskRemoved — ${jobs.size} downloads active, continuing")
+        }
+    }
+
     override fun onDestroy() {
         scope.cancel()
         releaseLocks()

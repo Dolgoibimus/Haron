@@ -378,6 +378,7 @@
     <string name="operation_type_move">Перемещение</string>
     <string name="operation_type_delete">Удаление</string>
     <string name="operation_type_archive">Архивирование</string>
+    <string name="operation_type_extract">Извлечение</string>
     <string name="operation_type_download">Скачивание</string>
     <string name="operation_type_upload">Загрузка</string>
 

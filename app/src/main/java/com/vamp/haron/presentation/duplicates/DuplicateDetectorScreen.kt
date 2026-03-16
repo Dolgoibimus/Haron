@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.NavigationEvent
 import com.vamp.haron.domain.usecase.DuplicateGroup
@@ -328,16 +329,15 @@ fun DuplicateDetectorScreen(
                                         .clip(RoundedCornerShape(3.dp))
                                 )
                             }
-                            Spacer(Modifier.height(4.dp))
+                            val dupPercent = if (progress.totalFiles > 0) "${(progress.scannedFiles * 100 / progress.totalFiles)}%" else ""
+                            ProgressInfoRow(
+                                counter = "${progress.scannedFiles}/${progress.totalFiles}",
+                                percent = dupPercent
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    "${progress.scannedFiles}/${progress.totalFiles}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                                 Text(
                                     progress.currentFolder.substringAfterLast('/'),
                                     style = MaterialTheme.typography.labelSmall,

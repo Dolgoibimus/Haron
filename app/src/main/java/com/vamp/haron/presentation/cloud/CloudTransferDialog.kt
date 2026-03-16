@@ -20,10 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 
 data class CloudTransferItem(
     val id: String,
@@ -90,14 +90,8 @@ private fun TransferRow(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                if (transfer.percent > 0) "${transfer.percent}%" else stringResource(R.string.cloud_preparing),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.End
-            )
             if (showCancelButton) {
+                Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = onCancel,
                     modifier = Modifier.size(24.dp)
@@ -120,5 +114,8 @@ private fun TransferRow(
         } else {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
+        ProgressInfoRow(
+            percent = if (transfer.percent > 0) "${transfer.percent}%" else ""
+        )
     }
 }

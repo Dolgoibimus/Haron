@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.81 (Phase 4, Batch 81)
+**Текущая версия:** 0.84 (Phase 4, Batch 84)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -19,6 +19,49 @@
 > При /compact — сохранить прогресс здесь перед сжатием.
 
 Нет активных задач.
+
+---
+
+### Batch 84 — Унифицированные прогресс-бары: скорость / счётчик / процент ⚠️ не проверено
+
+**Цель:** Под каждым прогресс-баром в приложении — единый ряд: скорость (слева) | счётчик (по центру) | процент (справа, на уровне конца полосы).
+
+**Что сделано:**
+- `ProgressInfoRow.kt` (новый) — переиспользуемый Composable: speed / counter / percent, каждый опциональный
+- `OperationProgress` — добавлено поле `speedBytesPerSec: Long = 0`
+- **Применено к 14 прогресс-барам:**
+  - ExplorerScreen (archiveExtractProgress + operationProgress) — counter + percent
+  - TransferProgressCard — speed + counter + percent (заменена bytes/total + speed + ETA строка)
+  - SearchScreen DownloadProgressItem — speed + percent (порядок исправлен: speed слева, percent справа)
+  - CloudTransferDialog — percent
+  - ArchiveViewerScreen — counter + percent
+  - FtpBrowserTab — counter (bytes) + percent
+  - SmbBrowserTab — counter (bytes) + percent
+  - WebDavBrowserTab — counter (bytes) + percent
+  - DuplicateDetectorScreen — counter + percent
+  - ComparisonScreen — counter + percent
+  - MediaRemotePanel (транскод) — percent
+  - QuickSendOverlay — speed + counter + percent
+  - QuickReceiveOverlay — speed + counter + percent
+  - TrashDialog — percent
+  - FilePropertiesDialog (хеш) — percent
+  - SteganographyScreen — percent
+
+---
+
+### Batch 83 — Неубиваемые файловые операции ⚠️ не проверено
+
+**Цель:** Все операции с прогресс-баром (копирование, перемещение, удаление, архивация, извлечение) продолжают работать после смахивания приложения из рецентов. При возврате в приложение прогресс виден.
+
+**Что сделано:**
+- Манифест: `android:stopWithTask="false"` для `FileOperationService`, `TransferService`, `WebDownloadService`
+- `onTaskRemoved()` в трёх сервисах — если нет активных операций → stopSelf(), иначе продолжаем
+- `OperationHolder.kt` (новый) — static holder для передачи больших списков в сервис (Intent extras ограничен ~500KB)
+- `OperationType.EXTRACT` добавлен в enum + строки EN/RU
+- `FileOperationService` расширен: новые actions (DELETE, ARCHIVE, ARCHIVE_ONE_TO_ONE, EXTRACT), Hilt EntryPoint для зависимостей, static start-методы
+- `ExplorerViewModel`: убран порог `SERVICE_FILE_THRESHOLD`/`SERVICE_SIZE_THRESHOLD`, убран `inlineOperationJob`, убран `runInlineOperation()`. Все copy/move/delete/archive/extract → через `FileOperationService`
+- Подписка на прогресс в init{} расширена: DELETE → updateTrashSizeInfo()
+- Cloud delete, protected delete, per-file-decision copy/move — остались в VM (зависят от session-scoped managers / per-file conflict resolution)
 
 ---
 

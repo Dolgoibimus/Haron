@@ -908,8 +908,7 @@ class ExplorerViewModel @Inject constructor(
     /** Selection snapshot at the start of a drag gesture (for non-contiguous multi-range). */
     private var dragBaseSelection: Set<String> = emptySet()
 
-    /** Job for inline (non-service) file operations, used for cancellation. */
-    private var inlineOperationJob: kotlinx.coroutines.Job? = null
+    // inlineOperationJob removed — all file operations now go through FileOperationService
 
     /** Scroll position cache: path → firstVisibleItemIndex */
     private val scrollCache = mutableMapOf<String, Int>()
@@ -1028,7 +1027,6 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             FileOperationService.progress.collect { progress ->
                 _uiState.update { it.copy(operationProgress = progress) }
-                // Когда операция завершена — haptic + log + обновить обе панели
                 if (progress?.isComplete == true) {
                     if (progress.error == null) {
                         hapticManager.completion()
@@ -1038,7 +1036,11 @@ class ExplorerViewModel @Inject constructor(
                     delay(500)
                     refreshPanel(PanelId.TOP)
                     refreshPanel(PanelId.BOTTOM)
-                    // Очистить прогресс через 3 секунды
+                    // Post-completion side effects by operation type
+                    when (progress.type) {
+                        OperationType.DELETE -> updateTrashSizeInfo()
+                        else -> { /* no extra action */ }
+                    }
                     delay(3000)
                     _uiState.update { it.copy(operationProgress = null) }
                 }
@@ -1123,10 +1125,7 @@ class ExplorerViewModel @Inject constructor(
         // lives in MainActivity and must survive ViewModel lifecycle
     }
 
-    /** Threshold: use foreground service for >10 files or >50MB total */
     private companion object {
-        const val SERVICE_FILE_THRESHOLD = 10
-        const val SERVICE_SIZE_THRESHOLD = 50L * 1024 * 1024 // 50 MB
         const val MAX_HISTORY_SIZE = 50
     }
 
@@ -2629,26 +2628,8 @@ class ExplorerViewModel @Inject constructor(
         val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val sourcePanel = getPanel(activeId)
 
-        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
-        val totalSize = selected.sumOf { it.size }
-        val dirs = selected.count { it.isDirectory }
-        val files = selected.size - dirs
         clearSelection(activeId)
-
-        if (paths.size > SERVICE_FILE_THRESHOLD || totalSize > SERVICE_SIZE_THRESHOLD) {
-            FileOperationService.start(appContext, paths, destinationDir, isMove = false, conflictResolution = resolution)
-        } else {
-            val fileSizes = selected.associate { it.path to it.size }
-            inlineOperationJob = viewModelScope.launch {
-                runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
-                    copyFilesUseCase(listOf(path), destinationDir, resolution)
-                }
-                copyTagsToDestination(paths, destinationDir)
-                hapticManager.success()
-                showStatusMessage(targetId, appContext.getString(R.string.copied_format, formatFileCount(dirs, files)))
-                refreshPanel(targetId)
-            }
-        }
+        FileOperationService.start(appContext, paths, destinationDir, isMove = false, conflictResolution = resolution)
     }
 
     private fun executeCopyWithDecisions(
@@ -2666,7 +2647,7 @@ class ExplorerViewModel @Inject constructor(
         val files = selected.size - dirs
         clearSelection(activeId)
 
-        inlineOperationJob = viewModelScope.launch {
+        viewModelScope.launch {
             val total = paths.size
             var completed = 0
             _uiState.update {
@@ -2762,27 +2743,8 @@ class ExplorerViewModel @Inject constructor(
         val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val sourcePanel = getPanel(activeId)
 
-        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
-        val totalSize = selected.sumOf { it.size }
-        val dirs = selected.count { it.isDirectory }
-        val files = selected.size - dirs
         clearSelection(activeId)
-
-        if (paths.size > SERVICE_FILE_THRESHOLD || totalSize > SERVICE_SIZE_THRESHOLD) {
-            FileOperationService.start(appContext, paths, destinationDir, isMove = true, conflictResolution = resolution)
-        } else {
-            val fileSizes = selected.associate { it.path to it.size }
-            inlineOperationJob = viewModelScope.launch {
-                runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
-                    moveFilesUseCase(listOf(path), destinationDir, resolution)
-                }
-                migrateTagsToDestination(paths, destinationDir)
-                hapticManager.success()
-                showStatusMessage(targetId, appContext.getString(R.string.moved_format, formatFileCount(dirs, files)))
-                refreshPanel(activeId)
-                refreshPanel(targetId)
-            }
-        }
+        FileOperationService.start(appContext, paths, destinationDir, isMove = true, conflictResolution = resolution)
     }
 
     private fun executeMoveWithDecisions(
@@ -2800,7 +2762,7 @@ class ExplorerViewModel @Inject constructor(
         val files = selected.size - dirs
         clearSelection(activeId)
 
-        inlineOperationJob = viewModelScope.launch {
+        viewModelScope.launch {
             val total = paths.size
             var completed = 0
             _uiState.update {
@@ -2910,15 +2872,9 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
+        // Pre-check trash overflow (shows dialog if needed)
         viewModelScope.launch {
-            val total = paths.size
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE))
-            }
-
-            // Pre-calculate eviction: free space in trash before the loop
             val nonSafPaths = paths.filter { !it.startsWith("content://") }
-            var totalEvicted = 0
             if (nonSafPaths.isNotEmpty()) {
                 val maxMb = preferences.trashMaxSizeMb
                 if (maxMb > 0) {
@@ -2928,11 +2884,9 @@ class ExplorerViewModel @Inject constructor(
                         else f.length()
                     }
                     val maxBytes = maxMb.toLong() * 1024 * 1024
-                    // If incoming files exceed trash limit — ask user to delete permanently
                     if (incomingSize > maxBytes) {
                         _uiState.update {
                             it.copy(
-                                operationProgress = null,
                                 dialogState = DialogState.TrashOverflow(
                                     paths = paths,
                                     incomingSize = incomingSize,
@@ -2942,109 +2896,10 @@ class ExplorerViewModel @Inject constructor(
                         }
                         return@launch
                     }
-                    val currentTrashSize = trashRepository.getTrashSize()
-                    val needed = (currentTrashSize + incomingSize) - maxBytes
-                    if (needed > 0) {
-                        totalEvicted = trashRepository.evictToFitSize(maxBytes - incomingSize)
-                    }
                 }
             }
-
-            var completed = 0
-            var lastError: String? = null
-            for ((index, path) in paths.withIndex()) {
-                val isSaf = path.startsWith("content://")
-                val fileName = if (isSaf) {
-                    Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
-                } else {
-                    File(path).name
-                }
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.DELETE))
-                }
-                try {
-                    if (isSaf) {
-                        fileRepository.deleteFiles(listOf(path)).onSuccess { completed++ }
-                    } else {
-                        trashRepository.moveToTrash(listOf(path))
-                            .onSuccess { count -> completed += count }
-                            .onFailure { e -> lastError = e.message }
-                    }
-                } catch (e: Exception) {
-                    lastError = e.message
-                }
-            }
-
-            if (totalEvicted > 0) {
-                _toastMessage.tryEmit(appContext.getString(R.string.auto_evicted_format, totalEvicted))
-            }
-            updateTrashSizeInfo()
-            // Remove tags for deleted files
-            if (completed > 0) {
-                removeTagsForPaths(paths)
-            }
-            if (lastError != null && completed == 0) {
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(0, total, "", OperationType.DELETE, isComplete = true, error = lastError))
-                }
-                hapticManager.error()
-                _toastMessage.tryEmit(appContext.getString(R.string.delete_error_format, lastError ?: ""))
-            } else {
-                _uiState.update {
-                    it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.DELETE, isComplete = true))
-                }
-                hapticManager.success()
-                showStatusMessage(activeId, appContext.getString(R.string.moved_to_trash_count, completed))
-            }
-
-            viewModelScope.launch {
-                delay(2000)
-                _uiState.update {
-                    if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-                }
-            }
-            refreshBothIfSamePath(activeId)
-        }
-    }
-
-    /** Processes files one by one with progress updates in UI. */
-    private suspend fun runInlineOperation(
-        paths: List<String>,
-        type: OperationType,
-        fileSizes: Map<String, Long> = emptyMap(),
-        action: suspend (String) -> Result<Int>
-    ) {
-        val total = paths.size
-        _uiState.update {
-            it.copy(operationProgress = OperationProgress(0, total, "", type))
-        }
-        var completed = 0
-        for ((index, path) in paths.withIndex()) {
-            val fileName = if (path.startsWith("content://")) {
-                Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
-            } else {
-                path.substringAfterLast('/')
-            }
-            val size = fileSizes[path] ?: 0L
-            val displayName = if (size > 1024 * 1024) {
-                "$fileName (${size.toFileSize(appContext)})"
-            } else {
-                fileName
-            }
-            _uiState.update {
-                it.copy(operationProgress = OperationProgress(index, total, displayName, type))
-            }
-            action(path).onSuccess { completed++ }
-        }
-        _uiState.update {
-            it.copy(operationProgress = OperationProgress(completed, total, "", type, isComplete = true))
-        }
-        // Cleanup progress after delay — non-blocking so callers proceed immediately
-        viewModelScope.launch {
-            delay(2000)
-            _uiState.update {
-                if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it
-            }
+            // Delegate to foreground service
+            FileOperationService.startDelete(appContext, paths, useTrash = true)
         }
     }
 
@@ -3056,9 +2911,6 @@ class ExplorerViewModel @Inject constructor(
             action = FileOperationService.ACTION_CANCEL
         }
         appContext.startService(intent)
-        // Cancel inline operation
-        inlineOperationJob?.cancel()
-        inlineOperationJob = null
         // Cancel cloud transfers
         cloudTransferJobs.values.forEach { it.cancel() }
         cloudTransferJobs.clear()
@@ -3470,35 +3322,8 @@ class ExplorerViewModel @Inject constructor(
         password: String?,
         splitSizeMb: Int
     ) {
-        val activeId = _uiState.value.activePanel
-        viewModelScope.launch {
-            clearSelection(activeId)
-            var actualName = archiveName
-            try {
-                createZipUseCase(selectedPaths, outputPath, password, splitSizeMb)
-                    .collect { progress ->
-                        if (progress.actualArchiveName != null) {
-                            actualName = progress.actualArchiveName
-                        }
-                        _uiState.update {
-                            it.copy(operationProgress = OperationProgress(
-                                current = progress.current,
-                                total = progress.total,
-                                currentFileName = progress.fileName,
-                                type = OperationType.ARCHIVE
-                            ))
-                        }
-                    }
-                hapticManager.success()
-                _toastMessage.tryEmit(appContext.getString(R.string.archive_created, actualName))
-                refreshBothIfSamePath(activeId)
-            } catch (e: Exception) {
-                hapticManager.error()
-                _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, e.message ?: ""))
-                EcosystemLogger.e(HaronConstants.TAG, "confirmCreateArchive: ZIP failed — ${e.javaClass.simpleName}: ${e.message}")
-            }
-            _uiState.update { it.copy(operationProgress = null) }
-        }
+        clearSelection(_uiState.value.activePanel)
+        FileOperationService.startArchive(appContext, selectedPaths, outputPath, password, splitSizeMb)
     }
 
     fun createArchiveOneToOne(selectedPaths: List<String>) {
@@ -3513,45 +3338,8 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
-            clearSelection(activeId)
-            var created = 0
-            try {
-                for ((index, srcPath) in selectedPaths.withIndex()) {
-                    val srcFile = File(srcPath)
-                    if (!srcFile.exists()) {
-                        EcosystemLogger.e(HaronConstants.TAG, "createArchiveOneToOne: source missing: $srcPath")
-                        continue
-                    }
-                    val parentDir = srcFile.parent ?: continue
-                    var outputPath = "$parentDir/${srcFile.nameWithoutExtension}.zip"
-                    if (File(outputPath).exists()) {
-                        outputPath = CreateZipUseCase.findUniqueZipPath(outputPath)
-                    }
-                    EcosystemLogger.d(HaronConstants.TAG, "createArchiveOneToOne: [${index + 1}/${selectedPaths.size}] ${srcFile.name} -> ${File(outputPath).name}")
-
-                    _uiState.update {
-                        it.copy(operationProgress = OperationProgress(
-                            current = index + 1,
-                            total = selectedPaths.size,
-                            currentFileName = srcFile.name,
-                            type = OperationType.ARCHIVE
-                        ))
-                    }
-
-                    createZipUseCase(listOf(srcPath), outputPath).collect { /* consume flow */ }
-                    created++
-                }
-                hapticManager.success()
-                _toastMessage.tryEmit(appContext.getString(R.string.archive_one_to_one_done, created))
-                refreshBothIfSamePath(activeId)
-            } catch (e: Exception) {
-                hapticManager.error()
-                _toastMessage.tryEmit(appContext.getString(R.string.archive_create_error, e.message ?: ""))
-                EcosystemLogger.e(HaronConstants.TAG, "createArchiveOneToOne: failed — ${e.javaClass.simpleName}: ${e.message}")
-            }
-            _uiState.update { it.copy(operationProgress = null) }
-        }
+        clearSelection(activeId)
+        FileOperationService.startArchiveOneToOne(appContext, selectedPaths)
     }
 
     fun onPreviewFileChanged(newIndex: Int) {
@@ -4058,38 +3846,16 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun pasteFromShelf(isMove: Boolean) {
-        val activeId = _uiState.value.activePanel
-        val panel = getPanel(activeId)
+        val panel = getPanel(_uiState.value.activePanel)
         val destinationDir = panel.currentPath
         val items = _uiState.value.shelfItems
         if (items.isEmpty()) return
 
         val paths = items.map { it.path }
         dismissShelf()
+        if (isMove) clearShelf()
 
-        if (isMove) {
-            val fileSizes = items.associate { it.path to it.size }
-            inlineOperationJob = viewModelScope.launch {
-                runInlineOperation(paths, OperationType.MOVE, fileSizes) { path ->
-                    moveFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
-                }
-                migrateTagsToDestination(paths, destinationDir)
-                clearShelf()
-                refreshPanel(PanelId.TOP)
-                refreshPanel(PanelId.BOTTOM)
-                _toastMessage.tryEmit(appContext.getString(R.string.moved_from_shelf, paths.size))
-            }
-        } else {
-            val fileSizes = items.associate { it.path to it.size }
-            inlineOperationJob = viewModelScope.launch {
-                runInlineOperation(paths, OperationType.COPY, fileSizes) { path ->
-                    copyFilesUseCase(listOf(path), destinationDir, ConflictResolution.RENAME)
-                }
-                copyTagsToDestination(paths, destinationDir)
-                refreshPanel(activeId)
-                _toastMessage.tryEmit(appContext.getString(R.string.copied_from_shelf, paths.size))
-            }
-        }
+        FileOperationService.start(appContext, paths, destinationDir, isMove = isMove, conflictResolution = ConflictResolution.RENAME)
     }
 
     // --- Duplicate Detector ---
@@ -5429,7 +5195,6 @@ class ExplorerViewModel @Inject constructor(
     private fun doExtractFromArchive(archivePanelId: PanelId, destinationDir: String, selectedOnly: Boolean) {
         val archivePanel = getPanel(archivePanelId)
         if (!archivePanel.isArchiveMode) return
-        val activeId = _uiState.value.activePanel
         val virtualPath = archivePanel.archiveVirtualPath
 
         val selectedEntries = if (selectedOnly && archivePanel.selectedPaths.isNotEmpty()) {
@@ -5437,46 +5202,22 @@ class ExplorerViewModel @Inject constructor(
                 path.substringAfter("!/", "")
             }.toSet()
         } else {
-            // Extract all visible files in current virtual path
             archivePanel.files.map { fe ->
                 fe.path.substringAfter("!/", "")
             }.toSet()
         }
 
-        viewModelScope.launch {
-            extractArchiveUseCase(
-                archivePath = archivePanel.archivePath!!,
-                destinationDir = destinationDir,
-                selectedEntries = selectedEntries,
-                password = archivePanel.archivePassword,
-                basePrefix = virtualPath
-            ).collect { progress ->
-                updatePanel(archivePanelId) { it.copy(archiveExtractProgress = progress) }
-                if (progress.isComplete) {
-                    delay(300)
-                    val targetPanelId = if (activeId == archivePanelId) archivePanelId else activeId
-                    if (!getPanel(targetPanelId).isArchiveMode) {
-                        refreshPanel(targetPanelId)
-                    }
-                    val otherId = if (targetPanelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-                    if (!getPanel(otherId).isArchiveMode && getPanel(otherId).currentPath == destinationDir) {
-                        refreshPanel(otherId)
-                    }
-                    updatePanel(archivePanelId) {
-                        it.copy(
-                            selectedPaths = emptySet(),
-                            isSelectionMode = false,
-                            archiveExtractProgress = null
-                        )
-                    }
-                    if (progress.error != null) {
-                        _toastMessage.tryEmit(progress.error)
-                    } else {
-                        _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destinationDir))
-                    }
-                }
-            }
+        updatePanel(archivePanelId) {
+            it.copy(selectedPaths = emptySet(), isSelectionMode = false)
         }
+        FileOperationService.startExtract(
+            appContext,
+            archivePath = archivePanel.archivePath!!,
+            destDir = destinationDir,
+            selectedEntries = selectedEntries,
+            password = archivePanel.archivePassword,
+            basePrefix = virtualPath
+        )
     }
 
     /** Extract selected archive file(s) from normal folder view into other panel. */
@@ -5521,33 +5262,13 @@ class ExplorerViewModel @Inject constructor(
     }
 
     private fun doExtractSelectedArchiveFiles(panelId: PanelId, archivePaths: List<String>, destDir: String) {
-        val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-        viewModelScope.launch {
-            for (archivePath in archivePaths) {
-                extractArchiveUseCase(
-                    archivePath = archivePath,
-                    destinationDir = destDir
-                ).collect { progress ->
-                    updatePanel(panelId) { it.copy(archiveExtractProgress = progress) }
-                    if (progress.isComplete) {
-                        delay(300)
-                        refreshPanel(otherId)
-                        if (getPanel(panelId).currentPath == destDir) refreshPanel(panelId)
-                        updatePanel(panelId) {
-                            it.copy(
-                                selectedPaths = emptySet(),
-                                isSelectionMode = false,
-                                archiveExtractProgress = null
-                            )
-                        }
-                        if (progress.error != null) {
-                            _toastMessage.tryEmit(progress.error)
-                        } else {
-                            _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destDir))
-                        }
-                    }
-                }
-            }
+        updatePanel(panelId) {
+            it.copy(selectedPaths = emptySet(), isSelectionMode = false)
+        }
+        // Extract each archive via service (sequentially — one at a time)
+        // For multiple archives we extract the first one; completion handler in init{} will refresh panels
+        for (archivePath in archivePaths) {
+            FileOperationService.startExtract(appContext, archivePath, destDir)
         }
     }
 
@@ -5701,28 +5422,7 @@ class ExplorerViewModel @Inject constructor(
                 val destDir = File(baseDir, archiveName).absolutePath
                 withContext(Dispatchers.IO) { File(destDir).mkdirs() }
 
-                extractArchiveUseCase(
-                    archivePath = archivePath,
-                    destinationDir = destDir
-                ).collect { progress ->
-                    updatePanel(panelId) { it.copy(archiveExtractProgress = progress) }
-                    if (progress.isComplete) {
-                        delay(300)
-                        updatePanel(panelId) { it.copy(archiveExtractProgress = null) }
-                        if (progress.error != null) {
-                            _toastMessage.tryEmit(progress.error)
-                        } else {
-                            _toastMessage.tryEmit(appContext.getString(R.string.extracted_to_format, destDir))
-                        }
-                    }
-                }
-            }
-            // Refresh & invalidate folder size cache
-            invalidateFolderSizeCache(panelId)
-            refreshPanel(panelId)
-            if (destination == ExtractDestination.OTHER_PANEL) {
-                invalidateFolderSizeCache(otherId)
-                refreshPanel(otherId)
+                FileOperationService.startExtract(appContext, archivePath, destDir)
             }
         }
     }
@@ -6489,7 +6189,8 @@ class ExplorerViewModel @Inject constructor(
 
     fun confirmTrashOverflowDelete(paths: List<String>) {
         dismissDialog()
-        confirmForceDelete(paths)
+        clearSelection(_uiState.value.activePanel)
+        FileOperationService.startDelete(appContext, paths, useTrash = false)
     }
 
     fun confirmForceDelete(paths: List<String>) {

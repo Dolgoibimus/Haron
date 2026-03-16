@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.ArchiveEntry
 import com.vamp.haron.presentation.common.PasswordDialog
@@ -146,14 +147,20 @@ fun ArchiveViewerScreen(
                 // Extract progress
                 val progress = state.extractProgress
                 if (progress != null && !progress.isComplete) {
-                    LinearProgressIndicator(
-                        progress = { if (progress.total > 0) progress.current.toFloat() / progress.total else 0f },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    val extractFraction = if (progress.total > 0) progress.current.toFloat() / progress.total else 0f
                     Text(
                         text = stringResource(R.string.extraction_progress_format, progress.current, progress.total, progress.fileName),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                    LinearProgressIndicator(
+                        progress = { extractFraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ProgressInfoRow(
+                        counter = if (progress.total > 0) "${progress.current}/${progress.total}" else "",
+                        percent = if (progress.total > 0) "${(extractFraction * 100).toInt()}%" else "",
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
 

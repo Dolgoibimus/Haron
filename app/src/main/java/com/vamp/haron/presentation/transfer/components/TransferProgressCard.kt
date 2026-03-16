@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -23,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.TransferProgressInfo
 
@@ -77,36 +76,12 @@ fun TransferProgressCard(
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
             )
 
-            Spacer(Modifier.height(4.dp))
-            Row {
-                Text(
-                    "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.weight(1f))
-                if (progress.speedBytesPerSec > 0) {
-                    Text(
-                        stringResource(R.string.transfer_speed, progress.speedBytesPerSec.toFileSize()),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.transfer_eta, formatEta(progress.etaSeconds)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            ProgressInfoRow(
+                speed = if (progress.speedBytesPerSec > 0) "${progress.speedBytesPerSec.toFileSize()}/s" else "",
+                counter = if (progress.totalFiles > 1) "${progress.currentFileIndex + 1}/${progress.totalFiles}" else "${progress.bytesTransferred.toFileSize()} / ${progress.totalBytes.toFileSize()}",
+                percent = if (progress.totalBytes > 0) "${(progress.fraction * 100).toInt()}%" else ""
+            )
         }
     }
 }
 
-private fun formatEta(seconds: Long): String {
-    return when {
-        seconds < 60 -> "${seconds}s"
-        seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
-        else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
-    }
-}
