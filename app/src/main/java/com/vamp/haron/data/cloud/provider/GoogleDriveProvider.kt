@@ -33,8 +33,8 @@ class GoogleDriveProvider(
 ) : CloudProviderInterface {
 
     companion object {
-        const val CLIENT_ID = "GOOGLE_CLIENT_ID_REMOVED"
-        const val CLIENT_SECRET = "GOOGLE_CLIENT_SECRET_REMOVED"
+        val CLIENT_ID: String get() = com.vamp.haron.BuildConfig.GOOGLE_CLIENT_ID
+        val CLIENT_SECRET: String get() = com.vamp.haron.BuildConfig.GOOGLE_CLIENT_SECRET
         const val TOKEN_URL = "https://oauth2.googleapis.com/token"
     }
 

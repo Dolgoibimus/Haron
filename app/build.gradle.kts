@@ -25,6 +25,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // ndk abiFilters removed — splits.abi handles architecture filtering
+
+        val localProps = Properties()
+        project.rootProject.file("local.properties").reader(Charsets.UTF_8).use { localProps.load(it) }
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${localProps.getProperty("GOOGLE_CLIENT_ID", "")}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_SECRET", "\"${localProps.getProperty("GOOGLE_CLIENT_SECRET", "")}\"")
     }
 
     signingConfigs {
