@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -51,8 +52,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -100,6 +103,7 @@ import com.vamp.haron.data.db.entity.FileIndexEntity
 import com.vamp.haron.domain.model.FileEntry
 import com.vamp.haron.domain.model.SearchSource
 import com.vamp.haron.domain.model.WebSearchResult
+import com.vamp.haron.domain.usecase.websearch.IntentDetectorUseCase
 import com.vamp.haron.domain.repository.DateFilter
 import com.vamp.haron.domain.repository.FileCategory
 import com.vamp.haron.domain.repository.IndexMode
@@ -216,6 +220,17 @@ fun SearchScreen(
                 viewModel.dismissPreview()
                 onOpenArchiveViewer(preview.entry.path, preview.entry.name)
             }
+        )
+    }
+
+    // Web Navigator sheet
+    val navigatorStack = state.webNavigatorStack
+    if (navigatorStack != null) {
+        WebNavigatorSheet(
+            stack = navigatorStack,
+            onNavigate = { viewModel.webNavigatorNavigateTo(it) },
+            onBack = { viewModel.webNavigatorBack() },
+            onDismiss = { viewModel.closeWebNavigator() }
         )
     }
 
@@ -712,54 +727,352 @@ private fun InternetSearchTab(
             }
         }
 
-        // Loading / Error / Results
+        // Search progress bar (thin, streaming)
         if (state.isWebSearching) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        // Per-source status chips (visible while searching and after)
+        if (state.isWebSearching || state.webSearchSourcesDone.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.web_searching),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else if (state.webError != null && state.webResults.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = state.webError,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                WebSourceChip(
+                    label = stringResource(R.string.web_source_od),
+                    count = state.webSearchSourcesDone["od"],
+                    isSearching = state.isWebSearching && !state.webSearchSourcesDone.containsKey("od")
+                )
+                WebSourceChip(
+                    label = stringResource(R.string.web_source_archive),
+                    count = state.webSearchSourcesDone["archive"],
+                    isSearching = state.isWebSearching && !state.webSearchSourcesDone.containsKey("archive")
+                )
+                WebSourceChip(
+                    label = stringResource(R.string.web_source_libgen),
+                    count = state.webSearchSourcesDone["libgen"],
+                    isSearching = state.isWebSearching && !state.webSearchSourcesDone.containsKey("libgen")
+                )
+                WebSourceChip(
+                    label = stringResource(R.string.web_source_torrent),
+                    count = state.webSearchSourcesDone["torrent"],
+                    isSearching = state.isWebSearching && !state.webSearchSourcesDone.containsKey("torrent")
                 )
             }
-        } else if (state.webResults.isNotEmpty()) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(
-                    items = state.webResults,
-                    key = { it.url }
-                ) { result ->
-                    WebSearchResultItem(
-                        result = result,
-                        onTap = {
-                            viewModel.downloadFile(result)
-                            Toast.makeText(context, context.getString(R.string.web_download_started), Toast.LENGTH_SHORT).show()
-                        },
-                        onLongTap = {
-                            viewModel.copyLink(result)
-                            Toast.makeText(context, context.getString(R.string.web_link_copied), Toast.LENGTH_SHORT).show()
-                        }
+        }
+
+        // Content area — results stream in immediately, no longer blocked by spinner
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                state.webSearchConfirmation != null && !state.isWebSearching -> {
+                    WebSearchConfirmationCard(
+                        confirmation = state.webSearchConfirmation,
+                        onConfirm = { viewModel.confirmWebSearch() },
+                        onDismiss = { viewModel.dismissWebSearchConfirmation() }
                     )
+                }
+                state.webError != null && state.webResults.isEmpty() && !state.isWebSearching -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = state.webError,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                state.webResults.isNotEmpty() -> {
+                    val odResults = state.webResults.filter { it.source == SearchSource.OPEN_DIRECTORY }
+                    val archiveResults = state.webResults.filter { it.source == SearchSource.INTERNET_ARCHIVE }
+                    val torrentResults = state.webResults.filter { it.source == SearchSource.TORRENT }
+                    val libGenResults = state.webResults.filter { it.source == SearchSource.LIBGEN }
+
+                    var odExpanded by remember { mutableStateOf(true) }
+                    var archiveExpanded by remember { mutableStateOf(true) }
+                    var torrentExpanded by remember { mutableStateOf(true) }
+                    var libGenExpanded by remember { mutableStateOf(true) }
+
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        // Direct links section
+                        if (odResults.isNotEmpty()) {
+                            stickyHeader(key = "header_od") {
+                                WebSearchCategoryHeader(
+                                    title = stringResource(R.string.search_category_direct),
+                                    count = odResults.size,
+                                    expanded = odExpanded,
+                                    onToggle = { odExpanded = !odExpanded }
+                                )
+                            }
+                            if (odExpanded) {
+                                items(items = odResults, key = { it.url }) { result ->
+                                    WebSearchResultItem(
+                                        result = result,
+                                        onTap = {
+                                            viewModel.downloadFile(result)
+                                            Toast.makeText(context, context.getString(R.string.web_download_started), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongTap = {
+                                            viewModel.copyLink(result)
+                                            Toast.makeText(context, context.getString(R.string.web_link_copied), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onBrowse = {
+                                            val parentUrl = result.url.substringBeforeLast('/')
+                                            viewModel.openWebNavigator(parentUrl)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Archive section
+                        if (archiveResults.isNotEmpty()) {
+                            stickyHeader(key = "header_archive") {
+                                WebSearchCategoryHeader(
+                                    title = stringResource(R.string.search_category_archive),
+                                    count = archiveResults.size,
+                                    expanded = archiveExpanded,
+                                    onToggle = { archiveExpanded = !archiveExpanded }
+                                )
+                            }
+                            if (archiveExpanded) {
+                                items(items = archiveResults, key = { it.url }) { result ->
+                                    WebSearchResultItem(
+                                        result = result,
+                                        onTap = {
+                                            viewModel.downloadFile(result)
+                                            Toast.makeText(context, context.getString(R.string.web_download_started), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongTap = {
+                                            viewModel.copyLink(result)
+                                            Toast.makeText(context, context.getString(R.string.web_link_copied), Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // LibGen section
+                        if (libGenResults.isNotEmpty()) {
+                            stickyHeader(key = "header_libgen") {
+                                WebSearchCategoryHeader(
+                                    title = stringResource(R.string.search_category_libgen),
+                                    count = libGenResults.size,
+                                    expanded = libGenExpanded,
+                                    onToggle = { libGenExpanded = !libGenExpanded }
+                                )
+                            }
+                            if (libGenExpanded) {
+                                items(items = libGenResults, key = { it.url }) { result ->
+                                    WebSearchResultItem(
+                                        result = result,
+                                        onTap = {
+                                            viewModel.downloadFile(result)
+                                            Toast.makeText(context, context.getString(R.string.web_download_started), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongTap = {
+                                            viewModel.copyLink(result)
+                                            Toast.makeText(context, context.getString(R.string.web_link_copied), Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Torrent section
+                        if (torrentResults.isNotEmpty()) {
+                            stickyHeader(key = "header_torrent") {
+                                WebSearchCategoryHeader(
+                                    title = stringResource(R.string.search_category_torrents),
+                                    count = torrentResults.size,
+                                    expanded = torrentExpanded,
+                                    onToggle = { torrentExpanded = !torrentExpanded }
+                                )
+                            }
+                            if (torrentExpanded) {
+                                items(items = torrentResults, key = { it.url }) { result ->
+                                    WebSearchResultItem(
+                                        result = result,
+                                        onTap = {
+                                            viewModel.downloadFile(result)
+                                            Toast.makeText(context, context.getString(R.string.web_download_started), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongTap = {
+                                            viewModel.copyLink(result)
+                                            Toast.makeText(context, context.getString(R.string.web_link_copied), Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun WebSearchConfirmationCard(
+    confirmation: WebSearchConfirmation,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val contentType = confirmation.detectionResult.contentType
+    val heading = confirmation.detectionResult.heading
+    val abstract = confirmation.detectionResult.abstractText
+
+    val icon = when (contentType) {
+        IntentDetectorUseCase.ContentType.AUDIO -> Icons.Filled.MusicNote
+        IntentDetectorUseCase.ContentType.VIDEO -> Icons.Filled.VideoFile
+        IntentDetectorUseCase.ContentType.BOOK -> Icons.Filled.Description
+        IntentDetectorUseCase.ContentType.DOCUMENT -> Icons.AutoMirrored.Filled.InsertDriveFile
+        IntentDetectorUseCase.ContentType.SOFTWARE -> Icons.Filled.PhoneAndroid
+        IntentDetectorUseCase.ContentType.GENERAL -> Icons.Filled.Search
+    }
+    val typeLabel = when (contentType) {
+        IntentDetectorUseCase.ContentType.AUDIO -> stringResource(R.string.web_confirm_type_audio)
+        IntentDetectorUseCase.ContentType.VIDEO -> stringResource(R.string.web_confirm_type_video)
+        IntentDetectorUseCase.ContentType.BOOK -> stringResource(R.string.web_confirm_type_book)
+        IntentDetectorUseCase.ContentType.DOCUMENT -> stringResource(R.string.web_confirm_type_document)
+        IntentDetectorUseCase.ContentType.SOFTWARE -> stringResource(R.string.web_confirm_type_software)
+        IntentDetectorUseCase.ContentType.GENERAL -> stringResource(R.string.web_confirm_type_general)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = typeLabel,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                if (heading != null || abstract != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    if (heading != null) {
+                        Text(
+                            text = heading,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    if (abstract != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = abstract,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.web_confirm_no))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = onConfirm) {
+                        Text(stringResource(R.string.web_confirm_yes))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WebSourceChip(
+    label: String,
+    count: Int?,
+    isSearching: Boolean
+) {
+    val isDone = count != null
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isDone && count!! > 0) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            when {
+                isSearching -> CircularProgressIndicator(
+                    modifier = Modifier.size(10.dp),
+                    strokeWidth = 1.5.dp
+                )
+                isDone && count!! > 0 -> Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(10.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                else -> Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(10.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = if (isDone && count!! > 0) "$label $count" else label,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun WebSearchCategoryHeader(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$title ($count)",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary
+        )
+    }
+    androidx.compose.material3.HorizontalDivider()
 }
 
 @Composable
@@ -816,7 +1129,8 @@ private fun DownloadProgressItem(dl: DownloadProgress) {
 private fun WebSearchResultItem(
     result: WebSearchResult,
     onTap: () -> Unit,
-    onLongTap: () -> Unit
+    onLongTap: () -> Unit,
+    onBrowse: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -834,6 +1148,7 @@ private fun WebSearchResultItem(
                 SearchSource.OPEN_DIRECTORY -> Icons.Filled.Folder
                 SearchSource.TORRENT -> Icons.Filled.Link
                 SearchSource.INTERNET_ARCHIVE -> Icons.Filled.Archive
+                SearchSource.LIBGEN -> Icons.Filled.MenuBook
             },
             contentDescription = null,
             modifier = Modifier.size(32.dp),
@@ -841,6 +1156,7 @@ private fun WebSearchResultItem(
                 SearchSource.OPEN_DIRECTORY -> MaterialTheme.colorScheme.primary
                 SearchSource.TORRENT -> MaterialTheme.colorScheme.error
                 SearchSource.INTERNET_ARCHIVE -> MaterialTheme.colorScheme.tertiary
+                SearchSource.LIBGEN -> MaterialTheme.colorScheme.secondary
             }
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -862,6 +1178,7 @@ private fun WebSearchResultItem(
                         SearchSource.OPEN_DIRECTORY -> MaterialTheme.colorScheme.primaryContainer
                         SearchSource.TORRENT -> MaterialTheme.colorScheme.errorContainer
                         SearchSource.INTERNET_ARCHIVE -> MaterialTheme.colorScheme.tertiaryContainer
+                        SearchSource.LIBGEN -> MaterialTheme.colorScheme.secondaryContainer
                     }
                 ) {
                     Text(
@@ -869,6 +1186,7 @@ private fun WebSearchResultItem(
                             SearchSource.OPEN_DIRECTORY -> stringResource(R.string.web_source_od)
                             SearchSource.TORRENT -> stringResource(R.string.web_source_torrent)
                             SearchSource.INTERNET_ARCHIVE -> stringResource(R.string.web_source_archive)
+                            SearchSource.LIBGEN -> stringResource(R.string.web_source_libgen)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -895,6 +1213,19 @@ private fun WebSearchResultItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+        if (onBrowse != null) {
+            IconButton(
+                onClick = onBrowse,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Language,
+                    contentDescription = stringResource(R.string.web_browse),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
         Icon(

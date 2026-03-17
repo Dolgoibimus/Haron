@@ -25,17 +25,26 @@ class InternetArchiveSearchUseCase @Inject constructor() {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    suspend operator fun invoke(query: String): List<WebSearchResult> = coroutineScope {
+    suspend operator fun invoke(
+        query: String,
+        contentTypes: Set<IntentDetectorUseCase.ContentType> = setOf(IntentDetectorUseCase.ContentType.GENERAL)
+    ): List<WebSearchResult> = coroutineScope {
         val parsed = QueryParser.parse(query)
-        val queries = mutableListOf(query)
-        if (Transliterator.containsCyrillic(query)) {
-            queries.add(Transliterator.transliterate(query))
+        val baseQuery = parsed.searchQuery
+
+        // Build queries: plain + creator field, for each language variant
+        val langVariants = mutableListOf(baseQuery, "creator:($baseQuery)")
+        if (Transliterator.containsCyrillic(baseQuery)) {
+            val latin = Transliterator.transliterate(baseQuery)
+            langVariants.add(latin)
+            langVariants.add("creator:($latin)")
         }
 
-        EcosystemLogger.d(HaronConstants.TAG, "Archive: keywords=${parsed.keywords}, ext=${parsed.extension}")
+        EcosystemLogger.d(HaronConstants.TAG, "Archive: keywords=${parsed.keywords}, ext=${parsed.extension}, types=$contentTypes")
 
-        val deferreds = queries.map { q ->
-            async { searchArchive(q, parsed) }
+        // For each content type, run all language variants in parallel
+        val deferreds = contentTypes.flatMap { ct ->
+            langVariants.map { q -> async { searchArchive(q, parsed, ct) } }
         }
         val allResults = deferreds.flatMap { it.await() }
 
@@ -43,26 +52,32 @@ class InternetArchiveSearchUseCase @Inject constructor() {
         val seen = mutableSetOf<String>()
         val deduped = mutableListOf<WebSearchResult>()
         for (r in allResults) {
-            if (seen.add(r.url)) {
-                deduped.add(r)
-            }
+            if (seen.add(r.url)) deduped.add(r)
         }
+        EcosystemLogger.i(HaronConstants.TAG, "Archive: ${deduped.size} total after dedup")
         deduped
     }
 
-    private suspend fun searchArchive(query: String, parsed: QueryParser.ParsedQuery): List<WebSearchResult> = withContext(Dispatchers.IO) {
+    private suspend fun searchArchive(
+        query: String,
+        parsed: QueryParser.ParsedQuery,
+        contentType: IntentDetectorUseCase.ContentType
+    ): List<WebSearchResult> = withContext(Dispatchers.IO) {
         try {
-            // Use mediatype filter if extension implies a type
-            val mediaFilter = when (parsed.extension) {
-                "pdf", "doc", "docx", "txt", "epub", "fb2", "djvu" -> " AND mediatype:texts"
-                "mp3", "flac", "wav", "ogg", "m4a" -> " AND mediatype:audio"
-                "mp4", "mkv", "avi", "mov", "webm" -> " AND mediatype:movies"
+            val mediaFilter = when {
+                parsed.extension in setOf("pdf", "doc", "docx", "txt", "epub", "fb2", "djvu") -> " AND mediatype:texts"
+                parsed.extension in setOf("mp3", "flac", "wav", "ogg", "m4a") -> " AND mediatype:audio"
+                parsed.extension in setOf("mp4", "mkv", "avi", "mov", "webm") -> " AND mediatype:movies"
+                contentType == IntentDetectorUseCase.ContentType.AUDIO -> " AND mediatype:audio"
+                contentType == IntentDetectorUseCase.ContentType.VIDEO -> " AND mediatype:movies"
+                contentType == IntentDetectorUseCase.ContentType.BOOK -> " AND mediatype:texts"
+                contentType == IntentDetectorUseCase.ContentType.DOCUMENT -> " AND mediatype:texts"
                 else -> ""
             }
             val encoded = URLEncoder.encode(query + mediaFilter, "UTF-8")
             val url = "https://archive.org/advancedsearch.php?q=$encoded" +
                     "&fl[]=identifier&fl[]=title&fl[]=item_size" +
-                    "&rows=20&output=json"
+                    "&rows=30&output=json"
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Haron/1.0")
@@ -75,31 +90,38 @@ class InternetArchiveSearchUseCase @Inject constructor() {
             val responseObj = json.optJSONObject("response") ?: return@withContext emptyList()
             val docs = responseObj.optJSONArray("docs") ?: return@withContext emptyList()
 
-            val results = mutableListOf<WebSearchResult>()
-            val fileDeferreds = mutableListOf<Pair<String, String>>() // identifier, title
-
+            val fileDeferreds = mutableListOf<Pair<String, String>>()
             for (i in 0 until docs.length()) {
                 val doc = docs.getJSONObject(i)
                 val identifier = doc.optString("identifier", "")
                 val title = doc.optString("title", identifier)
-                val itemSize = doc.optLong("item_size", -1)
-
                 if (identifier.isEmpty()) continue
-
                 fileDeferreds.add(identifier to title)
             }
 
-            // Fetch file details for each item
-            coroutineScope {
-                val detailDeferreds = fileDeferreds.map { (identifier, title) ->
-                    async(Dispatchers.IO) { fetchItemFiles(identifier, title, parsed) }
-                }
-                for (deferred in detailDeferreds) {
-                    results.addAll(deferred.await())
-                }
+            // Accepted extensions: use broader set for known content types
+            val acceptedExts: Set<String>? = when {
+                contentType == IntentDetectorUseCase.ContentType.AUDIO ->
+                    setOf("mp3", "flac", "ogg", "m4a", "wav", "aac", "opus", "wma")
+                contentType == IntentDetectorUseCase.ContentType.VIDEO ->
+                    setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v")
+                contentType == IntentDetectorUseCase.ContentType.BOOK ->
+                    setOf("pdf", "epub", "fb2", "djvu", "mobi", "azw3", "txt")
+                contentType == IntentDetectorUseCase.ContentType.DOCUMENT ->
+                    setOf("pdf", "doc", "docx", "odt", "rtf", "txt", "xls", "xlsx")
+                parsed.extension != null -> setOf(parsed.extension)
+                else -> null
             }
 
-            EcosystemLogger.d(HaronConstants.TAG, "Archive: ${results.size} files for \"$query\"")
+            val results = mutableListOf<WebSearchResult>()
+            coroutineScope {
+                val detailDeferreds = fileDeferreds.map { (id, title) ->
+                    async(Dispatchers.IO) { fetchItemFiles(id, title, acceptedExts) }
+                }
+                for (d in detailDeferreds) results.addAll(d.await())
+            }
+
+            EcosystemLogger.d(HaronConstants.TAG, "Archive: ${results.size} files for \"$query\" [$contentType]")
             results
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "Archive: search failed: ${e.message}")
@@ -107,7 +129,7 @@ class InternetArchiveSearchUseCase @Inject constructor() {
         }
     }
 
-    private fun fetchItemFiles(identifier: String, title: String, parsed: QueryParser.ParsedQuery): List<WebSearchResult> {
+    private fun fetchItemFiles(identifier: String, title: String, acceptedExts: Set<String>?): List<WebSearchResult> {
         return try {
             val url = "https://archive.org/metadata/$identifier/files"
             val request = Request.Builder()
@@ -128,7 +150,6 @@ class InternetArchiveSearchUseCase @Inject constructor() {
                 val size = file.optString("size", "-1").toLongOrNull() ?: -1
                 val format = file.optString("format", "")
 
-                // Skip metadata files
                 if (name.endsWith("_meta.xml") || name.endsWith("_files.xml") ||
                     name.endsWith("_meta.sqlite") || name.endsWith("_archive.torrent") ||
                     format == "Metadata" || format == "Item Tile" ||
@@ -136,12 +157,9 @@ class InternetArchiveSearchUseCase @Inject constructor() {
                 ) continue
 
                 val ext = name.substringAfterLast('.', "").lowercase()
-
-                // Filter by extension if user specified one
-                if (parsed.extension != null && ext != parsed.extension) continue
+                if (acceptedExts != null && ext !in acceptedExts) continue
 
                 val downloadUrl = "https://archive.org/download/$identifier/$name"
-
                 files.add(
                     WebSearchResult(
                         title = "$title — $name",

@@ -8,7 +8,7 @@
 
 ## Статус проекта
 
-**Текущая версия:** 0.85 (Phase 4, Batch 85)
+**Текущая версия:** 0.90 (Phase 4, Batch 90)
 **Текущая фаза:** Phase 4 — продвинутые функции (v2.0 features)
 
 ---
@@ -22,7 +22,138 @@
 
 ---
 
-### Batch 86 — Размер выделенных файлов в дивайдере ✅ проверено
+### В работе — нужно решение (пауза)
+
+**Проблема:** OD-поиск не находит аудио ни через какие источники. Работает только Archive.org, но там мало современного русского контента (только public domain / CC-лицензии).
+
+**Протестировано и не работает:**
+- SearXNG — все публичные инстансы заблокированы (429/403)
+- Bing — bot detection + timeout 48с → убран
+- DDG — bot detection, 0 ссылок → убран
+- mmnt.ru — нужно проверить логи, возможно тоже требует JS
+- FilePursuit — нужно проверить логи, возможно блокирует
+
+**Почему браузер находит, а мы нет:** TLS fingerprint (JA3) блокируется на уровне TCP, до HTTP; нельзя подделать без замены SSL-стека ОС. HTTP/2 frames — ещё один слой. JS — нужен WebView (50-100 МБ, медленно).
+
+**Варианты для обдумывания:**
+1. WebView как скрытый движок для поиска директорий (тяжело, но технически работает — JA3 реального Chrome)
+2. Добавить специализированные источники по типу контента: VK Music (требует авторизацию), Jamendo (только CC), SoundCloud (нужен API key)
+3. Другой подход: поиск через Telegram-боты (есть боты с индексами mp3)
+4. Использовать Common Crawl index (crawl.cc) — есть API, но медленный
+5. Принять что аудио-поиск не будет работать без API-ключей и сосредоточиться на книгах/документах где LibGen работает хорошо
+
+**Текущее состояние кода:** всё скомпилировано, Archive работает, остальные источники дают 0 для аудио.
+
+---
+
+### Batch 91 — OD поиск: mmnt.ru + FilePursuit + Yandex; прогрессбар поиска streaming ❌ OD не работает
+
+**Цель:** (1) Добавить mmnt.ru и FilePursuit как специализированные OD-индексы (имеют собственный краулер, не нужен поисковик). (2) Добавить Яндекс HTML как движок (лучше кириллицы, менее агрессивен к ботам). (3) Убрать нерабочие: Bing (timeout 48с), DDG (bot detection всегда 0), 4 из 6 SearXNG-инстансов. (4) Прогрессбар поиска: LinearProgressIndicator вместо CircularProgressIndicator, per-source статус чипы (OD⟳/✓N, Archive⟳/✓N, ...), результаты видны сразу по мере поступления.
+
+**Что сделано:**
+- `OpenDirectorySearchUseCase.kt` — полностью переработан:
+  - Phase 1 (параллельно): `searchMmntRu()` + `searchFilePursuit()` → прямые ссылки на файлы, без парсинга директорий
+  - Phase 2 (параллельно): `searchEngines()` → директории → `parseDirectoryListing()`
+  - Цепочка движков: Yandex HTML (новый, первый) → SearXNG (2 инстанса, fallback)
+  - Удалены: Bing (`bingClient`), DDG (`searchDdgHtml`), 4 SearXNG инстанса
+  - Извлечён `buildAcceptedExts()` — общий хелпер, нет дублирования кода
+- `SearchScreen.kt` — InternetSearchTab:
+  - `LinearProgressIndicator` (тонкая полоска сверху) вместо полноэкранного `CircularProgressIndicator`
+  - Строка статус-чипов `WebSourceChip`: ⟳ пока ищет, ✓N когда нашёл, ✓0 (серый) если пусто
+  - Результаты появляются сразу по мере поступления от каждого источника (`weight(1f)` Box)
+
+**Почему нельзя перенять тактику браузера:** TLS fingerprint (JA3) — поисковики блокируют на уровне TCP до HTTP; HTTP/2 SETTINGS-frames — ещё один слой идентификации; JS-рендеринг (Cloudflare) — можно обойти через WebView, но требует 50-100 МБ / главный поток / медленно.
+
+**Проверено:**
+- Прогрессбар (LinearProgressIndicator + чипы) — ✅ работает визуально
+- LibGen ✓0 для аудио — ✅ ожидаемо (книги, не музыка)
+- mmnt.ru — ❌ возвращает 0 результатов (JS или отсутствие в индексе)
+- FilePursuit — ❌ возвращает 0 результатов
+- Yandex — не протестирован напрямую
+- Archive.org — ✅ единственный рабочий источник, но мало современного контента
+
+---
+
+### Batch 90 — Поиск: keyword-типы + multi-type + LibGen + Web Navigator ⚠️ не проверено
+
+**Цель:** (1) Писать "книга" вместо "epub" → автоопределение типа, поиск по всем форматам. (2) Несколько типов одновременно: "книга аудиокнига фильм". (3) Пропуск confirmation card при keyword. (4) LibGen добавлен. (5) Web Navigator — обзор ссылок на странице.
+
+**Что сделано:**
+- `QueryParser.kt` — полностью переписан: добавлен `CONTENT_TYPE_WORDS` (~50 слов: книга/music/фильм/...) → `contentHints: Set<String>`; слова типа контента вырезаются из `searchQuery`
+- `IntentDetectorUseCase.kt` — fast path 2: `contentHints.isNotEmpty()` → немедленно строит `Set<ContentType>` без DDG. `IntentDetectionResult.contentTypes: Set<ContentType>` + `effectiveTypes` property
+- `InternetArchiveSearchUseCase.kt` — принимает `Set<ContentType>`, параллельный поиск по всем типам × языковым вариантам; широкий набор расширений на тип (AUDIO→mp3/flac/ogg/..., BOOK→pdf/epub/fb2/...)
+- `OpenDirectorySearchUseCase.kt` — принимает `Set<ContentType>`, `extGroup` = объединение расширений всех типов; `parseDirectoryListing` с объединённым `typeExtensions`
+- `LibGenSearchUseCase.kt` — принимает `Set<ContentType>`; пропускает аудио/видео/ПО; принимает все форматы книг когда тип=BOOK
+- `WebNavigateUseCase.kt` — новый: загружает URL, извлекает `<a href>` ссылки, определяет файл по расширению. Возвращает `WebNavigatorPage` со списком `WebNavigatorLink`
+- `SearchViewModel.kt` — fast path при `contentHints`: сразу в поиск без confirmation card; `runWebSearch(searchQuery, contentTypes)` — общая логика поиска; Web Navigator: `openWebNavigator/webNavigatorNavigateTo/webNavigatorBack/closeWebNavigator`
+- `WebNavigatorSheet.kt` — новый: ModalBottomSheet со стеком страниц. Хлебные крошки, список ссылок с иконками (файл=Download, страница=Language), тап по файлу=скачивание, тап по странице=навигация. Progress при загрузке.
+- `SearchScreen.kt` — кнопка "Обзор" (глобус) у OD-результатов → открывает Web Navigator с родительской директорией; интеграция `WebNavigatorSheet`
+- Новые строки: `web_browse`, `web_no_links`, `web_navigator_files`, `web_navigator_links`, `action_close` (EN + RU)
+
+**Проверить:**
+- Набери "книга война и мир" → должен перейти сразу к поиску (без confirmation card), найти PDF/EPUB/FB2 в Archive и LibGen
+- Набери "война и мир книга аудиокнига" → должен искать и книги, и аудиокниги одновременно
+- Набери "diana ankudinova mp3" → extension fast path, confirmation card (старое поведение)
+- В результатах OD нажми иконку глобуса → должен открыться Web Navigator с ссылками из директории
+- В Web Navigator тапни ссылку на файл → скачивание; тапни ссылку на страницу → переход с обновлением списка
+
+---
+
+### Batch 89 — Поиск: SearXNG + умные дорки + contentType в движках ⚠️ не проверено
+
+**Цель:** Улучшить качество поиска — "diana ankudinova mp3" давала только 1 результат из Архива. Проблемы: DDG HTML-скрапинг ненадёжен; дорк слабый; фильтр по ключевым словам отбрасывал файлы типа "01_Tishe.mp3" в папке "/diana_ankudinova/"; contentType не передавался в движки.
+
+**Что сделано:**
+- `OpenDirectorySearchUseCase.kt`:
+  - Добавлен `contentType` параметр
+  - Дорк строится умно: AUDIO → `intitle:"index of" (mp3|flac|ogg) "artist"`, VIDEO → `(mp4|mkv|avi)` и т.д.
+  - Добавлен **SearXNG** как основной движок (пробуем 3 публичных инстанса: searx.be, search.bus-hit.me, searx.tiekoetter.com) с DDG HTML как fallback
+  - Улучшен DDG fallback: 2 дорк-вариации + uddg= извлечение URL
+  - **Relaxed keyword filter**: если extension/contentType известен — не фильтруем по ключевым словам в именах файлов (папка найдена поисковиком специально для запроса → все mp3 в ней релевантны)
+  - Лимит директорий: 8 → 10
+- `InternetArchiveSearchUseCase.kt`:
+  - Добавлен `contentType` параметр
+  - Применяет `mediatype:audio/movies/texts` по contentType даже без явного расширения в запросе
+- `SearchViewModel.kt` — `confirmWebSearch()` передаёт `contentType` в `openDirectorySearch` и `archiveSearch`
+
+**Файлы:** `OpenDirectorySearchUseCase.kt`, `InternetArchiveSearchUseCase.kt`, `SearchViewModel.kt`
+
+---
+
+### Batch 88 — Поиск: confirmation card + прогресс-бар облака ⚠️ не проверено
+
+**Цель:**
+1. Глобальный поиск: после ввода запроса и нажатия "Поиск" — сначала определяем тип контента через DuckDuckGo, показываем карточку с резюме (заголовок, краткое описание) и кнопками "Да, искать" / "Нет". При подтверждении — запускаем поиск по трём источникам.
+2. Облачная загрузка: исправлена анимация прогресс-бара — раньше показывал статичные 0% на весь процесс. Теперь: animated indeterminate пока не пошли байты, потом плавное заполнение.
+
+**Что сделано:**
+- `IntentDetectorUseCase.kt` — возвращает `IntentDetectionResult` (contentType + heading + abstractText из DDG JSON); добавлен `extractField()` для парсинга JSON без зависимостей
+- `SearchViewModel.kt` — `WebSearchConfirmation` data class; `searchWeb()` теперь только определяет тип и показывает confirmation; `confirmWebSearch()` запускает реальный поиск; `dismissWebSearchConfirmation()` сбрасывает
+- `SearchScreen.kt` — `WebSearchConfirmationCard` composable: иконка типа + label + heading + abstractText + кнопки; вставлена в if/else chain InternetSearchTab
+- `ExplorerScreen.kt` — исправлено условие `isIndeterminate`: добавлен `isWaitingForBytes = filePercent==0 && speedBytesPerSec==0 && !isComplete` → bar анимируется пока байты не пошли
+- `YandexDiskProvider.kt` — добавлен `producerScope`; per-buffer progress внутри `writeTo()` (каждые 8 буферов = ~512KB) для плавного заполнения бара даже для маленьких файлов
+- `strings.xml` (EN + RU) — добавлены `web_confirm_yes/no` + `web_confirm_type_*`
+
+**Файлы:** `IntentDetectorUseCase.kt`, `SearchViewModel.kt`, `SearchScreen.kt`, `ExplorerScreen.kt`, `YandexDiskProvider.kt`, `strings.xml` (оба)
+
+---
+
+### Batch 87 — Breadcrumb "44 МБ / 567 МБ" + облако: скорость + FB2 ⚠️ не проверено
+
+**Цель:** (1) Показывать размер папки / общий размер раздела в breadcrumb. (2) Облако: скорость загрузки в прогресс-баре. (3) FB2 в облаке — эскиз в иконке.
+
+**Что сделано:**
+- `ExplorerUiState.kt` — `storageSizeCache: Map<String, Long>`
+- `ExplorerViewModel.kt` — `ensureStorageTotalCalculated()`, `getStorageTotalFor()`, `getVolumeRoot()`; `speedBytesPerSec = progress.speedBytesPerSec` в 3 местах upload
+- `ExplorerScreen.kt` — LaunchedEffect для вызова ensure..., передача storageTotalSize в FilePanel
+- `FilePanel.kt`, `BreadcrumbBar.kt` — параметр storageTotalSize, формат "X / Y"
+- `ThumbnailCache.kt` — temp файл теперь сохраняет расширение из cacheKey → FB2 detection работает
+
+**Файлы:** `ExplorerViewModel.kt`, `ExplorerScreen.kt`, `FilePanel.kt`, `BreadcrumbBar.kt`, `ThumbnailCache.kt`, `ExplorerUiState.kt`
+
+---
+
+### Batch 86 — Размер выделенных файлов в дивайдере ✅ проверено — Размер выделенных файлов в дивайдере ✅ проверено
 
 **Цель:** Показывать суммарный размер выделенных файлов прямо в дивайдере между панелями.
 
@@ -3021,6 +3152,17 @@ RU:
 - Поиск по содержимому: ищет текст внутри файлов (TXT, DOCX, ODT, PDF и др.)
 - При первом поиске по содержимому папка индексируется, повторный поиск — мгновенный
 - Автосброс при смене папки
+
+### Интернет-поиск ⚠️ не проверено
+- Поиск и скачивание файлов из интернета (второй таб в глобальном поиске)
+- Четыре источника: Open Directory, Internet Archive, Library Genesis, торренты (нулевая раздача)
+- Введи "книга", "музыка", "фильм" — поиск сразу по всем форматам этого типа
+- Введи несколько типов сразу: "книга аудиокнига" — ищет и книги, и аудиокниги
+- Автоопределение типа контента по ключевым словам (книга/музыка/фильм/видео/...)
+- Library Genesis — миллионы книг на всех языках: PDF, EPUB, FB2, DJVU
+- Тап на результат — скачивание в Downloads/Haron/
+- Долгий тап — копировать ссылку
+- Web Navigator: кнопка "Обзор" у найденных директорий → просматривай ссылки на странице, навигируй вглубь, тап на файл = скачивание ⚠️ не проверено
 
 ### Передача файлов
 - Wi-Fi Direct + обнаружение в сети (NSD)

@@ -10,4 +10,4 @@ data class WebSearchResult(
     val isMagnet: Boolean = false
 )
 
-enum class SearchSource { OPEN_DIRECTORY, TORRENT, INTERNET_ARCHIVE }
+enum class SearchSource { OPEN_DIRECTORY, TORRENT, INTERNET_ARCHIVE, LIBGEN }
