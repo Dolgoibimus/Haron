@@ -1,7 +1,7 @@
 package com.vamp.haron.data.db
 
 import android.content.Context
-import android.util.Log
+import com.vamp.core.logger.EcosystemLogger
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -98,9 +98,9 @@ abstract class HaronDatabase : RoomDatabase() {
                                 """.trimIndent()
                             )
 
-                            Log.d(TAG, "FTS4 tables created successfully")
+                            EcosystemLogger.d(TAG, "FTS4 tables created successfully")
                         } catch (e: Exception) {
-                            Log.w(TAG, "FTS not available, search will use LIKE fallback", e)
+                            EcosystemLogger.e(TAG, "FTS not available, search will use LIKE fallback: ${e.message}")
                         }
                     }
                 })

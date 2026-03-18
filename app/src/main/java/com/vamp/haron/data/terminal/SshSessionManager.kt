@@ -46,6 +46,8 @@ class SshSessionManager {
             sess.timeout = 15_000
             sess.connect(15_000)
 
+            EcosystemLogger.d(HaronConstants.TAG, "SshSessionManager: session established, auth method=password, serverVersion=${sess.serverVersion}")
+
             val ch = sess.openChannel("shell") as ChannelShell
             ch.setPtyType("xterm-256color", 120, 40, 0, 0)
 
@@ -55,7 +57,7 @@ class SshSessionManager {
 
             session = sess
             channel = ch
-            EcosystemLogger.d(HaronConstants.TAG, "SshSessionManager: connected to ${params.host}, shell channel opened")
+            EcosystemLogger.i(HaronConstants.TAG, "SshSessionManager: connected to ${params.host}:${params.port}, shell channel opened")
         } catch (e: Throwable) {
             EcosystemLogger.e(HaronConstants.TAG, "SshSessionManager: connect failed to ${params.host}: ${e.message}")
             throw e

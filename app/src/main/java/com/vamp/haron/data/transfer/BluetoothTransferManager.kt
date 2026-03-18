@@ -136,6 +136,7 @@ class BluetoothTransferManager @Inject constructor(
     ): Flow<TransferProgressInfo> = flow {
         val adapter = bluetoothAdapter ?: throw Exception("Bluetooth not available")
         adapter.cancelDiscovery()
+        EcosystemLogger.d(HaronConstants.TAG, "BT sendFiles: starting, device=$deviceAddress, files=${files.size}, totalSize=${files.sumOf { it.length() }}")
 
         val device = adapter.getRemoteDevice(deviceAddress)
         val socket = try {
@@ -143,7 +144,7 @@ class BluetoothTransferManager @Inject constructor(
             s.connect()
             s
         } catch (e: java.io.IOException) {
-            EcosystemLogger.w(HaronConstants.TAG, "Standard RFCOMM failed, trying fallback: ${e.message}")
+            EcosystemLogger.w(HaronConstants.TAG, "BT sendFiles: standard RFCOMM failed, trying fallback: ${e.message}")
             // Reflection fallback for Samsung/LG/Huawei devices
             try {
                 val method = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
@@ -151,6 +152,7 @@ class BluetoothTransferManager @Inject constructor(
                 fallback.connect()
                 fallback
             } catch (e2: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "BT sendFiles: fallback RFCOMM also failed: ${e2.message}")
                 throw java.io.IOException(
                     "Bluetooth connection failed. Make sure the target device has Haron in receive mode. (${e.message})",
                     e2
@@ -175,6 +177,7 @@ class BluetoothTransferManager @Inject constructor(
             val waitStart = System.currentTimeMillis()
             while (socket.inputStream.available() == 0) {
                 if (System.currentTimeMillis() - waitStart > 10_000) {
+                    EcosystemLogger.e(HaronConstants.TAG, "BT sendFiles: handshake timeout (10s), no response from receiver")
                     throw java.io.IOException(
                         "No response from receiver (timeout). Make sure the target device has Haron open in receive mode."
                     )
@@ -188,6 +191,7 @@ class BluetoothTransferManager @Inject constructor(
             val responseType = TransferProtocolNegotiator.parseType(response)
             if (responseType == TransferProtocolNegotiator.TYPE_DECLINE) {
                 val reason = TransferProtocolNegotiator.parseDecline(response)
+                EcosystemLogger.i(HaronConstants.TAG, "BT sendFiles: transfer declined by receiver, reason=$reason")
                 throw java.io.IOException("Transfer declined: $reason")
             }
 
@@ -195,6 +199,7 @@ class BluetoothTransferManager @Inject constructor(
 
             // Send files sequentially
             files.forEachIndexed { index, file ->
+                EcosystemLogger.d(HaronConstants.TAG, "BT sendFiles: sending file ${index + 1}/${files.size}: ${file.name} (${file.length()} bytes)")
                 val header = TransferProtocolNegotiator.buildFileHeader(file.name, file.length(), index)
                 output.writeUTF(header)
                 output.flush()
@@ -226,6 +231,10 @@ class BluetoothTransferManager @Inject constructor(
 
             output.writeUTF(TransferProtocolNegotiator.buildComplete())
             output.flush()
+
+            val totalTimeMs = System.currentTimeMillis() - startTime
+            val avgSpeed = if (totalTimeMs > 0) (totalBytes * 1000 / totalTimeMs) else 0
+            EcosystemLogger.i(HaronConstants.TAG, "BT sendFiles: complete, ${files.size} files, $totalBytes bytes in ${totalTimeMs}ms (avg ${avgSpeed} B/s)")
 
             emit(
                 TransferProgressInfo(
@@ -318,6 +327,7 @@ class BluetoothTransferManager @Inject constructor(
         val input = pendingBtInput ?: throw IllegalStateException("No pending BT input")
         pendingBtSocket = null
         pendingBtInput = null
+        EcosystemLogger.d(HaronConstants.TAG, "BT acceptBtTransfer: accepting ${files.size} files, totalSize=${files.sumOf { it.size }}")
 
         try {
             val output = PrintWriter(socket.outputStream, true)
@@ -374,6 +384,9 @@ class BluetoothTransferManager @Inject constructor(
                 fileIndex++
             }
 
+            val totalTimeMs = System.currentTimeMillis() - startTime
+            EcosystemLogger.i(HaronConstants.TAG, "BT acceptBtTransfer: complete, $fileIndex files received in ${totalTimeMs}ms")
+
             emit(
                 TransferProgressInfo(
                     bytesTransferred = totalBytes,
@@ -392,6 +405,7 @@ class BluetoothTransferManager @Inject constructor(
 
     fun declineBtTransfer(reason: String = "User declined") {
         val socket = pendingBtSocket ?: return
+        EcosystemLogger.d(HaronConstants.TAG, "BT declineBtTransfer: reason=$reason")
         pendingBtSocket = null
         pendingBtInput = null
         try {
@@ -403,6 +417,7 @@ class BluetoothTransferManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun stopListening() {
+        EcosystemLogger.d(HaronConstants.TAG, "BT stopListening: stopping RFCOMM server")
         btListening = false
         try {
             btServerSocket?.close()

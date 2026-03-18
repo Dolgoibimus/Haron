@@ -84,6 +84,7 @@ class GoogleCastManager @Inject constructor(
 
         override fun onSessionEnding(session: CastSession) {}
         override fun onSessionEnded(session: CastSession, error: Int) {
+            EcosystemLogger.i(HaronConstants.TAG, "Cast session ended: device=${session.castDevice?.friendlyName}, errorCode=$error")
             session.remoteMediaClient?.unregisterCallback(remoteMediaCallback)
             currentSession = null
             _isConnected.value = false
@@ -95,13 +96,16 @@ class GoogleCastManager @Inject constructor(
 
         override fun onSessionResuming(session: CastSession, sessionId: String) {}
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            EcosystemLogger.d(HaronConstants.TAG, "Cast session resumed: device=${session.castDevice?.friendlyName}, wasSuspended=$wasSuspended")
             currentSession = session
             _isConnected.value = true
             _connectedDeviceName.value = session.castDevice?.friendlyName
             session.remoteMediaClient?.registerCallback(remoteMediaCallback)
         }
 
-        override fun onSessionResumeFailed(session: CastSession, error: Int) {}
+        override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            EcosystemLogger.e(HaronConstants.TAG, "Cast session resume failed: errorCode=$error")
+        }
         override fun onSessionSuspended(session: CastSession, reason: Int) {}
     }
 
@@ -162,20 +166,26 @@ class GoogleCastManager @Inject constructor(
         val client = currentSession?.remoteMediaClient ?: return
         when (event) {
             is RemoteInputEvent.PlayPause -> {
+                val action = if (client.isPlaying) "pause" else "play"
+                EcosystemLogger.d(HaronConstants.TAG, "Cast sendRemoteInput: $action")
                 if (client.isPlaying) client.pause() else client.play()
             }
             is RemoteInputEvent.SeekTo -> {
+                EcosystemLogger.d(HaronConstants.TAG, "Cast sendRemoteInput: seekTo ${event.positionMs}ms")
                 client.seek(event.positionMs)
             }
             is RemoteInputEvent.VolumeChange -> {
                 val current = currentSession?.volume ?: 0.5
                 val newVolume = (current + event.delta).coerceIn(0.0, 1.0)
+                EcosystemLogger.d(HaronConstants.TAG, "Cast sendRemoteInput: volume ${current} -> $newVolume (delta=${event.delta})")
                 currentSession?.setVolume(newVolume)
             }
             is RemoteInputEvent.Next -> {
+                EcosystemLogger.d(HaronConstants.TAG, "Cast sendRemoteInput: next")
                 client.queueNext(null)
             }
             is RemoteInputEvent.Prev -> {
+                EcosystemLogger.d(HaronConstants.TAG, "Cast sendRemoteInput: prev")
                 client.queuePrev(null)
             }
             // TV remote events handled via WebSocket, not Cast SDK
@@ -250,6 +260,7 @@ class GoogleCastManager @Inject constructor(
     }
 
     fun disconnect() {
+        EcosystemLogger.d(HaronConstants.TAG, "Cast disconnect: ending session, device=${_connectedDeviceName.value}")
         sessionManager?.endCurrentSession(true)
         currentSession = null
         _isConnected.value = false

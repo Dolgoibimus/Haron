@@ -184,6 +184,7 @@ fun FilePanel(
     selectionDirCount: Int = 0,
     otherPanelSelectionCount: Int = 0,
     currentFolderSize: Long? = null,
+    storageTotalSize: Long = 0L,
     marqueeEnabled: Boolean = true,
     folderSizeCache: Map<String, Long> = emptyMap(),
     hasSelectionBar: Boolean = false,
@@ -946,6 +947,7 @@ fun FilePanel(
                     currentPath = state.currentPath,
                     safVolumeLabel = safVolumeLabel,
                     folderSize = currentFolderSize ?: state.files.filter { !it.isDirectory }.sumOf { it.size },
+                    storageTotalSize = storageTotalSize,
                     onSegmentClick = onBreadcrumbClick,
                     onSizeClick = onSizeClick,
                     cloudBreadcrumbs = state.cloudBreadcrumbs

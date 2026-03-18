@@ -14,7 +14,15 @@ class SaveAudioTagsUseCase @Inject constructor() {
         try {
             val file = File(path)
             val audioFile = AudioFileIO.read(file)
+            val format = audioFile.audioHeader?.format ?: "unknown"
+            val bitRate = audioFile.audioHeader?.bitRate ?: "?"
+            val sampleRate = audioFile.audioHeader?.sampleRate ?: "?"
+            EcosystemLogger.d(TAG, "File format: $format, bitRate=$bitRate, sampleRate=$sampleRate, path=$path")
+
             val tag = audioFile.tagOrCreateAndSetDefault
+            val existingTitle = try { tag.getFirst(FieldKey.TITLE) } catch (_: Exception) { "" }
+            val existingArtist = try { tag.getFirst(FieldKey.ARTIST) } catch (_: Exception) { "" }
+            EcosystemLogger.d(TAG, "Existing tags: title='$existingTitle', artist='$existingArtist'")
 
             setField(tag, FieldKey.TITLE, tags.title)
             setField(tag, FieldKey.ARTIST, tags.artist)

@@ -99,6 +99,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -796,7 +798,8 @@ class ExplorerViewModel @Inject constructor(
                                 updateProgress(OperationProgress(
                                     idx + 1, total, entry.name, OperationType.UPLOAD,
                                     filePercent = overallPercent.coerceIn(0, 100),
-                                    id = progressId
+                                    id = progressId,
+                                    speedBytesPerSec = progress.speedBytesPerSec
                                 ))
                             }
                     }
@@ -936,6 +939,9 @@ class ExplorerViewModel @Inject constructor(
     /** Navigation jobs per panel — cancel previous before starting new */
     private val navigationJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
 
+    /** Live folder size refresh job — runs during active file operations */
+    private var liveSizeRefreshJob: kotlinx.coroutines.Job? = null
+
     fun onScrollPositionChanged(panelId: PanelId, index: Int) {
         panelScrollIndex[panelId] = index
     }
@@ -1052,6 +1058,16 @@ class ExplorerViewModel @Inject constructor(
                     _uiState.update { it.copy(operationProgress = null) }
                 }
             }
+        }
+
+        // Real-time folder size refresh during file operations
+        viewModelScope.launch {
+            _uiState
+                .map { it.operationProgress?.isComplete != true && it.operationProgress != null }
+                .distinctUntilChanged()
+                .collect { isActive ->
+                    if (isActive) startLiveFolderSizeRefresh() else stopLiveFolderSizeRefresh()
+                }
         }
 
         // Network discovery — find Haron instances and SMB shares
@@ -2668,7 +2684,13 @@ class ExplorerViewModel @Inject constructor(
                 val resolution = decisions[path] ?: ConflictResolution.RENAME
                 fileRepository.copyFilesWithResolutions(
                     listOf(path), destinationDir, mapOf(path to resolution)
-                ).onSuccess { c -> completed += c }
+                ).onSuccess { c ->
+                    completed += c
+                    if (c > 0) {
+                        val size = selected.firstOrNull { it.path == path }?.size ?: 0L
+                        if (size > 0) adjustFolderSizeCache(destinationDir, +size)
+                    }
+                }
             }
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
@@ -2767,6 +2789,7 @@ class ExplorerViewModel @Inject constructor(
         val selected = sourcePanel.files.filter { it.path in paths.toSet() }
         val dirs = selected.count { it.isDirectory }
         val files = selected.size - dirs
+        val sourceDir = sourcePanel.currentPath
         clearSelection(activeId)
 
         viewModelScope.launch {
@@ -2783,7 +2806,16 @@ class ExplorerViewModel @Inject constructor(
                 val resolution = decisions[path] ?: ConflictResolution.RENAME
                 fileRepository.moveFilesWithResolutions(
                     listOf(path), destinationDir, mapOf(path to resolution)
-                ).onSuccess { c -> completed += c }
+                ).onSuccess { c ->
+                    completed += c
+                    if (c > 0) {
+                        val size = selected.firstOrNull { it.path == path }?.size ?: 0L
+                        if (size > 0) {
+                            adjustFolderSizeCache(destinationDir, +size)
+                            adjustFolderSizeCache(sourceDir, -size)
+                        }
+                    }
+                }
             }
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.MOVE, isComplete = true))
@@ -4173,12 +4205,21 @@ class ExplorerViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(operationProgress = OperationProgress(index, total, fileName, OperationType.MOVE))
                 }
+                val srcDir = java.io.File(path).parent ?: ""
                 fileRepository.moveFilesWithResolutions(
                     listOf(path), destinationDir, mapOf(path to resolution)
-                ).onSuccess { c -> completed += c }
-                    .onFailure { e ->
-                        EcosystemLogger.e(HaronConstants.TAG, "DnD move error: $fileName: ${e.message}")
+                ).onSuccess { c ->
+                    completed += c
+                    if (c > 0) {
+                        val size = getFileSizeForDelta(path)
+                        if (size > 0) {
+                            adjustFolderSizeCache(destinationDir, +size)
+                            adjustFolderSizeCache(srcDir, -size)
+                        }
                     }
+                }.onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD move error: $fileName: ${e.message}")
+                }
             }
 
             _uiState.update {
@@ -4234,9 +4275,14 @@ class ExplorerViewModel @Inject constructor(
                 }
                 fileRepository.copyFilesWithResolutions(
                     listOf(path), destinationDir, mapOf(path to resolution)
-                ).onSuccess { c -> completed += c }
-                    .onFailure { e ->
-                        EcosystemLogger.e(HaronConstants.TAG, "DnD copy error: $fileName: ${e.message}")
+                ).onSuccess { c ->
+                    completed += c
+                    if (c > 0) {
+                        val size = getFileSizeForDelta(path)
+                        if (size > 0) adjustFolderSizeCache(destinationDir, +size)
+                    }
+                }.onFailure { e ->
+                    EcosystemLogger.e(HaronConstants.TAG, "DnD copy error: $fileName: ${e.message}")
                     }
             }
 
@@ -4487,7 +4533,8 @@ class ExplorerViewModel @Inject constructor(
                                 updateProgress(OperationProgress(
                                     idx + 1, total, fileName, OperationType.UPLOAD,
                                     filePercent = overallPercent.coerceIn(0, 100),
-                                    id = progressId
+                                    id = progressId,
+                                    speedBytesPerSec = progress.speedBytesPerSec
                                 ))
                             }
                     }
@@ -4605,7 +4652,8 @@ class ExplorerViewModel @Inject constructor(
                                 updateProgress(OperationProgress(
                                     idx + 1, total, uploadName, OperationType.UPLOAD,
                                     filePercent = overallPercent.coerceIn(0, 100),
-                                    id = progressId
+                                    id = progressId,
+                                    speedBytesPerSec = progress.speedBytesPerSec
                                 ))
                             }
                     }
@@ -6440,6 +6488,88 @@ class ExplorerViewModel @Inject constructor(
         folderSizeJobs.values.forEach { it.cancel() }
         folderSizeJobs.clear()
         _uiState.update { it.copy(folderSizeCache = emptyMap()) }
+    }
+
+    /** Returns the storage volume root for a given path, or null for cloud/FTP/SAF. */
+    private fun getVolumeRoot(path: String): String? = when {
+        path.startsWith("/storage/emulated/0") -> "/storage/emulated/0"
+        path.startsWith("/storage/") -> path.split("/").take(3).joinToString("/")
+        path == HaronConstants.ROOT_PATH -> HaronConstants.ROOT_PATH
+        else -> null
+    }
+
+    /** Calculates total capacity of the storage volume for the given path (cached per volume root). */
+    fun ensureStorageTotalCalculated(path: String) {
+        val volumeRoot = getVolumeRoot(path) ?: return
+        if (_uiState.value.storageSizeCache.containsKey(volumeRoot)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val totalBytes = try {
+                if (volumeRoot == "/storage/emulated/0") {
+                    val ssm = appContext.getSystemService(android.content.Context.STORAGE_STATS_SERVICE)
+                            as android.app.usage.StorageStatsManager
+                    ssm.getTotalBytes(android.os.storage.StorageManager.UUID_DEFAULT)
+                } else {
+                    android.os.StatFs(volumeRoot).totalBytes
+                }
+            } catch (_: Exception) {
+                try { android.os.StatFs(volumeRoot).totalBytes } catch (_: Exception) { 0L }
+            }
+            if (totalBytes > 0) {
+                _uiState.update { it.copy(storageSizeCache = it.storageSizeCache + (volumeRoot to totalBytes)) }
+                EcosystemLogger.d(HaronConstants.TAG, "ensureStorageTotalCalculated: $volumeRoot = ${totalBytes / 1024 / 1024} MB")
+            }
+        }
+    }
+
+    /** Returns total storage size for the given path, or 0 if unknown/cloud. */
+    fun getStorageTotalFor(path: String): Long {
+        val volumeRoot = getVolumeRoot(path) ?: return 0L
+        return _uiState.value.storageSizeCache[volumeRoot] ?: 0L
+    }
+
+    /** Instantly adjust cached folder size by delta (e.g. +size on copy, -size on delete/move). */
+    private fun adjustFolderSizeCache(path: String, delta: Long) {
+        if (delta == 0L || path.isEmpty() || path.contains("://")) return
+        _uiState.update { state ->
+            val current = state.folderSizeCache[path] ?: return@update state
+            state.copy(folderSizeCache = state.folderSizeCache + (path to maxOf(0L, current + delta)))
+        }
+    }
+
+    /** Get file size from currently loaded panel files by path. */
+    private fun getFileSizeForDelta(path: String): Long {
+        val state = _uiState.value
+        return (state.topPanel.files + state.bottomPanel.files)
+            .firstOrNull { it.path == path }?.size ?: 0L
+    }
+
+    private fun startLiveFolderSizeRefresh() {
+        liveSizeRefreshJob?.cancel()
+        liveSizeRefreshJob = viewModelScope.launch {
+            while (true) {
+                delay(2000)
+                val state = _uiState.value
+                listOf(state.topPanel.currentPath, state.bottomPanel.currentPath)
+                    .filter { path ->
+                        path.isNotEmpty() &&
+                        !path.startsWith("content://") &&
+                        !isRestrictedAndroidDir(path) &&
+                        !path.contains("://") // skip cloud/ftp/virtual paths
+                    }
+                    .distinct()
+                    .forEach { path ->
+                        // Don't clear cache before recalc — avoids 0B flicker
+                        if (!folderSizeJobs.containsKey(path)) calculateFolderSize(path)
+                    }
+            }
+        }
+        EcosystemLogger.d(HaronConstants.TAG, "startLiveFolderSizeRefresh: started")
+    }
+
+    private fun stopLiveFolderSizeRefresh() {
+        liveSizeRefreshJob?.cancel()
+        liveSizeRefreshJob = null
+        EcosystemLogger.d(HaronConstants.TAG, "stopLiveFolderSizeRefresh: stopped")
     }
 
     // --- Bookmarks ---

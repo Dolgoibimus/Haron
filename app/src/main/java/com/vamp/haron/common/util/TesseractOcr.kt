@@ -3,7 +3,7 @@ package com.vamp.haron.common.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
+import com.vamp.core.logger.EcosystemLogger
 import com.googlecode.tesseract.android.TessBaseAPI
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -29,9 +29,9 @@ class TesseractOcr @Inject constructor(
         try {
             copyTrainedData()
             initialized = true
-            Log.d(TAG, "Tessdata copied, ready")
+            EcosystemLogger.d(TAG, "Tessdata copied, ready")
         } catch (e: Exception) {
-            Log.w(TAG, "Init failed", e)
+            EcosystemLogger.e(TAG, "Init failed: ${e.message}")
         }
     }
 
@@ -50,9 +50,9 @@ class TesseractOcr @Inject constructor(
                         input.copyTo(output)
                     }
                 }
-                Log.d(TAG, "Copied $fileName (${outFile.length()} bytes)")
+                EcosystemLogger.d(TAG, "Copied $fileName (${outFile.length()} bytes)")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to copy $fileName", e)
+                EcosystemLogger.e(TAG, "Failed to copy $fileName: ${e.message}")
             }
         }
     }
@@ -77,7 +77,7 @@ class TesseractOcr @Inject constructor(
         val api = TessBaseAPI()
         return try {
             if (!api.init(dataPath, "eng+rus")) {
-                Log.w(TAG, "TessBaseAPI.init failed")
+                EcosystemLogger.e(TAG, "TessBaseAPI.init failed")
                 return ""
             }
             api.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
@@ -85,7 +85,7 @@ class TesseractOcr @Inject constructor(
             val text = api.utF8Text ?: ""
             text.trim()
         } catch (e: Exception) {
-            Log.w(TAG, "Recognition failed: ${e.message}")
+            EcosystemLogger.e(TAG, "Recognition failed: ${e.message}")
             ""
         } finally {
             api.recycle()

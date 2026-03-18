@@ -42,6 +42,7 @@ data class ExplorerUiState(
     val bookmarks: Map<Int, String> = emptyMap(),
     val folderSizeCache: Map<String, Long> = emptyMap(),
     val folderSizeCalculating: Boolean = false,
+    val storageSizeCache: Map<String, Long> = emptyMap(), // volume root → total bytes
     val tagDefinitions: List<FileTag> = emptyList(),
     val fileTags: Map<String, List<String>> = emptyMap(),
     val activeTagFilter: String? = null,

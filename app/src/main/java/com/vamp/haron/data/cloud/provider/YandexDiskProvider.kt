@@ -316,6 +316,7 @@ class YandexDiskProvider(
     }
 
     override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = channelFlow {
+        val producerScope = this
         withContext(Dispatchers.IO) {
             try {
                 val file = File(localPath)
@@ -395,12 +396,23 @@ class YandexDiskProvider(
                                         raf.seek(offset)
                                         val buffer = ByteArray(65536)
                                         var remaining = chunkLen
+                                        var writtenInChunk = 0L
+                                        var bufferCount = 0
                                         while (remaining > 0) {
                                             val toRead = minOf(buffer.size.toLong(), remaining).toInt()
                                             val read = raf.read(buffer, 0, toRead)
                                             if (read <= 0) break
                                             sink.write(buffer, 0, read)
                                             remaining -= read
+                                            writtenInChunk += read
+                                            bufferCount++
+                                            // Emit progress every 8 buffers (~512KB) for smooth bar
+                                            if (bufferCount % 8 == 0) {
+                                                val totalSent = offset + writtenInChunk
+                                                val elapsed = System.currentTimeMillis() - startTime
+                                                val speed = if (elapsed > 500) totalSent * 1000 / elapsed else 0L
+                                                producerScope.trySend(CloudTransferProgress(fileName, totalSent, totalSize, speedBytesPerSec = speed))
+                                            }
                                         }
                                     }
                                 }

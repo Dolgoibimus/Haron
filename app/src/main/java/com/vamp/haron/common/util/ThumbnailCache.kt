@@ -14,6 +14,8 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Base64
 import android.util.LruCache
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,6 +58,7 @@ object ThumbnailCache {
             }
             val responseCode = connection.responseCode
             if (responseCode != 200) {
+                EcosystemLogger.d(HaronConstants.TAG, "ThumbnailCache: loadFromUrl failed, responseCode=$responseCode, key=$cacheKey")
                 connection.disconnect()
                 return@withContext null
             }
@@ -75,7 +78,8 @@ object ThumbnailCache {
                 ?: return@withContext null
             cache.put(cacheKey, bitmap)
             bitmap
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ThumbnailCache: loadFromUrl error, key=$cacheKey: ${e.message}")
             null
         }
     }
@@ -89,7 +93,16 @@ object ThumbnailCache {
         type: String
     ): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(cacheKey)?.let { return@withContext it }
-        val tempFile = File(context.cacheDir, "cloud_thumb_${cacheKey.hashCode().toUInt().toString(16)}")
+        // Preserve original extension so loadDocumentThumbnail/loadFb2* can detect file type
+        val fileName = cacheKey.substringAfterLast('/')
+        val fileExt = when {
+            fileName.lowercase().endsWith(".fb2.zip") -> ".fb2.zip"
+            else -> {
+                val e = fileName.substringAfterLast('.', "").lowercase()
+                if (e.isNotEmpty() && e.length <= 10 && e.all { c -> c.isLetterOrDigit() }) ".$e" else ""
+            }
+        }
+        val tempFile = File(context.cacheDir, "cloud_thumb_${cacheKey.hashCode().toUInt().toString(16)}$fileExt")
         try {
             val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
             connection.connectTimeout = 10_000
@@ -110,7 +123,8 @@ object ThumbnailCache {
             val bitmap = loadThumbnail(context, tempFile.absolutePath, false, type)
             bitmap?.let { cache.put(cacheKey, it) }
             bitmap
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ThumbnailCache: loadCloudThumbnail error, key=$cacheKey, type=$type: ${e.message}")
             null
         } finally {
             tempFile.delete()
@@ -139,7 +153,8 @@ object ThumbnailCache {
                 type == "apk" -> loadApkThumbnail(context, path, isContentUri)
                 else -> null
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ThumbnailCache: loadThumbnail error, type=$type, path=${path.substringAfterLast('/')}: ${e.message}")
             null
         }
 

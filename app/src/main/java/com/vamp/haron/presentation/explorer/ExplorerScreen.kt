@@ -289,6 +289,13 @@ fun ExplorerScreen(
         viewModel.executeGestureAction(action)
     }
 
+    LaunchedEffect(state.topPanel.currentPath) {
+        viewModel.ensureStorageTotalCalculated(state.topPanel.currentPath)
+    }
+    LaunchedEffect(state.bottomPanel.currentPath) {
+        viewModel.ensureStorageTotalCalculated(state.bottomPanel.currentPath)
+    }
+
     // Reload gesture mappings when returning from Settings
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -592,6 +599,7 @@ fun ExplorerScreen(
                 otherPanelSelectionCount = state.bottomPanel.selectedPaths.size,
                 selectionDirCount = topSelectionDirCount,
                 currentFolderSize = state.folderSizeCache[state.topPanel.currentPath],
+                storageTotalSize = viewModel.getStorageTotalFor(state.topPanel.currentPath),
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.topPanel.currentPath),
@@ -761,6 +769,7 @@ fun ExplorerScreen(
                 otherPanelSelectionCount = state.topPanel.selectedPaths.size,
                 selectionDirCount = bottomSelectionDirCount,
                 currentFolderSize = state.folderSizeCache[state.bottomPanel.currentPath],
+                storageTotalSize = viewModel.getStorageTotalFor(state.bottomPanel.currentPath),
                 marqueeEnabled = state.marqueeEnabled,
                 folderSizeCache = state.folderSizeCache,
                 hasSelectionBar = hasSelection && !isDragging,
@@ -1009,7 +1018,10 @@ fun ExplorerScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        val isIndeterminate = p.current == 0 && p.total > 0 && !hasFilePercent
+                        // Indeterminate when: (1) classic start state — current=0, no filePercent
+                        // (2) cloud upload waiting for first bytes — filePercent=0, speed=0 (no chunk done yet)
+                        val isWaitingForBytes = p.filePercent == 0 && p.speedBytesPerSec == 0L && !p.isComplete
+                        val isIndeterminate = isWaitingForBytes || (p.current == 0 && p.total > 0 && !hasFilePercent)
                         val barProgress = if (hasFilePercent) {
                             p.filePercent / 100f
                         } else {

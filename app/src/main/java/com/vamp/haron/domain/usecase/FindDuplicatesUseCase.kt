@@ -43,6 +43,9 @@ class FindDuplicatesUseCase @Inject constructor(
 ) {
 
     operator fun invoke(rootPath: String = HaronConstants.ROOT_PATH): Flow<DuplicateScanProgress> = flow {
+        val scanStartTime = System.currentTimeMillis()
+        EcosystemLogger.i(HaronConstants.TAG, "FindDuplicates: scan started, rootPath=$rootPath")
+
         // Phase 1: Group files by size
         val sizeMap = mutableMapOf<Long, MutableList<File>>()
         var scanned = 0
@@ -71,6 +74,7 @@ class FindDuplicatesUseCase @Inject constructor(
         // Filter only sizes with 2+ files
         val candidates = sizeMap.filter { it.value.size >= 2 }
         val totalToHash = candidates.values.sumOf { it.size }
+        EcosystemLogger.d(HaronConstants.TAG, "FindDuplicates: phase 1 complete, scanned=$scanned files, candidates=$totalToHash files in ${candidates.size} size groups")
 
         emit(DuplicateScanProgress(phase = 1, scannedFiles = scanned, totalFiles = scanned, currentFolder = appContext.getString(R.string.found_candidates_format, totalToHash), isComplete = false))
 
@@ -118,6 +122,11 @@ class FindDuplicatesUseCase @Inject constructor(
                 )
             }
             .sortedByDescending { it.wastedSpace }
+
+        val scanDurationMs = System.currentTimeMillis() - scanStartTime
+        val totalWasted = groups.sumOf { it.wastedSpace }
+        EcosystemLogger.i(HaronConstants.TAG, "FindDuplicates: scan complete in ${scanDurationMs}ms, " +
+                "${groups.size} duplicate groups found, totalWastedSpace=${totalWasted / 1024}KB")
 
         emit(DuplicateScanProgress(
             phase = 2,

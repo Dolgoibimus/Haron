@@ -26,6 +26,7 @@ fun BreadcrumbBar(
     currentPath: String = "",
     safVolumeLabel: String = "",
     folderSize: Long = 0L,
+    storageTotalSize: Long = 0L,
     onSegmentClick: (String) -> Unit = {},
     onSizeClick: () -> Unit = {},
     cloudBreadcrumbs: List<Pair<String, String>> = emptyList(),
@@ -185,7 +186,10 @@ fun BreadcrumbBar(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            text = folderSize.toFileSize(),
+            text = if (storageTotalSize > 0 && folderSize > 0)
+                "${folderSize.toFileSize()} / ${storageTotalSize.toFileSize()}"
+            else
+                folderSize.toFileSize(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             maxLines = 1,
