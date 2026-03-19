@@ -42,7 +42,7 @@
 
 # Background Operations
 - All file operations (copy, move, delete, archive, extract) run in Foreground Service- Operations survive app swipe-kill — continue in background- Notification with progress and cancel button
-- Progress bar at bottom of screen — visible on app return
+- Progress bar at bottom of screen — auto-collapses to thin line, tap to expand
 - Per-file progress for folder operations (copy, move, delete) [NEW]
 - Transfer speed display in all progress bars (except delete) [NEW]
 - Cancel button stops operation immediately [NEW]
@@ -346,12 +346,12 @@
 - Clickable breadcrumbs for cloud folder navigation
 - Folder item count displayed for cloud directories
 - Quick Preview for cloud images with high-res thumbnails
-- Cloud gallery: fullscreen viewing with swipe between photos
+- Cloud gallery: tap image — fullscreen viewing without download, swipe between photos
 - Video and audio streaming from cloud (plays instantly, no full download)
 - Open and edit text files from cloud
 - Save edited files back to cloud, to local storage, or both
-- Download cloud files to local storage
-- Upload local files to cloud (files up to 500MB+)
+- Download cloud files and folders to local storage (recursive with structure preserved)
+- Upload local files and folders to cloud (recursive with structure preserved)
 - Reliable upload: 8-10MB chunks with automatic retry on network failure
 - Rename files and folders in cloud
 - Delete files from cloud (including from Quick Preview)
