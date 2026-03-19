@@ -217,14 +217,25 @@
 - Transcode caching — instant replay of previously transcoded files
 - Automatic audio fallback for unsupported codecs (AC3/DTS)
 
-# Bluetooth HID Remote- Touchpad mode: move cursor on TV, tap, long press, scroll- Virtual keyboard: type text on TV screen (Latin + Cyrillic)- Connect to paired Bluetooth devices
+# Bluetooth HID Remote
+- Touchpad mode: move cursor on TV, tap, long press, scroll
+- Virtual keyboard: type text on TV screen (Latin + Cyrillic)
+- Connect to paired Bluetooth devices
 # Network & SMB
 - Auto-discover devices on LAN
 - SMB browser with dual-panel mode
 - Upload/download with progress
 - Saved connections (encrypted)
 
-# FTP Client & Server- Connect to remote FTP servers- Browse, download, upload files with progress- Dual-panel: FTP files on top, local files on bottom- FTPS (TLS) support- Saved FTP connections (encrypted credentials)- Built-in FTP server: share phone files to PC- Anonymous or password-protected access- Read-only mode option
+# FTP Client & Server
+- Connect to remote FTP servers
+- Browse, download, upload files with progress
+- Dual-panel: FTP files on top, local files on bottom
+- FTPS (TLS) support
+- Saved FTP connections (encrypted credentials)
+- Built-in FTP server: share phone files to PC
+- Anonymous or password-protected access
+- Read-only mode option
 # Quick Send
 - Long tap file → device circles → drag to send
 - Trusted devices auto-accept

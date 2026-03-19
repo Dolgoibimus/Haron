@@ -1297,6 +1297,7 @@
     <string name="cloud_transferring">Передача…</string>
     <string name="cloud_download_complete">Скачано: %d файлов</string>
     <string name="cloud_upload_complete">Загружено: %d файлов</string>
+    <string name="cloud_upload_empty_folder">Выбранные папки не содержат файлов</string>
     <string name="cloud_delete_confirm">Удалить \"%s\" из облака?</string>
     <string name="cloud_create_folder">Создать папку</string>
     <string name="cloud_error_list">Не удалось загрузить список: %s</string>

@@ -9,6 +9,12 @@ import org.apache.ftpserver.ftplet.FtpletResult
 
 class HaronFtplet : DefaultFtplet() {
 
+    override fun onConnect(session: FtpSession): FtpletResult {
+        val addr = session.clientAddress?.toString() ?: "?"
+        EcosystemLogger.i(HaronConstants.TAG, "FTP: connect from $addr")
+        return FtpletResult.DEFAULT
+    }
+
     override fun onLogin(session: FtpSession, request: FtpRequest): FtpletResult {
         val user = session.user?.name ?: "unknown"
         val addr = session.clientAddress?.toString() ?: "?"

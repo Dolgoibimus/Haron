@@ -15,6 +15,7 @@ import org.apache.ftpserver.usermanager.impl.BaseUser
 import org.apache.ftpserver.usermanager.impl.WritePermission
 import org.apache.ftpserver.usermanager.impl.ConcurrentLoginPermission
 import org.apache.ftpserver.usermanager.impl.TransferRatePermission
+import org.apache.ftpserver.ConnectionConfigFactory
 import org.apache.ftpserver.DataConnectionConfigurationFactory
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,10 +46,22 @@ class FtpServerManager @Inject constructor(
 
         val serverFactory = FtpServerFactory()
 
+        // Connection config
+        val connConfigFactory = ConnectionConfigFactory()
+        connConfigFactory.isAnonymousLoginEnabled = config.anonymousAccess
+        connConfigFactory.maxLogins = 20
+        connConfigFactory.maxAnonymousLogins = 20
+        connConfigFactory.maxLoginFailures = 5
+        connConfigFactory.loginFailureDelay = 0
+        serverFactory.connectionConfig = connConfigFactory.createConnectionConfig()
+
         // Configure listener
         val listenerFactory = ListenerFactory()
+        listenerFactory.isImplicitSsl = false
+        listenerFactory.serverAddress = "0.0.0.0"
         val dataConnFactory = DataConnectionConfigurationFactory()
         dataConnFactory.passivePorts = "${HaronConstants.FTP_PASSIVE_PORT_START}-${HaronConstants.FTP_PASSIVE_PORT_END}"
+        dataConnFactory.isPassiveIpCheck = false
         listenerFactory.dataConnectionConfiguration = dataConnFactory.createDataConnectionConfiguration()
 
         // Try ports
@@ -81,8 +94,16 @@ class FtpServerManager @Inject constructor(
                     val retryFactory = FtpServerFactory()
                     val retryListenerFactory = ListenerFactory()
                     retryListenerFactory.port = port
+                    retryListenerFactory.isImplicitSsl = false
+                    retryListenerFactory.serverAddress = "0.0.0.0"
+                    val retryConnConfig = ConnectionConfigFactory()
+                    retryConnConfig.isAnonymousLoginEnabled = config.anonymousAccess
+                    retryConnConfig.maxLogins = 20
+                    retryConnConfig.maxAnonymousLogins = 20
+                    retryFactory.connectionConfig = retryConnConfig.createConnectionConfig()
                     val retryDataConnFactory = DataConnectionConfigurationFactory()
                     retryDataConnFactory.passivePorts = "${HaronConstants.FTP_PASSIVE_PORT_START}-${HaronConstants.FTP_PASSIVE_PORT_END}"
+                    retryDataConnFactory.isPassiveIpCheck = false
                     retryListenerFactory.dataConnectionConfiguration = retryDataConnFactory.createDataConnectionConfiguration()
                     retryFactory.addListener("default", retryListenerFactory.createListener())
                     setupUsers(retryFactory, config)

@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -940,12 +942,15 @@ fun ExplorerScreen(
         }
 
         // File operation progress bar (supports multiple concurrent operations)
+        // Auto-collapsed by default, user can expand manually
         val progressList = state.operationProgressList.ifEmpty {
-            // backward compat: if only legacy field is set
             listOfNotNull(state.operationProgress)
         }
         val primaryProgress = progressList.firstOrNull()
         val secondaryList = progressList.drop(1)
+        var progressExpanded by remember { mutableStateOf(false) }
+        // Auto-collapse when new operation starts
+        LaunchedEffect(primaryProgress?.id) { progressExpanded = false }
         AnimatedVisibility(
             visible = primaryProgress != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -955,111 +960,184 @@ fun ExplorerScreen(
                 .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
         ) {
             primaryProgress?.let { p ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        // Secondary operations — compact lines above primary
-                        secondaryList.forEach { s ->
-                            val sTypeLabel = stringResource(s.type.labelRes)
-                            val sName = if (s.currentFileName.isNotEmpty()) "$sTypeLabel: ${s.currentFileName}" else sTypeLabel
-                            val sCounter = if (s.total > 1) "(${s.current}/${s.total})" else ""
-                            val sPercent = if (s.filePercent in 0..100) "${s.filePercent}%" else ""
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = sName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (sCounter.isNotEmpty()) {
-                                    Text(
-                                        text = sCounter,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(start = 6.dp)
-                                    )
-                                }
-                                if (sPercent.isNotEmpty()) {
-                                    Text(
-                                        text = sPercent,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(start = 6.dp)
-                                    )
-                                }
-                            }
-                        }
-                        // Primary operation — full progress bar
-                        val typeLabel = stringResource(p.type.labelRes)
-                        val hasFilePercent = p.filePercent in 0..100
-                        val nameText = when {
-                            p.currentFileName.isNotEmpty() -> "$typeLabel: ${p.currentFileName}"
-                            p.current == 0 && p.currentFileName.isEmpty() ->
-                                stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
-                            else -> typeLabel
-                        }
-                        Text(
-                            text = nameText,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        // Indeterminate when: (1) classic start state — current=0, no filePercent
-                        // (2) cloud upload waiting for first bytes — filePercent=0, speed=0 (no chunk done yet)
-                        val isWaitingForBytes = p.filePercent == 0 && p.speedBytesPerSec == 0L && !p.isComplete
-                        val isIndeterminate = isWaitingForBytes || (p.current == 0 && p.total > 0 && !hasFilePercent)
-                        val barProgress = if (hasFilePercent) {
-                            p.filePercent / 100f
-                        } else {
-                            if (p.total > 0) p.current.toFloat() / p.total else 0f
-                        }
+                val hasFilePercent = p.filePercent in 0..100
+                val isWaitingForBytes = p.filePercent == 0 && p.speedBytesPerSec == 0L && !p.isComplete
+                val isIndeterminate = isWaitingForBytes || (p.current == 0 && p.total > 0 && !hasFilePercent)
+                val barProgress = if (hasFilePercent) {
+                    p.filePercent / 100f
+                } else {
+                    if (p.total > 0) p.current.toFloat() / p.total else 0f
+                }
+                val speedText = if (p.speedBytesPerSec > 0) "${p.speedBytesPerSec.toFileSize()}/s" else ""
+                val counterText = if (p.total > 1) "${p.current}/${p.total}" else ""
+                val percentText = if (!isIndeterminate && (hasFilePercent || p.total > 0)) "${(barProgress * 100).toInt()}%" else ""
+
+                if (!progressExpanded) {
+                    // --- Collapsed: thin line with progress info ---
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f))
+                            .clickable { progressExpanded = true }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Thin progress indicator
                         if (isIndeterminate) {
                             LinearProgressIndicator(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
+                                    .weight(1f)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
                             )
                         } else {
                             LinearProgressIndicator(
                                 progress = { barProgress },
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
+                                    .weight(1f)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
                             )
                         }
-                        ProgressInfoRow(
-                            speed = if (p.speedBytesPerSec > 0) "${p.speedBytesPerSec.toFileSize()}/s" else "",
-                            counter = if (p.total > 1) "${p.current}/${p.total}" else "",
-                            percent = if (!isIndeterminate && (hasFilePercent || p.total > 0)) "${(barProgress * 100).toInt()}%" else ""
-                        )
+                        if (speedText.isNotEmpty()) {
+                            Text(
+                                text = speedText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                        if (counterText.isNotEmpty()) {
+                            Text(
+                                text = counterText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
+                        if (percentText.isNotEmpty()) {
+                            Text(
+                                text = percentText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { viewModel.cancelFileOperation() },
-                        modifier = Modifier.size(36.dp)
+                } else {
+                    // --- Expanded: full progress bar ---
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.cancel),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            // Secondary operations — compact lines above primary
+                            secondaryList.forEach { s ->
+                                val sTypeLabel = stringResource(s.type.labelRes)
+                                val sName = if (s.currentFileName.isNotEmpty()) "$sTypeLabel: ${s.currentFileName}" else sTypeLabel
+                                val sCounter = if (s.total > 1) "(${s.current}/${s.total})" else ""
+                                val sPercent = if (s.filePercent in 0..100) "${s.filePercent}%" else ""
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = sName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (sCounter.isNotEmpty()) {
+                                        Text(
+                                            text = sCounter,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 6.dp)
+                                        )
+                                    }
+                                    if (sPercent.isNotEmpty()) {
+                                        Text(
+                                            text = sPercent,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(start = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            // Primary operation — full details
+                            val typeLabel = stringResource(p.type.labelRes)
+                            val nameText = when {
+                                p.currentFileName.isNotEmpty() -> "$typeLabel: ${p.currentFileName}"
+                                p.current == 0 && p.currentFileName.isEmpty() ->
+                                    stringResource(R.string.file_operation_progress_format, typeLabel, p.total)
+                                else -> typeLabel
+                            }
+                            Text(
+                                text = nameText,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (isIndeterminate) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    progress = { barProgress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                )
+                            }
+                            ProgressInfoRow(
+                                speed = speedText,
+                                counter = counterText,
+                                percent = percentText
+                            )
+                        }
+                        Column {
+                            // Collapse button
+                            IconButton(
+                                onClick = { progressExpanded = false },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.ExpandMore,
+                                    contentDescription = stringResource(R.string.collapse),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            // Cancel button
+                            IconButton(
+                                onClick = { viewModel.cancelFileOperation() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.cancel),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }

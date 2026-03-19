@@ -191,15 +191,16 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun openCloudAuth() {
-        // Start HTTP server for Google OAuth loopback callback
+        // Start HTTP server for Google OAuth loopback callback, wait for it before opening browser
         viewModelScope.launch {
             if (!httpFileServer.isRunning()) {
                 httpFileServer.start(emptyList())
             }
             CloudOAuthHelper.setGdriveLoopbackPort(httpFileServer.actualPort)
             EcosystemLogger.d(HaronConstants.TAG, "openCloudAuth: server running on port ${httpFileServer.actualPort}")
+            // Only open browser after server is ready
+            _navigationEvent.tryEmit(NavigationEvent.OpenCloudAuth)
         }
-        _navigationEvent.tryEmit(NavigationEvent.OpenCloudAuth)
     }
 
     fun navigateToCloud(accountId: String) {
@@ -235,6 +236,66 @@ class ExplorerViewModel @Inject constructor(
 
     /** Mutex to serialize cloud uploads — parallel PUTs cause Yandex to reset ALL connections */
     private val cloudUploadMutex = Mutex()
+
+    private data class CloudDownloadItem(
+        val accountId: String,
+        val cloudFileId: String,
+        val localPath: String,
+        val name: String,
+        val size: Long
+    )
+
+    /**
+     * Ensure cloud folder path exists, creating intermediate folders as needed.
+     * E.g. relDir="MyFolder/sub1/sub2" → create MyFolder, then sub1 inside it, then sub2.
+     * Uses [createdFolders] cache to avoid re-creating existing folders.
+     * Returns the cloud path/ID of the deepest folder.
+     */
+    private suspend fun ensureCloudFolderPath(
+        accountId: String,
+        rootCloudDir: String,
+        relDir: String,
+        createdFolders: MutableMap<String, String>
+    ): String {
+        if (relDir.isEmpty() || relDir == "") return rootCloudDir
+        // Check cache first
+        createdFolders[relDir]?.let { return it }
+
+        // Build path segment by segment
+        val segments = relDir.split("/").filter { it.isNotEmpty() }
+        var currentCloudDir = rootCloudDir
+        var currentRelPath = ""
+        for (segment in segments) {
+            currentRelPath = if (currentRelPath.isEmpty()) segment else "$currentRelPath/$segment"
+            val cached = createdFolders[currentRelPath]
+            if (cached != null) {
+                currentCloudDir = cached
+                continue
+            }
+            // Create folder in cloud
+            val result = cloudManager.createFolder(accountId, currentCloudDir, segment)
+            result.onSuccess { entry ->
+                // Extract the cloud path/ID from the created entry
+                val createdPath = entry.path
+                createdFolders[currentRelPath] = createdPath
+                currentCloudDir = createdPath
+                EcosystemLogger.d(HaronConstants.TAG, "ensureCloudFolderPath: created '$segment' -> $createdPath")
+            }.onFailure { e ->
+                // Folder might already exist — try listing to find it
+                EcosystemLogger.d(HaronConstants.TAG, "ensureCloudFolderPath: createFolder failed for '$segment': ${e.message}, trying to find existing")
+                val listResult = cloudManager.listFiles(accountId, currentCloudDir)
+                val existing = listResult.getOrNull()?.find { it.isDirectory && it.name.equals(segment, ignoreCase = true) }
+                if (existing != null) {
+                    createdFolders[currentRelPath] = existing.path
+                    currentCloudDir = existing.path
+                    EcosystemLogger.d(HaronConstants.TAG, "ensureCloudFolderPath: found existing '$segment' -> ${existing.path}")
+                } else {
+                    throw RuntimeException("Failed to create cloud folder '$segment': ${e.message}")
+                }
+            }
+        }
+        return currentCloudDir
+    }
 
     /** Start a cloud transfer and track it. Returns transfer ID. */
     private fun launchCloudTransfer(
@@ -380,6 +441,26 @@ class ExplorerViewModel @Inject constructor(
     /**
      * Download a cloud file to cache, then open with appropriate viewer.
      */
+    /**
+     * Open cloud image in gallery — uses thumbnailUrl for direct loading without download.
+     * Falls back to cache download if no URL available.
+     */
+    private fun cloudOpenGallery(panelId: PanelId, entry: FileEntry) {
+        val panel = getPanel(panelId)
+        val imageFiles = panel.files.filter { !it.isDirectory && it.iconRes() == "image" }
+        GalleryHolder.items = imageFiles.map { f ->
+            GalleryHolder.GalleryItem(
+                filePath = f.path,
+                fileName = f.name,
+                fileSize = f.size,
+                imageUrl = f.thumbnailUrl
+            )
+        }
+        val startIndex = imageFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
+        GalleryHolder.startIndex = startIndex
+        _navigationEvent.tryEmit(NavigationEvent.OpenGallery(startIndex))
+    }
+
     fun cloudDownloadAndOpen(entry: FileEntry) {
         val parsed = cloudManager.parseCloudUri(entry.path) ?: return
         val (provider, cloudFileId) = parsed
@@ -691,47 +772,85 @@ class ExplorerViewModel @Inject constructor(
         }
 
         clearSelection(activeId)
-        val total = selected.size
-        val totalBytes = selected.sumOf { it.size }
-        var completedBytes = 0L
 
         val progressId = nextProgressId()
         launchCloudJob {
-            updateProgress(OperationProgress(0, total, "", OperationType.DOWNLOAD, id = progressId))
+            // Flatten: expand cloud directories recursively into file list
+            // Each item: (accountId, cloudFileId, localDestPath, fileSize)
+            val filesToDownload = mutableListOf<CloudDownloadItem>()
 
+            suspend fun collectFiles(entries: List<FileEntry>, localDir: String) {
+                for (entry in entries) {
+                    val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
+                    if (entry.isDirectory) {
+                        // Create local directory
+                        val subDir = File(localDir, entry.name)
+                        subDir.mkdirs()
+                        // List cloud folder contents and recurse
+                        cloudManager.listFiles(parsed.accountId, parsed.path).onSuccess { children ->
+                            collectFiles(children.map { it.toFileEntry() }, subDir.absolutePath)
+                        }.onFailure { e ->
+                            EcosystemLogger.e(HaronConstants.TAG, "Cloud download: failed to list folder ${entry.name}: ${e.message}")
+                        }
+                    } else {
+                        filesToDownload.add(CloudDownloadItem(
+                            parsed.accountId, parsed.path,
+                            File(localDir, entry.name).absolutePath,
+                            entry.name, entry.size
+                        ))
+                    }
+                }
+            }
+
+            updateProgress(OperationProgress(0, selected.size, "", OperationType.DOWNLOAD, id = progressId))
+            collectFiles(selected, targetDir)
+            // Refresh target panel immediately so folders appear
+            refreshPanel(targetId)
+
+            if (filesToDownload.isEmpty()) {
+                updateProgress(OperationProgress(0, 0, "", OperationType.DOWNLOAD, isComplete = true, id = progressId))
+                _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, 0))
+                delay(2000)
+                removeProgress(progressId)
+                return@launchCloudJob
+            }
+
+            val total = filesToDownload.size
+            val totalBytes = filesToDownload.sumOf { it.size }
+            var completedBytes = 0L
             var downloaded = 0
-            for ((idx, entry) in selected.withIndex()) {
-                val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
-                val (provider, cloudFileId) = parsed
-                val localFile = File(targetDir, entry.name)
 
+            for ((idx, item) in filesToDownload.withIndex()) {
                 updateProgress(OperationProgress(
-                    idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                    idx + 1, total, item.name, OperationType.DOWNLOAD,
                     filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
                     id = progressId
                 ))
 
                 try {
-                    cloudManager.downloadFile(parsed.accountId, cloudFileId, localFile.absolutePath)
+                    cloudManager.downloadFile(item.accountId, item.cloudFileId, item.localPath)
                         .collect { progress ->
                             val overallPercent = if (totalBytes > 0) {
                                 ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                             } else 0
                             updateProgress(OperationProgress(
-                                idx + 1, total, entry.name, OperationType.DOWNLOAD,
+                                idx + 1, total, item.name, OperationType.DOWNLOAD,
                                 filePercent = overallPercent.coerceIn(0, 100),
-                                id = progressId
+                                id = progressId,
+                                speedBytesPerSec = progress.speedBytesPerSec
                             ))
                         }
-                    completedBytes += entry.size
+                    completedBytes += item.size
                     downloaded++
-                    refreshPanel(targetId)
+                    // Refresh so file appears immediately
+                    if (downloaded % 3 == 0 || downloaded == 1) refreshPanel(targetId)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    completedBytes += entry.size
-                    EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${entry.name}: ${e.message}")
+                    completedBytes += item.size
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${item.name}: ${e.message}")
                 }
             }
+            refreshPanel(targetId)
             updateProgress(OperationProgress(
                 downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId
             ))
@@ -743,7 +862,8 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /**
-     * Upload selected local files to the cloud panel's current directory.
+     * Upload selected local files and folders to the cloud panel's current directory.
+     * Folders are uploaded recursively — structure is preserved in cloud.
      */
     fun cloudUploadFromLocal() {
         val state = _uiState.value
@@ -751,9 +871,9 @@ class ExplorerViewModel @Inject constructor(
         val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val sourcePanel = getPanel(activeId)
         val targetPanel = getPanel(targetId)
-        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths && !it.isDirectory }
+        val selected = sourcePanel.files.filter { it.path in sourcePanel.selectedPaths }
         if (selected.isEmpty()) {
-            EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: no files selected, aborting")
+            EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: no items selected, aborting")
             return
         }
 
@@ -764,55 +884,92 @@ class ExplorerViewModel @Inject constructor(
             return
         }
         val (provider, cloudDir) = parsed
-        EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: provider=$provider, cloudDir=$cloudDir, files=${selected.size}, names=${selected.map { it.name }}")
+
+        // Collect all files recursively (flatten directories)
+        val filesToUpload = mutableListOf<Pair<File, String>>() // localFile, relative cloud dir
+        for (entry in selected) {
+            val file = File(entry.path)
+            if (!file.exists()) continue
+            if (file.isDirectory) {
+                // Walk directory tree
+                file.walkTopDown().forEach { f ->
+                    if (f.isFile) {
+                        // Relative path inside the selected folder: "folderName/sub/file.txt"
+                        val relDir = f.parentFile?.toRelativeString(file.parentFile!!)?.replace('\\', '/') ?: ""
+                        filesToUpload.add(f to relDir)
+                    }
+                }
+            } else {
+                filesToUpload.add(file to "")
+            }
+        }
+        if (filesToUpload.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: no files found after expanding directories")
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_empty_folder))
+            return
+        }
+
+        EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: provider=$provider, cloudDir=$cloudDir, totalFiles=${filesToUpload.size}")
 
         clearSelection(activeId)
-        val total = selected.size
-        val totalBytes = selected.sumOf { it.size }
+        val total = filesToUpload.size
+        val totalBytes = filesToUpload.sumOf { it.first.length() }
         var completedBytes = 0L
-        EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: totalBytes=$totalBytes (${totalBytes / 1024}KB)")
 
         val progressId = nextProgressId()
         launchCloudJob {
             updateProgress(OperationProgress(0, total, "", OperationType.UPLOAD, id = progressId))
 
+            // Cache of created cloud folders: relativeDirPath -> cloudFolderId/path
+            val createdFolders = mutableMapOf<String, String>()
+            createdFolders[""] = cloudDir // root = current cloud dir
+
             var uploaded = 0
-            for ((idx, entry) in selected.withIndex()) {
-                EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: uploading [${idx + 1}/$total] ${entry.name} (${entry.size / 1024}KB) to $cloudDir")
+            for ((idx, pair) in filesToUpload.withIndex()) {
+                val (localFile, relDir) = pair
+                EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${localFile.name} relDir=$relDir")
                 updateProgress(OperationProgress(
-                    idx + 1, total, entry.name, OperationType.UPLOAD,
+                    idx + 1, total, localFile.name, OperationType.UPLOAD,
                     filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
                     id = progressId
                 ))
 
                 try {
+                    // Ensure cloud folder structure exists
+                    val prevFolderCount = createdFolders.size
+                    val targetCloudDir = ensureCloudFolderPath(parsed.accountId, cloudDir, relDir, createdFolders)
+                    // Refresh cloud panel if new folders were created
+                    if (createdFolders.size > prevFolderCount) refreshPanel(targetId)
+
                     cloudUploadMutex.withLock {
-                        cloudManager.uploadFile(parsed.accountId, entry.path, cloudDir, entry.name)
+                        cloudManager.uploadFile(parsed.accountId, localFile.absolutePath, targetCloudDir, localFile.name)
                             .collect { progress ->
                                 if (progress.error != null) {
-                                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${entry.name}: ${progress.error}")
+                                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: progress error for ${localFile.name}: ${progress.error}")
                                 }
                                 val overallPercent = if (totalBytes > 0) {
                                     ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
                                 } else 0
                                 updateProgress(OperationProgress(
-                                    idx + 1, total, entry.name, OperationType.UPLOAD,
+                                    idx + 1, total, localFile.name, OperationType.UPLOAD,
                                     filePercent = overallPercent.coerceIn(0, 100),
                                     id = progressId,
                                     speedBytesPerSec = progress.speedBytesPerSec
                                 ))
                             }
                     }
-                    completedBytes += entry.size
+                    completedBytes += localFile.length()
                     uploaded++
-                    EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${entry.name} uploaded OK, completedBytes=$completedBytes")
-                    refreshPanel(targetId)
+                    // Refresh cloud panel so files appear progressively
+                    if (uploaded % 3 == 0 || uploaded == 1) refreshPanel(targetId)
+                    EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${localFile.name} uploaded OK")
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    completedBytes += entry.size
-                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${entry.name} FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                    completedBytes += localFile.length()
+                    EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${localFile.name} FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 }
             }
+            refreshPanel(targetId)
             EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: DONE, uploaded $uploaded/$total files")
             updateProgress(OperationProgress(
                 uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId
@@ -1846,6 +2003,11 @@ class ExplorerViewModel @Inject constructor(
         } else if (isCloudPath(entry.path)) {
             val type = entry.iconRes()
             val nameLc = entry.name.lowercase()
+            // Cloud images — open gallery (download to cache, then open with swipe)
+            if (type == "image") {
+                cloudOpenGallery(panelId, entry)
+                return
+            }
             // Cloud media — stream without full download
             if (type in listOf("video", "audio")) {
                 cloudStreamAndPlay(entry)
@@ -4497,25 +4659,39 @@ class ExplorerViewModel @Inject constructor(
         val (provider, cloudDir) = destParsed
         EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: provider=$provider, cloudDir=$cloudDir")
 
-        // Pre-filter valid files and calculate total bytes
-        val validFiles = paths.mapNotNull { path ->
+        // Collect all files recursively (flatten directories)
+        val filesToUpload = mutableListOf<Pair<File, String>>() // localFile, relative dir
+        for (path in paths) {
             val file = File(path)
-            if (file.exists() && !file.isDirectory) file else null
+            if (!file.exists()) continue
+            if (file.isDirectory) {
+                file.walkTopDown().forEach { f ->
+                    if (f.isFile) {
+                        val relDir = f.parentFile?.toRelativeString(file.parentFile!!)?.replace('\\', '/') ?: ""
+                        filesToUpload.add(f to relDir)
+                    }
+                }
+            } else {
+                filesToUpload.add(file to "")
+            }
         }
-        val totalBytes = validFiles.sumOf { it.length() }
+        val totalBytes = filesToUpload.sumOf { it.first.length() }
         var completedBytes = 0L
 
         val progressId = nextProgressId()
         launchCloudJob {
-            val total = validFiles.size
+            val total = filesToUpload.size
             EcosystemLogger.d(HaronConstants.TAG, "executeDragCloudUpload: launching upload of $total files, totalBytes=$totalBytes")
+
+            val createdFolders = mutableMapOf<String, String>()
+            createdFolders[""] = cloudDir
 
             updateProgress(OperationProgress(0, total, "", OperationType.UPLOAD, id = progressId))
 
             var uploaded = 0
-            for ((idx, file) in validFiles.withIndex()) {
+            for ((idx, pair) in filesToUpload.withIndex()) {
+                val (file, relDir) = pair
                 val fileName = file.name
-                val fileSize = file.length()
 
                 updateProgress(OperationProgress(
                     idx + 1, total, fileName, OperationType.UPLOAD,
@@ -4524,8 +4700,9 @@ class ExplorerViewModel @Inject constructor(
                 ))
 
                 try {
+                    val targetCloudDir = ensureCloudFolderPath(destParsed.accountId, cloudDir, relDir, createdFolders)
                     cloudUploadMutex.withLock {
-                        cloudManager.uploadFile(destParsed.accountId, file.absolutePath, cloudDir, fileName)
+                        cloudManager.uploadFile(destParsed.accountId, file.absolutePath, targetCloudDir, fileName)
                             .collect { progress ->
                                 val overallPercent = if (totalBytes > 0) {
                                     ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
@@ -4538,15 +4715,15 @@ class ExplorerViewModel @Inject constructor(
                                 ))
                             }
                     }
-                    completedBytes += fileSize
+                    completedBytes += file.length()
                     uploaded++
-                    refreshPanel(targetPanelId)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    completedBytes += fileSize
+                    completedBytes += file.length()
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload failed: $fileName: ${e.message}")
                 }
             }
+            refreshPanel(targetPanelId)
 
             updateProgress(OperationProgress(
                 uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId

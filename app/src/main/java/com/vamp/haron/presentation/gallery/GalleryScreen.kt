@@ -167,6 +167,7 @@ fun GalleryScreen(
             val item = items[page]
             ZoomableImagePage(
                 filePath = item.filePath,
+                imageUrl = item.imageUrl,
                 onTap = { controlsVisible = !controlsVisible },
                 onZoomChanged = { zoomed -> isZoomed = zoomed }
             )
@@ -272,6 +273,7 @@ fun GalleryScreen(
 @Composable
 private fun ZoomableImagePage(
     filePath: String,
+    imageUrl: String? = null,
     onTap: () -> Unit,
     onZoomChanged: (Boolean) -> Unit = {}
 ) {
@@ -281,61 +283,84 @@ private fun ZoomableImagePage(
     var isLoading by remember(filePath) { mutableStateOf(true) }
     val context = LocalContext.current
 
-    // Load image
-    LaunchedEffect(filePath) {
+    // Load image — from URL if available, otherwise from local file
+    LaunchedEffect(filePath, imageUrl) {
         isLoading = true
         withContext(Dispatchers.IO) {
             try {
-                val isContentUri = filePath.startsWith("content://")
+                if (imageUrl != null) {
+                    // Cloud image — load from URL
+                    val url = java.net.URL(imageUrl)
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 30_000
+                    conn.connect()
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    conn.disconnect()
 
-                // Decode bounds
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                if (isContentUri) {
-                    context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
-                        BitmapFactory.decodeStream(it, null, options)
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    val sampleSize = calculateSampleSize(options.outWidth, options.outHeight, MAX_IMAGE_DIMENSION)
+                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts)
+                    if (bmp != null) {
+                        imageWidth = bmp.width
+                        imageHeight = bmp.height
+                        bitmap = bmp
                     }
                 } else {
-                    BitmapFactory.decodeFile(filePath, options)
-                }
+                    // Local file
+                    val isContentUri = filePath.startsWith("content://")
 
-                val rawW = options.outWidth
-                val rawH = options.outHeight
-
-                // Calculate sample size for large images
-                val sampleSize = calculateSampleSize(rawW, rawH, MAX_IMAGE_DIMENSION)
-                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-
-                var bmp = if (isContentUri) {
-                    context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
-                        BitmapFactory.decodeStream(it, null, decodeOpts)
-                    }
-                } else {
-                    BitmapFactory.decodeFile(filePath, decodeOpts)
-                }
-
-                // Apply EXIF rotation
-                if (bmp != null) {
-                    val orientation = try {
-                        val exif = if (isContentUri) {
-                            context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
-                                ExifInterface(it)
-                            }
-                        } else {
-                            ExifInterface(filePath)
+                    // Decode bounds
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    if (isContentUri) {
+                        context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
+                            BitmapFactory.decodeStream(it, null, options)
                         }
-                        exif?.getAttributeInt(
-                            ExifInterface.TAG_ORIENTATION,
-                            ExifInterface.ORIENTATION_NORMAL
-                        ) ?: ExifInterface.ORIENTATION_NORMAL
+                    } else {
+                        BitmapFactory.decodeFile(filePath, options)
+                    }
+
+                    val rawW = options.outWidth
+                    val rawH = options.outHeight
+
+                    // Calculate sample size for large images
+                    val sampleSize = calculateSampleSize(rawW, rawH, MAX_IMAGE_DIMENSION)
+                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+
+                    var bmp = if (isContentUri) {
+                        context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
+                            BitmapFactory.decodeStream(it, null, decodeOpts)
+                        }
+                    } else {
+                        BitmapFactory.decodeFile(filePath, decodeOpts)
+                    }
+
+                    // Apply EXIF rotation
+                    if (bmp != null) {
+                        val orientation = try {
+                            val exif = if (isContentUri) {
+                                context.contentResolver.openInputStream(Uri.parse(filePath))?.use {
+                                    ExifInterface(it)
+                                }
+                            } else {
+                                ExifInterface(filePath)
+                            }
+                            exif?.getAttributeInt(
+                                ExifInterface.TAG_ORIENTATION,
+                                ExifInterface.ORIENTATION_NORMAL
+                            ) ?: ExifInterface.ORIENTATION_NORMAL
                     } catch (_: Exception) {
                         ExifInterface.ORIENTATION_NORMAL
                     }
 
-                    bmp = applyExifRotation(bmp, orientation)
-                    imageWidth = bmp.width
-                    imageHeight = bmp.height
-                    bitmap = bmp
-                }
+                        bmp = applyExifRotation(bmp, orientation)
+                        imageWidth = bmp.width
+                        imageHeight = bmp.height
+                        bitmap = bmp
+                    }
+                } // end local file
             } catch (_: Exception) {
                 bitmap = null
             }

@@ -1299,6 +1299,7 @@
     <string name="cloud_transferring">Transferring…</string>
     <string name="cloud_download_complete">Downloaded: %d files</string>
     <string name="cloud_upload_complete">Uploaded: %d files</string>
+    <string name="cloud_upload_empty_folder">Selected folders contain no files</string>
     <string name="cloud_delete_confirm">Delete \"%s\" from cloud?</string>
     <string name="cloud_create_folder">Create folder</string>
     <string name="cloud_error_list">Failed to list files: %s</string>
