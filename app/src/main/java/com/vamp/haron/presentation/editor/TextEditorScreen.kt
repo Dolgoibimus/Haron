@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.draw.clipToBounds
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,7 +83,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import com.vamp.haron.R
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.SearchNavigationHolder
@@ -114,6 +120,7 @@ fun TextEditorScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val highlightQuery = remember { SearchNavigationHolder.highlightQuery }
+    val isDarkTheme = isSystemInDarkTheme()
 
     var isEditMode by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -519,18 +526,7 @@ fun TextEditorScreen(
                         }
                     } else {
                         IconButton(onClick = {
-                            if (rawText.length > MAX_EDIT_SIZE) {
-                                // Large file → use Sora Editor
-                                useSoraEditor.value = true
-                            } else {
-                                // Small file → BasicTextField
-                                useSoraEditor.value = false
-                                textFieldValue = TextFieldValue(
-                                    rawText,
-                                    TextRange(savedCursorPos.coerceIn(0, rawText.length))
-                                )
-                                editModeInitialized = true
-                            }
+                            useSoraEditor.value = true
                             isEditMode = true
                         }) {
                             Icon(
@@ -538,6 +534,48 @@ fun TextEditorScreen(
                                 contentDescription = stringResource(R.string.edit),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
+                        }
+                    }
+                    // Theme picker button
+                    var showThemePicker by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showThemePicker = true }) {
+                            Icon(
+                                Icons.Filled.Palette,
+                                contentDescription = stringResource(R.string.editor_theme),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showThemePicker,
+                            onDismissRequest = { showThemePicker = false }
+                        ) {
+                            SyntaxHighlightHelper.themes.forEach { theme ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = theme.displayName,
+                                            color = if (theme.id == SyntaxHighlightHelper.currentThemeId)
+                                                MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (theme.isDark) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showThemePicker = false
+                                        soraEditorRef?.let { editor ->
+                                            SyntaxHighlightHelper.switchTheme(editor, theme.id)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -595,8 +633,12 @@ fun TextEditorScreen(
                         }
                     }
 
-                    if (isEditMode && useSoraEditor.value) {
-                        // === EDIT MODE (large file): Sora Editor via AndroidView ===
+                    val usesSora = isEditMode && useSoraEditor.value
+                    // Always use Sora for view mode (syntax highlighting + line numbers)
+                    val useSoraReadOnly = !isEditMode
+
+                    if (usesSora || useSoraReadOnly) {
+                        // === Sora Editor (edit mode or read-only view with syntax highlighting) ===
                         val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
                         val bgColor = MaterialTheme.colorScheme.surface.toArgb()
                         val cursorColor = MaterialTheme.colorScheme.primary.toArgb()
@@ -636,11 +678,11 @@ fun TextEditorScreen(
                                     typefaceText = Typeface.MONOSPACE
                                     setTextSize(fontSizeSp)
                                     setWordwrap(true)
-                                    isLineNumberEnabled = false
+                                    isLineNumberEnabled = true
                                     isScalable = true
-                                    // Remove left divider line
+                                    isEditable = isEditMode
                                     setDividerWidth(0f)
-                                    // Colors
+                                    // Plain colors first (fast), TextMate applied async after
                                     val scheme = EditorColorScheme()
                                     scheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, bgColor)
                                     scheme.setColor(EditorColorScheme.TEXT_NORMAL, textColor)
@@ -690,8 +732,21 @@ fun TextEditorScreen(
                                     )
                                 }
                             },
+                            update = { editor ->
+                                editor.isEditable = isEditMode
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
+                        // Apply syntax highlighting async (after editor is created)
+                        LaunchedEffect(soraEditorRef) {
+                            val editor = soraEditorRef ?: return@LaunchedEffect
+                            withContext(Dispatchers.Default) {
+                                SyntaxHighlightHelper.init(context)
+                                SyntaxHighlightHelper.prepareLanguage(fileName)
+                            }
+                            // Apply on main thread (Sora API requires it)
+                            SyntaxHighlightHelper.applyPrepared(editor, isDarkTheme)
+                        }
                         } // end Box
                     } else if (isEditMode) {
                         // === EDIT MODE (small file): BasicTextField with verticalScroll ===
@@ -1127,11 +1182,12 @@ fun TextEditorScreen(
                             rawText = savedText
                             textLines = splitTextToChunks(savedText)
                             totalLineCount = savedText.count { it == '\n' } + 1
-                            if (!useSoraEditor.value) {
-                                textFieldValue = TextFieldValue(savedText, TextRange(textFieldValue.selection.start.coerceIn(0, savedText.length)))
+                            // Reload original text in Sora (don't release — still used in read-only view)
+                            soraEditorRef?.setText(savedText)
+                            soraEditorRef?.let {
+                                soraCanUndo = it.canUndo()
+                                soraCanRedo = it.canRedo()
                             }
-                            soraEditorRef?.release()
-                            soraEditorRef = null
                         }) {
                             Text(stringResource(R.string.dont_save))
                         }

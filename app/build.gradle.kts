@@ -64,8 +64,9 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -175,9 +176,13 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-39")
     implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-39")
 
-    // Sora Editor (large file editing — renders only visible lines, handles MB-sized files)
+    // Core library desugaring (Java 11+ API on older Android)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // Sora Editor (code editor with syntax highlighting)
     implementation(platform("io.github.Rosemoe.sora-editor:bom:0.23.6"))
     implementation("io.github.Rosemoe.sora-editor:editor")
+    implementation("io.github.Rosemoe.sora-editor:language-textmate")
 
     // Diff utils (file comparison)
     implementation("io.github.java-diff-utils:java-diff-utils:4.12")
