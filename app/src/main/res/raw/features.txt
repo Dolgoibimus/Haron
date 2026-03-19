@@ -78,6 +78,7 @@
 - Seekbar + ±10s rewind
 - Position saved between sessions
 - Video: fullscreen, immersive mode
+- Hardware video acceleration (MediaCodec) — smooth playback of large MKV files (7GB+) [NEW]
 
 # Internal Gallery
 - Fullscreen image viewing
