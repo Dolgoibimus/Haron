@@ -111,12 +111,15 @@
 - Smart detection: if archive has single root folder — extract as-is without dialog
 - Quick extract from file list: select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract- Tap pulsing icon → choose destination: next to archive / current panel / other panel- Each archive extracts into a subfolder with the archive name (auto-created)- Works with single or multiple archives at once- "1 to 1" archiving: select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
 # Text Editor
-- View and edit TXT/MD files
+- View and edit text and code files
+- Syntax highlighting for 30+ languages (Kotlin, Java, Python, JS, HTML, CSS, JSON, XML, SQL, C/C++, Go, Rust, etc.) [NEW]
+- 11 color themes: Darcula, Dracula, Monokai, Nord, One Dark Pro, GitHub Dark/Light, Tokyo Night, Solarized Dark/Light, Quiet Light [NEW]
+- Theme picker in editor toolbar (palette icon) [NEW]
+- Line numbers [NEW]
 - View mode (default) and edit mode
 - Undo/Redo (up to 50 steps)
 - Save dialog on exit with unsaved changes
 - Cursor position saved between sessions
-- Large files (600KB+) open in Sora Editor without freezes
 # File Properties
 - Name, path, size, date, MIME-type, permissions
 - Recursive folder size calculation
