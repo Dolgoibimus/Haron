@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -122,6 +124,7 @@ fun MediaPlayerScreen(
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_ALL) }
     var tapFeedback by remember { mutableStateOf<TapZone?>(null) }
     var tapCounter by remember { mutableStateOf(0) }
+    var vlcAttached by remember { mutableStateOf(false) }
     var showSystemBarsTemporarily by remember { mutableStateOf(false) }
     var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
     var wasDetached by remember { mutableStateOf(false) }
@@ -140,10 +143,8 @@ fun MediaPlayerScreen(
         future.addListener({
             val ctrl = future.get()
             controller = ctrl
-            // Initialize playlist in adapter
+            // Setup callbacks (playlist will be set after VLC attachViews)
             val adapter = PlaybackService.instance?.getAdapter()
-            adapter?.setPlaylist(PlaylistHolder.items, startIndex)
-            // Clear stale ReadingPositionManager when track finishes
             adapter?.onTrackFinished = { filePath ->
                 ReadingPositionManager.saveAsync(filePath, 0, 0L)
             }
@@ -171,7 +172,7 @@ fun MediaPlayerScreen(
                 val d = adapter.getCurrentDurationMs()
                 if (d > 0) duration = d else if (adapterIndex != currentIndex) duration = 0
             }
-            delay(100)
+            delay(250)
         }
     }
 
@@ -263,7 +264,9 @@ fun MediaPlayerScreen(
                 Lifecycle.Event.ON_START -> {
                     if (wasDetached) {
                         videoLayoutRef?.let { layout ->
-                            PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                            if (layout.width > 0 && layout.height > 0) {
+                                PlaybackService.instance?.getVlcPlayer()?.attachViews(layout, null, false, false)
+                            }
                         }
                         wasDetached = false
                     }
@@ -311,9 +314,29 @@ fun MediaPlayerScreen(
         onBack()
     }
 
-    // Attach VLC to surface when both layout and service are ready
+    // Attach VLC to surface when layout size is STABLE and service is ready
+    // Without this, MediaCodec.configure fails (height=0) or BLASTBufferQueue rejects buffers
     LaunchedEffect(videoLayoutRef) {
         val layout = videoLayoutRef ?: return@LaunchedEffect
+        // Wait for non-zero size
+        while (isActive && (layout.width == 0 || layout.height == 0)) {
+            delay(50)
+        }
+        // Wait for size to stabilize (immersive mode, system bars hiding)
+        var lastW = layout.width
+        var lastH = layout.height
+        var stableCount = 0
+        while (isActive && stableCount < 3) {
+            delay(100)
+            if (layout.width == lastW && layout.height == lastH) {
+                stableCount++
+            } else {
+                lastW = layout.width
+                lastH = layout.height
+                stableCount = 0
+            }
+        }
+        // Wait for VLC service
         while (isActive) {
             val vlcPlayer = PlaybackService.instance?.getVlcPlayer()
             if (vlcPlayer != null) {
@@ -323,6 +346,10 @@ fun MediaPlayerScreen(
                     vlcPlayer.detachViews()
                     vlcPlayer.attachViews(layout, null, false, false)
                 }
+                com.vamp.core.logger.EcosystemLogger.d(com.vamp.haron.common.constants.HaronConstants.TAG, "VLC attachViews: layout=${layout.width}x${layout.height} (stable)")
+                vlcAttached = true
+                // Now safe to start playback — surface is ready
+                PlaybackService.instance?.getAdapter()?.setPlaylist(PlaylistHolder.items, startIndex)
                 break
             }
             delay(50)

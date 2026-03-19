@@ -39,6 +39,7 @@ class VlcPlayerAdapter(
     private var durationMs: Long = 0L
     private var _repeatMode: Int = Player.REPEAT_MODE_ALL
     private var _isTransitioning: Boolean = false
+    private var lastInvalidateTime: Long = 0L
 
     init {
         EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: initialized")
@@ -62,7 +63,12 @@ class VlcPlayerAdapter(
                 VlcMediaPlayer.Event.TimeChanged -> {
                     if (!_isTransitioning) {
                         positionMs = vlcPlayer.time.coerceAtLeast(0)
-                        invalidateState()
+                        // Throttle state updates to reduce main thread pressure
+                        val now = System.currentTimeMillis()
+                        if (now - lastInvalidateTime > 500) {
+                            lastInvalidateTime = now
+                            invalidateState()
+                        }
                     }
                 }
                 VlcMediaPlayer.Event.LengthChanged -> {
@@ -130,11 +136,7 @@ class VlcPlayerAdapter(
             else -> Uri.fromFile(java.io.File(item.filePath))
         }
         val media = Media(libVlc, uri)
-        media.setHWDecoderEnabled(true, false)
-        media.addOption(":no-mediacodec-dr")
-        media.addOption(":no-avcodec-hurry-up")
-        media.addOption(":avcodec-workaround-bugs=5")
-        media.addOption(":no-avcodec-dr")
+        media.setHWDecoderEnabled(true, true)
         vlcPlayer.media = media
         media.release()
 
