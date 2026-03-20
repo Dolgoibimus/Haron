@@ -1634,6 +1634,7 @@ RU:
 - [ ] Машина времени (версии текстовых файлов)
 - [ ] Переименование по содержимому (ML Kit предлагает имя для фото)
 - [ ] Мониторинг мусора в реальном времени (WorkManager, уведомление)
+- [ ] Терминал 2.0: persistent shell + PTY + три таба + Claude AI
 - [ ] Монтажный стол (FFmpeg: обрезка, склейка видео, таймлайн)
 - [ ] Чистильщик мессенджеров (Telegram/WhatsApp кэш и медиа)
 - [ ] Root-режим (опциональный): chmod, /data, системные папки
@@ -1676,6 +1677,49 @@ RU:
 
 ---
 
+## Терминал 2.0 — план
+
+### Архитектура: три таба
+- **Shell** — persistent bash-сессия (один Process с pipe stdin/stdout, не новый процесс на каждую команду)
+- **SSH** — как сейчас (JSch PTY), + keepalive + авторесайз + автореконнект
+- **AI** — Claude Code клиент на Kotlin, OAuth через браузер (подписка Pro/Max), терминальный вывод (не чат-пузыри)
+
+### Shell — что улучшить
+- [ ] Persistent shell: один bash-процесс, stdin/stdout через pipe, export/alias/cd живут между командами
+- [ ] Ctrl+C: `process.destroy()` по кнопке + SIGINT через PTY
+- [ ] Интерактивный ввод: stdin pipe, yes/no, пароли, скрипты с вводом
+- [ ] Фоновые процессы: command &, jobs, fg, bg (приходит с persistent shell)
+- [ ] PTY (vi/nano/htop): JNI/NDK или готовая библиотека (termux-terminal-emulator)
+- [ ] Copy/paste: long tap по выводу → копировать текст
+- [ ] Foreground Service + WakeLock для живучести сессии
+
+### SSH — что улучшить
+- [ ] Keepalive: `session.setServerAliveInterval(30)` — пинг каждые 30 сек
+- [ ] Динамический resize: `channel.setPtySize()` по размеру экрана
+- [ ] Автореконнект при обрыве сети с сохранением рабочей директории
+- [ ] Public key auth (помимо пароля)
+
+### AI-таб — Claude Code клиент
+- [ ] OAuth авторизация через браузер → токен `sk-ant-oat01-...`
+- [ ] API-запросы с OAuth-токеном (тот же endpoint что Claude Code)
+- [ ] Терминальный вывод (лента, не чат)
+- [ ] Контекст: текущая папка, список файлов, история shell-команд
+- [ ] Tool use: выполнение команд в shell (с подтверждением), чтение/запись файлов
+- [ ] Fallback на API ключ если OAuth перестанет работать
+- [ ] Команда `claude` или `ai` в shell-табе → автопереход на AI-таб
+
+### Что будет работать (полный список)
+Shell: persistent bash, export, alias, cd, pipe (|), redirect (>, >>), фоновые (&), jobs/fg/bg, Ctrl+C/D/Z, интерактивный ввод, все утилиты Android (ls, cat, cp, mv, rm, mkdir, chmod, grep, find, ps, kill, ping, ifconfig, df, du, mount, top, netstat, wget/curl), Tab-автодополнение, история (200), ANSI цвета (16/256/RGB), кликабельные пути, copy/paste
+PTY: vi/vim, nano, htop, top, less, more, динамический resize
+SSH: persistent сессия, keepalive, авторесайз, автореконнект, public key auth, панель Ctrl+C/D/Z/L, стрелки, Home/End
+AI: Claude по подписке, tool use, терминальный вывод, контекст папки
+
+### Чего НЕ будет
+- Пакетный менеджер (pkg/apt) — нужен rootfs (~50МБ+ инфраструктура)
+- Собственные бинарники (python, gcc, git) — только через SSH на сервер
+
+---
+
 ## Известные проблемы (нерешённые)
 
 - **Dropbox: Production access** — приложение в статусе "Development", лимит пользователей исчерпан. Перед релизом подать "Apply for production" в Dropbox App Console → снимет лимит. Текущий подключённый аккаунт работает.
@@ -1685,6 +1729,30 @@ RU:
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 94 — Терминал: persistent shell + PTY ✅ проверено
+
+**Persistent shell с настоящим PTY:**
+- Нативный JNI модуль `pty.c` (~120 строк C): `forkpty()` → создаёт дочерний процесс с PTY
+- `PtyNative.kt` — Kotlin JNI-обёртка: createSubprocess, setWindowSize, sendSignal, waitFor
+- `ShellSession.kt` — управление сессией: start, sendCommand, sendRaw, sendInterrupt, resize, stop
+- CMake + NDK сборка (`app/src/main/cpp/CMakeLists.txt`)
+
+**Что работает:**
+- ✅ Persistent shell — export, alias, cd живут между командами
+- ✅ Ctrl+C прерывает команду мгновенно (настоящий SIGINT через PTY)
+- ✅ Поле ввода не блокируется во время выполнения команды
+- ✅ Автоперезапуск shell при крэше
+- ✅ Ctrl+D (EOF), Ctrl+Z (suspend)
+- ✅ Resize PTY: `PtyNative.setWindowSize()`
+
+**Что пока НЕ работает:**
+- ❌ vi/nano/htop — нужен grid-рендер (ANSI cursor positioning), сейчас построчный LazyColumn
+- ❌ Табы Shell/SSH/AI — следующий батч
+
+**Файлы:** pty.c, CMakeLists.txt, PtyNative.kt, ShellSession.kt, TerminalViewModel.kt, TerminalScreen.kt, build.gradle.kts
+
+---
 
 ### Batch 93 — Видеоплеер: свайпы, настройки DND, описание функций ⚠️ не проверено
 

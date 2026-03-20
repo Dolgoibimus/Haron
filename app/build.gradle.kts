@@ -26,6 +26,12 @@ android {
 
         // ndk abiFilters removed — splits.abi handles architecture filtering
 
+        externalNativeBuild {
+            cmake {
+                cFlags("-std=c11")
+            }
+        }
+
         val localProps = Properties()
         project.rootProject.file("local.properties").reader(Charsets.UTF_8).use { localProps.load(it) }
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${localProps.getProperty("GOOGLE_CLIENT_ID", "")}\"")
@@ -49,6 +55,13 @@ android {
             reset()
             include("armeabi-v7a", "arm64-v8a")
             isUniversalApk = false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

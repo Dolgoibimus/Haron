@@ -269,6 +269,7 @@ fun TerminalScreen(
                             viewModel.requestCompletion(inputValue.text)
                         },
                         onCtrlC = {
+                            viewModel.sendInterrupt()
                             viewModel.clearCompletions()
                             inputValue = TextFieldValue("")
                         }
@@ -276,7 +277,7 @@ fun TerminalScreen(
                 }
 
                 // Input row
-                val inputBlocked = state.isRunning || state.sshConnecting
+                val inputBlocked = state.sshConnecting // persistent shell is always ready
 
                 Row(
                     modifier = Modifier

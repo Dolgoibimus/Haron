@@ -80,6 +80,11 @@ class TerminalViewModel @Inject constructor(
     private val ansiParser = AnsiParser()
     private val tabEngine = TabCompletionEngine()
 
+    // Persistent shell
+    private val shellSession = com.vamp.haron.data.terminal.ShellSession()
+    private var shellReaderJob: Job? = null
+    private val shellLineBuffer = StringBuilder()
+
     // SSH
     private val sshManager = SshSessionManager()
     private var sshReaderJob: Job? = null
@@ -88,6 +93,55 @@ class TerminalViewModel @Inject constructor(
     companion object {
         private const val MAX_HISTORY = 200
         private const val KEY_HISTORY = "cmd_history"
+    }
+
+    init {
+        startShellSession()
+    }
+
+    private fun startShellSession() {
+        viewModelScope.launch {
+            try {
+                shellSession.start(_state.value.currentDir)
+                startShellReader()
+                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: persistent shell started")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: shell start failed — ${e.message}")
+                appendLine(TerminalLine("Failed to start shell: ${e.message}", isError = true))
+            }
+        }
+    }
+
+    private fun startShellReader() {
+        shellReaderJob?.cancel()
+        shellReaderJob = viewModelScope.launch {
+            shellSession.outputFlow.collect { chunk ->
+                shellLineBuffer.append(chunk)
+                val content = shellLineBuffer.toString()
+                val lines = content.split('\n')
+
+                // All complete lines
+                for (i in 0 until lines.size - 1) {
+                    val line = lines[i].trimEnd('\r')
+                    ansiParser.reset()
+                    val parsed = ansiParser.parseLine(line)
+                    appendLine(TerminalLine(text = line, parsed = parsed))
+                }
+
+                // Keep partial line in buffer
+                shellLineBuffer.clear()
+                shellLineBuffer.append(lines.last())
+
+                // Flush prompt-like endings
+                val remaining = shellLineBuffer.toString()
+                if (remaining.isNotEmpty() && (remaining.endsWith("$ ") || remaining.endsWith("# ") || remaining.endsWith("> "))) {
+                    ansiParser.reset()
+                    val parsed = ansiParser.parseLine(remaining)
+                    appendLine(TerminalLine(text = remaining, parsed = parsed))
+                    shellLineBuffer.clear()
+                }
+            }
+        }
     }
 
     private fun loadHistory(): List<String> {
@@ -127,16 +181,40 @@ class TerminalViewModel @Inject constructor(
             return
         }
 
-        // Show prompt + command
-        val prompt = "\$ $trimmed"
-        appendLine(TerminalLine(prompt, isCommand = true))
-        _state.update { it.copy(isRunning = true) }
+        // Handle built-in commands that need local processing
+        val cmd = trimmed.split(" ").firstOrNull()?.lowercase() ?: ""
+        when (cmd) {
+            "help" -> {
+                appendLine(TerminalLine("\$ $trimmed", isCommand = true))
+                for (line in showHelp()) appendLine(line)
+                return
+            }
+            "clear", "cls" -> {
+                clearScreen()
+                return
+            }
+            "ssh" -> {
+                appendLine(TerminalLine("\$ $trimmed", isCommand = true))
+                val parts = parseCommandLine(trimmed)
+                parseSshCommand(parts.drop(1))
+                return
+            }
+        }
 
-        viewModelScope.launch {
-            val result = processCommand(trimmed)
-            _state.update { it.copy(isRunning = false) }
-            for (line in result) {
-                appendLine(line)
+        // Send to persistent shell — shell echoes the command and produces output
+        if (shellSession.isAlive) {
+            shellSession.sendCommand(trimmed)
+        } else {
+            // Shell died — restart and retry
+            appendLine(TerminalLine("[Shell session restarting...]", isError = true))
+            startShellSession()
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(500)
+                if (shellSession.isAlive) {
+                    shellSession.sendCommand(trimmed)
+                } else {
+                    appendLine(TerminalLine("Shell failed to restart", isError = true))
+                }
             }
         }
     }
@@ -162,6 +240,25 @@ class TerminalViewModel @Inject constructor(
     fun sendSshRaw(data: String) {
         viewModelScope.launch {
             sshManager.sendRaw(data)
+        }
+    }
+
+    /** Send Ctrl+C to the active session (shell or SSH) */
+    fun sendInterrupt() {
+        if (_state.value.sshMode) {
+            viewModelScope.launch { sshManager.sendRaw("\u0003") }
+        } else {
+            shellSession.sendInterrupt()
+        }
+        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: Ctrl+C sent")
+    }
+
+    /** Send raw data to the active session */
+    fun sendRaw(data: String) {
+        if (_state.value.sshMode) {
+            viewModelScope.launch { sshManager.sendRaw(data) }
+        } else {
+            shellSession.sendRaw(data.toByteArray(Charsets.UTF_8))
         }
     }
 
@@ -627,6 +724,8 @@ class TerminalViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        shellReaderJob?.cancel()
+        shellSession.stop()
         sshReaderJob?.cancel()
         sshManager.disconnect()
     }
