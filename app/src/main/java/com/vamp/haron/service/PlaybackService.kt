@@ -38,7 +38,7 @@ class PlaybackService : MediaSessionService() {
         instance = this
 
         libVlc = LibVLC(this, arrayListOf(
-            "--avcodec-skiploopfilter=4",
+            "--avcodec-skiploopfilter=0",
             "--avcodec-skip-frame=0",
             "--avcodec-skip-idct=0",
             "--audio-resampler", "soxr",

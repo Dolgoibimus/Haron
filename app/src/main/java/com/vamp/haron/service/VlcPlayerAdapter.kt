@@ -136,7 +136,10 @@ class VlcPlayerAdapter(
             else -> Uri.fromFile(java.io.File(item.filePath))
         }
         val media = Media(libVlc, uri)
-        media.setHWDecoderEnabled(true, true)
+        val ext = item.fileName.substringAfterLast('.', "").lowercase()
+        val useHwDecoder = ext in setOf("mkv", "mp4", "m4v", "mov", "webm", "ts", "m2ts")
+        media.setHWDecoderEnabled(useHwDecoder, false)
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: HW decoder=${useHwDecoder} for ext=$ext")
         vlcPlayer.media = media
         media.release()
 
