@@ -1458,4 +1458,28 @@
     <string name="web_navigator_files">%d files</string>
     <string name="web_navigator_links">%d pages</string>
     <string name="action_close">Close</string>
+
+    <!-- Player Settings -->
+    <string name="player_settings">Player Settings</string>
+    <string name="player_dnd_title">Block notifications</string>
+    <string name="player_dnd_subtitle">Enable Do Not Disturb while playing</string>
+    <string name="player_dnd_no_permission">DND access not granted</string>
+    <string name="player_dnd_grant_permission">Grant access</string>
+    <string name="player_dnd_allow_through">Allow through</string>
+    <string name="player_dnd_calls">Calls</string>
+    <string name="player_dnd_messages">Messages</string>
+    <string name="player_dnd_alarms">Alarms</string>
+    <string name="player_dnd_repeat_callers">Repeat callers (within 15 min)</string>
+    <string name="player_dnd_who_can_call">Who can call/message</string>
+    <string name="player_dnd_senders_none">No one</string>
+    <string name="player_dnd_senders_starred">Starred contacts</string>
+    <string name="player_dnd_senders_contacts">All contacts</string>
+    <string name="player_dnd_senders_any">Anyone</string>
+    <string name="player_dnd_visual">Visual effects to block</string>
+    <string name="player_dnd_heads_up">Pop-up notifications</string>
+    <string name="player_dnd_status_bar">Status bar icons</string>
+    <string name="player_dnd_screen_on">Turn screen on</string>
+    <string name="player_dnd_vibration">Silent mode (no vibration)</string>
+    <string name="player_tab_video">Video</string>
+    <string name="player_tab_audio">Audio</string>
 </resources>

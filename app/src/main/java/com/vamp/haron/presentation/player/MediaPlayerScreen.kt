@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -20,6 +21,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +51,8 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -100,10 +105,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.videolan.libvlc.util.VLCVideoLayout
+import androidx.compose.material.icons.filled.Settings
+import kotlin.math.abs
 
 @Composable
 fun MediaPlayerScreen(
     startIndex: Int,
+    prefs: com.vamp.haron.data.datastore.HaronPreferences,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -112,6 +120,8 @@ fun MediaPlayerScreen(
     val castViewModel: CastViewModel = hiltViewModel(
         viewModelStoreOwner = context as androidx.activity.ComponentActivity
     )
+
+    var showSettings by remember { mutableStateOf(false) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
@@ -129,8 +139,22 @@ fun MediaPlayerScreen(
     var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
     var wasDetached by remember { mutableStateOf(false) }
 
+    // Brightness & Volume swipe controls
+    val audioManager = remember { context.getSystemService(AudioManager::class.java)!! }
+    val maxStreamVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    var brightnessLevel by remember { mutableIntStateOf(
+        (context as? Activity)?.window?.attributes?.screenBrightness?.let {
+            if (it < 0) 50 else (it * 100).toInt().coerceIn(0, 100)
+        } ?: 50
+    ) }
+    var volumeLevel by remember { mutableIntStateOf(
+        (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / maxStreamVolume).coerceIn(0, 100)
+    ) }
+    var activeSwipeGesture by remember { mutableStateOf<SwipeGesture?>(null) }
+
     val currentItem = PlaylistHolder.items.getOrNull(currentIndex)
     val isVideo = currentItem?.fileType == "video"
+    val dndManager = remember(isVideo) { com.vamp.haron.data.player.DndManager(context, prefs, isVideo) }
     val fileName = currentItem?.fileName ?: ""
     val filePath = currentItem?.filePath ?: ""
 
@@ -229,6 +253,14 @@ fun MediaPlayerScreen(
         onDispose { TransferHolder.voiceFabVisible.value = true }
     }
 
+    // DND: activate on play, deactivate on pause/exit
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) dndManager.activate() else dndManager.deactivate()
+    }
+    DisposableEffect(Unit) {
+        onDispose { dndManager.deactivate() }
+    }
+
     // Immersive mode for video
     if (isVideo) {
         SideEffect {
@@ -250,6 +282,17 @@ fun MediaPlayerScreen(
     DisposableEffect(isPlaying, isVideo) {
         view.keepScreenOn = isPlaying && isVideo
         onDispose { view.keepScreenOn = false }
+    }
+
+    // Restore system brightness on exit
+    DisposableEffect(Unit) {
+        onDispose {
+            (context as? Activity)?.window?.let { win ->
+                val params = win.attributes
+                params.screenBrightness = -1f
+                win.attributes = params
+            }
+        }
     }
 
     // Lifecycle: detach/re-attach VLC surface on screen off/on
@@ -374,139 +417,233 @@ fun MediaPlayerScreen(
             AudioPlayerContent(filePath = filePath, fileName = fileName)
         }
 
-        // YouTube-style tap zones
-        Row(
+        // Gesture overlay: taps (rewind/play/forward) + swipes (brightness/volume/back)
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 40.dp, vertical = 56.dp)
+                .pointerInput(Unit) {
+                    val edgePx = 30.dp.toPx()
+                    val backThresholdPx = 80.dp.toPx()
+
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startPos = down.position
+                        val w = size.width.toFloat()
+                        val h = size.height.toFloat()
+                        var moved = false
+                        var gesture: SwipeGesture? = null
+                        val initBrightness = brightnessLevel
+                        val initVolume = volumeLevel
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+
+                            if (!change.pressed) {
+                                // Finger up
+                                if (!moved) {
+                                    // Tap — determine zone by thirds
+                                    val third = w / 3f
+                                    when {
+                                        startPos.x < third -> {
+                                            if (isVideo && !showControls) {
+                                                showControls = true
+                                            } else {
+                                                controller?.let { ctrl ->
+                                                    val newTime = (ctrl.currentPosition - 10_000).coerceAtLeast(0)
+                                                    ctrl.seekTo(newTime)
+                                                    currentPosition = newTime
+                                                }
+                                                tapFeedback = TapZone.LEFT
+                                                tapCounter++
+                                            }
+                                        }
+                                        startPos.x > 2 * third -> {
+                                            if (isVideo && !showControls) {
+                                                showControls = true
+                                            } else {
+                                                controller?.let { ctrl ->
+                                                    val newTime = (ctrl.currentPosition + 10_000).coerceAtMost(ctrl.duration)
+                                                    ctrl.seekTo(newTime)
+                                                    currentPosition = newTime
+                                                }
+                                                tapFeedback = TapZone.RIGHT
+                                                tapCounter++
+                                            }
+                                        }
+                                        else -> {
+                                            if (isVideo && !showControls) {
+                                                showControls = true
+                                            } else {
+                                                if (isVideo) showControls = !showControls
+                                                controller?.let { ctrl ->
+                                                    if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
+                                                }
+                                                tapFeedback = TapZone.CENTER
+                                                tapCounter++
+                                            }
+                                        }
+                                    }
+                                } else if (gesture == SwipeGesture.EDGE_BACK) {
+                                    val totalDx = change.position.x - startPos.x
+                                    if (totalDx > backThresholdPx) {
+                                        PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                                        context.stopService(Intent(context, PlaybackService::class.java))
+                                        onBack()
+                                    }
+                                }
+                                activeSwipeGesture = null
+                                break
+                            }
+
+                            val delta = change.position - startPos
+
+                            if (!moved && (abs(delta.x) > viewConfiguration.touchSlop || abs(delta.y) > viewConfiguration.touchSlop)) {
+                                moved = true
+                                gesture = when {
+                                    isVideo && startPos.x < edgePx && abs(delta.x) > abs(delta.y) -> SwipeGesture.EDGE_BACK
+                                    isVideo && abs(delta.y) > abs(delta.x) && startPos.x < w / 2 -> SwipeGesture.BRIGHTNESS
+                                    abs(delta.y) > abs(delta.x) -> SwipeGesture.VOLUME
+                                    else -> null
+                                }
+                                activeSwipeGesture = gesture
+                            }
+
+                            if (moved && gesture != null) {
+                                change.consume()
+                                val dy = change.position.y - startPos.y
+
+                                when (gesture) {
+                                    SwipeGesture.BRIGHTNESS -> {
+                                        brightnessLevel = (initBrightness - (dy / h * 100).toInt()).coerceIn(0, 100)
+                                        (context as? Activity)?.window?.let { win ->
+                                            val params = win.attributes
+                                            params.screenBrightness = (brightnessLevel / 100f).coerceAtLeast(0.01f)
+                                            win.attributes = params
+                                        }
+                                    }
+                                    SwipeGesture.VOLUME -> {
+                                        volumeLevel = (initVolume - (dy / h * 100).toInt()).coerceIn(0, 100)
+                                        audioManager.setStreamVolume(
+                                            AudioManager.STREAM_MUSIC,
+                                            (volumeLevel * maxStreamVolume / 100).coerceIn(0, maxStreamVolume),
+                                            0
+                                        )
+                                    }
+                                    SwipeGesture.EDGE_BACK -> {}
+                                    null -> {}
+                                }
+                            }
+                        }
+                    }
+                }
         ) {
-            // Left — rewind 10s
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                if (isVideo && !showControls) {
-                                    showControls = true
-                                } else {
-                                    controller?.let { ctrl ->
-                                        val newTime = (ctrl.currentPosition - 10_000).coerceAtLeast(0)
-                                        ctrl.seekTo(newTime)
-                                        currentPosition = newTime
-                                    }
-                                    tapFeedback = TapZone.LEFT
-                                    tapCounter++
-                                }
-                            },
-                            onLongPress = { showSystemBarsTemporarily = true }
-                        )
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val feedbackAlpha by animateFloatAsState(
-                    targetValue = if (tapFeedback == TapZone.LEFT) 1f else 0f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "left"
-                )
-                if (feedbackAlpha > 0.01f) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .alpha(feedbackAlpha)
-                            .background(Color.White.copy(alpha = 0.2f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Replay10, null, tint = Color.White, modifier = Modifier.size(32.dp))
+            // Tap feedback icons
+            val feedbackAlphaLeft by animateFloatAsState(
+                targetValue = if (tapFeedback == TapZone.LEFT) 1f else 0f,
+                animationSpec = tween(durationMillis = 300), label = "left"
+            )
+            val feedbackAlphaCenter by animateFloatAsState(
+                targetValue = if (tapFeedback == TapZone.CENTER) 1f else 0f,
+                animationSpec = tween(durationMillis = 300), label = "center"
+            )
+            val feedbackAlphaRight by animateFloatAsState(
+                targetValue = if (tapFeedback == TapZone.RIGHT) 1f else 0f,
+                animationSpec = tween(durationMillis = 300), label = "right"
+            )
+            Row(modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 56.dp)) {
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    if (feedbackAlphaLeft > 0.01f) {
+                        Box(
+                            Modifier.size(64.dp).alpha(feedbackAlphaLeft)
+                                .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Replay10, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    if (feedbackAlphaCenter > 0.01f) {
+                        Box(
+                            Modifier.size(64.dp).alpha(feedbackAlphaCenter)
+                                .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                null, tint = Color.White, modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    if (feedbackAlphaRight > 0.01f) {
+                        Box(
+                            Modifier.size(64.dp).alpha(feedbackAlphaRight)
+                                .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Forward10, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
                     }
                 }
             }
 
-            // Center — play/pause
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                if (isVideo && !showControls) {
-                                    showControls = true
-                                } else {
-                                    if (isVideo) showControls = !showControls
-                                    controller?.let { ctrl ->
-                                        if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
-                                    }
-                                    tapFeedback = TapZone.CENTER
-                                    tapCounter++
-                                }
-                            },
-                            onLongPress = { showSystemBarsTemporarily = true }
-                        )
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val feedbackAlpha by animateFloatAsState(
-                    targetValue = if (tapFeedback == TapZone.CENTER) 1f else 0f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "center"
-                )
-                if (feedbackAlpha > 0.01f) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .alpha(feedbackAlpha)
-                            .background(Color.White.copy(alpha = 0.2f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            null, tint = Color.White, modifier = Modifier.size(36.dp)
-                        )
+            // Brightness indicator (left side)
+            if (activeSwipeGesture == SwipeGesture.BRIGHTNESS) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 24.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 16.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.WbSunny, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier.width(4.dp).height(120.dp)
+                                .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                                    .fillMaxHeight(brightnessLevel / 100f)
+                                    .align(Alignment.BottomCenter)
+                                    .background(Color.White, RoundedCornerShape(2.dp))
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text("$brightnessLevel", style = MaterialTheme.typography.bodySmall, color = Color.White)
                     }
                 }
             }
 
-            // Right — forward 10s
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                if (isVideo && !showControls) {
-                                    showControls = true
-                                } else {
-                                    controller?.let { ctrl ->
-                                        val newTime = (ctrl.currentPosition + 10_000).coerceAtMost(ctrl.duration)
-                                        ctrl.seekTo(newTime)
-                                        currentPosition = newTime
-                                    }
-                                    tapFeedback = TapZone.RIGHT
-                                    tapCounter++
-                                }
-                            },
-                            onLongPress = { showSystemBarsTemporarily = true }
-                        )
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val feedbackAlpha by animateFloatAsState(
-                    targetValue = if (tapFeedback == TapZone.RIGHT) 1f else 0f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "right"
-                )
-                if (feedbackAlpha > 0.01f) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .alpha(feedbackAlpha)
-                            .background(Color.White.copy(alpha = 0.2f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Forward10, null, tint = Color.White, modifier = Modifier.size(32.dp))
+            // Volume indicator (right side)
+            if (activeSwipeGesture == SwipeGesture.VOLUME) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 24.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 16.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(@Suppress("DEPRECATION") Icons.Filled.VolumeUp, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier.width(4.dp).height(120.dp)
+                                .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                                    .fillMaxHeight(volumeLevel / 100f)
+                                    .align(Alignment.BottomCenter)
+                                    .background(Color.White, RoundedCornerShape(2.dp))
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text("$volumeLevel", style = MaterialTheme.typography.bodySmall, color = Color.White)
                     }
                 }
             }
@@ -543,6 +680,12 @@ fun MediaPlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    IconButton(onClick = {
+                        controller?.pause()
+                        showSettings = true
+                    }) {
+                        Icon(Icons.Filled.Settings, stringResource(R.string.player_settings), tint = Color.White)
+                    }
                     CastButton(
                         isConnected = castViewModel.isConnected,
                         onClick = { castViewModel.showSheet() }
@@ -682,10 +825,20 @@ fun MediaPlayerScreen(
                 onDismiss = { castViewModel.hideSheet() }
             )
         }
+
+        // Settings overlay (fullscreen, no navigation away)
+        if (showSettings) {
+            PlayerSettingsScreen(
+                prefs = prefs,
+                initialTab = if (isVideo) 0 else 1,
+                onBack = { showSettings = false }
+            )
+        }
     }
 }
 
 private enum class TapZone { LEFT, CENTER, RIGHT }
+private enum class SwipeGesture { EDGE_BACK, BRIGHTNESS, VOLUME }
 
 @Composable
 private fun AudioPlayerContent(filePath: String, fileName: String) {

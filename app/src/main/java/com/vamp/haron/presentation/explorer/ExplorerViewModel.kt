@@ -6658,6 +6658,26 @@ class ExplorerViewModel @Inject constructor(
                     totalBytes.toFileSize(appContext)
                 ))
             } catch (_: Exception) { /* ignore */ }
+        } else {
+            // Show folder size / storage total for non-root paths
+            val folderSize = _uiState.value.folderSizeCache[path]
+                ?: panel.files.filter { !it.isDirectory }.sumOf { it.size }
+            val volumeRoot = getVolumeRoot(path)
+            if (volumeRoot != null) {
+                try {
+                    val stat = android.os.StatFs(volumeRoot)
+                    val totalBytes = stat.totalBytes
+                    _toastMessage.tryEmit(appContext.getString(
+                        R.string.storage_size_info,
+                        folderSize.toFileSize(appContext),
+                        totalBytes.toFileSize(appContext)
+                    ))
+                } catch (_: Exception) {
+                    _toastMessage.tryEmit(folderSize.toFileSize(appContext))
+                }
+            } else {
+                _toastMessage.tryEmit(folderSize.toFileSize(appContext))
+            }
         }
     }
 

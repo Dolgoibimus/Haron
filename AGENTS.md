@@ -1672,6 +1672,7 @@ RU:
 - **findItemIndexAtPosition() fallback** → функция возвращала индекс ближайшего элемента при тапе на пустое место в LazyVerticalGrid. Решение: убрать fallback, возвращать `-1` для пустого пространства.
 - **deleteRecursively() не даёт прогресса** → для папки с 1000 файлами `deleteRecursively()` — одна операция, прогрессбар = 0% → готово. Решение: `walkBottomUp()` + удаление по одному файлу с колбэком прогресса.
 - **Media3 Transformer profile ignored for H264** → `setEncodingProfileLevel()` игнорируется при использовании `DefaultEncoderFactory` + H264. Вместо этого: `experimentalSetEnableHighQualityTargeting(true)` для автоподбора битрейта.
+- **VLC HW decoder ломает AVI (XviD/DivX)** → `setHWDecoderEnabled(true, true)` (force=true) заставляет MediaCodec декодировать MPEG-4 ASP → артефакты, unknown output format (2130708361). `(true, false)` тоже не помогает — VLC всё равно выбирает HW. Решение: whitelist по расширению — HW для mkv/mp4/mov/webm/ts/m2ts, software для avi/wmv/flv и остального. Также `--avcodec-skiploopfilter=4` (skip ALL) даёт артефакты на старых кодеках → заменён на `=0` (не пропускать).
 
 ---
 
@@ -1684,6 +1685,59 @@ RU:
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 93 — Видеоплеер: свайпы, настройки DND, описание функций ⚠️ не проверено
+
+**Свайп-жесты в видеоплеере:**
+- Свайп вверх/вниз по левой половине → яркость (0–100)
+- Свайп вверх/вниз по правой половине → громкость (0–100)
+- Свайп вправо от левого края (< 30dp) → выход из плеера
+- Единый `awaitEachGesture` handler, совместим с тап-зонами (перемотка/пауза)
+- Индикатор-полоска с иконкой и значением при свайпе
+
+**Настройки плеера:**
+- Иконка шестерёнки (⚙) в top bar → полноэкранный overlay настроек (видео на паузе)
+- Два таба: Видео / Аудио — независимые настройки DND для каждого
+- DND через `NotificationManager.setInterruptionFilter(INTERRUPTION_FILTER_PRIORITY)`
+- 5 категорий: мастер-тогл, что пропускать, кто звонит, визуальные эффекты, вибрация
+- `ACCESS_NOTIFICATION_POLICY` permission + системный грант
+- `DndManager` сохраняет/восстанавливает оригинальное состояние DND и ringer mode
+- Настройки раздельны по ключам: `vdnd_*` для видео, `adnd_*` для аудио
+
+**Тап в неактивной панели:**
+- Короткий тап в области файлов неактивной панели только активирует панель — файл не открывается
+- Долгий тап работает как обычно (выделение + DnD)
+- Шапка панели не затронута — кнопки работают всегда
+
+**Тост по размеру:**
+- Тап по отображению размера в хлебных крошках → тост с размером папки / общий объём хранилища
+- Работает и в корне (StorageStatsManager), и в подпапках (StatFs + folderSizeCache)
+
+**Реорганизация features.txt (EN + RU):**
+- Объединены 9 секций: SAF+USB→Хранилища, Lock+Protected→Безопасность, GlobalSearch+LocalSearch→Поиск, Transfer+SMB+FTP+QuickSend→Сеть, Cast+BT HID→ТВ, Bookmarks+Tools→Разделитель, Gestures+Voice→Жесты и голос, Widget+DefaultOpener→в Навигацию, Appearance→в Настройки
+- Медиаплеер: подзаголовки ## Видео и ## Аудио
+- FeaturesScreen: парсер `##` подзаголовков + стрелка → у заголовков с деталями
+- FeatureCategoryDetailScreen: полноэкранный экран инструкций по тапу на стрелку
+- BackHandler для возврата в список + сохранение позиции скролла
+- Формат `> ` для деталей в features.txt
+- Полное флоу для ВСЕХ категорий: как открыть, что делает каждая кнопка, пошаговые инструкции, голосовые команды
+
+**Файлы:** PlaybackService.kt, VlcPlayerAdapter.kt, MediaPlayerScreen.kt, PlayerSettingsScreen.kt, DndManager.kt, HaronPreferences.kt, HaronNavigation.kt, FeaturesScreen.kt, FilePanel.kt, ExplorerViewModel.kt, AndroidManifest.xml, features.txt (EN+RU), strings.xml (EN+RU)
+
+---
+
+### Batch 92 — Фикс AVI артефактов (VLC decoder) ✅ проверено
+
+**Проблема:** после Batch MKV-фикса (86926d5) AVI файлы показывали жуткие артефакты. Причина: `setHWDecoderEnabled(true, true)` принудительно использовал HW-декодер для XviD/DivX (MPEG-4 ASP), который MediaCodec не поддерживает нормально. Плюс `--avcodec-skiploopfilter=4` пропускал весь деблокинг.
+
+**Решение:**
+- `VlcPlayerAdapter.kt`: whitelist расширений для HW-декодера (mkv, mp4, m4v, mov, webm, ts, m2ts). Остальные (avi, wmv, flv и т.д.) → софтверный декодер
+- `PlaybackService.kt`: `--avcodec-skiploopfilter=0` — не пропускать деблокинг
+- Добавлено логирование выбора декодера
+
+**Файлы:** `VlcPlayerAdapter.kt`, `PlaybackService.kt`
+
+---
 
 ### Batch 54 — Облака + Пульт ТВ ✅ проверено
 

@@ -131,6 +131,12 @@ interface VoiceManagerEntryPoint {
     fun voiceCommandManager(): VoiceCommandManager
 }
 
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface PreferencesEntryPoint {
+    fun haronPreferences(): com.vamp.haron.data.datastore.HaronPreferences
+}
+
 @Composable
 fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifier) {
     val navController = rememberNavController()
@@ -556,8 +562,15 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             )
         ) { backStackEntry ->
             val startIndex = backStackEntry.arguments?.getInt("startIndex") ?: 0
+            val playerPrefs = remember {
+                EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    PreferencesEntryPoint::class.java
+                ).haronPreferences()
+            }
             MediaPlayerScreen(
                 startIndex = startIndex,
+                prefs = playerPrefs,
                 onBack = { navController.popBackStack() }
             )
         }

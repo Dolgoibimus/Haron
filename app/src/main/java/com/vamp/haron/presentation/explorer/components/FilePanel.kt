@@ -1039,6 +1039,7 @@ fun FilePanel(
                 // Stable references for gesture handler
                 val currentFilteredFiles by rememberUpdatedState(filteredFiles)
                 val currentOnPanelTap by rememberUpdatedState(onPanelTap)
+                val currentIsActive by rememberUpdatedState(isActive)
                 val currentOnLongPressItem by rememberUpdatedState(onLongPressItem)
                 val currentOnSelectRange by rememberUpdatedState(onSelectRange)
                 val currentOnDragStarted by rememberUpdatedState(onDragStarted)
@@ -1148,7 +1149,12 @@ fun FilePanel(
                         }
                         .pointerInput(Unit) {
                             // Tap handler for grid mode: icon tap = preview, name tap = open
+                            // If panel is not active, first tap only activates it
                             detectTapGestures { offset ->
+                                if (!currentIsActive) {
+                                    currentOnPanelTap()
+                                    return@detectTapGestures
+                                }
                                 val index = findItemIndexAtPosition(
                                     gridState.layoutInfo, offset, currentGridColumns
                                 )
@@ -1431,9 +1437,9 @@ fun FilePanel(
                             isSelected = entry.path in state.selectedPaths,
                             isSelectionMode = state.isSelectionMode,
                             isRenaming = state.renamingPath == entry.path,
-                            onClick = { onFileClick(entry) },
-                            onLongClick = { onLongPressItem(entry) },
-                            onIconClick = { onIconClick(entry) },
+                            onClick = { if (isActive) onFileClick(entry) else onPanelTap() },
+                            onLongClick = { onPanelTap(); onLongPressItem(entry) },
+                            onIconClick = { if (isActive) onIconClick(entry) else onPanelTap() },
                             onRenameConfirm = onRenameConfirm,
                             onRenameCancel = onRenameCancel,
                             isGridMode = isGridMode,

@@ -1,266 +1,642 @@
 # Navigation & Interface
 - Two-panel vertical layout (top + bottom)
+  > Portrait: panels stacked vertically (top + bottom)
+  > Landscape: panels arranged horizontally (left + right)
+  > Tap anywhere in an inactive panel to activate it — file won't open, next tap works normally
 - Draggable panel divider with 3 tap zones (bookmarks / 50-50 / tools)
+  > Hold the divider and drag up/down (or left/right in landscape) to resize panels
+  > Left zone (shows file count): tap → pie menu with 6 bookmark slots for quick folder access
+  > Center zone: tap → reset panels to equal 50/50 split
+  > Right zone (shows file count): tap → pie menu with tools (Trash, Analyzer, Duplicates, APK, Player, Reader)
+  > While dragging files across the divider: left side = copy, right side = move
 - Folder navigation with back button
+  > ← button in panel header: go to previous folder from history, or parent folder if no history
+  > → button: go forward in history
+  > Both buttons gray out when navigation is not possible
+  > Edge swipe can be configured as back in Settings → Gestures
 - Clickable breadcrumbs for quick path navigation
+  > Tap any folder segment in the path bar to jump directly to that level
+  > Current folder (last segment) is not clickable
+  > Path scrolls horizontally — auto-scrolls to show current folder
+  > Right side shows folder size / storage total
 - Navigation history per panel (← → like a browser)
+  > Each panel keeps its own independent navigation history
+  > Tap ← to go back, → to go forward — just like a browser
+  > History works inside archives too
 - Open current folder in other panel
+  > Tap the overflow menu (⋮) in the panel header
+  > Select "Open in other panel"
+  > The same folder opens in the opposite panel — useful for comparing or moving files
 - Active panel highlighted with border
+  > Active panel: thicker border (2dp) in primary color + slightly elevated background
+  > Inactive panel: thin border (1dp) in muted color
+  > Switches automatically on tap, selection, or any action
 - Scroll position preserved per panel
+  > Each panel remembers its scroll position when you navigate away and return
+- Desktop widget: favorites list on home screen, tap folder → app opens there
+  > Long-press home screen → Add Widget → Haron Favorites
+  > Shows list of your favorite folders with paths
+  > Tap any folder → Haron opens directly in that folder
+- Registered as system file handler: open from any app via "Open with", receive files via Share
+  > Haron appears in system "Open with" chooser for files, archives, documents, media
+  > Receive files via Share from any app
+  > Auto-detects USB drives when connected
 
 # Files & Folders
 - File list with type icons
 - Preview thumbnails: images, video, text, PDF, documents, APK, FB2
 - Scalable grid: 1–6 columns via pinch gesture
-- Tap zones in list: tap → open, long tap left → select, long tap right → quick send, icon tap → preview
+  > Pinch in/out anywhere on the file list to change columns (1–6)
+  > 1 column = detailed list, 2+ = grid with thumbnails
+- Tap zones in list: tap → open, long tap left → select, long tap middle → drag, long tap right → quick send, icon tap → preview
+  > Tap on file name → open file or enter folder
+  > Long tap left side → select/deselect the file
+  > Long tap middle → file gets selected and is immediately ready to drag — pull to other panel without releasing
+  > Long tap right side → quick send (device circles appear)
+  > Tap on file icon → quick preview dialog
 - Tap zones in grid: icon tap → preview, long tap → select, name tap → open, long tap name → quick send
+  > Tap on thumbnail → quick preview dialog
+  > Long tap on thumbnail → file gets selected and ready to drag; release without dragging = stays selected
+  > Tap on file name below thumbnail → open file
+  > Long tap on name → device circles appear for quick send; for folders = select
 - File extension badge on icons
 - Empty folders visually highlighted
 - Sort by name, date, size, extension
+  > Tap overflow menu (⋮) → Sort → choose field and direction
 - Show/hide hidden files
+  > Tap overflow menu (⋮) → "Show hidden" toggle, or voice command "hidden"
 - Quick search in current folder
+  > Tap search icon (🔍) in panel header → type to filter files by name
+  > Toggle "Content" button to search inside files (TXT, DOCX, PDF, etc.)
+  > Long tap search icon → global search across entire device
 - Create templates: folder, TXT, MD, dated folder
+  > Tap "+" button in panel header → choose template type
+  > Voice: "create" / "new"
 
 # Selection & Operations
 - Long tap + swipe for range selection
+  > Long tap a file on the left zone — file gets selected. Without releasing, drag up or down — all files along the way get selected too
 - Select all / deselect all (long tap → select by extension)
+  > Tap "Select all" icon in the selection toolbar
+  > Long tap "Select all" → select only files with the same extension
+  > Voice: "select all" / "deselect"
 - File counter and total size of selection
+  > Shown in the divider between panels: "3 files / 45 MB"
+  > Shown in the divider between panels: "3 files / 45 MB"
 - Copy and move between panels
+  > Select files → tap Copy or Move icon in the selection toolbar
+  > Files go to the folder open in the other panel
+  > Voice: "copy" / "move"
 - Delete to trash
+  > Select files → tap Delete icon → files move to Trash (recoverable for 30 days)
+  > Voice: "delete" / "remove"
 - Inline renaming (like Windows)
+  > Long tap file name in list view → name becomes editable, type new name, confirm
 - Batch rename: template, numbering, find & replace
+  > Select multiple files → overflow menu (⋮) → Batch Rename
+  > Three modes: template with variables, sequential numbering, find & replace
 - Drag-and-Drop between panels (single and group)
-- Copy or Move chooser: drag file across divider — left side copies, right side moves- Duplicate files: long tap Copy → dialog with number of copies and 3 destinations  - To subfolder here: creates folder named after file, copies inside  - To other panel (subfolder): same but in the other panel's folder  - To other panel (open folder): copies directly into the other panel's current folder  - Copy names: filename(1).ext, filename(2).ext, etc.  - Folder size updates in real time during duplication- Conflict dialog: replace / rename / skip
+  > Long tap file (middle zone in list, thumbnail in grid) — file gets selected and "sticks" to your finger
+  > Without releasing, drag to the other panel — file moves there
+  > If files were already selected, dragging any one of them drags the entire selection
+- Copy or Move chooser when dragging across divider
+  > While dragging a file across the divider — release on left side = copy, right side = move
+  > Duplicate files: long tap Copy → choose number of copies and destination
+  > 3 destinations: subfolder here, other panel (subfolder), other panel (open folder)
+  > Copy names: filename(1).ext, filename(2).ext, etc.
+  > Folder size updates in real time during duplication
+- Conflict dialog: replace / rename / skip
 
 # Trash
 - Deleted files stored for 30 days
+  > Deleted files don't disappear immediately — they're kept for 30 days, then removed automatically
 - View, restore, clear trash
+  > Open: Side Menu → Trash, or Tool Pie-Menu (right divider zone), or voice command "trash"
+  > Trash screen: list of deleted files with deletion date and original path
+  > Select files → tap "Restore" → files return to their original folder
+  > "Clear all" → permanently deletes all files from trash
+  > "Delete forever" → permanently deletes only selected files
 - Auto-cleanup when size limit exceeded
+  > When trash exceeds the configured limit — oldest files are removed automatically
 - Size limit: 0–5000 MB
+  > Configure in Settings → Trash size limit (slider from 0 to 5000 MB)
+  > 0 = no limit
 - Per-file deletion progress (shows each file being deleted)
+  > When deleting a folder with many files — shows each file name and progress
 - Auto-recovery of records from filesystem if metadata is corrupted
+  > If trash metadata is corrupted (crash, out of storage) — files are not lost
+  > Haron finds orphaned files in the trash folder and restores records automatically
 
 # Background Operations
-- All file operations (copy, move, delete, archive, extract) run in Foreground Service- Operations survive app swipe-kill — continue in background- Notification with progress and cancel button
-- Progress bar at bottom of screen — auto-collapses to thin line, tap to expand [NEW]
-- Per-file progress for folder operations (copy, move, delete) [NEW]
+- All file operations run in Foreground Service
+  > Copy, move, delete, archive, extract — all run in a background service
+  > You can swipe Haron away from recent apps — the operation will continue until complete
+  > Notification shade: progress bar + current file name + cancel button
+- Progress bar at bottom of screen [NEW]
+  > Collapsed by default into a thin strip — visible but doesn't block your work
+  > Tap the strip → expands to show: file name, speed, percentage, cancel button
+  > Automatically collapses when a new operation starts
+- Per-file progress for folder operations [NEW]
+  > When copying/moving/deleting a folder — shows each file individually, not just "folder"
 - Transfer speed display in all progress bars (except delete) [NEW]
+  > Shown in MB/s or KB/s in real time
 - Cancel button stops operation immediately [NEW]
+  > Tap "Cancel" → operation stops, already processed files are preserved
+
 # Side Menu (Drawer)
 - Storages: internal + SD-cards
+  > How to open: tap hamburger icon (☰) in top panel header, or swipe from left edge (if configured in gestures), or voice "menu"
+  > Lists all available storages: internal, SD cards, USB drives
+  > Tap a storage → panel navigates to its root
 - Favorites: favorite folders
+  > Quick access to pinned folders
+  > Add to favorites: overflow menu (⋮) in panel header → star icon
+  > Tap a favorite folder → panel navigates there
 - Recent: last 5 visited folders
+  > Automatically remembers the last 5 folders you visited
 - Tools: trash, analyzer, duplicates, empty folders, force delete, tags, transfer, terminal
-- Appearance: system / light / dark theme
+  > Full list of tools — tap to open the corresponding screen
 - Settings
+  > App settings: theme, font, icons, security, gestures, Shizuku
 
 # Temporary Shelf
 - File buffer for moving between distant folders
-- "To Shelf" button when files selected
-- Paste / Move from shelf
-- Shelf persists between sessions
+  > 1. Select files → tap "Shelf" icon in selection toolbar — files saved to shelf
+  > 2. Navigate to destination folder (even different storage)
+  > 3. Open shelf: Side Menu → Shelf, or voice "shelf"
+  > 4. Tap "Paste" to copy or "Move" to move files from shelf
+  > Shelf persists between sessions — close the app and come back later
 
-# Storage (SAF)
+# Storage & Drives
 - SD-card and external storage support
+  > SD card appears in the Side Menu automatically when inserted
+  > All file operations (copy, move, delete) work with SD cards just like internal storage
 - All file operations work with content:// URI
+  > Technical detail: on SD cards and external drives, Android uses SAF (Storage Access Framework)
+  > Haron handles it transparently — no difference for you
 - Access to Android/data and Android/obb via Shizuku (Android 11+)
+  > Problem: Android 11+ blocks access to Android/data and Android/obb even with full storage permission
+  > Solution: Shizuku — a free app that bypasses this restriction
+  > 1. Install Shizuku from Play Store
+  > 2. Start Shizuku via ADB or wireless debugging (instructions inside Shizuku)
+  > 3. In Haron: Settings → Shizuku → Grant permission
+  > After that: copy, move, delete, rename in Android/data and Android/obb work fully
+- Auto-detect USB drives (OTG)
+  > Plug in a USB drive via OTG adapter → Haron detects it automatically
+  > USB drive appears in the Side Menu
+- Navigate USB, safe eject
+  > Work with files on the drive like a regular folder
+  > Safe eject: tap "Eject" icon next to USB drive in Side Menu
+- Free/total space indicator
+  > Each storage shows how much space is used and total capacity
+
 # Quick Preview
 - Tap file icon → preview dialog
-- Images, video, audio, text, PDF, archives, APK, documents, FB2
-- Play media in preview
-- Open in gallery / reader / archive buttons
+  > In list mode: tap the icon on the left side of the file name
+  > In grid mode: tap the thumbnail
+  > Opens a dialog over the panels — quickly see content without switching to a separate screen
+- Supported formats: images, video, audio, text, PDF, archives, APK, documents, FB2
+  > Images: shows photo with swipe to adjacent files in the folder
+  > Video/audio: plays directly in the dialog
+  > Text: first lines of the file
+  > PDF: first page
+  > APK: icon + version + permissions
+  > Archives: list of files inside
+- Buttons at the bottom of the dialog
+  > "Gallery" — open image in fullscreen gallery
+  > "Reader" — open document/PDF in the reader
+  > "Archive" — open archive as a folder in the panel
+  > "Player" — open media file in fullscreen player
 - Delete images directly from preview (trash button) — moves to next photo
+  > Trash button in preview dialog → file moves to trash → automatically jumps to the next photo
+
 # Media Player
 - Built-in VLC engine (LibVLC)
 - All popular codecs: MP3, FLAC, OGG, WAV, AVI, MKV, MP4, etc.
 - Folder playlist with auto-advance
-- Background playback with lock screen controls
+  > Open any media file → all media files in the same folder become a playlist
+  > Tracks advance automatically, repeat mode: All → One → Off
 - Seekbar + ±10s rewind
+  > Tap left zone → rewind 10s, tap right zone → forward 10s, tap center → play/pause
 - Position saved between sessions
-- Video: fullscreen, immersive mode
+- Player settings: separate tabs for video and audio [NEW]
+  > Tap gear icon (⚙) in player header → fullscreen settings overlay
+  > Video and Audio tabs with independent DND settings
+- Do Not Disturb mode: block notifications during playback with fine-grained control [NEW]
+  > Choose what to allow: calls, messages, alarms, repeat callers
+  > Choose who can reach you: no one, starred contacts, all contacts, anyone
+  > Block visual effects: pop-ups, status bar, screen wake
+  > Silent mode: disable vibration during playback
+## Video
+- Fullscreen, immersive mode
 - Hardware video acceleration (MediaCodec) — smooth playback of large MKV files (7GB+) [NEW]
+- Swipe gestures: brightness (left half), volume (right half), back (left edge) [NEW]
+  > Swipe up/down on left half of screen → adjust brightness (0–100)
+  > Swipe up/down on right half → adjust volume (0–100)
+  > Swipe right from left edge → exit player
+  > Visual indicator bar appears during swipe
+## Audio
+- Background playback with lock screen controls
+  > Audio continues when you leave the app or lock the screen
+  > Controls in notification and on lock screen
 
 # Internal Gallery
 - Fullscreen image viewing
+  > How to open: tap an image in the file list, or via preview → "Gallery"
+  > Fullscreen display on black background
 - Swipe between images in folder
+  > Swipe left/right — jump to next/previous image in the folder
+  > Adjacent images are preloaded — transitions are instant
 - Zoom: pinch (1x–5x) and double tap
+  > Pinch with two fingers — smooth zoom from 1x to 5x
+  > Double tap — quick zoom into the tap point (or reset if already zoomed)
+  > While zoomed, drag to pan the image
 - Share button
+  > Share icon in the header → send photo to any app
 - Pre-load adjacent images
+  > Photos to the left and right of the current one load in the background — swipe without delay
 
 # PDF Reader
 - Fullscreen PDF reader
+  > How to open: tap a PDF file, or via preview → "Reader"
 - Scroll, zoom (pinch + double tap)
+  > Vertical page scrolling
+  > Pinch to zoom, double tap for quick zoom
 - Page indicator with quick jump
+  > Bottom: "Page X of Y" — tap the indicator → enter a page number for quick jump
 - Search highlight with navigation
+  > Search icon in header → type text → matches highlighted in yellow
+  > ← → buttons to navigate between matches
 - Password-protected PDF support
+  > If the PDF is password-protected — a password dialog appears before opening
 - Position saved between sessions
+  > Close a PDF and open it later — the reader opens on the same page
 
 # Document Reader
 - DOC, DOCX, ODT, RTF, FB2, XLSX, XLS, CSV
+  > How to open: tap a document in the file list, or via preview → "Reader"
+  > All formats displayed with formatting (bold, italic, lists, tables)
 - FB2: cover + annotation before text
+  > FB2 books: cover first, then annotation, then text — like a real book
 - Zoom and scroll
+  > Pinch to enlarge text, vertical scrolling
 - Search highlight with navigation
+  > Search icon → type text → matches highlighted, navigate with ← →
 - Position saved between sessions
 
 # Archives
-- View ZIP, 7z, RAR (including RAR5), TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ- Inline viewing in panel like regular folder
+- View ZIP, 7z, RAR (incl. RAR5), TAR, TAR.GZ, TAR.BZ2, TAR.XZ
+  > Tap an archive → it opens in the panel like a regular folder
+  > Navigate inside, view files, extract selectively
+  > Inline viewing — no need to extract first
 - Navigate folders inside archive
 - Selective extraction
+  > Select specific files inside archive → tap Extract icon
 - Create ZIP with optional password (AES-256) and split
+  > Select files → tap Archive icon in selection toolbar
+  > Set password, split size, compression level in dialog
 - Conflict dialog on create: replace / rename / cancel
 - Extract options: extract here or into subfolder by archive name
 - Smart detection: if archive has single root folder — extract as-is without dialog
-- Quick extract from file list: select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract- Tap pulsing icon → choose destination: next to archive / current panel / other panel- Each archive extracts into a subfolder with the archive name (auto-created)- Works with single or multiple archives at once- "1 to 1" archiving: select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
+- Quick extract from file list
+  > Select archives (ZIP/7z/RAR) in file list → Archive icon pulses and changes to Extract
+  > Tap pulsing icon → choose destination: next to archive / current panel / other panel
+  > Each archive extracts into a subfolder with its name (auto-created)
+  > Works with single or multiple archives at once
+- "1 to 1" archiving
+  > Select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
+
 # Text Editor
 - View and edit text and code files
-- Syntax highlighting for 30+ languages (Kotlin, Java, Python, JS, HTML, CSS, JSON, XML, SQL, C/C++, Go, Rust, etc.) [NEW]
-- 11 color themes: Darcula, Dracula, Monokai, Nord, One Dark Pro, GitHub Dark/Light, Tokyo Night, Solarized Dark/Light, Quiet Light [NEW]
-- Theme picker in editor toolbar (palette icon) [NEW]
+  > How to open: tap a text/code file, or via preview → "Editor"
+  > Opens in view mode by default (read-only) — to avoid accidental edits
+  > Tap pencil icon (✏) → switch to edit mode
+- Syntax highlighting for 30+ languages [NEW]
+  > Kotlin, Java, Python, JS, HTML, CSS, JSON, XML, SQL, C/C++, Go, Rust, PHP, Ruby, Swift, etc.
+  > Language detected automatically by file extension
+- 11 color themes [NEW]
+  > Darcula, Dracula, Monokai, Nord, One Dark Pro, GitHub Dark/Light, Tokyo Night, Solarized Dark/Light, Quiet Light
+- Theme picker in editor toolbar [NEW]
+  > Tap palette icon (🎨) in editor header → theme list → tap a theme → applied instantly
 - Line numbers [NEW]
+  > Displayed to the left of the text — useful for code navigation
 - View mode (default) and edit mode
+  > View (default): text can be scrolled and copied, but not changed
+  > Edit: tap pencil → keyboard appears, you can type and delete text
 - Undo/Redo (up to 50 steps)
+  > Buttons ↩ ↪ in the header — undo last action or redo
+  > Up to 50 steps of history
 - Save dialog on exit with unsaved changes
+  > If there are unsaved changes and you press "Back" — dialog: "Save / Cancel / Discard"
 - Cursor position saved between sessions
+  > Close a file and open it later — cursor stays at the same position
+
 # File Properties
 - Name, path, size, date, MIME-type, permissions
+  > Select a file → tap Info icon in selection toolbar, or voice command "properties"
 - Recursive folder size calculation
 - EXIF data for photos (with delete option)
-- Audio tags: title, artist, album, year, genre, duration, bitrate (editable)- Save/edit audio tags directly in file properties- Album cover search from internet (Deezer + iTunes) with save to file- Search cover by filename — auto-parse artist and title- Smart search: one search fills all missing tags (title, artist, album, year, genre) + cover- "Save all" button: save tags and cover together in one tap- PDF metadata: title, author, subject, keywords, creator, producer, creation date, page count- FB2 metadata: title, author, genre, language, series, date, annotation- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512- Hash comparison: paste expected hash — instant match/mismatch check
+- Audio tags (editable)
+  > Title, artist, album, year, genre, duration, bitrate — all editable
+  > Album cover search from internet (Deezer + iTunes) with save to file
+  > Smart search: one tap fills all missing tags + cover from internet
+  > "Save all" button: save tags and cover together in one tap
+- PDF metadata
+  > Title, author, subject, keywords, creator, producer, creation date, page count
+- FB2 metadata
+  > Title, author, genre, language, series, date, annotation
+- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512
+  > Tap "Calculate" → choose hash type
+  > Paste expected hash → instant match/mismatch check
+
 # Storage Analyzer
 - Pie chart by file type
+  > Open: Side Menu → Analyzer, Tool Pie-Menu, or voice command "storage"
+  > Interactive pie chart — tap a segment to see files in that category
 - Categories with size and file count
 - Top 200 largest files per category
 - Large files (>10 MB) section
 
 # Duplicate Detector
 - Find identical files across storage
+  > Open: Side Menu → Duplicates, Tool Pie-Menu, or voice command "duplicates"
+  > Scans entire storage: first groups by file size, then verifies with MD5 hash
 - Two-phase: group by size → MD5 hash
 - Original markers: original is kept, copies are suggested for deletion
+  > Mark a file as "original" → it won't be suggested for deletion
 - Source folders mode: files in selected folders are automatically treated as originals
+  > Overflow menu → "Original folders" → choose folders where originals live
 - Auto-select copies for deletion
 
-# Settings
-- Night mode by schedule
-- Font size and icon size sliders
-- Haptic vibration toggle
-- Security: PIN, biometric, security question
-- Require PIN on launch toggle
-- Trash size limit
-- Shizuku status and control (install, start, grant permission)
 # Tags (Labels)
 - Colored labels with text names (8 colors)
+  > Create tags: Side Menu → Tags → "+" button
+  > 8 color presets to choose from
 - Assign to files and folders
+  > Select files → overflow menu → "Tags" → pick tag(s)
 - Filter by label
+  > Tap a tag chip in panel header to show only files with that tag
 - Labels persist on rename/move/copy
 
-# Desktop Widget
-- Favorites list on home screen
-- Tap folder → app opens there
+# Panel Divider
+- Quick Bookmarks (1–6): tap left zone → pie menu, save/navigate to folders instantly, persistent between launches
+  > Tap left zone of divider → pie menu with 6 slots
+  > Empty slot: saves current folder path
+  > Filled slot: navigates to saved folder instantly
+  > Long tap slot to clear it
+- Tool Pie-Menu: tap right zone → pie menu — Trash, Analyzer, Duplicates, APK, Player, Reader
+  > Tap right zone of divider → pie menu with 6 tools
+  > Quick access to frequently used tools without opening Side Menu
 
-# Quick Bookmarks (1–6)
-- Tap left divider zone → pie menu
-- Save/navigate to folders instantly
-- Persistent between launches
+# Search
+- Global search across entire device
+  > How to open: long tap 🔍 in panel header, or voice "search" / "find"
+  > Search screen: input field on top, filter chips below, results below that
+  > Two tabs: "Device Search" and "Internet Search"
+- Two search modes: by name and by content
+  > "Тт" button on the right — searches file names (always works, no indexing needed)
+  > "📄" button — searches text INSIDE files (requires indexing, see below)
+  > Switch between modes with one tap
+- Search results
+  > Each result: colored icon by file type, name, parent folder path, size, date
+  > Tap result → open file
+  > Long tap result → navigate to file location in explorer (shows the folder)
+  > Tap result icon → quick preview
+  > In "📄" mode: text snippet with matched word shown under result (tap arrow to expand)
+  > Results load in batches of 200 — scroll down for more
+- Filters: category, size, date
+  > Three rows of filter chips, scroll horizontally
+  > Categories: All · Documents · Images · Audio · Video · Archives
+  > Size: <1MB · 1-10MB · 10-100MB · 100M-1G · >1GB
+  > Date: Today · Week · Month · Year · Older
+  > Tap chip to enable, tap again to disable. Filters combine with each other
+- Content search: text, DOCX, ODT, PDF
+  > Switch to "📄" → type a word → finds it inside documents
+  > Only works after indexing (🔄 button in header)
+  > Without indexing, only file name search is available
+- Audio/video metadata search
+  > Finds by tags: artist, album, track title
+  > Works after media indexing (🎵 button)
+- ML Kit image labeling (objects on photos)
+  > Type "dog" — finds photos with dogs
+  > Works after visual indexing (📷 button)
+- OCR on photos (text recognition)
+  > Type text — finds photos where that text is visible (signs, screenshots, documents)
+  > Works after visual indexing (📷 button)
+- Archive search (file names inside)
+  > Finds files inside ZIP/RAR/7z by name, without extracting
+- Indexing: why and how
+  > Without indexing, only file name search works — fast but limited
+  > Indexing "teaches" the search engine about file contents — after that you can search by text, tags, objects on photos
+  > Three buttons in search screen header — each handles its own type:
+  > 🔄 Basic: reads text from documents, EXIF from photos, contents from archives
+  > 🎵 Media: reads audio/video tags (duration, bitrate, codec, artist)
+  > 📷 Visual: recognizes objects on photos (ML Kit) + text on photos (OCR)
+  > Tap button → indexing starts with progress bar and current file name
+  > First time: may take a few minutes (depends on file count)
+  > Status below: "Indexed: X files · Y ago" + content index size
+  > If some files couldn't be processed — "Skipped: N files" appears (tap to expand list)
+- Background index update
+  > Index updates automatically on file changes and screen on (every 30 min)
+  > No need to re-run indexing manually each time
+- Local search (in panel)
+  > Tap 🔍 in panel header → quick filter files in current folder by name
+  > "📄" button — switches to content search inside files (TXT, DOCX, ODT, PDF, etc.)
+  > First content search indexes the folder (few seconds), subsequent searches are instant
+  > Difference from global: local searches only current folder, global searches entire device
 
-# Tool Pie-Menu
-- Tap right divider zone → pie menu
-- Trash, Analyzer, Duplicates, APK, Player, Reader
+# Barcode & QR Scanner
+- Built-in scanner via camera (ML Kit)
+  > How to open: voice command "scanner" / "scan" / "qr", or long tap the scanner button on Transfer screen
+  > Point the camera at a QR code or barcode — recognized automatically
+- Scan QR codes, barcodes (EAN, UPC, Code128, etc.)
+  > Supported formats: QR, Data Matrix, EAN-8, EAN-13, UPC-A, UPC-E, Code39, Code93, Code128, ITF, Codabar, Aztec, PDF417
+- Scan result actions
+  > Link → "Open" button → opens in browser
+  > Text → "Copy" button → text copied to clipboard
+  > Contact/Wi-Fi → offer to add/connect
 
-# App Lock
+# Security
 - PIN (4–8 digits) with auto-enter
+  > Set up in Settings → Security → choose PIN length (4–8 digits)
+  > Auto-enter: PIN is submitted automatically when enough digits entered
 - Biometric (fingerprint)
 - Combined: biometric + PIN backup
 - Timeout lock (30 min)
 - Security question for PIN recovery
 - Screenshot protection when locked
-
-# Protected Folder
-- AES-256-GCM encryption (Android Keystore)
+- Protected folder: AES-256-GCM encryption (Android Keystore)
+  > Select files → shield icon in selection toolbar → files encrypted and hidden
 - Files completely invisible without shield
 - Shield button requires PIN
-- Long tap shield → enter protected files
-- Tap shield in protected mode → exit
+- Long tap shield → enter protected files, tap shield → exit
+  > Shield icon (🛡) in panel header
+  > Long tap shield → enter PIN → protected files appear as virtual folder
+  > Tap shield while in protected mode → exit, files become invisible again
 - Virtual directory for all protected files
 - Copy decrypts, move decrypts + unprotects
 
-# Global Search
-- Long tap search → enter global search
-- Search by name across entire device
-- Filters: category, size, date
-- Content search: text files, DOCX, ODT, PDF
-- Audio/video metadata search
-- ML Kit image labeling (objects on photos)
-- OCR on photos (text recognition)
-- Archive search (file names inside)
-- Indexing: basic (text, metadata, archives), media (audio/video tags), visual (ML + OCR)
-- Background index update on file changes and screen on (every 30 min)
+# Network & Transfer
+- Device transfer: Wi-Fi Direct + NSD
+  > How to open: Side Menu → Transfer, or voice command "transfer"
+  > Devices with Haron on the same network are discovered automatically
+  > Select files → tap a device in the list → transfer begins
+  > Haron automatically picks the best protocol (Wi-Fi Direct for speed, NSD for reliability)
+- QR transfer — two modes
+  > Select files → Transfer → "HTTP / QR code" → QR code appears
+  > Tap QR to switch between two modes:
+  > Wi-Fi mode (both devices on same network): single QR with download link — scan on the other device
+  > Hotspot mode (different networks or no Wi-Fi):
+  >   Tab "Haron": one QR — second Haron scans, auto-connects to hotspot and downloads
+  >   Tab "Others": two QR codes — first to connect to Wi-Fi, second to download in browser
+  > Hotspot is temporary — turns off automatically when dialog is closed
+- Progress, resume, retry on disconnect
+  > Progress bar with percentage and speed
+  > Auto-retry on connection drop
+  > Transfer runs in Foreground Service — continues even if you minimize the app
+- Quick Send
+  > In file list: long tap the right zone of a file → device circles appear around your finger
+  > Without releasing, drag to the target device → file is sent
+  > Trusted devices accept files automatically without confirmation
+  > Device renaming: assign a custom name to each device
+- SMB browser
+  > Side Menu → Transfer → SMB
+  > Auto-discovery of computers and NAS on local network
+  > Browse shared folders in dual-panel mode — just like local files
+  > Upload and download files with progress bar
+  > Saved connections with encrypted credentials
+- FTP client
+  > Side Menu → Transfer → FTP
+  > Connect to remote FTP servers by address, login and password
+  > Browse, download, upload files with progress
+  > Dual-panel mode: FTP files on top, local files on bottom
+  > FTPS (TLS) support for secure connections
+  > Saved connections with encrypted credentials
+- Built-in FTP server
+  > Side Menu → Transfer → FTP Server → Start
+  > Shares phone files to a computer — open ftp://IP:port in a browser or FTP client on your PC
+  > Anonymous or password-protected access
+  > Read-only mode — download allowed, upload blocked
 
-# Local Search (in Panel)
-- Name search: filters files in current folder by name
-- Content search: finds text inside files (TXT, DOCX, ODT, PDF, etc.)
-- First content search indexes the folder, subsequent searches are instant
-- Debounce 300ms, auto-reset on folder change
-
-# Barcode & QR Scanner
-- Built-in scanner via camera (ML Kit)
-- Scan QR codes, barcodes (EAN, UPC, Code128, etc.)
-- How to open: long tap the scanner button in Transfer screen, or voice command "scanner" / "scan" / "qr"
-- Scan result: open link, copy text, or search
-
-# File Transfer
-- Wi-Fi Direct + NSD (LAN)
-- Auto-select best protocol
-- QR code transfer — two modes (tap QR to switch):  Wi-Fi mode (both devices on the same network):  1. Select files → Transfer → "HTTP / QR code"  2. QR code with download link — scan on the other device  Hotspot mode (devices on different networks or no Wi-Fi):  - Tab "Haron": one QR code — second Haron scans it, auto-connects to hotspot and downloads  - Tab "Others": two QR codes for any device without Haron — first for Wi-Fi connection, second for download link in browser  - Hotspot is temporary, stops automatically when dialog is closed- Progress, resume, retry on disconnect
-- Foreground Service + WakeLock
-
-# Cast to TV
+# TV
 - Chromecast, Miracast, DLNA support
-- Media, slideshow, PDF presentation, screen mirror (via browser) modes
-- Remote control: play/pause, seek, volume
-- Transcoding: AVI, MKV, WMV, MOV, FLV, 3GP, TS → MP4 for Chromecast
-- Transcode caching — instant replay of previously transcoded files
-- Automatic audio fallback for unsupported codecs (AC3/DTS)
+  > How to start: tap Cast icon (📺) in the player, or select files → Cast in selection toolbar
+  > TV devices are discovered automatically on your network
+  > Select a device → content starts playing on the TV
+- Cast modes
+  > Media: video and audio files on TV
+  > Slideshow: select photos → Cast → photos change automatically
+  > PDF presentation: PDF file displayed page by page on TV
+  > Screen mirror: phone screen streamed via browser to TV
+- Remote control
+  > During casting: play/pause, seek, volume control
+- Transcoding
+  > If the video format is unsupported by the TV (AVI, MKV, WMV, MOV, FLV, 3GP, TS) — Haron converts to MP4 automatically
+  > Transcoding progress with percentage
+  > Cache: previously transcoded files play instantly on repeat cast
+- Automatic audio fallback
+  > If the TV doesn't support the audio codec (AC3/DTS) — audio track is converted automatically
+- Bluetooth HID remote
+  > Touchpad mode: phone = touchpad for TV. Finger movement = cursor, tap = click, long tap = right click, two-finger swipe = scroll
+  > Virtual keyboard: type on your phone — text appears on the TV screen (Latin + Cyrillic)
+  > How to connect: pair TV via Bluetooth → in Haron: Transfer → BT HID → select device
 
-# Bluetooth HID Remote
-- Touchpad mode: move cursor on TV, tap, long press, scroll
-- Virtual keyboard: type text on TV screen (Latin + Cyrillic)
-- Connect to paired Bluetooth devices
-# Network & SMB
-- Auto-discover devices on LAN
-- SMB browser with dual-panel mode
-- Upload/download with progress
-- Saved connections (encrypted)
+# Terminal
+- Shell command execution
+  > How to open: Side Menu → Terminal, Tool Pie-Menu, or voice "terminal" / "console"
+  > Fullscreen terminal with input field and output area
+  > Working directory: the folder open in the active panel
+- Color output (16/256/RGB)
+  > ANSI escape code support — colored output from ls, grep, git and other utilities
+- Tab path autocomplete
+  > Press Tab — auto-completes file and folder names (like a real terminal)
+- Clickable paths in output
+  > If command output contains a file/folder path — tap it → panel navigates there
+- Command history (200)
+  > Swipe up on input field → previous commands
+  > Stores 200 recent commands between sessions
+- SSH connection to remote servers
+  > Type: ssh user@host or ssh user@host -p port
+  > Password dialog appears with "Save" checkbox (password encrypted with AES-256)
+  > After connecting: full interactive shell (cd, env, aliases — all preserved in session)
+- SSH control panel
+  > Appears during active SSH connection
+  > Buttons: Enter, Tab, Ctrl+C, Ctrl+D, Ctrl+Z, Ctrl+L, Esc, arrows ← → ↑ ↓, Home, End
+  > SSH badge in header shows which server you're connected to + disconnect button
 
-# FTP Client & Server
-- Connect to remote FTP servers
-- Browse, download, upload files with progress
-- Dual-panel: FTP files on top, local files on bottom
-- FTPS (TLS) support
-- Saved FTP connections (encrypted credentials)
-- Built-in FTP server: share phone files to PC
-- Anonymous or password-protected access
-- Read-only mode option
-# Quick Send
-- Long tap file → device circles → drag to send
-- Trusted devices auto-accept
-- Device renaming (aliases)
+# File Comparison
+- Text diff: two columns with sync scroll
+  > Select 2 files → tap Compare icon in selection toolbar
+  > Two-column view: left = file 1, right = file 2, scroll synced
+- Color coding: green/red/yellow
+  > Green = added lines, Red = removed lines, Yellow = changed lines
+- Folder comparison
+  > Select 2 folders → Compare → shows which files differ, are unique, or match
+- Auto mode detection
+  > Automatically detects text vs folder comparison based on selection
 
-# USB OTG
-- Auto-detect USB drives
-- Navigate, safe eject
-- Free/total space indicator
+# Cloud Storage
+- Google Drive, Dropbox, Yandex Disk
+  > How to connect: Side Menu → "Clouds" section → tap provider icon → sign in via browser
+  > Secure OAuth2 with PKCE — Haron never sees or stores your password
+  > After sign-in, cloud appears as a storage in Side Menu — tap to open
+- Browse cloud files
+  > Dual-panel mode — cloud files look and work just like local ones
+  > Clickable breadcrumbs for cloud folder navigation
+  > File count displayed for each cloud folder
+  > Quick Preview: tap icon → preview with large thumbnail (no download needed)
+- Cloud gallery [NEW]
+  > Tap an image → fullscreen viewing straight from the cloud without downloading
+  > Swipe left/right — browse photos in the cloud folder
+- Streaming media from cloud
+  > Video and audio play immediately — no need to wait for full download
+  > File streams as you watch/listen
+- Edit text from cloud
+  > Open a text file from cloud → edit → on save: three options — to cloud, locally, or both
+- Download and upload [NEW]
+  > Download: select cloud files/folders → Copy → paste into a local folder
+  > Upload: select local files/folders → Copy → paste into a cloud folder
+  > Recursive: entire folder structure is preserved
+  > Drag and drop: between panels (one local, one cloud)
+- Reliable upload
+  > Files upload in 8-10 MB chunks
+  > On network drop — automatic retry, upload resumes from the same point
+  > Parallel transfers with individual cancel for each
+- Cloud file management
+  > Rename, delete, create folders — directly in the cloud
+  > Delete from preview — no need to go back to the panel
 
-# Gestures
+# Web Search [NEW]
+- Search files on the internet from three sources at once [NEW]
+  > How to open: global search → tab "Internet Search"
+  > Type a query → search runs across all sources simultaneously
+  > Results grouped by source with headers
+- Three sources [NEW]
+  > Open Directory: finds files in public web directories (FTP servers, file hosting)
+  > Torrent: searches torrent databases — shows name, size, seeder count
+  > Internet Archive: searches archive.org — 70M+ digitized books, audio, video, software
+- Smart features [NEW]
+  > Transliteration: Russian queries automatically searched in both Cyrillic and Latin
+  > Extension filter: add ".pdf", ".mp3" etc. to the query — only files of that type remain
+- Actions with results [NEW]
+  > Tap result → download starts (progress bar with speed and percentage)
+  > Long tap → copy link to clipboard
+  > Torrents download in zero-upload mode (no seeding) — download only
+  > All downloads saved to /Downloads/Haron/
+
+# Gestures & Voice
 - 4 customizable edge swipes
-- 13 available actions
-- Configure in Settings
-
-# Voice Commands
-- 35+ commands in Russian and English
-- Tap mic — single command, tap again — stop
-- Long tap mic — list of all commands
-- Drag mic button to any position on screen
-- Wake word: say "Haron [command]" or "Haron" then command (enable in settings)
+  > Swipe from left, right, top, bottom edge — each configurable separately
+  > Configure: Settings → Gestures → choose action for each swipe
+  > 13 available actions: back, forward, up, home, menu, search, create, trash, analyzer, terminal, hidden, refresh, select all
+- 35+ voice commands in Russian and English
+  > How to use: tap mic icon (🎤) → speak a command → mic turns off automatically
+  > Long tap mic → show list of all available commands
+  > Mic button can be dragged to any position on the screen
+- Wake word: "Haron"
+  > Enable: Settings → Voice → Wake word
+  > Say "Haron [command]" — e.g. "Haron copy" — no need to tap the mic first
+  > Or "Haron" → pause → command
 - Mic stops when app is minimized, resumes on return
 - Panel targeting: add "top/upper/first" or "bottom/lower/second" to any command
   Example: "back top", "open downloads bottom", "copy in first"
@@ -320,61 +696,23 @@
   - Refresh cache: обнови кэш, обнови голосовой кэш / refresh cache
   - Secure folder: защищённые, защита, сейф / secure, protected
 
-# Terminal
-- Shell command execution
-- Color output (16/256/RGB)
-- Tab path autocomplete
-- Clickable paths in output
-- Command history (200)
-- SSH connection to remote servers (ssh user@host [-p port])
-- Interactive shell via SSH (cd, env, aliases persist)
-- Password dialog with save option (AES-256 encryption)
-- SSH control panel: Enter, Tab, Ctrl+C/D/Z/L, Esc, arrows, Home/End
-- SSH badge and disconnect button in header
-
-# Default Opener
-- Registered as system file handler
-- Open from any app via "Open with"
-- Receive files via Share
-
-# File Comparison
-- Text diff: two columns with sync scroll
-- Color coding: green/red/yellow
-- Folder comparison
-- Auto mode detection
-
-# Cloud Storage
-- Google Drive, Dropbox, Yandex Disk
-- Secure OAuth2 authentication with PKCE
-- Browse cloud files in dual-panel mode (just like local files)
-- Clickable breadcrumbs for cloud folder navigation
-- Folder item count displayed for cloud directories
-- Quick Preview for cloud images with high-res thumbnails
-- Cloud gallery: tap image — fullscreen viewing without download, swipe between photos [NEW]
-- Video and audio streaming from cloud (plays instantly, no full download)
-- Open and edit text files from cloud
-- Save edited files back to cloud, to local storage, or both
-- Download cloud files and folders to local storage (recursive with structure preserved) [NEW]
-- Upload local files and folders to cloud (recursive with structure preserved) [NEW]
-- Reliable upload: 8-10MB chunks with automatic retry on network failure
-- Rename files and folders in cloud
-- Delete files from cloud (including from Quick Preview)
-- Create folders in cloud
-- Drag and drop files between local storage and cloud
-- Parallel transfers with individual cancel for each
-
-# Web Search [NEW]
-- Search files on the internet from three sources at once [NEW]
-- Open Directory: finds files in public web directories (via DuckDuckGo) [NEW]
-- Torrent: searches torrent databases, shows seeders count [NEW]
-- Internet Archive: searches archive.org (70M+ digitized items) [NEW]
-- Cyrillic transliteration: Russian queries automatically searched in both Cyrillic and Latin [NEW]
-- Extension filter: type ".pdf", ".mp3" etc. in query to filter by file type [NEW]
-- Tap result to download, long tap to copy link [NEW]
-- Torrent downloads in zero-upload mode (no seeding) [NEW]
-- Download progress with speed and percentage [NEW]
-- Downloads saved to /Downloads/Haron/ [NEW]
-
-# Appearance
-- Theme: system / light / dark
-- Material Design 3
+# Settings
+- Theme: system / light / dark (Material Design 3)
+  > How to open: Side Menu → Settings, or voice "settings"
+  > Three display modes: follow system theme, always light, always dark
+- Night mode by schedule
+  > Automatic switch to dark theme by time
+  > Configure start and end time
+- Font size and icon size sliders
+  > Increase or decrease text and icon size across the entire app
+  > Slider from 60% to 140% for each
+- Haptic vibration toggle
+  > Enable/disable tactile feedback (vibration on selection, pinch, etc.)
+- Require PIN on launch toggle
+  > If enabled — Haron asks for PIN or fingerprint on every launch
+- Trash size limit
+  > Slider: 0–5000 MB (0 = no limit)
+  > When exceeded — oldest files are removed automatically
+- Shizuku status and control
+  > Shows: whether Shizuku is installed, running, permission granted
+  > Buttons: install, start, grant permission — all in one place

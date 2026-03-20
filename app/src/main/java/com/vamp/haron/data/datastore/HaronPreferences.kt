@@ -606,6 +606,41 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_TRANSCODE_CACHE_TTL_HOURS, 24)
         set(value) = prefs.edit().putInt(KEY_TRANSCODE_CACHE_TTL_HOURS, value).apply()
 
+    // --- Player DND settings (separate for video/audio) ---
+
+    private fun dndKey(base: String, isVideo: Boolean) = "${if (isVideo) "v" else "a"}dnd_$base"
+
+    fun playerDndEnabled(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("enabled", isVideo), false)
+    fun setPlayerDndEnabled(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("enabled", isVideo), value).apply()
+
+    fun playerDndAllowCalls(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("calls", isVideo), false)
+    fun setPlayerDndAllowCalls(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("calls", isVideo), value).apply()
+
+    fun playerDndAllowMessages(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("messages", isVideo), false)
+    fun setPlayerDndAllowMessages(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("messages", isVideo), value).apply()
+
+    fun playerDndAllowAlarms(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("alarms", isVideo), true)
+    fun setPlayerDndAllowAlarms(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("alarms", isVideo), value).apply()
+
+    fun playerDndAllowRepeatCallers(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("repeat", isVideo), false)
+    fun setPlayerDndAllowRepeatCallers(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("repeat", isVideo), value).apply()
+
+    /** 0=none, 1=starred, 2=contacts, 3=any */
+    fun playerDndCallSenders(isVideo: Boolean): Int = prefs.getInt(dndKey("senders", isVideo), 0)
+    fun setPlayerDndCallSenders(isVideo: Boolean, value: Int) = prefs.edit().putInt(dndKey("senders", isVideo), value).apply()
+
+    fun playerDndSuppressHeadsUp(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("heads_up", isVideo), true)
+    fun setPlayerDndSuppressHeadsUp(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("heads_up", isVideo), value).apply()
+
+    fun playerDndSuppressStatusBar(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("status_bar", isVideo), false)
+    fun setPlayerDndSuppressStatusBar(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("status_bar", isVideo), value).apply()
+
+    fun playerDndSuppressScreenOn(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("screen_on", isVideo), true)
+    fun setPlayerDndSuppressScreenOn(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("screen_on", isVideo), value).apply()
+
+    fun playerDndSilentMode(isVideo: Boolean): Boolean = prefs.getBoolean(dndKey("silent", isVideo), true)
+    fun setPlayerDndSilentMode(isVideo: Boolean, value: Boolean) = prefs.edit().putBoolean(dndKey("silent", isVideo), value).apply()
+
     /** Archive thumbnail cache max size in MB (0 = no limit). Default 100 MB. */
     var archiveThumbCacheSizeMb: Int
         get() = prefs.getInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, 100)

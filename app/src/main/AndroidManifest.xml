@@ -5,6 +5,9 @@
     <!-- Storage: full access (Android 11+) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- DND: player notification blocking -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
     <!-- Storage: legacy (Android 10 and below) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"

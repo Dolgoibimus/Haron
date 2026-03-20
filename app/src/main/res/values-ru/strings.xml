@@ -1456,4 +1456,28 @@
     <string name="web_navigator_files">%d файлов</string>
     <string name="web_navigator_links">%d страниц</string>
     <string name="action_close">Закрыть</string>
+
+    <!-- Player Settings -->
+    <string name="player_settings">Настройки плеера</string>
+    <string name="player_dnd_title">Блокировка уведомлений</string>
+    <string name="player_dnd_subtitle">Включить Не беспокоить во время воспроизведения</string>
+    <string name="player_dnd_no_permission">Доступ к DND не предоставлен</string>
+    <string name="player_dnd_grant_permission">Предоставить доступ</string>
+    <string name="player_dnd_allow_through">Пропускать</string>
+    <string name="player_dnd_calls">Звонки</string>
+    <string name="player_dnd_messages">Сообщения</string>
+    <string name="player_dnd_alarms">Будильники</string>
+    <string name="player_dnd_repeat_callers">Повторные звонки (в течение 15 мин)</string>
+    <string name="player_dnd_who_can_call">Кто может звонить/писать</string>
+    <string name="player_dnd_senders_none">Никто</string>
+    <string name="player_dnd_senders_starred">Избранные контакты</string>
+    <string name="player_dnd_senders_contacts">Все контакты</string>
+    <string name="player_dnd_senders_any">Все</string>
+    <string name="player_dnd_visual">Блокировать визуальные эффекты</string>
+    <string name="player_dnd_heads_up">Всплывающие уведомления</string>
+    <string name="player_dnd_status_bar">Иконки в статус-баре</string>
+    <string name="player_dnd_screen_on">Включение экрана</string>
+    <string name="player_dnd_vibration">Беззвучный режим (без вибрации)</string>
+    <string name="player_tab_video">Видео</string>
+    <string name="player_tab_audio">Аудио</string>
 </resources>
