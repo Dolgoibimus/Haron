@@ -44,6 +44,8 @@ class SshSessionManager {
             sess.setPassword(params.password)
             sess.setConfig("StrictHostKeyChecking", "no")
             sess.timeout = 15_000
+            sess.setServerAliveInterval(30_000) // keepalive every 30s
+            sess.setServerAliveCountMax(3) // disconnect after 3 missed (90s)
             sess.connect(15_000)
 
             EcosystemLogger.d(HaronConstants.TAG, "SshSessionManager: session established, auth method=password, serverVersion=${sess.serverVersion}")

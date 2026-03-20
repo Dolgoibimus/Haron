@@ -56,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,8 +95,27 @@ fun TerminalScreen(
     viewModel: TerminalViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    var shellInput by remember { mutableStateOf(TextFieldValue("")) }
+    var sshInput by remember { mutableStateOf(TextFieldValue("")) }
     var inputValue by remember { mutableStateOf(TextFieldValue("")) }
     val listState = rememberLazyListState()
+    var selectedTab by remember { mutableIntStateOf(0) } // 0=Shell, 1=SSH, 2=AI
+
+    // Sync inputValue with per-tab storage on tab switch + reset history index
+    LaunchedEffect(selectedTab) {
+        inputValue = if (selectedTab == 1) sshInput else shellInput
+        viewModel.resetHistoryIndex()
+    }
+    // Save back to per-tab storage
+    LaunchedEffect(inputValue) {
+        if (selectedTab == 1) sshInput = inputValue else shellInput = inputValue
+    }
+
+    // Sync tab with SSH mode
+    LaunchedEffect(state.sshMode) {
+        if (state.sshMode && selectedTab != 1) selectedTab = 1
+        if (!state.sshMode && selectedTab == 1) selectedTab = 0
+    }
 
     val bgColor = Color(0xFF1E1E1E)
     val textColor = Color(0xFFD4D4D4)
@@ -136,75 +156,97 @@ fun TerminalScreen(
         contentWindowInsets = WindowInsets(0),
         topBar = {
             val halfStatusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() / 2
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(bgColor)
                     .padding(top = halfStatusBar)
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.back),
-                    tint = textColor,
+                // Header row: back + title + SSH status
+                Row(
                     modifier = Modifier
-                        .size(18.dp)
-                        .clickable { onBack() }
-                )
-                Text(
-                    text = stringResource(R.string.terminal_title),
-                    color = textColor,
-                    fontSize = 15.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(start = 15.dp)
-                )
-
-                if (state.sshConnecting) {
-                    Spacer(Modifier.width(8.dp))
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = commandColor
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
+                        tint = textColor,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { onBack() }
                     )
-                    Spacer(Modifier.width(4.dp))
                     Text(
-                        text = stringResource(R.string.ssh_connecting),
-                        color = textColor.copy(alpha = 0.7f),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
+                        text = stringResource(R.string.terminal_title),
+                        color = textColor,
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(start = 15.dp)
                     )
+
+                    if (state.sshConnecting) {
+                        Spacer(Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = commandColor
+                        )
+                    }
+
+                    if (state.sshMode) {
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = { viewModel.disconnectSsh() },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.LinkOff,
+                                contentDescription = stringResource(R.string.ssh_disconnect),
+                                tint = errorColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
 
-                if (state.sshMode) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "SSH",
-                        color = Color.Black,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(sshPromptColor)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(
-                        onClick = { viewModel.disconnectSsh() },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.LinkOff,
-                            contentDescription = stringResource(R.string.ssh_disconnect),
-                            tint = errorColor,
-                            modifier = Modifier.size(18.dp)
+                // Tabs: Shell | SSH | AI
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    listOf("Shell", "SSH", "AI").forEachIndexed { index, title ->
+                        val isSelected = selectedTab == index
+                        Text(
+                            text = title,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) commandColor else textColor.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(if (isSelected) Color(0xFF2D2D2D) else Color.Transparent)
+                                .clickable {
+                                    when (index) {
+                                        0 -> {
+                                            if (state.sshMode) viewModel.disconnectSsh()
+                                            selectedTab = 0
+                                        }
+                                        1 -> selectedTab = 1
+                                        2 -> selectedTab = 2
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
                         )
                     }
                 }
             }
         },
         bottomBar = {
+            if (selectedTab == 2) return@Scaffold // AI tab — no input bar yet
+
             val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             val keyboardPadding = (imeBottom - navBottom).coerceAtLeast(0.dp)
@@ -460,14 +502,53 @@ fun TerminalScreen(
             }
         }
     ) { padding ->
-        // Terminal grid — Canvas-based character grid for full-screen apps (vi, nano, htop)
-        TerminalGrid(
-            buffer = viewModel.terminalBuffer,
-            onSizeCalculated = { rows, cols -> viewModel.resizePty(rows, cols) },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        )
+        when (selectedTab) {
+            0 -> {
+                TerminalGrid(
+                    buffer = viewModel.shellBuffer,
+                    onSizeCalculated = { rows, cols -> viewModel.resizePty(rows, cols) },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                )
+            }
+            1 -> {
+                TerminalGrid(
+                    buffer = viewModel.sshBuffer,
+                    onSizeCalculated = { rows, cols -> viewModel.resizePty(rows, cols) },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                )
+            }
+            2 -> {
+                // AI tab — placeholder
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .background(bgColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Claude AI",
+                            color = commandColor,
+                            fontSize = 18.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Coming soon",
+                            color = textColor.copy(alpha = 0.5f),
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

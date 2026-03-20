@@ -1737,6 +1737,37 @@ AI: Claude по подписке, tool use, терминальный вывод,
 
 > Выполненные задачи с описанием как решили.
 
+### Batch 95 — Терминал: grid renderer, tabs, раздельные буферы ✅ проверено
+
+**Grid renderer (Canvas):**
+- TerminalBuffer: rows×cols матрица с полной ANSI-поддержкой (cursor, erase, scroll, SGR)
+- TerminalGrid: Canvas-рендер с авторесайзом по размеру экрана
+- vi/nano/htop отрисовываются полноценно (тильды, статус-бар, курсор)
+
+**Raw mode для интерактивных приложений:**
+- Автодетект vi/nano/htop → каждая клавиша сразу в PTY
+- Backspace работает (DEL 0x7F)
+- Автовыход из raw mode при появлении промпта shell
+- История команд не засоряется вводом из vi
+
+**Три таба: Shell | SSH | AI:**
+- Отдельный grid-буфер для Shell и SSH
+- Отдельное поле ввода для каждого таба
+- Отдельная история команд (200 на каждый)
+- Автопереключение на SSH-таб при подключении
+- AI-таб: заглушка "Coming soon"
+
+**SSH keepalive:**
+- `setServerAliveInterval(30000)` — пинг каждые 30 сек
+- Сессия не отваливается при idle
+
+**Панель быстрых клавиш:**
+- Esc, Enter, Tab, ^C, ^D, ^Z, ↑↓←→ + символы
+
+**Файлы:** TerminalBuffer.kt, TerminalGrid.kt, TerminalViewModel.kt, TerminalScreen.kt, SshSessionManager.kt
+
+---
+
 ### Batch 94 — Терминал: persistent shell + PTY ✅ проверено
 
 **Persistent shell с настоящим PTY:**

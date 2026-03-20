@@ -44,7 +44,8 @@ data class TerminalState(
     val currentDir: String = Environment.getExternalStorageDirectory().absolutePath,
     val isRunning: Boolean = false,
     val rawMode: Boolean = false, // true when interactive app (vi, nano) is running
-    val commandHistory: List<String> = emptyList(),
+    val shellHistory: List<String> = emptyList(),
+    val sshHistory: List<String> = emptyList(),
     val historyIndex: Int = -1,
     val completions: List<String> = emptyList(),
     val bufferSize: Int = 2000,
@@ -71,7 +72,10 @@ class TerminalViewModel @Inject constructor(
         appContext.getSharedPreferences("terminal_history", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(
-        TerminalState(commandHistory = loadHistory())
+        TerminalState(
+            shellHistory = loadHistory(KEY_SHELL_HISTORY),
+            sshHistory = loadHistory(KEY_SSH_HISTORY)
+        )
     )
     val state: StateFlow<TerminalState> = _state.asStateFlow()
 
@@ -83,8 +87,13 @@ class TerminalViewModel @Inject constructor(
     private var shellReaderJob: Job? = null
     private val shellLineBuffer = StringBuilder()
 
-    // Terminal grid buffer for full-screen apps (vi, nano, htop)
-    val terminalBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
+    // Separate grid buffer per tab
+    val shellBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
+    val sshBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
+
+    /** Get active buffer based on current mode */
+    val terminalBuffer: com.vamp.haron.data.terminal.TerminalBuffer
+        get() = if (_state.value.sshMode) sshBuffer else shellBuffer
 
     // SSH
     private val sshManager = SshSessionManager()
@@ -93,7 +102,8 @@ class TerminalViewModel @Inject constructor(
 
     companion object {
         private const val MAX_HISTORY = 200
-        private const val KEY_HISTORY = "cmd_history"
+        private const val KEY_SHELL_HISTORY = "cmd_history_shell"
+        private const val KEY_SSH_HISTORY = "cmd_history_ssh"
     }
 
     init {
@@ -117,37 +127,40 @@ class TerminalViewModel @Inject constructor(
         shellReaderJob?.cancel()
         shellReaderJob = viewModelScope.launch {
             shellSession.outputFlow.collect { chunk ->
-                // Feed raw output to terminal buffer (handles all ANSI: cursor, erase, colors)
-                terminalBuffer.processOutput(chunk)
+                shellBuffer.processOutput(chunk)
 
                 // Detect exit from interactive app: prompt reappears
                 if (_state.value.rawMode) {
-                    // Strip ANSI codes for prompt detection
                     val clean = chunk.replace(Regex("\u001B\\[[0-9;?]*[a-zA-Z]"), "").trimEnd()
                     val lastLine = clean.lines().lastOrNull { it.isNotBlank() } ?: ""
-                    EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: raw check lastLine='${lastLine.takeLast(20)}' clean_end='${clean.takeLast(10)}'")
                     if (lastLine.endsWith("$") || lastLine.endsWith("#") || lastLine.endsWith(">")
                         || lastLine.endsWith("$ ") || lastLine.endsWith("# ") || lastLine.endsWith("> ")) {
                         _state.update { it.copy(rawMode = false) }
-                        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: raw mode OFF (prompt detected)")
                     }
                 }
             }
         }
     }
 
-    private fun loadHistory(): List<String> {
-        val json = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
+    private fun loadHistory(key: String): List<String> {
+        val json = prefs.getString(key, null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
             (0 until arr.length()).map { arr.getString(it) }
         } catch (_: Exception) { emptyList() }
     }
 
-    private fun saveHistory(history: List<String>) {
+    private fun saveHistory(key: String, history: List<String>) {
         val arr = JSONArray(history)
-        prefs.edit().putString(KEY_HISTORY, arr.toString()).commit()
+        prefs.edit().putString(key, arr.toString()).commit()
     }
+
+    /** Get current history based on mode */
+    private fun currentHistory(): List<String> =
+        if (_state.value.sshMode) _state.value.sshHistory else _state.value.shellHistory
+
+    private fun currentHistoryKey(): String =
+        if (_state.value.sshMode) KEY_SSH_HISTORY else KEY_SHELL_HISTORY
 
     fun executeCommand(input: String) {
         val trimmed = input.trim()
@@ -159,13 +172,13 @@ class TerminalViewModel @Inject constructor(
 
         // Don't save to history in raw mode (vi/nano commands)
         if (!_state.value.rawMode) {
-            val newHistory = (_state.value.commandHistory + trimmed).takeLast(MAX_HISTORY)
-            saveHistory(newHistory)
+            val key = currentHistoryKey()
+            val history = currentHistory()
+            val newHistory = (history + trimmed).takeLast(MAX_HISTORY)
+            saveHistory(key, newHistory)
             _state.update {
-                it.copy(
-                    commandHistory = newHistory,
-                    historyIndex = -1
-                )
+                if (_state.value.sshMode) it.copy(sshHistory = newHistory, historyIndex = -1)
+                else it.copy(shellHistory = newHistory, historyIndex = -1)
             }
         }
 
@@ -242,6 +255,10 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    fun resetHistoryIndex() {
+        _state.update { it.copy(historyIndex = -1) }
+    }
+
     /** Send a single character directly to PTY (raw mode for vi/nano) */
     fun sendChar(char: Char) {
         shellSession.sendRaw(char.toString().toByteArray(Charsets.UTF_8))
@@ -297,7 +314,7 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun historyUp(): String? {
-        val history = _state.value.commandHistory
+        val history = currentHistory()
         if (history.isEmpty()) return null
         val newIndex = if (_state.value.historyIndex < 0) {
             history.lastIndex
@@ -309,7 +326,7 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun historyDown(): String? {
-        val history = _state.value.commandHistory
+        val history = currentHistory()
         if (history.isEmpty()) return null
         val idx = _state.value.historyIndex
         if (idx < 0) return null
@@ -439,7 +456,7 @@ class TerminalViewModel @Inject constructor(
             )
         }
 
-        appendLine(TerminalLine("Connecting to $user@$host:$port...", isCommand = true))
+        sshBuffer.processOutput("Connecting to $user@$host:$port...\r\n")
 
         viewModelScope.launch {
             try {
@@ -465,7 +482,7 @@ class TerminalViewModel @Inject constructor(
                 }
 
                 EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connected to $user@$host:$port")
-                appendLine(TerminalLine("Connected to $user@$host. Type 'exit' to disconnect.", isCommand = true))
+                sshBuffer.processOutput("Connected to $user@$host. Type 'exit' to disconnect.\r\n")
                 startSshReader()
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: SSH connect failed $user@$host:$port — ${e.message}")
@@ -492,7 +509,7 @@ class TerminalViewModel @Inject constructor(
                     is NoRouteToHostException -> "No route to host: $host"
                     else -> "Connection failed: ${e.message}"
                 }
-                appendLine(TerminalLine(message, isError = true))
+                terminalBuffer.processOutput("$message\r\n")
             }
         }
     }
@@ -505,31 +522,7 @@ class TerminalViewModel @Inject constructor(
             }
 
             sshManager.outputFlow.collect { chunk ->
-                // Split chunk into lines, handling partial lines
-                sshLineBuffer.append(chunk)
-                val content = sshLineBuffer.toString()
-                val lines = content.split('\n')
-
-                // All complete lines
-                for (i in 0 until lines.size - 1) {
-                    val line = lines[i].trimEnd('\r')
-                    ansiParser.reset()
-                    val parsed = ansiParser.parseLine(line)
-                    appendLine(TerminalLine(text = line, parsed = parsed))
-                }
-
-                // Keep the last partial line in buffer
-                sshLineBuffer.clear()
-                sshLineBuffer.append(lines.last())
-
-                // If buffer ends with something meaningful (prompt), flush it
-                val remaining = sshLineBuffer.toString()
-                if (remaining.isNotEmpty() && (remaining.endsWith("$ ") || remaining.endsWith("# ") || remaining.endsWith("> "))) {
-                    ansiParser.reset()
-                    val parsed = ansiParser.parseLine(remaining)
-                    appendLine(TerminalLine(text = remaining, parsed = parsed))
-                    sshLineBuffer.clear()
-                }
+                sshBuffer.processOutput(chunk)
             }
         }
 
@@ -551,7 +544,7 @@ class TerminalViewModel @Inject constructor(
         sshLineBuffer.clear()
 
         if (showMessage) {
-            appendLine(TerminalLine("[SSH disconnected]", isCommand = true))
+            terminalBuffer.processOutput("[SSH disconnected]\r\n")
         }
 
         _state.update {
