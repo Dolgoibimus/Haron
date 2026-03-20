@@ -262,8 +262,13 @@ fun TerminalScreen(
                         bgColor = Color(0xFF2D2D2D),
                         textColor = textColor,
                         onSymbol = { symbol ->
-                            val t = inputValue.text + symbol
-                            inputValue = TextFieldValue(t, TextRange(t.length))
+                            // Special keys → send raw to shell, don't insert in text field
+                            if (symbol.firstOrNull()?.code?.let { it < 0x20 || it == 0x1B } == true) {
+                                viewModel.sendRaw(symbol)
+                            } else {
+                                val t = inputValue.text + symbol
+                                inputValue = TextFieldValue(t, TextRange(t.length))
+                            }
                         },
                         onTab = {
                             viewModel.requestCompletion(inputValue.text)
@@ -319,10 +324,34 @@ fun TerminalScreen(
                         }
                         BasicTextField(
                             value = inputValue,
-                            onValueChange = {
+                            onValueChange = { newValue ->
                                 if (!inputBlocked) {
-                                    inputValue = it
-                                    viewModel.clearCompletions()
+                                    if (state.rawMode) {
+                                        // Raw mode: send each new character directly to PTY
+                                        if (newValue.text.length < inputValue.text.length || (inputValue.text == " " && newValue.text.isEmpty())) {
+                                            // Backspace was pressed
+                                            viewModel.sendRaw("\u007F") // DEL character
+                                        } else {
+                                            // Filter out the sentinel space
+                                            val oldClean = inputValue.text.trimStart()
+                                            val newClean = newValue.text.trimStart()
+                                            val added = if (newClean.length > oldClean.length) newClean.removePrefix(oldClean) else newValue.text.removePrefix(inputValue.text)
+                                            if (added.isNotEmpty()) {
+                                                for (ch in added) {
+                                                    if (ch == '\n') {
+                                                        viewModel.sendEnter()
+                                                    } else {
+                                                        viewModel.sendChar(ch)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // Keep a single space so Backspace can be detected
+                                        inputValue = TextFieldValue(" ", TextRange(1))
+                                    } else {
+                                        inputValue = newValue
+                                        viewModel.clearCompletions()
+                                    }
                                 }
                             },
                             modifier = Modifier
@@ -340,9 +369,22 @@ fun TerminalScreen(
                             ),
                             keyboardActions = KeyboardActions(
                                 onSend = {
-                                    if (inputValue.text.isNotBlank() && !inputBlocked) {
+                                    if (state.rawMode) {
+                                        // In raw mode, Enter → send CR to PTY
+                                        viewModel.sendEnter()
+                                    } else if (inputValue.text.isNotBlank() && !inputBlocked) {
                                         viewModel.executeCommand(inputValue.text)
                                         inputValue = TextFieldValue("")
+                                    }
+                                },
+                                onDone = {
+                                    if (state.rawMode) {
+                                        viewModel.sendEnter()
+                                    }
+                                },
+                                onGo = {
+                                    if (state.rawMode) {
+                                        viewModel.sendEnter()
                                     }
                                 }
                             )
@@ -418,71 +460,14 @@ fun TerminalScreen(
             }
         }
     ) { padding ->
-        // Output area
-        LazyColumn(
-            state = listState,
+        // Terminal grid — Canvas-based character grid for full-screen apps (vi, nano, htop)
+        TerminalGrid(
+            buffer = viewModel.terminalBuffer,
+            onSizeCalculated = { rows, cols -> viewModel.resizePty(rows, cols) },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 8.dp)
-        ) {
-            items(state.lines, key = null) { line ->
-                if (line.parsed != null && line.parsed.spans.any { it.fg != null || it.bold || it.italic }) {
-                    val annotated = buildStyledText(line, textColor, errorColor, commandColor, linkColor)
-                    Text(
-                        text = annotated,
-                        style = monoStyle,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    )
-                } else {
-                    val plainText = line.parsed?.plainText ?: line.text
-                    val paths = PathDetector.detectPaths(plainText)
-                    if (paths.isNotEmpty() && !line.isCommand) {
-                        val annotated = buildAnnotatedString {
-                            var lastEnd = 0
-                            val baseColor = when {
-                                line.isError -> errorColor
-                                line.isCommand -> commandColor
-                                else -> textColor
-                            }
-                            for (p in paths) {
-                                if (p.startIndex > lastEnd) {
-                                    withStyle(SpanStyle(color = baseColor)) {
-                                        append(plainText.substring(lastEnd, p.startIndex))
-                                    }
-                                }
-                                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                                    append(p.path)
-                                }
-                                lastEnd = p.endIndex
-                            }
-                            if (lastEnd < plainText.length) {
-                                withStyle(SpanStyle(color = baseColor)) {
-                                    append(plainText.substring(lastEnd))
-                                }
-                            }
-                        }
-                        Text(
-                            text = annotated,
-                            style = monoStyle,
-                            modifier = Modifier.padding(vertical = 1.dp)
-                        )
-                    } else {
-                        val color = when {
-                            line.isError -> errorColor
-                            line.isCommand -> commandColor
-                            else -> textColor
-                        }
-                        Text(
-                            text = plainText,
-                            style = monoStyle,
-                            color = color,
-                            modifier = Modifier.padding(vertical = 1.dp)
-                        )
-                    }
-                }
-            }
-        }
+        )
     }
 }
 
@@ -687,6 +672,8 @@ private fun SshQuickPanel(
     }
 }
 
+private data class PanelBtn(val label: String, val color: Color, val action: () -> Unit)
+
 @Composable
 private fun QuickSymbolsPanel(
     bgColor: Color,
@@ -695,6 +682,23 @@ private fun QuickSymbolsPanel(
     onTab: () -> Unit,
     onCtrlC: () -> Unit
 ) {
+    val ctrlColor = Color(0xFFF44747)
+    val specialColor = Color(0xFF4EC9B0)
+    val arrowColor = Color(0xFFDCDCAA)
+    val escColor = Color(0xFFCE9178)
+
+    val buttons = listOf(
+        PanelBtn("Esc", escColor) { onSymbol("\u001B") },
+        PanelBtn("Enter", specialColor) { onSymbol("\r") },
+        PanelBtn("Tab", specialColor) { onTab() },
+        PanelBtn("^C", ctrlColor) { onCtrlC() },
+        PanelBtn("^D", ctrlColor) { onSymbol("\u0004") },
+        PanelBtn("^Z", ctrlColor) { onSymbol("\u001A") },
+        PanelBtn("↑", arrowColor) { onSymbol("\u001B[A") },
+        PanelBtn("↓", arrowColor) { onSymbol("\u001B[B") },
+        PanelBtn("←", arrowColor) { onSymbol("\u001B[D") },
+        PanelBtn("→", arrowColor) { onSymbol("\u001B[C") },
+    )
     val symbols = listOf("~", "/", "|", ">", "<", "&", ";", "\"", "'", ".", "-", "_")
 
     Row(
@@ -706,39 +710,23 @@ private fun QuickSymbolsPanel(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Tab button
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color(0xFF383838))
-                .clickable { onTab() }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Tab",
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                color = Color(0xFF4EC9B0)
-            )
+        buttons.forEach { btn ->
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF383838))
+                    .clickable { btn.action() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = btn.label,
+                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    color = btn.color
+                )
+            }
         }
 
-        // Ctrl+C button
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color(0xFF383838))
-                .clickable { onCtrlC() }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "^C",
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                color = Color(0xFFF44747)
-            )
-        }
-
-        // Symbol buttons
         symbols.forEach { sym ->
             Box(
                 modifier = Modifier

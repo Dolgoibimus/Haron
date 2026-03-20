@@ -40,12 +40,10 @@ data class TerminalLine(
 )
 
 data class TerminalState(
-    val lines: List<TerminalLine> = listOf(
-        TerminalLine("Haron Terminal v2.0 — ANSI color support", isCommand = false),
-        TerminalLine("Type 'help' for available commands.", isCommand = false)
-    ),
+    val lines: List<TerminalLine> = emptyList(),
     val currentDir: String = Environment.getExternalStorageDirectory().absolutePath,
     val isRunning: Boolean = false,
+    val rawMode: Boolean = false, // true when interactive app (vi, nano) is running
     val commandHistory: List<String> = emptyList(),
     val historyIndex: Int = -1,
     val completions: List<String> = emptyList(),
@@ -85,6 +83,9 @@ class TerminalViewModel @Inject constructor(
     private var shellReaderJob: Job? = null
     private val shellLineBuffer = StringBuilder()
 
+    // Terminal grid buffer for full-screen apps (vi, nano, htop)
+    val terminalBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
+
     // SSH
     private val sshManager = SshSessionManager()
     private var sshReaderJob: Job? = null
@@ -116,29 +117,20 @@ class TerminalViewModel @Inject constructor(
         shellReaderJob?.cancel()
         shellReaderJob = viewModelScope.launch {
             shellSession.outputFlow.collect { chunk ->
-                shellLineBuffer.append(chunk)
-                val content = shellLineBuffer.toString()
-                val lines = content.split('\n')
+                // Feed raw output to terminal buffer (handles all ANSI: cursor, erase, colors)
+                terminalBuffer.processOutput(chunk)
 
-                // All complete lines
-                for (i in 0 until lines.size - 1) {
-                    val line = lines[i].trimEnd('\r')
-                    ansiParser.reset()
-                    val parsed = ansiParser.parseLine(line)
-                    appendLine(TerminalLine(text = line, parsed = parsed))
-                }
-
-                // Keep partial line in buffer
-                shellLineBuffer.clear()
-                shellLineBuffer.append(lines.last())
-
-                // Flush prompt-like endings
-                val remaining = shellLineBuffer.toString()
-                if (remaining.isNotEmpty() && (remaining.endsWith("$ ") || remaining.endsWith("# ") || remaining.endsWith("> "))) {
-                    ansiParser.reset()
-                    val parsed = ansiParser.parseLine(remaining)
-                    appendLine(TerminalLine(text = remaining, parsed = parsed))
-                    shellLineBuffer.clear()
+                // Detect exit from interactive app: prompt reappears
+                if (_state.value.rawMode) {
+                    // Strip ANSI codes for prompt detection
+                    val clean = chunk.replace(Regex("\u001B\\[[0-9;?]*[a-zA-Z]"), "").trimEnd()
+                    val lastLine = clean.lines().lastOrNull { it.isNotBlank() } ?: ""
+                    EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: raw check lastLine='${lastLine.takeLast(20)}' clean_end='${clean.takeLast(10)}'")
+                    if (lastLine.endsWith("$") || lastLine.endsWith("#") || lastLine.endsWith(">")
+                        || lastLine.endsWith("$ ") || lastLine.endsWith("# ") || lastLine.endsWith("> ")) {
+                        _state.update { it.copy(rawMode = false) }
+                        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: raw mode OFF (prompt detected)")
+                    }
                 }
             }
         }
@@ -165,15 +157,16 @@ class TerminalViewModel @Inject constructor(
         // Clear completions
         _state.update { it.copy(completions = emptyList()) }
 
-        // Add to history
-        val newHistory = (_state.value.commandHistory + trimmed).takeLast(MAX_HISTORY)
-        saveHistory(newHistory)
-
-        _state.update {
-            it.copy(
-                commandHistory = newHistory,
-                historyIndex = -1
-            )
+        // Don't save to history in raw mode (vi/nano commands)
+        if (!_state.value.rawMode) {
+            val newHistory = (_state.value.commandHistory + trimmed).takeLast(MAX_HISTORY)
+            saveHistory(newHistory)
+            _state.update {
+                it.copy(
+                    commandHistory = newHistory,
+                    historyIndex = -1
+                )
+            }
         }
 
         if (_state.value.sshMode) {
@@ -181,39 +174,45 @@ class TerminalViewModel @Inject constructor(
             return
         }
 
-        // Handle built-in commands that need local processing
+        // Built-in commands that DON'T go to shell
         val cmd = trimmed.split(" ").firstOrNull()?.lowercase() ?: ""
         when (cmd) {
             "help" -> {
-                appendLine(TerminalLine("\$ $trimmed", isCommand = true))
-                for (line in showHelp()) appendLine(line)
+                for (line in showHelp()) {
+                    terminalBuffer.processOutput(line.text + "\r\n")
+                }
                 return
             }
             "clear", "cls" -> {
-                clearScreen()
+                terminalBuffer.processOutput("\u001B[2J\u001B[H") // ANSI clear screen + cursor home
                 return
             }
             "ssh" -> {
-                appendLine(TerminalLine("\$ $trimmed", isCommand = true))
                 val parts = parseCommandLine(trimmed)
                 parseSshCommand(parts.drop(1))
                 return
             }
         }
 
-        // Send to persistent shell — shell echoes the command and produces output
+        // Detect interactive apps → switch to raw mode
+        val interactiveApps = setOf("vi", "vim", "nano", "htop", "top", "less", "more", "man")
+        if (cmd in interactiveApps) {
+            _state.update { it.copy(rawMode = true) }
+        }
+
+        // Everything else → send directly to persistent shell as raw text
+        // Shell handles echo, cd, vi, export, pipes — everything
         if (shellSession.isAlive) {
             shellSession.sendCommand(trimmed)
         } else {
-            // Shell died — restart and retry
-            appendLine(TerminalLine("[Shell session restarting...]", isError = true))
+            terminalBuffer.processOutput("[Shell restarting...]\r\n")
             startShellSession()
             viewModelScope.launch {
                 kotlinx.coroutines.delay(500)
                 if (shellSession.isAlive) {
                     shellSession.sendCommand(trimmed)
                 } else {
-                    appendLine(TerminalLine("Shell failed to restart", isError = true))
+                    terminalBuffer.processOutput("[Shell failed to restart]\r\n")
                 }
             }
         }
@@ -240,6 +239,28 @@ class TerminalViewModel @Inject constructor(
     fun sendSshRaw(data: String) {
         viewModelScope.launch {
             sshManager.sendRaw(data)
+        }
+    }
+
+    /** Send a single character directly to PTY (raw mode for vi/nano) */
+    fun sendChar(char: Char) {
+        shellSession.sendRaw(char.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    /** Send Enter in raw mode */
+    fun sendEnter() {
+        shellSession.sendRaw(byteArrayOf(0x0D)) // CR
+    }
+
+    /** Exit raw mode (called when interactive app exits) */
+    fun exitRawMode() {
+        _state.update { it.copy(rawMode = false) }
+    }
+
+    /** Resize PTY to match screen dimensions */
+    fun resizePty(rows: Int, cols: Int) {
+        if (shellSession.isAlive) {
+            shellSession.resize(rows, cols)
         }
     }
 
