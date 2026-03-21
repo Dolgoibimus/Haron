@@ -1,8 +1,11 @@
 package com.vamp.haron.presentation.terminal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,10 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -30,6 +37,7 @@ import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +48,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -198,32 +209,74 @@ fun TerminalScreen(
             )
         }
 
+        // History list — slides in above quick panel
+        var showHistory by remember { mutableStateOf(false) }
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showHistory && state.history.isNotEmpty(),
+            enter = androidx.compose.animation.slideInVertically { it },
+            exit = androidx.compose.animation.slideOutVertically { it }
+        ) {
+            val scrollState = rememberScrollState()
+            LaunchedEffect(Unit) {
+                scrollState.scrollTo(scrollState.maxValue)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 250.dp)
+                    .background(Color(0xFF252526))
+                    .verticalScroll(scrollState)
+            ) {
+                state.history.forEach { cmd ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showHistory = false
+                                viewModel.insertCommand(cmd)
+                            }
+                            .padding(vertical = 2.dp, horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = cmd,
+                            color = Color(0xFFD4D4D4),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f).padding(vertical = 4.dp)
+                        )
+                        Text(
+                            text = "✕",
+                            color = Color(0xFF888888),
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .clickable { viewModel.removeFromHistory(cmd) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Quick keys panel
         QuickKeysPanel(
             onSendRaw = { viewModel.sendRaw(it) },
             onTab = { viewModel.sendRaw("\t") },
             onCtrlC = { viewModel.sendInterrupt() },
-            onHistoryUp = {
-                val cmd = viewModel.historyUp()
-                if (cmd != null) {
-                    viewModel.sendRaw("\u0015")
-                    for (ch in cmd) viewModel.sendChar(ch)
-                }
-            },
-            onHistoryDown = {
-                val cmd = viewModel.historyDown()
-                if (cmd != null) {
-                    viewModel.sendRaw("\u0015")
-                    for (ch in cmd) viewModel.sendChar(ch)
-                } else {
-                    viewModel.sendRaw("\u0015")
-                }
-            }
+            onArrowUp = { viewModel.sendRaw("\u001B[A") },
+            onArrowUpLong = { showHistory = !showHistory },
+            onArrowDown = { viewModel.sendRaw("\u001B[B") }
         )
 
         // Hidden TextField — captures keyboard, sends to PTY/SSH
-        // Keep "x " (char + space) so Android doesn't trigger Caps after reset
+        // Pending backspace: keyboard may shorten text on Enter tap — wait to see if
+        // keyboardActions fires (= Enter), otherwise it was a real backspace
         var hiddenText by remember { mutableStateOf(TextFieldValue("x ", TextRange(2))) }
+        var pendingBackspace by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+
         BasicTextField(
             value = hiddenText,
             onValueChange = { newValue ->
@@ -231,20 +284,25 @@ fun TerminalScreen(
                 val newLen = newValue.text.length
                 when {
                     newLen < oldLen -> {
-                        // Backspace
-                        viewModel.sendBackspace()
-                        hiddenText = TextFieldValue("x ", TextRange(2))
+                        // Could be backspace OR keyboard modifying text before Enter
+                        pendingBackspace = true
+                        scope.launch {
+                            delay(150L)
+                            if (pendingBackspace) {
+                                viewModel.sendBackspace()
+                                pendingBackspace = false
+                            }
+                        }
                     }
                     newLen > oldLen -> {
-                        // New characters typed
                         val added = newValue.text.substring(oldLen)
                         for (ch in added) {
                             if (ch == '\n') viewModel.sendEnter()
                             else viewModel.sendChar(ch)
                         }
-                        hiddenText = TextFieldValue("x ", TextRange(2))
                     }
                 }
+                hiddenText = TextFieldValue("x ", TextRange(2))
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -253,15 +311,15 @@ fun TerminalScreen(
             textStyle = TextStyle(fontSize = 1.sp, color = Color.Transparent),
             cursorBrush = SolidColor(Color.Transparent),
             keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.None,
+                imeAction = ImeAction.Done,
                 capitalization = KeyboardCapitalization.None,
-                autoCorrectEnabled = false,
+                autoCorrectEnabled = true,
                 keyboardType = KeyboardType.Text
             ),
             keyboardActions = KeyboardActions(
-                onSend = { viewModel.sendEnter() },
-                onDone = { viewModel.sendEnter() },
-                onGo = { viewModel.sendEnter() }
+                onSend = { pendingBackspace = false; viewModel.sendEnter() },
+                onDone = { pendingBackspace = false; viewModel.sendEnter() },
+                onGo = { pendingBackspace = false; viewModel.sendEnter() }
             )
         )
 
@@ -416,13 +474,15 @@ private fun sshFieldColors(textColor: Color, accentColor: Color) = OutlinedTextF
 
 // --- Quick Keys Panel ---
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QuickKeysPanel(
     onSendRaw: (String) -> Unit,
     onTab: () -> Unit,
     onCtrlC: () -> Unit,
-    onHistoryUp: () -> Unit,
-    onHistoryDown: () -> Unit
+    onArrowUp: () -> Unit,
+    onArrowUpLong: () -> Unit,
+    onArrowDown: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val ctrlColor = Color(0xFFF44747)
@@ -446,8 +506,8 @@ private fun QuickKeysPanel(
                 for (ch in clip) onSendRaw(ch.toString())
             }
         },
-        Btn("↑", arrowColor) { onHistoryUp() },
-        Btn("↓", arrowColor) { onHistoryDown() },
+        // ↑ handled separately (short tap = arrow, long tap = history)
+        Btn("↓", arrowColor) { onArrowDown() },
         Btn("←", arrowColor) { onSendRaw("\u001B[D") },
         Btn("→", arrowColor) { onSendRaw("\u001B[C") },
         Btn("Home", arrowColor) { onSendRaw("\u001B[H") },
@@ -465,7 +525,45 @@ private fun QuickKeysPanel(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        buttons.forEach { btn ->
+        // Regular buttons before ↑
+        buttons.take(7).forEach { btn ->
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF383838))
+                    .clickable { btn.action() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = btn.label,
+                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    color = btn.color
+                )
+            }
+        }
+
+        // ↑ button: short tap = arrow up, long tap = toggle history list
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF383838))
+                .combinedClickable(
+                    onClick = { onArrowUp() },
+                    onLongClick = { onArrowUpLong() }
+                )
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "↑",
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                color = arrowColor
+            )
+        }
+
+        // Remaining buttons (↓, ←, →, Home, End)
+        buttons.drop(7).forEach { btn ->
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))

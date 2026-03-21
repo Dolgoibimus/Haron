@@ -18,55 +18,7 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-### Терминал Termux-стиль + SSH через JSch
-
-**Что работает (проверено):**
-- ✅ Shell PTY — один процесс sh, ввод каждого символа через sendRaw в PTY
-- ✅ Termux-стиль UI — один терминал, скрытый TextField для клавиатуры, нет BasicTextField/промпта
-- ✅ Quick keys панель — Esc, Tab, ^C/D/Z/L, стрелки, Paste, символы
-- ✅ Pinch-to-zoom шрифта (4-24sp) + debounce resize 250ms
-- ✅ TerminalGrid Canvas — ANSI цвета, cursor blink
-- ✅ TerminalBuffer — альтернативный экранный буфер, scroll regions, cursor save/restore, DEC private modes (для Claude Code, vi, htop)
-- ✅ SSH кнопка в хедере → диалог (host, user, port, пароль) → JSch connect
-- ✅ JSch подключается, MOTD приходит и отображается через available() + Thread.sleep(50) в корутине
-- ✅ Ввод маршрутизируется: isSsh → sshManager.sendRaw(), иначе → shellSession.sendRaw()
-- ✅ sendRaw доставляет символы на сервер (подтверждено логами INPUT>)
-- ✅ Disconnect → возврат в shell
-- ✅ Сохранение пароля AES-256
-
-**Что работает (дополнительно подтверждено):**
-- ✅ Эхо от сервера приходит — ключевой фикс: `sendRaw` должен быть `suspend fun` с `withContext(Dispatchers.IO)`, вызов через `viewModelScope.launch`. Запись в JSch PipedOutputStream с main thread ломала pipe.
-- ✅ `available()` работает для всех данных когда write и read идут через Dispatchers.IO
-- ✅ Claude Code запускается через SSH, принимает ввод, отвечает
-- ✅ PTY size передаётся из buffer (initialCols/initialRows) — Claude Code рисует UI под правильный размер
-- ✅ TerminalBuffer обновлён по паттернам Termux: aboutToAutoWrap, erase с текущим стилем, раздельные saved states, tab stops, lineFeed ниже scroll region, wide characters
-- ✅ DejaVu Sans Mono встроен (2.1MB, широкое Unicode-покрытие)
-- ✅ TerminalGrid: wide char trail cells пропускаются, cursor visibility из buffer
-
-**Что НЕ работает (известные ограничения):**
-- `setPtySize()` ломает pipe — отключён (размер задаётся при connect через setPtyType)
-- `setOutputStream()` callback не вызывается в mwiede/jsch — не использовать
-- Blocking `read()` в Thread — висит навсегда (JSch PipedInputStream не совместим)
-- Единственный рабочий подход: `available()` + `Thread.sleep(50)` в корутине `Dispatchers.IO`
-- `sendRaw` ОБЯЗАТЕЛЬНО через `withContext(Dispatchers.IO)` — без этого write с main thread ломает pipe
-
-**Решённые проблемы рендеринга Claude Code:**
-- ✅ Белые прямоугольники — были курсором (block cursor → заменён на bar cursor 2dp)
-- ✅ Красный/жёлтый текст дублировался в чат — wcWidth считал ✗(U+2717) и Dingbats (U+2600-U+27BF) как width=2, сдвигая строки → wrap в неправильных местах. Исправлено: Dingbats = width 1
-- ✅ DejaVu Sans Mono встроен (2.1MB) для лучшего Unicode-покрытия
-- ✅ PTY size передаётся из buffer → Claude Code рисует UI под правильный размер
-
-**Оставшиеся мелочи:**
-- Разделительные линии `─` (U+2500) Claude Code могут быть тусклыми/невидимыми
-- Synchronized update mode (?2026h/l) не реализован — косметические мерцания при перерисовке
-- Debug логи (TermBuf PUT/CUU/CUD) пока включены — убрать когда всё стабильно
-
-**Файлы:**
-- TerminalViewModel.kt — чистый, один shell + SSH через JSch, маршрутизация ввода
-- TerminalScreen.kt — Termux-стиль, SSH кнопка + диалог
-- TerminalGrid.kt — fontSizeSp снаружи, debounce resize
-- TerminalBuffer.kt — alt screen, scroll regions, cursor save/restore, DEC modes
-- SshSessionManager.kt — JSch available() + Thread.sleep(50) в корутине
+Терминал Termux-стиль + SSH — завершён (Batch 98). Закоммичено.
 
 ---
 
@@ -1682,7 +1634,7 @@ RU:
 - [ ] Машина времени (версии текстовых файлов)
 - [ ] Переименование по содержимому (ML Kit предлагает имя для фото)
 - [ ] Мониторинг мусора в реальном времени (WorkManager, уведомление)
-- [ ] Терминал 2.0: persistent shell + PTY + три таба + Claude AI
+- [x] Терминал 2.0: Termux-стиль, SSH через JSch, VT100/xterm эмуляция, Claude Code ← Batch 98
 - [ ] Монтажный стол (FFmpeg: обрезка, склейка видео, таймлайн)
 - [ ] Чистильщик мессенджеров (Telegram/WhatsApp кэш и медиа)
 - [ ] Root-режим (опциональный): chmod, /data, системные папки
@@ -1725,42 +1677,30 @@ RU:
 
 ---
 
-## Терминал 2.0 — план
+## Терминал — текущая архитектура
 
-### Архитектура: три таба
-- **Shell** — persistent bash-сессия (один Process с pipe stdin/stdout, не новый процесс на каждую команду)
-- **SSH** — как сейчас (JSch PTY), + keepalive + авторесайз + автореконнект
-- **AI** — Claude Code клиент на Kotlin, OAuth через браузер (подписка Pro/Max), терминальный вывод (не чат-пузыри)
+### Реализовано (Batch 98):
+- **Termux-стиль** — одно окно, ввод через скрытый TextField, каждый символ → PTY
+- **Shell** — persistent bash через native PTY (JNI/NDK)
+- **SSH** — JSch, кнопка в хедере, диалог пароля, available() + Dispatchers.IO
+- **VT100/xterm** — alt screen, scroll regions, cursor save/restore, DEC modes, wcWidth
 
 ### Shell — что улучшить
-- [ ] Persistent shell: один bash-процесс, stdin/stdout через pipe, export/alias/cd живут между командами
-- [ ] Ctrl+C: `process.destroy()` по кнопке + SIGINT через PTY
-- [ ] Интерактивный ввод: stdin pipe, yes/no, пароли, скрипты с вводом
-- [ ] Фоновые процессы: command &, jobs, fg, bg (приходит с persistent shell)
-- [ ] PTY (vi/nano/htop): JNI/NDK или готовая библиотека (termux-terminal-emulator)
-- [ ] Copy/paste: long tap по выводу → копировать текст
+- [x] Persistent shell через PTY ← сделано
+- [x] Ctrl+C через SIGINT ← сделано
+- [x] PTY (vi/nano/htop) через JNI/NDK ← сделано
+- [ ] Copy/paste: long tap по тексту в grid → выделить → скопировать
 - [ ] Foreground Service + WakeLock для живучести сессии
 
 ### SSH — что улучшить
-- [ ] Keepalive: `session.setServerAliveInterval(30)` — пинг каждые 30 сек
-- [ ] Динамический resize: `channel.setPtySize()` по размеру экрана
-- [ ] Автореконнект при обрыве сети с сохранением рабочей директории
+- [x] Keepalive: `session.setServerAliveInterval(30_000)` ← сделано
+- [ ] Динамический resize: `setPtySize()` ломает JSch pipe, нужен другой подход или другая SSH-библиотека
+- [ ] Автореконнект при обрыве сети
 - [ ] Public key auth (помимо пароля)
 
-### AI-таб — Claude Code клиент
-- [ ] OAuth авторизация через браузер → токен `sk-ant-oat01-...`
-- [ ] API-запросы с OAuth-токеном (тот же endpoint что Claude Code)
-- [ ] Терминальный вывод (лента, не чат)
-- [ ] Контекст: текущая папка, список файлов, история shell-команд
-- [ ] Tool use: выполнение команд в shell (с подтверждением), чтение/запись файлов
-- [ ] Fallback на API ключ если OAuth перестанет работать
-- [ ] Команда `claude` или `ai` в shell-табе → автопереход на AI-таб
-
-### Что будет работать (полный список)
-Shell: persistent bash, export, alias, cd, pipe (|), redirect (>, >>), фоновые (&), jobs/fg/bg, Ctrl+C/D/Z, интерактивный ввод, все утилиты Android (ls, cat, cp, mv, rm, mkdir, chmod, grep, find, ps, kill, ping, ifconfig, df, du, mount, top, netstat, wget/curl), Tab-автодополнение, история (200), ANSI цвета (16/256/RGB), кликабельные пути, copy/paste
-PTY: vi/vim, nano, htop, top, less, more, динамический resize
-SSH: persistent сессия, keepalive, авторесайз, автореконнект, public key auth, панель Ctrl+C/D/Z/L, стрелки, Home/End
-AI: Claude по подписке, tool use, терминальный вывод, контекст папки
+### Что работает сейчас
+Shell: persistent bash через PTY, export, alias, cd, pipe, redirect, фоновые, Ctrl+C/D/Z, vi/nano/htop/less, ANSI 16/256/RGB, pinch-zoom шрифта
+SSH: JSch, кнопка подключения, диалог пароля, keepalive 30s, Claude Code работает через SSH
 
 ### Пакеты (TODO)
 - [ ] Busybox (~1МБ) встроить в APK — 300 утилит сразу (vi, wget, less, tar, awk, sed и др.)
@@ -1782,6 +1722,18 @@ AI: Claude по подписке, tool use, терминальный вывод,
 ## Известные проблемы (нерешённые)
 
 - **Dropbox: Production access** — приложение в статусе "Development", лимит пользователей исчерпан. Перед релизом подать "Apply for production" в Dropbox App Console → снимет лимит. Текущий подключённый аккаунт работает.
+- **SSH setPtySize()** — ломает JSch PipedInputStream. Resize SSH терминала при изменении шрифта/ориентации не работает. Размер задаётся один раз при подключении.
+- **Терминал: разделительные линии Claude Code** — `─` (U+2500) могут быть тусклыми/невидимыми
+- **Терминал: synchronized update mode** — `?2026h/l` не реализован, возможны косметические мерцания при перерисовке Claude Code
+- **Терминал: debug логи** — TermBuf PUT/CUU/CUD логи включены, убрать когда стабильно
+
+### Решённые проблемы ввода терминала
+
+- **Enter удалял последний символ** — клавиатура при тапе Enter модифицировала скрытый TextField (укорачивала текст), `onValueChange` видел укорочение и отправлял BACKSPACE вместо ENTER. **Решение:** `pendingBackspace` флаг + delay 150мс. При укорочении текста — не отправлять backspace сразу, а ждать. Если за 150мс `keyboardActions.onDone` вызовется → это Enter (backspace отменяется). Если нет → реальный backspace. Плюс `ImeAction.Done` вместо `ImeAction.None` — чтобы `keyboardActions.onDone` гарантированно срабатывал.
+- **Caps Lock после каждого символа** — sentinel `" "` (пробел) сбрасывался → Android считал начало предложения → включал Caps. **Решение:** sentinel `"x "` (символ + пробел) — Android видит середину слова.
+- **Свайп/предсказания не работали** — `autoCorrectEnabled = false` отключал всю клавиатурную магию. **Решение:** `autoCorrectEnabled = true`.
+- **История команд** — долгий тап ↑ в quick panel → выезжающий список (AnimatedVisibility + slideInVertically) до 200 команд. Тап по команде → вставляет (Ctrl+U + sendChar) и закрывает. Кнопка ✕ для удаления. Повторный долгий тап → скрывает. Команды захватываются из buffer grid при Enter (ищет промпт `$ `/`# `/`> `, берёт текст после него). Фильтрует пустые, пароли, дубликаты. Persist в SharedPreferences.
+- **LazyColumn в DropdownMenu крашит** — `IllegalStateException: Asking for intrinsic measurements of SubcomposeLayout`. Решение: `Column` + `verticalScroll` вместо `LazyColumn`.
 
 ---
 
@@ -1789,7 +1741,48 @@ AI: Claude по подписке, tool use, терминальный вывод,
 
 > Выполненные задачи с описанием как решили.
 
-### Batch 97 — Терминал: надёжный resize, raw mode по ANSI, обновление обеих панелей ⚠️ не проверено
+### Batch 98 — Termux-стиль терминал, SSH через JSch, VT100 эмуляция ⚠️ не проверено
+
+**Терминал — полная переделка в стиль Termux:**
+- Один экран, нет табов Shell/SSH/AI
+- Ввод напрямую в PTY через скрытый 1dp TextField (каждый символ → sendRaw)
+- Sentinel `"x "` вместо `" "` — убрал автоматический Caps Lock
+- Quick keys: Esc, Tab, ^C/D/Z/L, Paste, ↑↓←→, Home, End, символы
+- Клавиатура: `focusRequester + keyboardController?.show()` после SSH-диалога
+
+**SSH через JSch (push I/O):**
+- Кнопка SSH в хедере → диалог (host, user, port, пароль, save)
+- JSch: `getInputStream()` до connect + `available()` + `Thread.sleep(50)` в `withContext(Dispatchers.IO)`
+- `sendRaw` = `suspend fun` с `withContext(Dispatchers.IO)` — ОБЯЗАТЕЛЬНО, иначе pipe ломается
+- `setPtySize()` отключён — ломает JSch PipedInputStream
+- PTY size из buffer.cols/rows при connect через `setPtyType()`
+- Disconnect → возврат в shell, кнопка disconnect в хедере
+- Keepalive 30s, пароль AES-256
+
+**TerminalBuffer — VT100/xterm по паттернам Termux:**
+- Alternate screen buffer (?1049h/l, ?47h/l)
+- Scroll regions (DECSTBM), origin mode, auto-wrap
+- `aboutToAutoWrap` — курсор в последней колонке, wrap при следующем символе
+- Раздельные saved states main/alt screen
+- Erase с текущим стилем (не дефолтным)
+- Tab stops настраиваемые (ESC H, CSI g)
+- Wide chars: `wcWidth()`, trail-ячейки. Dingbats (U+2600-27BF) = width 1
+- DEC modes: cursor visibility, bracketed paste, focus events
+
+**TerminalGrid:**
+- DejaVu Sans Mono (2.1MB, полное Unicode)
+- Bar cursor (2dp линия) вместо block
+- Wide char trail cells пропускаются
+- Pinch-to-zoom (4-24sp), debounce resize 250ms
+
+**ExplorerViewModel:**
+- ВСЕ файловые операции обновляют ОБЕ панели
+
+**Файлы:** TerminalViewModel.kt, TerminalScreen.kt, TerminalGrid.kt, TerminalBuffer.kt, SshSessionManager.kt, ExplorerViewModel.kt, features.txt (EN+RU), DejaVuSansMono.ttf, JetBrainsMono.ttf
+
+---
+
+### Batch 97 — Терминал: надёжный resize, raw mode по ANSI, обновление обеих панелей ⚠️ поглощён Batch 98
 
 **Надёжный pinch-to-zoom + resize:**
 - `fontSizeSp` вынесен из TerminalGrid в TerminalScreen — отдельный для Shell и SSH, не теряется при смене таба

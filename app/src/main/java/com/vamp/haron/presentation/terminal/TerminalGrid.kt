@@ -57,7 +57,7 @@ fun TerminalGrid(
 
     val termTypeface = remember {
         try {
-            val tf = android.graphics.Typeface.createFromAsset(gridContext.assets, "fonts/DejaVuSansMono.ttf")
+            val tf = android.graphics.Typeface.createFromAsset(gridContext.assets, "fonts/JetBrainsMono.ttf")
             android.util.Log.d("TermGrid", "Font loaded: DejaVuSansMono, bold=${tf.isBold}, italic=${tf.isItalic}")
             tf
         } catch (e: Exception) {

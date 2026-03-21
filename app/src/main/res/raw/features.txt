@@ -542,9 +542,8 @@
   > How to connect: pair TV via Bluetooth → in Haron: Transfer → BT HID → select device
 
 # Terminal
-- Termux-style terminal [NEW]
-  > Single window — no tabs, no separate input field
-  > Every keystroke goes directly to PTY — like a real terminal
+- Built-in terminal [NEW]
+  > Single window, direct keyboard input
   > Tap on terminal to show keyboard
   > DejaVu Sans Mono font with full Unicode support
 - Persistent shell with real PTY [NEW]
@@ -564,13 +563,16 @@
   > Keepalive every 30s — session won't drop on idle
   > Full interactive shell — run Claude Code, vi, htop on remote server
   > Disconnect button in header — returns to local shell
-- Pinch-to-zoom font size [NEW]
-  > Pinch gesture changes terminal font size (4–24sp)
-  > Text always fills screen width — columns recalculate automatically
 - Quick keys panel
   > Esc, Tab, ^C, ^D, ^Z, ^L, Paste, ↑↓←→, Home, End
   > Symbols: ~ / | > < & ; " ' . - _
   > Works in local shell and SSH
+- Command history [NEW]
+  > Long tap ↑ — sliding list of recent commands (up to 200)
+  > Tap command — inserts into terminal
+  > Delete button (✕) next to each command
+  > Commands captured automatically from terminal buffer on Enter
+  > Passwords are excluded from history
 
 # File Comparison
 - Text diff: two columns with sync scroll

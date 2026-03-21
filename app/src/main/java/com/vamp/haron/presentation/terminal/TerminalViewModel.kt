@@ -108,8 +108,52 @@ class TerminalViewModel @Inject constructor(
 
     fun sendEnter() {
         EcosystemLogger.d(HaronConstants.TAG, "INPUT> ENTER isSsh=$isSsh")
+        // Capture command from buffer before sending Enter
+        captureCommandFromBuffer()
         if (isSsh) viewModelScope.launch { sshManager.sendRaw("\r") }
         else shellSession.sendRaw(byteArrayOf(0x0D))
+    }
+
+    /**
+     * Read current line from buffer grid, extract command after prompt ($ # >).
+     * Skip empty, passwords, duplicates.
+     */
+    private fun captureCommandFromBuffer() {
+        val row = buffer.cursorRow
+        val col = buffer.cursorCol
+        if (row < 0 || row >= buffer.rows || col <= 0) return
+
+        // Read characters from grid row up to cursor position
+        val sb = StringBuilder()
+        for (c in 0 until minOf(col, buffer.cols)) {
+            val cell = buffer.grid[row][c]
+            if (!cell.isWideTrail) sb.append(cell.char)
+        }
+        val line = sb.toString()
+
+        // Find last prompt marker and extract command after it
+        val promptMarkers = listOf("$ ", "# ", "> ")
+        var cmdStart = -1
+        for (marker in promptMarkers) {
+            val idx = line.lastIndexOf(marker)
+            if (idx >= 0 && idx + marker.length > cmdStart) {
+                cmdStart = idx + marker.length
+            }
+        }
+        if (cmdStart < 0) return
+
+        val cmd = line.substring(cmdStart).trim()
+        if (cmd.isBlank()) return
+        // Skip passwords
+        if (cmd.contains("password", ignoreCase = true) || cmd.contains("passphrase", ignoreCase = true)) return
+        // Skip if same as last entry
+        val history = _state.value.history
+        if (history.isNotEmpty() && history.last() == cmd) return
+
+        // Save to history (max 200)
+        val newHistory = (history + cmd).let { if (it.size > MAX_HISTORY) it.drop(it.size - MAX_HISTORY) else it }
+        _state.update { it.copy(history = newHistory) }
+        saveHistory(newHistory)
     }
 
     fun sendBackspace() {
@@ -223,28 +267,22 @@ class TerminalViewModel @Inject constructor(
         } catch (_: Exception) { emptyList() }
     }
 
-    fun historyUp(): String? {
-        val history = _state.value.history
-        if (history.isEmpty()) return null
-        val newIndex = if (_state.value.historyIndex < 0) history.lastIndex
-        else (_state.value.historyIndex - 1).coerceAtLeast(0)
-        _state.update { it.copy(historyIndex = newIndex) }
-        return history[newIndex]
+    private fun saveHistory(history: List<String>) {
+        val arr = JSONArray(history)
+        prefs.edit().putString(KEY_HISTORY, arr.toString()).apply()
     }
 
-    fun historyDown(): String? {
-        val history = _state.value.history
-        if (history.isEmpty()) return null
-        val idx = _state.value.historyIndex
-        if (idx < 0) return null
-        val newIndex = idx + 1
-        return if (newIndex > history.lastIndex) {
-            _state.update { it.copy(historyIndex = -1) }
-            ""
-        } else {
-            _state.update { it.copy(historyIndex = newIndex) }
-            history[newIndex]
-        }
+    /** Insert a command from history into PTY: Ctrl+U (clear line) + type each char */
+    fun insertCommand(cmd: String) {
+        sendRaw("\u0015") // Ctrl+U — kill line
+        for (ch in cmd) sendChar(ch)
+    }
+
+    fun removeFromHistory(cmd: String) {
+        val newHistory = _state.value.history.toMutableList()
+        newHistory.remove(cmd)
+        _state.update { it.copy(history = newHistory) }
+        saveHistory(newHistory)
     }
 
     // --- Util ---
