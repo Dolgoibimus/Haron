@@ -4,14 +4,11 @@ import android.content.Context
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vamp.haron.data.terminal.AnsiParser
-import com.vamp.haron.data.terminal.ParsedLine
 import com.vamp.haron.data.terminal.SshConnectionParams
+import com.vamp.haron.data.terminal.SshCredential
 import com.vamp.haron.data.terminal.SshCredentialStore
 import com.vamp.haron.data.terminal.SshSessionManager
-import com.vamp.haron.data.terminal.TabCompletionEngine
 import android.content.SharedPreferences
-import com.jcraft.jsch.JSchException
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,43 +22,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
 import javax.inject.Inject
 
-data class TerminalLine(
-    val text: String,
-    val isCommand: Boolean = false,
-    val isError: Boolean = false,
-    val parsed: ParsedLine? = null
-)
-
 data class TerminalState(
-    val lines: List<TerminalLine> = emptyList(),
     val currentDir: String = Environment.getExternalStorageDirectory().absolutePath,
-    val isRunning: Boolean = false,
-    val rawMode: Boolean = false, // true when interactive app (vi, nano) is running
-    val shellHistory: List<String> = emptyList(),
-    val sshHistory: List<String> = emptyList(),
+    val history: List<String> = emptyList(),
     val historyIndex: Int = -1,
-    val completions: List<String> = emptyList(),
-    val bufferSize: Int = 2000,
-    val timeoutSec: Int = 30,
     // SSH
-    val sshMode: Boolean = false,
+    val sshConnected: Boolean = false,
+    val sshConnecting: Boolean = false,
     val sshUser: String = "",
     val sshHost: String = "",
-    val sshPort: Int = 22,
-    val sshConnecting: Boolean = false,
-    val showPasswordDialog: Boolean = false,
+    val showSshDialog: Boolean = false,
     val pendingSshUser: String = "",
     val pendingSshHost: String = "",
     val pendingSshPort: Int = 22
 )
 
+/**
+ * Terminal — Termux-style single window.
+ * Shell: local PTY (ShellSession).
+ * SSH: JSch with push I/O (setInputStream/setOutputStream). Triggered by SSH button.
+ * Input always goes directly to active session (shell or SSH).
+ */
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
@@ -71,262 +54,186 @@ class TerminalViewModel @Inject constructor(
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("terminal_history", Context.MODE_PRIVATE)
 
-    private val _state = MutableStateFlow(
-        TerminalState(
-            shellHistory = loadHistory(KEY_SHELL_HISTORY),
-            sshHistory = loadHistory(KEY_SSH_HISTORY)
-        )
-    )
+    private val _state = MutableStateFlow(TerminalState(history = loadHistory()))
     val state: StateFlow<TerminalState> = _state.asStateFlow()
 
-    private val ansiParser = AnsiParser()
-    private val tabEngine = TabCompletionEngine()
-
-    // Persistent shell
+    // Shell PTY
     private val shellSession = com.vamp.haron.data.terminal.ShellSession()
     private var shellReaderJob: Job? = null
-    private val shellLineBuffer = StringBuilder()
 
-    // Separate grid buffer per tab
-    val shellBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
-    val sshBuffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
-
-    /** Get active buffer based on current mode */
-    val terminalBuffer: com.vamp.haron.data.terminal.TerminalBuffer
-        get() = if (_state.value.sshMode) sshBuffer else shellBuffer
-
-    // SSH
+    // SSH via JSch
     private val sshManager = SshSessionManager()
     private var sshReaderJob: Job? = null
-    private val sshLineBuffer = StringBuilder()
+
+    // Single buffer — both shell and SSH write here
+    val buffer = com.vamp.haron.data.terminal.TerminalBuffer(rows = 40, cols = 80)
+
+    private val isSsh: Boolean get() = _state.value.sshConnected
 
     companion object {
         private const val MAX_HISTORY = 200
-        private const val KEY_SHELL_HISTORY = "cmd_history_shell"
-        private const val KEY_SSH_HISTORY = "cmd_history_ssh"
+        private const val KEY_HISTORY = "cmd_history_shell"
     }
 
     init {
-        startShellSession()
+        startShell()
     }
 
-    private fun startShellSession() {
+    private fun startShell() {
         viewModelScope.launch {
             try {
                 shellSession.start(_state.value.currentDir)
-                startShellReader()
-                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: persistent shell started")
-            } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: shell start failed — ${e.message}")
-                appendLine(TerminalLine("Failed to start shell: ${e.message}", isError = true))
-            }
-        }
-    }
-
-    private fun startShellReader() {
-        shellReaderJob?.cancel()
-        shellReaderJob = viewModelScope.launch {
-            shellSession.outputFlow.collect { chunk ->
-                shellBuffer.processOutput(chunk)
-
-                // Detect exit from interactive app: prompt reappears
-                if (_state.value.rawMode) {
-                    val clean = chunk.replace(Regex("\u001B\\[[0-9;?]*[a-zA-Z]"), "").trimEnd()
-                    val lastLine = clean.lines().lastOrNull { it.isNotBlank() } ?: ""
-                    if (lastLine.endsWith("$") || lastLine.endsWith("#") || lastLine.endsWith(">")
-                        || lastLine.endsWith("$ ") || lastLine.endsWith("# ") || lastLine.endsWith("> ")) {
-                        _state.update { it.copy(rawMode = false) }
+                shellReaderJob = launch {
+                    shellSession.outputFlow.collect { chunk ->
+                        if (!isSsh) {
+                            buffer.processOutput(chunk)
+                            logPty(chunk)
+                        }
                     }
                 }
+                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: shell started")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: shell start failed — ${e.message}")
             }
         }
     }
 
-    private fun loadHistory(key: String): List<String> {
-        val json = prefs.getString(key, null) ?: return emptyList()
+    // --- Input: routed to active session ---
+
+    fun sendChar(char: Char) {
+        EcosystemLogger.d(HaronConstants.TAG, "INPUT> char='$char' isSsh=$isSsh")
+        if (isSsh) viewModelScope.launch { sshManager.sendRaw(char.toString()) }
+        else shellSession.sendRaw(char.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    fun sendEnter() {
+        EcosystemLogger.d(HaronConstants.TAG, "INPUT> ENTER isSsh=$isSsh")
+        if (isSsh) viewModelScope.launch { sshManager.sendRaw("\r") }
+        else shellSession.sendRaw(byteArrayOf(0x0D))
+    }
+
+    fun sendBackspace() {
+        EcosystemLogger.d(HaronConstants.TAG, "INPUT> BACKSPACE isSsh=$isSsh")
+        if (isSsh) viewModelScope.launch { sshManager.sendRaw("\u007F") }
+        else shellSession.sendRaw(byteArrayOf(0x7F))
+    }
+
+    fun sendRaw(data: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "INPUT> raw='${data.take(20)}' isSsh=$isSsh")
+        if (isSsh) viewModelScope.launch { sshManager.sendRaw(data) }
+        else shellSession.sendRaw(data.toByteArray(Charsets.UTF_8))
+    }
+
+    fun sendInterrupt() {
+        EcosystemLogger.d(HaronConstants.TAG, "INPUT> INTERRUPT isSsh=$isSsh")
+        if (isSsh) viewModelScope.launch { sshManager.sendRaw("\u0003") }
+        else shellSession.sendInterrupt()
+    }
+
+    fun resizePty(rows: Int, cols: Int) {
+        if (shellSession.isAlive) shellSession.resize(rows, cols)
+        // SSH resize disabled — setPtySize breaks JSch PipedInputStream
+    }
+
+    // --- SSH ---
+
+    fun showSshDialog() {
+        _state.update { it.copy(showSshDialog = true) }
+    }
+
+    fun dismissSshDialog() {
+        _state.update { it.copy(showSshDialog = false) }
+    }
+
+    fun getSavedPassword(user: String, host: String, port: Int): String {
+        return sshCredentialStore.load(user, host, port)?.password ?: ""
+    }
+
+    fun connectSsh(user: String, host: String, port: Int, password: String, savePassword: Boolean) {
+        _state.update { it.copy(showSshDialog = false, sshConnecting = true) }
+        buffer.processOutput("\r\nConnecting to $user@$host:$port...\r\n")
+
+        if (savePassword && password.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                sshCredentialStore.save(SshCredential(user, host, port, password))
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                // Set PTY size to match actual buffer so cursor positioning is correct
+                sshManager.initialCols = buffer.cols
+                sshManager.initialRows = buffer.rows
+                sshManager.connect(SshConnectionParams(user, host, port, password))
+
+                // Start reading loop in IO dispatcher (same pool as JSch — required for available())
+                launch(Dispatchers.IO) {
+                    sshManager.startReading()
+                }
+
+                // Collect SSH output → same buffer
+                sshReaderJob = launch {
+                    sshManager.outputFlow.collect { chunk ->
+                        buffer.processOutput(chunk)
+                        logPty(chunk)
+                    }
+                }
+
+                _state.update {
+                    it.copy(
+                        sshConnected = true,
+                        sshConnecting = false,
+                        sshUser = user,
+                        sshHost = host
+                    )
+                }
+                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connected to $user@$host:$port")
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: SSH failed — ${e.message}")
+                _state.update { it.copy(sshConnecting = false) }
+                val msg = when {
+                    e.message?.contains("Auth") == true -> "Authentication failed"
+                    e.message?.contains("timeout", true) == true -> "Connection timed out"
+                    e.message?.contains("refuse", true) == true -> "Connection refused"
+                    else -> "SSH error: ${e.message}"
+                }
+                buffer.processOutput("$msg\r\n")
+            }
+        }
+    }
+
+    fun disconnectSsh() {
+        sshReaderJob?.cancel()
+        sshReaderJob = null
+        sshManager.disconnect()
+        _state.update {
+            it.copy(sshConnected = false, sshConnecting = false, sshUser = "", sshHost = "")
+        }
+        buffer.processOutput("\r\n[SSH disconnected]\r\n")
+        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH disconnected")
+    }
+
+    // --- History ---
+
+    private fun loadHistory(): List<String> {
+        val json = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
             (0 until arr.length()).map { arr.getString(it) }
         } catch (_: Exception) { emptyList() }
     }
 
-    private fun saveHistory(key: String, history: List<String>) {
-        val arr = JSONArray(history)
-        prefs.edit().putString(key, arr.toString()).commit()
-    }
-
-    /** Get current history based on mode */
-    private fun currentHistory(): List<String> =
-        if (_state.value.sshMode) _state.value.sshHistory else _state.value.shellHistory
-
-    private fun currentHistoryKey(): String =
-        if (_state.value.sshMode) KEY_SSH_HISTORY else KEY_SHELL_HISTORY
-
-    fun executeCommand(input: String) {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return
-        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: execute cmd=${trimmed.take(80)}, sshMode=${_state.value.sshMode}")
-
-        // Clear completions
-        _state.update { it.copy(completions = emptyList()) }
-
-        // Don't save to history in raw mode (vi/nano commands)
-        if (!_state.value.rawMode) {
-            val key = currentHistoryKey()
-            val history = currentHistory()
-            val newHistory = (history + trimmed).takeLast(MAX_HISTORY)
-            saveHistory(key, newHistory)
-            _state.update {
-                if (_state.value.sshMode) it.copy(sshHistory = newHistory, historyIndex = -1)
-                else it.copy(shellHistory = newHistory, historyIndex = -1)
-            }
-        }
-
-        if (_state.value.sshMode) {
-            executeSshCommand(trimmed)
-            return
-        }
-
-        // Built-in commands that DON'T go to shell
-        val cmd = trimmed.split(" ").firstOrNull()?.lowercase() ?: ""
-        when (cmd) {
-            "help" -> {
-                for (line in showHelp()) {
-                    terminalBuffer.processOutput(line.text + "\r\n")
-                }
-                return
-            }
-            "clear", "cls" -> {
-                terminalBuffer.processOutput("\u001B[2J\u001B[H") // ANSI clear screen + cursor home
-                return
-            }
-            "ssh" -> {
-                val parts = parseCommandLine(trimmed)
-                parseSshCommand(parts.drop(1))
-                return
-            }
-        }
-
-        // Detect interactive apps → switch to raw mode
-        val interactiveApps = setOf("vi", "vim", "nano", "htop", "top", "less", "more", "man")
-        if (cmd in interactiveApps) {
-            _state.update { it.copy(rawMode = true) }
-        }
-
-        // Everything else → send directly to persistent shell as raw text
-        // Shell handles echo, cd, vi, export, pipes — everything
-        if (shellSession.isAlive) {
-            shellSession.sendCommand(trimmed)
-        } else {
-            terminalBuffer.processOutput("[Shell restarting...]\r\n")
-            startShellSession()
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(500)
-                if (shellSession.isAlive) {
-                    shellSession.sendCommand(trimmed)
-                } else {
-                    terminalBuffer.processOutput("[Shell failed to restart]\r\n")
-                }
-            }
-        }
-    }
-
-    private fun executeSshCommand(input: String) {
-        val lower = input.lowercase().trim()
-        when (lower) {
-            "clear", "cls" -> {
-                clearScreen()
-                return
-            }
-            "exit", "disconnect" -> {
-                disconnectSsh()
-                return
-            }
-        }
-        // Send command through SSH — no local prompt, PTY echoes
-        viewModelScope.launch {
-            sshManager.sendCommand(input)
-        }
-    }
-
-    fun sendSshRaw(data: String) {
-        viewModelScope.launch {
-            sshManager.sendRaw(data)
-        }
-    }
-
-    fun resetHistoryIndex() {
-        _state.update { it.copy(historyIndex = -1) }
-    }
-
-    /** Send a single character directly to PTY (raw mode for vi/nano) */
-    fun sendChar(char: Char) {
-        shellSession.sendRaw(char.toString().toByteArray(Charsets.UTF_8))
-    }
-
-    /** Send Enter in raw mode */
-    fun sendEnter() {
-        shellSession.sendRaw(byteArrayOf(0x0D)) // CR
-    }
-
-    /** Exit raw mode (called when interactive app exits) */
-    fun exitRawMode() {
-        _state.update { it.copy(rawMode = false) }
-    }
-
-    /** Resize PTY to match screen dimensions */
-    fun resizePty(rows: Int, cols: Int) {
-        if (shellSession.isAlive) {
-            shellSession.resize(rows, cols)
-        }
-    }
-
-    /** Send Ctrl+C to the active session (shell or SSH) */
-    fun sendInterrupt() {
-        if (_state.value.sshMode) {
-            viewModelScope.launch { sshManager.sendRaw("\u0003") }
-        } else {
-            shellSession.sendInterrupt()
-        }
-        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: Ctrl+C sent")
-    }
-
-    /** Send raw data to the active session */
-    fun sendRaw(data: String) {
-        if (_state.value.sshMode) {
-            viewModelScope.launch { sshManager.sendRaw(data) }
-        } else {
-            shellSession.sendRaw(data.toByteArray(Charsets.UTF_8))
-        }
-    }
-
-
-
-    fun requestCompletion(currentInput: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val completions = tabEngine.complete(currentInput, _state.value.currentDir)
-            _state.update { it.copy(completions = completions) }
-        }
-    }
-
-    fun clearCompletions() {
-        _state.update { it.copy(completions = emptyList()) }
-    }
-
     fun historyUp(): String? {
-        val history = currentHistory()
+        val history = _state.value.history
         if (history.isEmpty()) return null
-        val newIndex = if (_state.value.historyIndex < 0) {
-            history.lastIndex
-        } else {
-            (_state.value.historyIndex - 1).coerceAtLeast(0)
-        }
+        val newIndex = if (_state.value.historyIndex < 0) history.lastIndex
+        else (_state.value.historyIndex - 1).coerceAtLeast(0)
         _state.update { it.copy(historyIndex = newIndex) }
         return history[newIndex]
     }
 
     fun historyDown(): String? {
-        val history = currentHistory()
+        val history = _state.value.history
         if (history.isEmpty()) return null
         val idx = _state.value.historyIndex
         if (idx < 0) return null
@@ -340,400 +247,14 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
-    fun clearScreen() {
-        _state.update { it.copy(lines = emptyList()) }
-    }
+    // --- Util ---
 
-    fun setBufferSize(size: Int) {
-        _state.update { it.copy(bufferSize = size.coerceIn(100, 10000)) }
-    }
-
-    fun setTimeoutSec(sec: Int) {
-        _state.update { it.copy(timeoutSec = sec.coerceIn(5, 300)) }
-    }
-
-    private fun appendLine(line: TerminalLine) {
-        _state.update { s ->
-            val newLines = (s.lines + line).takeLast(s.bufferSize)
-            s.copy(lines = newLines)
+    private fun logPty(chunk: String) {
+        // Log raw with escape codes visible for debugging
+        val escaped = chunk.take(300).replace("\u001B", "⟨ESC⟩").replace("\r", "⟨CR⟩").replace("\n", "⟨LF⟩")
+        if (escaped.isNotBlank()) {
+            EcosystemLogger.d(HaronConstants.TAG, "PTY> $escaped")
         }
-    }
-
-    private suspend fun processCommand(input: String): List<TerminalLine> {
-        val parts = parseCommandLine(input)
-        if (parts.isEmpty()) return emptyList()
-
-        val cmd = parts[0].lowercase()
-        val args = parts.drop(1)
-
-        return when (cmd) {
-            "help" -> showHelp()
-            "cd" -> changeDirectory(args)
-            "pwd" -> listOf(TerminalLine(_state.value.currentDir))
-            "clear", "cls" -> {
-                clearScreen(); emptyList()
-            }
-            "ssh" -> {
-                parseSshCommand(args)
-                emptyList()
-            }
-            "exit" -> listOf(TerminalLine("Use the back button to exit."))
-            else -> executeExternal(input)
-        }
-    }
-
-    // --- SSH ---
-
-    private fun parseSshCommand(args: List<String>) {
-        if (args.isEmpty()) {
-            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
-            _state.update { it.copy(isRunning = false) }
-            return
-        }
-
-        var userHost = ""
-        var port = 22
-
-        var i = 0
-        while (i < args.size) {
-            when (args[i]) {
-                "-p" -> {
-                    if (i + 1 < args.size) {
-                        port = args[i + 1].toIntOrNull() ?: 22
-                        i += 2
-                    } else {
-                        i++
-                    }
-                }
-                else -> {
-                    if (userHost.isEmpty()) userHost = args[i]
-                    i++
-                }
-            }
-        }
-
-        if (!userHost.contains("@")) {
-            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
-            _state.update { it.copy(isRunning = false) }
-            return
-        }
-
-        val user = userHost.substringBefore("@")
-        val host = userHost.substringAfter("@")
-
-        if (user.isBlank() || host.isBlank()) {
-            appendLine(TerminalLine("Usage: ssh user@host [-p port]", isError = true))
-            _state.update { it.copy(isRunning = false) }
-            return
-        }
-
-        _state.update {
-            it.copy(
-                isRunning = false,
-                showPasswordDialog = true,
-                pendingSshUser = user,
-                pendingSshHost = host,
-                pendingSshPort = port
-            )
-        }
-    }
-
-    fun getSavedPassword(user: String, host: String, port: Int): String {
-        return sshCredentialStore.load(user, host, port)?.password ?: ""
-    }
-
-    fun connectSsh(password: String, savePassword: Boolean) {
-        val user = _state.value.pendingSshUser
-        val host = _state.value.pendingSshHost
-        val port = _state.value.pendingSshPort
-
-        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connect $user@$host:$port")
-
-        _state.update {
-            it.copy(
-                showPasswordDialog = false,
-                sshConnecting = true
-            )
-        }
-
-        sshBuffer.processOutput("Connecting to $user@$host:$port...\r\n")
-
-        viewModelScope.launch {
-            try {
-                sshManager.connect(SshConnectionParams(user, host, port, password))
-
-                if (savePassword) {
-                    withContext(Dispatchers.IO) {
-                        sshCredentialStore.save(
-                            com.vamp.haron.data.terminal.SshCredential(user, host, port, password)
-                        )
-                    }
-                }
-
-                sshLineBuffer.clear()
-                _state.update {
-                    it.copy(
-                        sshMode = true,
-                        sshUser = user,
-                        sshHost = host,
-                        sshPort = port,
-                        sshConnecting = false
-                    )
-                }
-
-                EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH connected to $user@$host:$port")
-                sshBuffer.processOutput("Connected to $user@$host. Type 'exit' to disconnect.\r\n")
-                startSshReader()
-            } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: SSH connect failed $user@$host:$port — ${e.message}")
-                _state.update {
-                    it.copy(
-                        sshConnecting = false,
-                        pendingSshUser = "",
-                        pendingSshHost = "",
-                        pendingSshPort = 22
-                    )
-                }
-                val message = when (e) {
-                    is JSchException -> {
-                        when {
-                            e.message?.contains("Auth") == true -> "Authentication failed"
-                            e.message?.contains("timeout", ignoreCase = true) == true -> "Connection timed out"
-                            e.message?.contains("reject", ignoreCase = true) == true -> "Connection refused"
-                            else -> "SSH error: ${e.message}"
-                        }
-                    }
-                    is UnknownHostException -> "Unknown host: $host"
-                    is ConnectException -> "Connection refused: $host:$port"
-                    is SocketTimeoutException -> "Connection timed out"
-                    is NoRouteToHostException -> "No route to host: $host"
-                    else -> "Connection failed: ${e.message}"
-                }
-                terminalBuffer.processOutput("$message\r\n")
-            }
-        }
-    }
-
-    private fun startSshReader() {
-        sshReaderJob?.cancel()
-        sshReaderJob = viewModelScope.launch {
-            launch(Dispatchers.IO) {
-                sshManager.startReading()
-            }
-
-            sshManager.outputFlow.collect { chunk ->
-                sshBuffer.processOutput(chunk)
-            }
-        }
-
-        // Monitor connection state
-        viewModelScope.launch {
-            // Wait until reader finishes (connection closed)
-            sshReaderJob?.join()
-            if (_state.value.sshMode) {
-                disconnectSsh(showMessage = true)
-            }
-        }
-    }
-
-    fun disconnectSsh(showMessage: Boolean = true) {
-        EcosystemLogger.d(HaronConstants.TAG, "TerminalVM: SSH disconnect ${_state.value.sshUser}@${_state.value.sshHost}")
-        sshReaderJob?.cancel()
-        sshReaderJob = null
-        sshManager.disconnect()
-        sshLineBuffer.clear()
-
-        if (showMessage) {
-            terminalBuffer.processOutput("[SSH disconnected]\r\n")
-        }
-
-        _state.update {
-            it.copy(
-                sshMode = false,
-                sshUser = "",
-                sshHost = "",
-                sshPort = 22,
-                sshConnecting = false,
-                pendingSshUser = "",
-                pendingSshHost = "",
-                pendingSshPort = 22
-            )
-        }
-    }
-
-    fun cancelSshPasswordDialog() {
-        _state.update {
-            it.copy(
-                showPasswordDialog = false,
-                pendingSshUser = "",
-                pendingSshHost = "",
-                pendingSshPort = 22
-            )
-        }
-        appendLine(TerminalLine("SSH connection cancelled.", isCommand = true))
-    }
-
-    // --- Help ---
-
-    private fun showHelp(): List<TerminalLine> {
-        return listOf(
-            TerminalLine("Built-in commands:"),
-            TerminalLine("  cd <dir>    — Change directory"),
-            TerminalLine("  pwd         — Print working directory"),
-            TerminalLine("  clear       — Clear screen"),
-            TerminalLine("  help        — Show this help"),
-            TerminalLine(""),
-            TerminalLine("SSH remote access:"),
-            TerminalLine("  ssh user@host          — Connect to remote server"),
-            TerminalLine("  ssh user@host -p 2222  — Connect on custom port"),
-            TerminalLine("  exit / disconnect      — Close SSH session"),
-            TerminalLine(""),
-            TerminalLine("System commands (via sh):"),
-            TerminalLine("  ls, cat, cp, mv, rm, mkdir, rmdir,"),
-            TerminalLine("  grep, find, wc, head, tail, sort,"),
-            TerminalLine("  chmod, touch, echo, df, du, ping,"),
-            TerminalLine("  whoami, date, uname, id, ps, top"),
-            TerminalLine(""),
-            TerminalLine("ANSI colors: try 'ls --color=always'"),
-            TerminalLine("Tab completion: type partial path and tap Tab"),
-            TerminalLine("Clickable paths in output — tap to navigate"),
-            TerminalLine("Pipe (|) and redirect (>, >>) supported."),
-            TerminalLine("Quick symbols panel above keyboard.")
-        )
-    }
-
-    // --- Local commands ---
-
-    private fun changeDirectory(args: List<String>): List<TerminalLine> {
-        val target = when {
-            args.isEmpty() -> Environment.getExternalStorageDirectory().absolutePath
-            args[0] == "~" -> Environment.getExternalStorageDirectory().absolutePath
-            args[0] == "-" -> Environment.getExternalStorageDirectory().absolutePath
-            args[0] == ".." -> File(_state.value.currentDir).parent
-                ?: _state.value.currentDir
-            args[0].startsWith("/") -> args[0]
-            else -> File(_state.value.currentDir, args[0]).canonicalPath
-        }
-        val dir = File(target)
-        if (!dir.isDirectory) {
-            return listOf(TerminalLine("cd: $target: No such directory", isError = true))
-        }
-        if (!matchesCaseSensitive(dir)) {
-            return listOf(TerminalLine("cd: $target: No such directory (case mismatch)", isError = true))
-        }
-        _state.update { it.copy(currentDir = dir.canonicalPath) }
-        return emptyList()
-    }
-
-    private fun matchesCaseSensitive(target: File): Boolean {
-        var current = target.canonicalFile
-        while (current.parent != null) {
-            val parent = current.parentFile ?: return true
-            val actualNames = parent.list() ?: return true
-            if (current.name !in actualNames) return false
-            current = parent
-        }
-        return true
-    }
-
-    private suspend fun executeExternal(command: String): List<TerminalLine> {
-        val timeoutMs = _state.value.timeoutSec * 1000L
-        val maxLines = _state.value.bufferSize
-
-        return withContext(Dispatchers.IO) {
-            try {
-                val pb = ProcessBuilder("sh", "-c", command)
-                pb.directory(File(_state.value.currentDir))
-                pb.redirectErrorStream(true)
-                pb.environment()["HOME"] = Environment.getExternalStorageDirectory().absolutePath
-                pb.environment()["TERM"] = "xterm-256color"
-
-                val process = pb.start()
-                val reader = process.inputStream.bufferedReader()
-                val collectedLines = mutableListOf<String>()
-                val deadline = System.currentTimeMillis() + timeoutMs
-
-                val readerThread = Thread {
-                    try {
-                        reader.forEachLine { line ->
-                            if (Thread.currentThread().isInterrupted) return@forEachLine
-                            synchronized(collectedLines) {
-                                if (collectedLines.size < maxLines) collectedLines.add(line)
-                            }
-                        }
-                    } catch (_: Exception) { }
-                }
-                readerThread.start()
-                readerThread.join(timeoutMs)
-
-                if (readerThread.isAlive) {
-                    readerThread.interrupt()
-                    process.destroyForcibly()
-                    ansiParser.reset()
-                    val partial = synchronized(collectedLines) { collectedLines.toList() }
-                    val parsed = partial.map { rawLine ->
-                        TerminalLine(
-                            text = rawLine,
-                            parsed = ansiParser.parseLine(rawLine)
-                        )
-                    }
-                    return@withContext parsed + TerminalLine(
-                        "Command timed out (${_state.value.timeoutSec}s) — partial output above",
-                        isError = true
-                    )
-                }
-
-                val exitCode = process.waitFor()
-                ansiParser.reset()
-                val lines = synchronized(collectedLines) { collectedLines.toList() }
-                    .map { rawLine ->
-                        val parsed = ansiParser.parseLine(rawLine)
-                        TerminalLine(
-                            text = rawLine,
-                            isError = exitCode != 0,
-                            parsed = parsed
-                        )
-                    }
-
-                if (exitCode != 0 && lines.isEmpty()) {
-                    listOf(TerminalLine("Exit code: $exitCode", isError = true))
-                } else {
-                    lines
-                }
-            } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "TerminalVM: external cmd error — ${e.message}")
-                listOf(TerminalLine("Error: ${e.message}", isError = true))
-            }
-        }
-    }
-
-    private fun parseCommandLine(input: String): List<String> {
-        val parts = mutableListOf<String>()
-        val current = StringBuilder()
-        var inQuote = false
-        var quoteChar = ' '
-
-        for (char in input) {
-            when {
-                inQuote -> {
-                    if (char == quoteChar) inQuote = false
-                    else current.append(char)
-                }
-                char == '"' || char == '\'' -> {
-                    inQuote = true
-                    quoteChar = char
-                }
-                char == ' ' -> {
-                    if (current.isNotEmpty()) {
-                        parts.add(current.toString())
-                        current.clear()
-                    }
-                }
-                else -> current.append(char)
-            }
-        }
-        if (current.isNotEmpty()) parts.add(current.toString())
-        return parts
     }
 
     override fun onCleared() {

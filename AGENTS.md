@@ -18,7 +18,55 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-Нет активных задач.
+### Терминал Termux-стиль + SSH через JSch
+
+**Что работает (проверено):**
+- ✅ Shell PTY — один процесс sh, ввод каждого символа через sendRaw в PTY
+- ✅ Termux-стиль UI — один терминал, скрытый TextField для клавиатуры, нет BasicTextField/промпта
+- ✅ Quick keys панель — Esc, Tab, ^C/D/Z/L, стрелки, Paste, символы
+- ✅ Pinch-to-zoom шрифта (4-24sp) + debounce resize 250ms
+- ✅ TerminalGrid Canvas — ANSI цвета, cursor blink
+- ✅ TerminalBuffer — альтернативный экранный буфер, scroll regions, cursor save/restore, DEC private modes (для Claude Code, vi, htop)
+- ✅ SSH кнопка в хедере → диалог (host, user, port, пароль) → JSch connect
+- ✅ JSch подключается, MOTD приходит и отображается через available() + Thread.sleep(50) в корутине
+- ✅ Ввод маршрутизируется: isSsh → sshManager.sendRaw(), иначе → shellSession.sendRaw()
+- ✅ sendRaw доставляет символы на сервер (подтверждено логами INPUT>)
+- ✅ Disconnect → возврат в shell
+- ✅ Сохранение пароля AES-256
+
+**Что работает (дополнительно подтверждено):**
+- ✅ Эхо от сервера приходит — ключевой фикс: `sendRaw` должен быть `suspend fun` с `withContext(Dispatchers.IO)`, вызов через `viewModelScope.launch`. Запись в JSch PipedOutputStream с main thread ломала pipe.
+- ✅ `available()` работает для всех данных когда write и read идут через Dispatchers.IO
+- ✅ Claude Code запускается через SSH, принимает ввод, отвечает
+- ✅ PTY size передаётся из buffer (initialCols/initialRows) — Claude Code рисует UI под правильный размер
+- ✅ TerminalBuffer обновлён по паттернам Termux: aboutToAutoWrap, erase с текущим стилем, раздельные saved states, tab stops, lineFeed ниже scroll region, wide characters
+- ✅ DejaVu Sans Mono встроен (2.1MB, широкое Unicode-покрытие)
+- ✅ TerminalGrid: wide char trail cells пропускаются, cursor visibility из buffer
+
+**Что НЕ работает (известные ограничения):**
+- `setPtySize()` ломает pipe — отключён (размер задаётся при connect через setPtyType)
+- `setOutputStream()` callback не вызывается в mwiede/jsch — не использовать
+- Blocking `read()` в Thread — висит навсегда (JSch PipedInputStream не совместим)
+- Единственный рабочий подход: `available()` + `Thread.sleep(50)` в корутине `Dispatchers.IO`
+- `sendRaw` ОБЯЗАТЕЛЬНО через `withContext(Dispatchers.IO)` — без этого write с main thread ломает pipe
+
+**Решённые проблемы рендеринга Claude Code:**
+- ✅ Белые прямоугольники — были курсором (block cursor → заменён на bar cursor 2dp)
+- ✅ Красный/жёлтый текст дублировался в чат — wcWidth считал ✗(U+2717) и Dingbats (U+2600-U+27BF) как width=2, сдвигая строки → wrap в неправильных местах. Исправлено: Dingbats = width 1
+- ✅ DejaVu Sans Mono встроен (2.1MB) для лучшего Unicode-покрытия
+- ✅ PTY size передаётся из buffer → Claude Code рисует UI под правильный размер
+
+**Оставшиеся мелочи:**
+- Разделительные линии `─` (U+2500) Claude Code могут быть тусклыми/невидимыми
+- Synchronized update mode (?2026h/l) не реализован — косметические мерцания при перерисовке
+- Debug логи (TermBuf PUT/CUU/CUD) пока включены — убрать когда всё стабильно
+
+**Файлы:**
+- TerminalViewModel.kt — чистый, один shell + SSH через JSch, маршрутизация ввода
+- TerminalScreen.kt — Termux-стиль, SSH кнопка + диалог
+- TerminalGrid.kt — fontSizeSp снаружи, debounce resize
+- TerminalBuffer.kt — alt screen, scroll regions, cursor save/restore, DEC modes
+- SshSessionManager.kt — JSch available() + Thread.sleep(50) в корутине
 
 ---
 
@@ -1721,6 +1769,10 @@ AI: Claude по подписке, tool use, терминальный вывод,
 - [ ] Установка в `filesDir/usr/bin/`, добавление в PATH при старте shell
 - [ ] Автоматическая проверка совместимости пакетов: readelf (зависимости .so), strings (hardcoded paths), пробный запуск (--version). Запустить на полном репо → создать JSON-список с пометками ✅/⚠️/❌
 
+### Мелкие доработки (TODO)
+- [ ] Copy/paste: долгий тап по тексту в grid → выделить → скопировать в буфер обмена
+- [ ] Динамический resize SSH PTY при повороте экрана
+
 ### Чего НЕ будет
 - Полный пакетный менеджер (pkg/apt) — нужен rootfs (~50МБ+ инфраструктура)
 - Собственные бинарники (python, gcc, git) — пока только через скачиваемые пакеты или SSH на сервер
@@ -1736,6 +1788,69 @@ AI: Claude по подписке, tool use, терминальный вывод,
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 97 — Терминал: надёжный resize, raw mode по ANSI, обновление обеих панелей ⚠️ не проверено
+
+**Надёжный pinch-to-zoom + resize:**
+- `fontSizeSp` вынесен из TerminalGrid в TerminalScreen — отдельный для Shell и SSH, не теряется при смене таба
+- TerminalGrid принимает fontSizeSp + onFontSizeChanged как параметры
+- `onSizeCalculated` вызывается через `LaunchedEffect` с debounce 250мс (trailing edge) — без SIGWINCH-шторма при pinch
+- Убран дублирующий resize в `onSizeChanged` — одна точка расчёта cols/rows
+- `resizePty()` ресайзит ОБА (Shell PTY + SSH channel), не только activeTab — оба всегда знают актуальный размер
+
+**Raw mode по факту ANSI, не по имени команды:**
+- Раньше: `claude`/`vi`/`htop` → raw mode включался СРАЗУ → пользователь не мог ничего набрать пока приложение не запустилось
+- Теперь: команда → `pendingRawMode = true` → raw mode включается только когда приходит ANSI-вывод (`\u001B[`) от приложения
+- Логирование активации/деактивации raw mode
+
+**Выход из raw mode:**
+- `^C` в SSH-панели теперь отправляет сигнал И выходит из raw mode (раньше только сигнал)
+- Кнопка `RAW` (красная) появляется в SSH-панели когда raw mode активен — тап = выход
+- Кнопка Send работает в raw mode — отправляет Enter (раньше была disabled из-за пробела-sentinel)
+
+**Обновление обеих панелей после операций:**
+- ВСЕ файловые операции (copy, move, delete, rename, duplicate, archive, extract) теперь обновляют ОБЕ панели
+- Облачные операции (download, upload, delete, create folder, DnD) — обе панели
+- `refreshBothIfSamePath()` → всегда обе панели безусловно
+
+**AI-таб убран из features.txt** — «Three tabs: Shell, SSH, AI» → «Two tabs: Shell and SSH»
+
+**Файлы:** TerminalGrid.kt, TerminalScreen.kt, TerminalViewModel.kt, ExplorerViewModel.kt, features.txt, features_ru.txt
+
+---
+
+### Batch 96 — Терминал: pinch-zoom, SSH resize, copy/paste, полная изоляция табов ⚠️ не проверено
+
+**Pinch-to-zoom шрифта:**
+- `detectTransformGestures` для pinch — Compose API, без конфликтов
+- Шрифт 4–24sp, по умолчанию 8sp
+- При изменении шрифта grid синхронно пересчитывает cols/rows
+- Paint пересоздаётся через `remember(fontSizeSp)` — charWidth корректно обновляется
+- Отступ 4dp слева и справа в Canvas
+
+**SSH resize:**
+- `SshSessionManager.resizePty()` — `channel.setPtySize()` при изменении размера grid
+- SSH-сервер получает SIGWINCH и перерисовывает вывод
+- `resizePty()` в ViewModel маршрутизирует по activeTab (Shell или SSH)
+
+**Copy/Paste:**
+- Paste: кнопка в панели быстрых клавиш — вставляет из буфера обмена в терминал
+- Long tap + drag для выделения текста — временно убрано (конфликт с pinch)
+
+**Полная изоляция табов:**
+- rawMode раздельный: shellRawMode / sshRawMode
+- sendChar/sendEnter/sendRaw маршрутизируются по activeTab
+- activeTab синхронизируется из UI
+- История команд по activeTab, не по sshMode
+- `claude` добавлен в список интерактивных приложений (raw mode в SSH)
+
+**AI-таб убран** — OAuth токены заблокированы Anthropic для сторонних приложений
+
+**Клавиатура:** KeyboardType.Text вместо Password — русский ввод не сбрасывается
+
+**Файлы:** TerminalGrid.kt, TerminalViewModel.kt, TerminalScreen.kt, SshSessionManager.kt
+
+---
 
 ### Batch 95 — Терминал: grid renderer, tabs, раздельные буферы ✅ проверено
 

@@ -542,37 +542,35 @@
   > How to connect: pair TV via Bluetooth → in Haron: Transfer → BT HID → select device
 
 # Terminal
-- Three tabs: Shell, SSH, AI [NEW]
-  > Shell — local terminal with persistent bash session
-  > SSH — remote server connection
-  > AI — Claude (coming soon)
-  > Each tab has its own screen, input field, and command history
+- Termux-style terminal [NEW]
+  > Single window — no tabs, no separate input field
+  > Every keystroke goes directly to PTY — like a real terminal
+  > Tap on terminal to show keyboard
+  > DejaVu Sans Mono font with full Unicode support
 - Persistent shell with real PTY [NEW]
   > Single bash process stays alive — export, alias, cd persist between commands
-  > Real PTY (pseudoterminal) via native JNI — like a real terminal
+  > Real PTY (pseudoterminal) via native JNI
   > Ctrl+C instantly interrupts commands (real SIGINT through PTY)
-  > Input field never blocks — type next command while current one runs
-- Fullscreen apps: vi, nano, htop [NEW]
-  > Canvas renderer: terminal character grid with cursor, colors, and styles
-  > vi opens and works fully — type, edit, :wq to save
-  > Raw mode: every keystroke sent directly to the app, Backspace works
-  > Quick keys panel: Esc, Enter, Tab, ^C, ^D, ^Z, arrows ↑↓←→
+- Fullscreen apps: vi, nano, htop, Claude Code [NEW]
+  > Full VT100/xterm emulation: alternate screen buffer, scroll regions, cursor positioning
+  > vi, nano, htop, less, Claude Code — all work correctly
+  > Cursor save/restore, origin mode, auto-wrap mode
 - Color output (16/256/RGB)
   > Full ANSI support: colors, cursor positioning, screen clear, line insert/delete
-- Tab path autocomplete
-  > Press Tab — auto-completes file and folder names
-- Command history (200 per tab) [NEW]
-  > Shell and SSH store history separately
-  > Up/down arrows to navigate history
-  > Persists between sessions
-- SSH connection to remote servers
-  > In Shell tab: ssh user@host [-p port] → password dialog → auto-switch to SSH tab
+  > Bold, italic, underline, reverse video
+- SSH connection [NEW]
+  > SSH button in header → connection dialog (host, user, port, password)
   > Password encrypted with AES-256, can be saved
-  > Keepalive every 30s — session won't drop on idle [NEW]
-  > Full interactive shell (cd, env, aliases persist)
+  > Keepalive every 30s — session won't drop on idle
+  > Full interactive shell — run Claude Code, vi, htop on remote server
+  > Disconnect button in header — returns to local shell
+- Pinch-to-zoom font size [NEW]
+  > Pinch gesture changes terminal font size (4–24sp)
+  > Text always fills screen width — columns recalculate automatically
 - Quick keys panel
-  > Esc, Enter, Tab, ^C, ^D, ^Z, arrows ↑↓←→, ~, /, |, >, <, &, ;, etc.
-  > Works in Shell, SSH, and inside vi/nano
+  > Esc, Tab, ^C, ^D, ^Z, ^L, Paste, ↑↓←→, Home, End
+  > Symbols: ~ / | > < & ; " ' . - _
+  > Works in local shell and SSH
 
 # File Comparison
 - Text diff: two columns with sync scroll

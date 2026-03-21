@@ -850,7 +850,8 @@ class ExplorerViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "Cloud download failed: ${item.name}: ${e.message}")
                 }
             }
-            refreshPanel(targetId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             updateProgress(OperationProgress(
                 downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId
             ))
@@ -969,7 +970,8 @@ class ExplorerViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "cloudUploadFromLocal: [${idx + 1}/$total] ${localFile.name} FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 }
             }
-            refreshPanel(targetId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             EcosystemLogger.d(HaronConstants.TAG, "cloudUploadFromLocal: DONE, uploaded $uploaded/$total files")
             updateProgress(OperationProgress(
                 uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId
@@ -1019,6 +1021,8 @@ class ExplorerViewModel @Inject constructor(
                     }
             }
 
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             updateProgress(OperationProgress(
                 deleted, total, "", OperationType.DELETE, isComplete = true,
                 filePercent = 100, id = progressId
@@ -1043,7 +1047,8 @@ class ExplorerViewModel @Inject constructor(
         viewModelScope.launch {
             cloudManager.createFolder(parsed.accountId, parentPath, name)
                 .onSuccess {
-                    refreshPanel(dialog.panelId)
+                    refreshPanel(PanelId.TOP)
+                    refreshPanel(PanelId.BOTTOM)
                 }
                 .onFailure { e ->
                     _toastMessage.tryEmit(e.message ?: "Error")
@@ -2868,7 +2873,8 @@ class ExplorerViewModel @Inject constructor(
                 hapticManager.success()
                 copyTagsToDestination(paths, destinationDir)
             } else hapticManager.error()
-            refreshPanel(targetId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             viewModelScope.launch {
                 delay(2000)
                 _uiState.update {
@@ -3412,7 +3418,8 @@ class ExplorerViewModel @Inject constructor(
                         parentDir.delete()
                     }
                 }
-                refreshPanel(panelId)
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "createInProtectedDir error: ${e.message}")
                 _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
@@ -4451,8 +4458,9 @@ class ExplorerViewModel @Inject constructor(
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
             }
-            // Only refresh target panel — source unchanged for copy
-            refreshPanel(targetPanelId)
+            // Refresh both panels to ensure UI shows real state
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             if (completed > 0) hapticManager.success() else hapticManager.error()
 
             delay(2000)
@@ -4502,7 +4510,8 @@ class ExplorerViewModel @Inject constructor(
             _uiState.update {
                 it.copy(operationProgress = OperationProgress(completed, total, "", OperationType.COPY, isComplete = true))
             }
-            refreshPanel(targetPanelId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             if (completed > 0) hapticManager.success() else hapticManager.error()
             viewModelScope.launch {
                 delay(2000)
@@ -4565,8 +4574,8 @@ class ExplorerViewModel @Inject constructor(
                 )
             }
             showStatusMessage(targetPanelId, appContext.getString(R.string.cloud_moved, moved))
-            refreshPanel(sourcePanelId)
-            if (sourcePanelId != targetPanelId) refreshPanel(targetPanelId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
 
             delay(2000)
             _uiState.update { it.copy(operationProgress = null) }
@@ -4631,6 +4640,8 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             updateProgress(OperationProgress(
                 downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId
             ))
@@ -4723,7 +4734,8 @@ class ExplorerViewModel @Inject constructor(
                     EcosystemLogger.e(HaronConstants.TAG, "DnD cloud upload failed: $fileName: ${e.message}")
                 }
             }
-            refreshPanel(targetPanelId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
 
             updateProgress(OperationProgress(
                 uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId
@@ -4844,6 +4856,8 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             updateProgress(OperationProgress(uploaded, total, "", OperationType.UPLOAD, isComplete = true, id = progressId))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
             delay(2000)
@@ -4939,6 +4953,8 @@ class ExplorerViewModel @Inject constructor(
                 }
             }
 
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             updateProgress(OperationProgress(downloaded, total, "", OperationType.DOWNLOAD, isComplete = true, id = progressId))
             _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
             delay(2000)
@@ -5227,13 +5243,12 @@ class ExplorerViewModel @Inject constructor(
         // Invalidate content index cache — files changed in this folder
         val path = getPanel(panelId).currentPath
         if (path.isNotEmpty()) preferences.removeContentIndexedFolder(path)
-        refreshPanel(panelId)
         val otherId = if (panelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val otherPath = getPanel(otherId).currentPath
         if (otherPath.isNotEmpty()) preferences.removeContentIndexedFolder(otherPath)
-        if (path == otherPath) {
-            refreshPanel(otherId)
-        }
+        // Always refresh both panels to ensure UI shows real state
+        refreshPanel(PanelId.TOP)
+        refreshPanel(PanelId.BOTTOM)
     }
 
     // --- Inline Archive Browsing ---
@@ -5597,8 +5612,9 @@ class ExplorerViewModel @Inject constructor(
                     }
                 }
             }
-            // Refresh panel + set accurate folder sizes
-            refreshPanel(affectedPanelId)
+            // Refresh both panels to ensure UI shows real state
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             for ((folder, size) in subfolderSizes) {
                 _uiState.update { s ->
                     s.copy(folderSizeCache = s.folderSizeCache + (folder to size))
@@ -6242,7 +6258,8 @@ class ExplorerViewModel @Inject constructor(
                 onSuccess = { newPath ->
                     _toastMessage.tryEmit(appContext.getString(R.string.renamed_to, java.io.File(newPath).name))
                     clearSelection(panelId)
-                    refreshPanel(panelId)
+                    refreshPanel(PanelId.TOP)
+                    refreshPanel(PanelId.BOTTOM)
                 },
                 onFailure = { e ->
                     _toastMessage.tryEmit(appContext.getString(R.string.error_rename) + ": ${e.message}")
@@ -6948,7 +6965,8 @@ class ExplorerViewModel @Inject constructor(
             } else {
                 hapticManager.error()
             }
-            refreshPanel(targetId)
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
             delay(2000)
             _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
         }
