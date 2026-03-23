@@ -122,6 +122,11 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Hide system navbar, keep status bar
+        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+        insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
         // Start transfer listener — runs in ReceiveFileManager's own scope,
         // survives Activity recreation and screen transitions
         receiveFileManager.ensureListening()

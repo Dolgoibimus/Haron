@@ -279,6 +279,49 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getStringSet("library_excluded_folders", emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet("library_excluded_folders", value).apply()
 
+    /** Custom navbar configuration (JSON) */
+    fun getNavbarConfig(): com.vamp.haron.domain.model.NavbarConfig {
+        val json = prefs.getString("navbar_config", null) ?: return com.vamp.haron.domain.model.NavbarConfig()
+        return try {
+            val root = JSONObject(json)
+            val pagesArr = root.getJSONArray("pages")
+            val pages = (0 until pagesArr.length()).map { pi ->
+                val pageObj = pagesArr.getJSONObject(pi)
+                val btnsArr = pageObj.getJSONArray("buttons")
+                val buttons = (0 until btnsArr.length()).map { bi ->
+                    val btnObj = btnsArr.getJSONObject(bi)
+                    com.vamp.haron.domain.model.NavbarButton(
+                        tapAction = com.vamp.haron.domain.model.NavbarAction.valueOf(btnObj.optString("tap", "NONE")),
+                        longAction = com.vamp.haron.domain.model.NavbarAction.valueOf(btnObj.optString("long", "NONE"))
+                    )
+                }
+                com.vamp.haron.domain.model.NavbarPage(buttons)
+            }
+            com.vamp.haron.domain.model.NavbarConfig(pages)
+        } catch (_: Exception) {
+            com.vamp.haron.domain.model.NavbarConfig()
+        }
+    }
+
+    fun setNavbarConfig(config: com.vamp.haron.domain.model.NavbarConfig) {
+        val root = JSONObject()
+        val pagesArr = JSONArray()
+        for (page in config.pages) {
+            val pageObj = JSONObject()
+            val btnsArr = JSONArray()
+            for (btn in page.buttons) {
+                btnsArr.put(JSONObject().apply {
+                    put("tap", btn.tapAction.name)
+                    put("long", btn.longAction.name)
+                })
+            }
+            pageObj.put("buttons", btnsArr)
+            pagesArr.put(pageObj)
+        }
+        root.put("pages", pagesArr)
+        prefs.edit().putString("navbar_config", root.toString()).apply()
+    }
+
     var lastDocumentFile: String?
         get() = prefs.getString(KEY_LAST_DOCUMENT_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_DOCUMENT_FILE, value).apply()

@@ -18,19 +18,106 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-**Читалка — Этап 1 в процессе (Batch 101):**
-- ✅ `BookEntity` + `BookDao` — Room таблица книг (title, author, cover, format, progress, series)
-- ✅ `ScanBooksUseCase` — сканер папок, извлечение метаданных FB2 + EPUB (title, author, cover, annotation, series)
-- ✅ HaronDatabase v5, Hilt DI для BookDao
-- ✅ LibraryViewModel — сканирование, grid columns (pinch-zoom), первый запуск диалог
-- ✅ LibraryScreen — grid обложек, прогресс скана, пустое состояние, pinch-zoom 1-6 колонок
-- ✅ Навигация: route LIBRARY, боковое меню (иконка MenuBook), ExplorerOverlays прокидка
-- ✅ `BookContent` / `BookElement` — модели: Chapter, Paragraph, Title, Epigraph, Poem, Citation, ImageBlock, EmptyLine
-- ✅ `ParseFb2UseCase` — XmlPullParser: парсит body/sections/poems/epigraphs/images, binary base64 → Bitmap
-- ✅ `BookReaderViewModel` — загрузка, сохранение позиции, настройки (шрифт, межстрочный, тема)
-- ✅ `BookReaderScreen` — Compose-рендеринг FB2: LazyColumn, тап→контролы, 4 темы (Auto/Light/Dark/Sepia), размер шрифта ±
-- ✅ Навигация: route BOOK_READER, из Library FB2→BookReaderScreen, остальные→PdfReaderScreen
-- ✅ Сборка проходит
+**Кастомный навбар — конструктор (в процессе):**
+- ✅ Системный навбар скрыт (immersive mode, статус-бар остаётся)
+- ✅ Кастомный навбар: HorizontalPager, N страниц, 5-7 кнопок
+- ✅ Кнопка Exit — hold 2 сек с кружком-таймером
+- ✅ Простой тап на Exit = системная "назад"
+- ✅ Все 25 действий подключены к ExplorerViewModel
+- ✅ NavbarConfig модель (NavbarAction, NavbarButton, NavbarPage, NavbarConfig)
+- ✅ HaronPreferences — JSON сохранение/загрузка конфига
+- ✅ NavbarSettingsScreen — экран настроек (страницы, кнопки, слайдер 5-7, выбор действий)
+- ✅ Обновление конфига при возврате из настроек (ON_RESUME)
+- ⬜ Долгий тап с кружком — продумать на какие кнопки и как
+- ⬜ Визуальное оформление кнопок (иконки побольше, подписи?)
+
+**Следующие задачи навбара:**
+- Настраиваемые действия на долгий тап для любой кнопки
+- Кружок-таймер для кнопок с опасными действиями (выход, удаление)
+- Стрелки вверх/вниз — переход между файлами, долгий = переход между панелями
+- Copy/Move — долгий тап = выбор панели
+
+---
+
+### Batch 102 — Сессия 2026-03-23: APK размер, библиотека, читалка, SD-карта, навбар ⚠️ не проверено
+
+**Что сделано:**
+
+**1. APK размер — удаление интернет-поиска (-15 МБ)**
+- Удалены: `domain/usecase/websearch/` (8 файлов), `presentation/search/` (4 файла — только web-таб), `WebDownloadService`, `WebSearchResult`, libtorrent4j
+- Глобальный поиск по устройству СОХРАНЁН (SearchScreen, SearchViewModel, IndexNotificationViewModel)
+- Из SearchScreen убран только таб "Интернет-поиск"
+- Бэкап наработок: `I:\...\Haron\InetFind\`
+- features.txt обновлён (EN + RU)
+- Release APK: ~165 МБ (было 180 МБ)
+
+**2. Библиотека — полная переработка**
+- Три таба: FB2/EPUB, PDF, Остальные
+- PDF и Остальные — группировка по папкам (FolderHeader: имя + путь)
+- Сканер: добавлены форматы doc, docx, odt, rtf, xlsx, xls, csv
+- extractMetadata для новых форматов
+- Тап = открыть книгу (не preview), info через кнопку на обложке
+- Grid columns per-tab (сохраняются в SharedPreferences)
+- Дисковый кеш обложек (`filesDir/book_covers/`, WEBP)
+- Автосинхронизация кеша с Room (удалённые книги чистятся)
+- Исключённые папки (excludedFolders) — не сканировать
+- Удалённые папки (removedFolders) — не возвращаются после ресканирования
+- Кнопка ресканирования в TopAppBar
+- FB2/EPUB → DocumentViewerScreen, PDF → PdfReaderScreen
+
+**3. DocumentViewerScreen — полноэкранный режим**
+- Убран Scaffold + TopAppBar
+- Текст на весь экран (4dp сверху от статус-бара, 4dp + navBarInsets снизу)
+- Overlay по тапу: сверху — назад + имя файла, снизу — темы + прогресс-слайдер
+- 4 темы: Auto, Light, Sepia, Dark (кнопки 42dp)
+- Smart color contrast: если цвет текста документа сливается с фоном темы — игнорируется
+- Ложный тап при скроле: проверка drag distance > touchSlop
+- Микрофон синхронизирован с overlay (появляется/исчезает вместе)
+
+**4. PdfReaderScreen — очистка**
+- Удалён дубликат DocumentReaderContent (~640 строк)
+- Overlay по тапу: темы + прогресс-слайдер (как в DocumentViewerScreen)
+- Оставлен только PDF-рендер (PdfReaderContent)
+
+**5. SD-карта — прямой доступ**
+- SafRootInfo.path — прямой путь к SD-карте
+- Если MANAGE_EXTERNAL_STORAGE грантован и File API читает — навигация напрямую, без SAF пикера
+- BreadcrumbBar: правильный корень для SD-карты (не ROOT_PATH + segments)
+- Баг хлебных крошек: `/storage/emulated/0/storage/F9F1-7D91` → починен
+
+**6. Rename overlay**
+- Поле ввода всплывает над клавиатурой (imePadding + 30dp)
+- До 3 строк для длинных имён
+- Enter = переименовать, тап на фон = отмена
+- Inline-поле в списке заменено на маркер (подсветка primary)
+
+**7. Кастомный навбар**
+- Системный навбар скрыт (hide navigationBars + BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)
+- HorizontalPager: N страниц × 5-7 кнопок
+- Дефолт: [Back/Exit] [?] [AppIcon] [?] [?] + пустая страница 2
+- Кнопка Exit: тап = назад, hold 2 сек = кружок + выход
+- NavbarConfig модель + JSON persistence в HaronPreferences
+- NavbarSettingsScreen: список страниц, слайдер кнопок, выбор действий
+- 25 действий: навигация, файловые операции, экраны
+- Конфиг обновляется при возврате из настроек (ON_RESUME)
+- Панели контента: padding bottom 48dp (над навбаром)
+- SelectionActionBar: padding bottom 48dp
+
+**8. HaronTV — форк для Android TV**
+- Создана копия проекта в `C:\Users\User\AndroidStudioProjects\HaronTV\`
+- AGENTSTV.md — полный план двухмодульной структуры (shared + tv)
+- Этапы 1-5 выполнены в параллельной сессии (shared + tv модули)
+
+**9. Прочее**
+- WebDAV тестовый сервер: wsgidav установлен, конфиг с кириллицей
+- Глобальный CLAUDE.md: секция "Визуальное оформление" (отступы полноэкранных режимов)
+- Logcat буфер на Redmi увеличен до 16 МБ
+
+**Коммиты:**
+- `c34103a` — remove internet search module and libtorrent4j
+- `a102f9b` — remove internet search from features.txt
+- `9126cc5` — restore global device search, remove only internet search tab
+- `8cda5dd` — library tabs, reader themes, SD card direct access
 
 ---
 

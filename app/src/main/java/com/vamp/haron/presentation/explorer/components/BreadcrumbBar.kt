@@ -144,29 +144,46 @@ fun BreadcrumbBar(
                     Text(segment, style = MaterialTheme.typography.labelMedium, color = if (index == cloudSegments.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                // Regular file system — original logic
+                // Regular file system
+                // Determine root: if currentPath starts with ROOT_PATH, use ROOT_PATH
+                // Otherwise (SD card etc.) use the actual root from currentPath
+                val isInternalStorage = currentPath.startsWith(HaronConstants.ROOT_PATH)
+                val fileRoot = if (isInternalStorage) HaronConstants.ROOT_PATH else {
+                    // Extract root like /storage/F9F1-7D91 from currentPath
+                    val parts = currentPath.removePrefix("/").split("/")
+                    if (parts.size >= 2) "/${parts[0]}/${parts[1]}" else currentPath
+                }
+                val rootLabel = if (isInternalStorage) stringResource(R.string.storage) else {
+                    java.io.File(fileRoot).name
+                }
+                val rootSegments = if (isInternalStorage) segments else {
+                    // Skip segments that are part of fileRoot (e.g. "storage", "F9F1-7D91")
+                    val rootParts = fileRoot.trim('/').split('/')
+                    segments.drop(rootParts.size)
+                }
+
                 Text(
-                    text = stringResource(R.string.storage),
+                    text = rootLabel,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (segments.isEmpty()) {
+                    color = if (rootSegments.isEmpty()) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.primary
                     },
                     modifier = Modifier.clickable {
-                        onSegmentClick(HaronConstants.ROOT_PATH)
+                        onSegmentClick(fileRoot)
                     }
                 )
 
-                segments.forEachIndexed { index, segment ->
+                rootSegments.forEachIndexed { index, segment ->
                     Text(
                         text = " › ",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    val isLast = index == segments.lastIndex
-                    val segmentPath = HaronConstants.ROOT_PATH + "/" +
-                        segments.take(index + 1).joinToString("/")
+                    val isLast = index == rootSegments.lastIndex
+                    val segmentPath = fileRoot + "/" +
+                        rootSegments.take(index + 1).joinToString("/")
                     Text(
                         text = segment,
                         style = MaterialTheme.typography.labelMedium,

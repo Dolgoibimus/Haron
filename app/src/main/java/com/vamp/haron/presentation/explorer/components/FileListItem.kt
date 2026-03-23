@@ -315,11 +315,14 @@ fun FileListItem(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 if (isRenaming) {
-                    InlineRenameField(
-                        currentName = entry.name,
-                        onConfirm = onRenameConfirm,
-                        onCancel = onRenameCancel,
-                        isGridMode = true,
+                    // Renaming marker — actual input in overlay
+                    Text(
+                        text = entry.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
@@ -451,10 +454,13 @@ fun FileListItem(
             Spacer(modifier = Modifier.width(4.dp))
 
             if (isRenaming) {
-                InlineRenameField(
-                    currentName = entry.name,
-                    onConfirm = onRenameConfirm,
-                    onCancel = onRenameCancel,
+                // Renaming marker — actual input in overlay
+                Text(
+                    text = entry.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -584,8 +590,8 @@ private fun InlineRenameField(
         value = textFieldValue,
         onValueChange = { textFieldValue = it },
         textStyle = textStyle,
-        singleLine = !isGridMode,
-        maxLines = if (isGridMode) 2 else 1,
+        singleLine = false,
+        maxLines = 3,
         cursorBrush = SolidColor(primaryColor),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(

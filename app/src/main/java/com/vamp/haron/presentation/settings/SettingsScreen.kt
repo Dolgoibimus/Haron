@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.AlertDialog
@@ -64,6 +65,7 @@ import com.vamp.haron.presentation.applock.PinSetupDialog
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenGesturesVoice: () -> Unit = {},
+    onOpenNavbarSettings: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -568,6 +570,15 @@ fun SettingsScreen(
                 Icon(Icons.Filled.SwipeRight, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.gestures_and_voice_button))
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenNavbarSettings,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Tune, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.navbar_settings_title))
             }
 
             Spacer(Modifier.height(16.dp))

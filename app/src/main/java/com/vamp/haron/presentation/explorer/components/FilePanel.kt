@@ -134,6 +134,7 @@ fun FilePanel(
     onBreadcrumbClick: (String) -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
+    onExitApp: () -> Unit = {},
     canNavigateBack: Boolean = false,
     canNavigateForward: Boolean = false,
     onOpenInOtherPanel: () -> Unit = {},
@@ -1027,6 +1028,13 @@ fun FilePanel(
                         handledTrigger.value = state.scrollToTrigger
                         gridState.scrollToItem(state.scrollToIndex)
                     }
+                }
+
+                // Auto-scroll to renaming item so keyboard doesn't cover it
+                LaunchedEffect(state.renamingPath) {
+                    val rp = state.renamingPath ?: return@LaunchedEffect
+                    val idx = filteredFiles.indexOfFirst { it.path == rp }
+                    if (idx >= 0) gridState.animateScrollToItem(idx)
                 }
 
                 var dragStartIndex by remember { mutableIntStateOf(-1) }

@@ -93,7 +93,9 @@ private data class DocxTabStop(val pos: Int, val leader: String?)
 object DocumentParser {
 
     fun parse(file: File): List<DocParagraph> {
-        if (file.name.lowercase().endsWith(".fb2.zip")) {
+        com.vamp.core.logger.EcosystemLogger.d("Haron", "DocumentParser.parse: ${file.absolutePath}, exists=${file.exists()}, canRead=${file.canRead()}, size=${file.length()}")
+        val nameLc = file.name.lowercase()
+        if (nameLc.endsWith(".fb2.zip") || (nameLc.endsWith(".zip") && nameLc.contains(".fb2"))) {
             return parseFb2FromZip(file)
         }
         return when (file.extension.lowercase()) {

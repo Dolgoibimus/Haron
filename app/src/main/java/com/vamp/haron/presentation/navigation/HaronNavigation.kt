@@ -94,6 +94,7 @@ object HaronRoutes {
     const val STEGANOGRAPHY = "steganography"
     const val LIBRARY = "library"
     const val LIBRARY_SETTINGS = "library_settings"
+    const val NAVBAR_SETTINGS = "navbar_settings"
     const val LOGS = "logs"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
@@ -451,6 +452,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
+                onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
                 onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
             )
         }
@@ -690,6 +692,16 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         }
         composable(HaronRoutes.LIBRARY_SETTINGS) {
             LibrarySettingsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.NAVBAR_SETTINGS) {
+            val context = LocalContext.current
+            val prefs = remember {
+                com.vamp.haron.data.datastore.HaronPreferences(context)
+            }
+            com.vamp.haron.presentation.settings.NavbarSettingsScreen(
+                prefs = prefs,
                 onBack = { navController.popBackStack() }
             )
         }

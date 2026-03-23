@@ -70,7 +70,26 @@ import com.vamp.haron.domain.model.PanelId
 import com.vamp.haron.presentation.explorer.components.ConflictComparisonCard
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,6 +108,7 @@ import com.vamp.haron.presentation.explorer.components.ToolsPopup
 import com.vamp.haron.presentation.explorer.components.EmptyFolderCleanupDialog
 import com.vamp.haron.presentation.explorer.components.ExtractOptionsDialog
 import com.vamp.haron.presentation.explorer.components.BatchRenameDialog
+import com.vamp.haron.presentation.explorer.components.CustomNavbar
 import com.vamp.haron.presentation.explorer.components.ForceDeleteConfirmDialog
 import com.vamp.haron.presentation.explorer.components.QuickPreviewDialog
 import com.vamp.haron.presentation.explorer.components.QuickReceiveOverlay
@@ -284,6 +304,20 @@ fun ExplorerScreen(
         }
     }
 
+    // Navbar config — reload on resume (after returning from NavbarSettings)
+    val prefs = remember { com.vamp.haron.data.datastore.HaronPreferences(context) }
+    var navbarConfig by remember { mutableStateOf(prefs.getNavbarConfig()) }
+    val lifecycleOwner2 = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner2) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                navbarConfig = prefs.getNavbarConfig()
+            }
+        }
+        lifecycleOwner2.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner2.lifecycle.removeObserver(observer) }
+    }
+
     // Execute pending voice/gesture action after returning from another screen
     val pendingVoiceAction by com.vamp.haron.domain.model.TransferHolder.pendingVoiceAction.collectAsState()
     LaunchedEffect(pendingVoiceAction) {
@@ -358,7 +392,7 @@ fun ExplorerScreen(
     val hasSearch = state.topPanel.isSearchActive || state.bottomPanel.isSearchActive
     val showDrawerOrShelf = state.showDrawer || state.showShelf
 
-    // Back: drawer/shelf → search → rename → selection → archive up → history back → navigate up → no-op at root
+    // Back: drawer/shelf → search → rename → selection → archive up → history back → navigate up → double-back exit
     val canGoBack = viewModel.canNavigateBack(activePanel)
     val canGoUp = viewModel.canNavigateUp(activePanel)
     val activePanelState = if (activePanel == PanelId.TOP) state.topPanel else state.bottomPanel
@@ -377,7 +411,7 @@ fun ExplorerScreen(
             activePanelState.isArchiveMode -> viewModel.navigateUp(activePanel)
             canGoBack -> viewModel.navigateBack(activePanel)
             canGoUp -> viewModel.navigateUp(activePanel, pushHistory = false)
-            // At root or virtual root — consume back press, do nothing
+            // At root — do nothing (exit via custom navbar)
         }
     }
 
@@ -516,6 +550,7 @@ fun ExplorerScreen(
                 onBreadcrumbClick = { viewModel.onBreadcrumbClick(PanelId.TOP, it) },
                 onNavigateBack = { viewModel.navigateBack(PanelId.TOP) },
                 onNavigateForward = { viewModel.navigateForward(PanelId.TOP) },
+                onExitApp = { (context as? android.app.Activity)?.finishAffinity() },
                 canNavigateBack = viewModel.canNavigateBack(PanelId.TOP),
                 canNavigateForward = viewModel.canNavigateForward(PanelId.TOP),
                 onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.TOP) },
@@ -686,6 +721,7 @@ fun ExplorerScreen(
                 onBreadcrumbClick = { viewModel.onBreadcrumbClick(PanelId.BOTTOM, it) },
                 onNavigateBack = { viewModel.navigateBack(PanelId.BOTTOM) },
                 onNavigateForward = { viewModel.navigateForward(PanelId.BOTTOM) },
+                onExitApp = { (context as? android.app.Activity)?.finishAffinity() },
                 canNavigateBack = viewModel.canNavigateBack(PanelId.BOTTOM),
                 canNavigateForward = viewModel.canNavigateForward(PanelId.BOTTOM),
                 onOpenInOtherPanel = { viewModel.openInOtherPanel(PanelId.BOTTOM) },
@@ -784,7 +820,7 @@ fun ExplorerScreen(
         }
 
         if (isLandscape) {
-            Row(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier.fillMaxSize().padding(bottom = 48.dp)) {
                 TopPanel(
                     modifier = Modifier
                         .fillMaxHeight()
@@ -808,7 +844,7 @@ fun ExplorerScreen(
                 )
             }
         } else {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize().padding(bottom = 48.dp)) {
                 TopPanel(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -900,7 +936,7 @@ fun ExplorerScreen(
                 onExtractArchives = {
                     selectionPanelId?.let { viewModel.showExtractArchivesDialog(it) }
                 },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp)
             )
         }
 
@@ -1173,6 +1209,56 @@ fun ExplorerScreen(
                 )
             }
         }
+
+        // Custom navbar (replaces system navbar)
+        CustomNavbar(
+            config = navbarConfig,
+            onAction = { action ->
+                val panelId = state.activePanel
+                when (action) {
+                    com.vamp.haron.domain.model.NavbarAction.BACK -> {
+                        when {
+                            state.showDrawer -> viewModel.dismissDrawer()
+                            state.showShelf -> viewModel.dismissShelf()
+                            hasSearch -> {
+                                if (state.topPanel.isSearchActive) viewModel.closeSearch(PanelId.TOP)
+                                if (state.bottomPanel.isSearchActive) viewModel.closeSearch(PanelId.BOTTOM)
+                            }
+                            hasRenaming -> viewModel.cancelInlineRename()
+                            hasSelection -> selectionPanelId?.let { viewModel.clearSelection(it) }
+                            activePanelState.isArchiveMode -> viewModel.navigateUp(panelId)
+                            viewModel.canNavigateBack(panelId) -> viewModel.navigateBack(panelId)
+                            viewModel.canNavigateUp(panelId) -> viewModel.navigateUp(panelId, pushHistory = false)
+                        }
+                    }
+                    com.vamp.haron.domain.model.NavbarAction.EXIT -> (context as? android.app.Activity)?.finishAffinity()
+                    com.vamp.haron.domain.model.NavbarAction.FORWARD -> viewModel.navigateForward(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.UP -> viewModel.navigateUp(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.HOME -> viewModel.navigateTo(panelId, com.vamp.haron.common.constants.HaronConstants.ROOT_PATH)
+                    com.vamp.haron.domain.model.NavbarAction.REFRESH -> viewModel.refreshPanel(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.SEARCH -> viewModel.openGlobalSearch()
+                    com.vamp.haron.domain.model.NavbarAction.SETTINGS -> viewModel.openSettings()
+                    com.vamp.haron.domain.model.NavbarAction.TERMINAL -> viewModel.openTerminal()
+                    com.vamp.haron.domain.model.NavbarAction.TRANSFER -> viewModel.openTransfer()
+                    com.vamp.haron.domain.model.NavbarAction.TRASH -> viewModel.showTrash()
+                    com.vamp.haron.domain.model.NavbarAction.STORAGE -> viewModel.openStorageAnalysis()
+                    com.vamp.haron.domain.model.NavbarAction.APPS -> viewModel.openAppManager()
+                    com.vamp.haron.domain.model.NavbarAction.DUPLICATES -> viewModel.openDuplicateDetector()
+                    com.vamp.haron.domain.model.NavbarAction.SELECT_ALL -> viewModel.selectAll(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.TOGGLE_HIDDEN -> viewModel.toggleShowHidden(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.CREATE_NEW -> viewModel.requestCreateFromTemplate()
+                    com.vamp.haron.domain.model.NavbarAction.COPY -> viewModel.copySelectedToOtherPanel()
+                    com.vamp.haron.domain.model.NavbarAction.MOVE -> viewModel.moveSelectedToOtherPanel()
+                    com.vamp.haron.domain.model.NavbarAction.DELETE -> viewModel.requestDeleteSelected()
+                    com.vamp.haron.domain.model.NavbarAction.RENAME -> viewModel.requestRename()
+                    com.vamp.haron.domain.model.NavbarAction.LIBRARY -> onNavigateToLibrary()
+                    com.vamp.haron.domain.model.NavbarAction.SCANNER -> {} // TODO: open scanner
+                    else -> {}
+                }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
     }
 
     ExplorerDialogs(
@@ -1187,6 +1273,17 @@ fun ExplorerScreen(
         onCastModeSelected = onCastModeSelected
     )
 
+    // Rename overlay — floats above keyboard
+    val renamingPath = state.topPanel.renamingPath ?: state.bottomPanel.renamingPath
+    if (renamingPath != null) {
+        val renamingName = java.io.File(renamingPath).name
+        RenameOverlay(
+            currentName = renamingName,
+            onConfirm = { viewModel.confirmInlineRename(it) },
+            onCancel = { viewModel.cancelInlineRename() }
+        )
+    }
+
     ExplorerOverlays(
         state = state,
         viewModel = viewModel,
@@ -1200,6 +1297,93 @@ fun ExplorerScreen(
         onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() },
         onNavigateToLibrary = onNavigateToLibrary
     )
+}
+
+@Composable
+private fun RenameOverlay(
+    currentName: String,
+    onConfirm: (String) -> Unit,
+    onCancel: () -> Unit
+) {
+    val dotIndex = currentName.lastIndexOf('.')
+    val selectionEnd = if (dotIndex > 0) dotIndex else currentName.length
+    var textFieldValue by remember(currentName) {
+        mutableStateOf(
+            androidx.compose.ui.text.input.TextFieldValue(
+                text = currentName,
+                selection = androidx.compose.ui.text.TextRange(0, selectionEnd)
+            )
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
+    var confirmed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onCancel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(bottom = 30.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { /* consume tap on surface */ },
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = textFieldValue,
+                    onValueChange = { textFieldValue = it },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = false,
+                    maxLines = 3,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            confirmed = true
+                            val newName = textFieldValue.text.trim()
+                            if (newName.isNotBlank() && newName != currentName) {
+                                onConfirm(newName)
+                            } else {
+                                onCancel()
+                            }
+                        }
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        .drawBehind {
+                            drawLine(
+                                color = androidx.compose.ui.graphics.Color(0xFF6200EE),
+                                start = Offset(0f, size.height),
+                                end = Offset(size.width, size.height),
+                                strokeWidth = 2.dp.toPx()
+                            )
+                        }
+                )
+            }
+        }
+    }
 }
 
 @Composable
