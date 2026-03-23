@@ -12,6 +12,7 @@ enum class GestureAction(val labelRes: Int) {
     OPEN_SHELF(R.string.gesture_action_open_shelf),
     TOGGLE_HIDDEN(R.string.gesture_action_toggle_hidden),
     CREATE_NEW(R.string.gesture_action_create_new),
+    GLOBAL_SEARCH(R.string.gesture_action_global_search),
     OPEN_TERMINAL(R.string.gesture_action_terminal),
     SELECT_ALL(R.string.gesture_action_select_all),
     REFRESH(R.string.gesture_action_refresh),
@@ -54,7 +55,7 @@ enum class GestureAction(val labelRes: Int) {
 
     companion object {
         private val SCREEN_NAV_ACTIONS = setOf(
-            OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER,
+            OPEN_SETTINGS, OPEN_TERMINAL, OPEN_TRANSFER, GLOBAL_SEARCH,
             OPEN_STORAGE, OPEN_DUPLICATES, OPEN_APPS, OPEN_SCANNER,
             OPEN_LOGS
         )

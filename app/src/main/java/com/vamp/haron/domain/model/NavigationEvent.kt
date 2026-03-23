@@ -48,6 +48,8 @@ sealed interface NavigationEvent {
 
     data object OpenSupport : NavigationEvent
 
+    data object OpenGlobalSearch : NavigationEvent
+
     data object OpenTransfer : NavigationEvent
 
     data object OpenTerminal : NavigationEvent

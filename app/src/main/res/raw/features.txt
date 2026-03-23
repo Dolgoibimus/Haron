@@ -68,6 +68,7 @@
 - Quick search in current folder
   > Tap search icon (🔍) in panel header → type to filter files by name
   > Toggle "Content" button to search inside files (TXT, DOCX, PDF, etc.)
+  > Long tap search icon → global search across entire device
 - Create templates: folder, TXT, MD, dated folder
   > Tap "+" button in panel header → choose template type
   > Voice: "create" / "new"
@@ -388,6 +389,9 @@
   > Quick access to frequently used tools without opening Side Menu
 
 # Search
+- Global search across entire device
+  > How to open: long tap 🔍 in panel header, or voice "search" / "find"
+  > Search screen: input field on top, filter chips below, results below that
 - Two search modes: by name and by content
   > "Тт" button on the right — searches file names (always works, no indexing needed)
   > "📄" button — searches text INSIDE files (requires indexing, see below)
@@ -438,7 +442,7 @@
   > Tap 🔍 in panel header → quick filter files in current folder by name
   > "📄" button — switches to content search inside files (TXT, DOCX, ODT, PDF, etc.)
   > First content search indexes the folder (few seconds), subsequent searches are instant
-  > Searches only current folder
+  > Difference from global: local searches only current folder, global searches entire device
 
 # Barcode & QR Scanner
 - Built-in scanner via camera (ML Kit)
@@ -627,7 +631,7 @@
 - 4 customizable edge swipes
   > Swipe from left, right, top, bottom edge — each configurable separately
   > Configure: Settings → Gestures → choose action for each swipe
-  > 12 available actions: back, forward, up, home, menu, create, trash, analyzer, terminal, hidden, refresh, select all
+  > 13 available actions: back, forward, up, home, menu, search, create, trash, analyzer, terminal, hidden, refresh, select all
 - 35+ voice commands in Russian and English
   > How to use: tap mic icon (🎤) → speak a command → mic turns off automatically
   > Long tap mic → show list of all available commands

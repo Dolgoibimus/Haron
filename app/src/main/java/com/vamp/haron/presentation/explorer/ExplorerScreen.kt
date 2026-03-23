@@ -127,9 +127,9 @@ fun ExplorerScreen(
     onOpenSettings: () -> Unit = { },
     onOpenFeatures: () -> Unit = { },
     onOpenSupport: () -> Unit = { },
+    onOpenGlobalSearch: () -> Unit = { },
     onOpenTransfer: () -> Unit = { },
     onOpenTerminal: () -> Unit = { },
-    onNavigateToLibrary: () -> Unit = { },
     onOpenComparison: () -> Unit = { },
     onOpenSteganography: () -> Unit = { },
     onOpenScanner: () -> Unit = { },
@@ -215,6 +215,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenSupport -> {
                     onOpenSupport()
+                }
+                is NavigationEvent.OpenGlobalSearch -> {
+                    onOpenGlobalSearch()
                 }
                 is NavigationEvent.OpenTransfer -> {
                     onOpenTransfer()
@@ -547,6 +550,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onOpenSearch = { viewModel.openSearch(PanelId.TOP) },
+                onOpenGlobalSearch = { viewModel.openGlobalSearch() },
                 onCloseSearch = { viewModel.closeSearch(PanelId.TOP) },
                 onToggleSearchInContent = { viewModel.toggleSearchInContent(PanelId.TOP) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.TOP, it) },
@@ -716,6 +720,7 @@ fun ExplorerScreen(
                 safVolumeLabel = sdLabel,
                 onOpenStorageAnalysis = { viewModel.openStorageAnalysis() },
                 onOpenSearch = { viewModel.openSearch(PanelId.BOTTOM) },
+                onOpenGlobalSearch = { viewModel.openGlobalSearch() },
                 onCloseSearch = { viewModel.closeSearch(PanelId.BOTTOM) },
                 onToggleSearchInContent = { viewModel.toggleSearchInContent(PanelId.BOTTOM) },
                 onScrollPositionChanged = { viewModel.onScrollPositionChanged(PanelId.BOTTOM, it) },
@@ -1191,8 +1196,7 @@ fun ExplorerScreen(
         showCloudAuthDialog = showCloudAuthDialog,
         onShowCloudAuthDialogChange = { showCloudAuthDialog = it },
         onOpenTvRemote = { castVmForBt?.connectForRemote() },
-        onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() },
-        onOpenLibrary = onNavigateToLibrary
+        onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() }
     )
 }
 
@@ -1714,8 +1718,7 @@ private fun ExplorerOverlays(
     showCloudAuthDialog: Boolean,
     onShowCloudAuthDialogChange: (Boolean) -> Unit,
     onOpenTvRemote: () -> Unit = {},
-    onOpenBtRemote: () -> Unit = {},
-    onOpenLibrary: () -> Unit = {}
+    onOpenBtRemote: () -> Unit = {}
 ) {
     // Shield auth overlay
     if (state.showShieldAuth) {
@@ -1847,7 +1850,6 @@ private fun ExplorerOverlays(
                     onManageTags = { viewModel.showTagManager() },
                     onOpenTransfer = { viewModel.openTransfer() },
                     onOpenTerminal = { viewModel.openTerminal() },
-                    onOpenLibrary = onOpenLibrary,
                     onOpenTvRemote = onOpenTvRemote,
                     onOpenBtRemote = onOpenBtRemote,
                     cloudAccounts = cloudAccounts,

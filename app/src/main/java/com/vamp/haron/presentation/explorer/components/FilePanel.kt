@@ -158,6 +158,7 @@ fun FilePanel(
     safVolumeLabel: String = "",
     onOpenStorageAnalysis: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
+    onOpenGlobalSearch: () -> Unit = {},
     onCloseSearch: () -> Unit = {},
     onToggleSearchInContent: () -> Unit = {},
     onScrollPositionChanged: (Int) -> Unit = {},
@@ -745,14 +746,21 @@ fun FilePanel(
                                 )
                             }
                         }
-                        // Search: tap = local search
+                        // Search: tap = local, long press = global search
+                        @OptIn(ExperimentalFoundationApi::class)
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
-                                .clickable {
-                                    onOpenSearch()
-                                    onPanelTap()
-                                },
+                                .combinedClickable(
+                                    onClick = {
+                                        onOpenSearch()
+                                        onPanelTap()
+                                    },
+                                    onLongClick = {
+                                        onPanelTap()
+                                        onOpenGlobalSearch()
+                                    }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
