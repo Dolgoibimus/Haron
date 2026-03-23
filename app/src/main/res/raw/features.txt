@@ -68,7 +68,6 @@
 - Quick search in current folder
   > Tap search icon (🔍) in panel header → type to filter files by name
   > Toggle "Content" button to search inside files (TXT, DOCX, PDF, etc.)
-  > Long tap search icon → global search across entire device
 - Create templates: folder, TXT, MD, dated folder
   > Tap "+" button in panel header → choose template type
   > Voice: "create" / "new"
@@ -389,10 +388,6 @@
   > Quick access to frequently used tools without opening Side Menu
 
 # Search
-- Global search across entire device
-  > How to open: long tap 🔍 in panel header, or voice "search" / "find"
-  > Search screen: input field on top, filter chips below, results below that
-  > Two tabs: "Device Search" and "Internet Search"
 - Two search modes: by name and by content
   > "Тт" button on the right — searches file names (always works, no indexing needed)
   > "📄" button — searches text INSIDE files (requires indexing, see below)
@@ -443,7 +438,7 @@
   > Tap 🔍 in panel header → quick filter files in current folder by name
   > "📄" button — switches to content search inside files (TXT, DOCX, ODT, PDF, etc.)
   > First content search indexes the folder (few seconds), subsequent searches are instant
-  > Difference from global: local searches only current folder, global searches entire device
+  > Searches only current folder
 
 # Barcode & QR Scanner
 - Built-in scanner via camera (ML Kit)
@@ -505,6 +500,12 @@
   > Browse shared folders in dual-panel mode — just like local files
   > Upload and download files with progress bar
   > Saved connections with encrypted credentials
+  > Server nicknames: rename saved servers for easy identification [NEW]
+  > Guest connections saved automatically with "(Guest)" label [NEW]
+- Network media streaming [NEW]
+  > Tap a video or audio file on FTP/SMB/WebDAV/SFTP → plays instantly without downloading
+  > Full playlist: all media files in the folder are added to the playlist
+  > Supports FTP, FTPS, SFTP, SMB, WebDAV protocols
 - FTP client
   > Side Menu → Transfer → FTP
   > Connect to remote FTP servers by address, login and password
@@ -512,6 +513,8 @@
   > Dual-panel mode: FTP files on top, local files on bottom
   > FTPS (TLS) support for secure connections
   > Saved connections with encrypted credentials
+  > Server nicknames and anonymous auto-save [NEW]
+  > Full UTF-8 support: Cyrillic filenames display correctly [NEW]
 - Built-in FTP server
   > Side Menu → Transfer → FTP Server → Start
   > Shares phone files to a computer — open ftp://IP:port in a browser or FTP client on your PC
@@ -536,6 +539,10 @@
   > Cache: previously transcoded files play instantly on repeat cast
 - Automatic audio fallback
   > If the TV doesn't support the audio codec (AC3/DTS) — audio track is converted automatically
+- Background playback [NEW]
+  > Cast continues when the phone screen is turned off
+  > Transcoding also continues in background — no need to keep the screen on
+  > Wi-Fi stays active via WifiLock, CPU stays active via WakeLock
 - Bluetooth HID remote
   > Touchpad mode: phone = touchpad for TV. Finger movement = cursor, tap = click, long tap = right click, two-finger swipe = scroll
   > Virtual keyboard: type on your phone — text appears on the TV screen (Latin + Cyrillic)
@@ -616,29 +623,11 @@
   > Rename, delete, create folders — directly in the cloud
   > Delete from preview — no need to go back to the panel
 
-# Web Search [NEW]
-- Search files on the internet from three sources at once [NEW]
-  > How to open: global search → tab "Internet Search"
-  > Type a query → search runs across all sources simultaneously
-  > Results grouped by source with headers
-- Three sources [NEW]
-  > Open Directory: finds files in public web directories (FTP servers, file hosting)
-  > Torrent: searches torrent databases — shows name, size, seeder count
-  > Internet Archive: searches archive.org — 70M+ digitized books, audio, video, software
-- Smart features [NEW]
-  > Transliteration: Russian queries automatically searched in both Cyrillic and Latin
-  > Extension filter: add ".pdf", ".mp3" etc. to the query — only files of that type remain
-- Actions with results [NEW]
-  > Tap result → download starts (progress bar with speed and percentage)
-  > Long tap → copy link to clipboard
-  > Torrents download in zero-upload mode (no seeding) — download only
-  > All downloads saved to /Downloads/Haron/
-
 # Gestures & Voice
 - 4 customizable edge swipes
   > Swipe from left, right, top, bottom edge — each configurable separately
   > Configure: Settings → Gestures → choose action for each swipe
-  > 13 available actions: back, forward, up, home, menu, search, create, trash, analyzer, terminal, hidden, refresh, select all
+  > 12 available actions: back, forward, up, home, menu, create, trash, analyzer, terminal, hidden, refresh, select all
 - 35+ voice commands in Russian and English
   > How to use: tap mic icon (🎤) → speak a command → mic turns off automatically
   > Long tap mic → show list of all available commands
