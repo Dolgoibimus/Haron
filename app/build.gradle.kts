@@ -184,10 +184,6 @@ dependencies {
     // JAudiotagger (write album art into ID3/Vorbis/M4A tags)
     implementation("net.jthink:jaudiotagger:3.0.1")
 
-    // libtorrent4j (torrent download — zero upload mode)
-    implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-39")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-39")
 
     // Core library desugaring (Java 11+ API on older Android)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")

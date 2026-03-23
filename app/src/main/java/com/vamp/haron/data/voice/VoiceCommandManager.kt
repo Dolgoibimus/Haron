@@ -629,8 +629,6 @@ class VoiceCommandManager @Inject constructor(
             listOf("скрытые", "hidden", "показать скрытые", "show hidden", "спрятанные") to GestureAction.TOGGLE_HIDDEN,
             // Create
             listOf("создать", "создай", "новый", "новая", "create", "new") to GestureAction.CREATE_NEW,
-            // Search
-            listOf("поиск", "найти", "найди", "search", "find") to GestureAction.GLOBAL_SEARCH,
             // Terminal
             listOf("терминал", "terminal", "консоль", "console", "командная строка") to GestureAction.OPEN_TERMINAL,
             // Select all

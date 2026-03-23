@@ -5946,10 +5946,6 @@ class ExplorerViewModel @Inject constructor(
         _navigationEvent.tryEmit(NavigationEvent.OpenStorageAnalysis)
     }
 
-    fun openGlobalSearch() {
-        _navigationEvent.tryEmit(NavigationEvent.OpenGlobalSearch)
-    }
-
     // --- File Transfer ---
 
     fun openTransfer() {
@@ -6155,7 +6151,6 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_SHELF -> toggleShelf()
             GestureAction.TOGGLE_HIDDEN -> toggleShowHidden(panelId)
             GestureAction.CREATE_NEW -> requestCreateFromTemplate()
-            GestureAction.GLOBAL_SEARCH -> openGlobalSearch()
             GestureAction.OPEN_TERMINAL -> openTerminal()
             GestureAction.SELECT_ALL -> selectAll(panelId)
             GestureAction.REFRESH -> {

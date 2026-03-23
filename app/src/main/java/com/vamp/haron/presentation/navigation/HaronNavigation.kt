@@ -41,9 +41,7 @@ import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
 import com.vamp.haron.presentation.settings.GesturesVoiceScreen
 import com.vamp.haron.presentation.settings.LogsScreen
 import com.vamp.haron.presentation.settings.SettingsScreen
-import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.TransferHolder
-import com.vamp.haron.presentation.search.SearchScreen
 import com.vamp.haron.presentation.storage.StorageAnalysisScreen
 import android.webkit.MimeTypeMap
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -72,7 +70,6 @@ object HaronRoutes {
     const val DUPLICATE_DETECTOR = "duplicate_detector"
     const val APP_MANAGER = "app_manager"
     const val SETTINGS = "settings"
-    const val SEARCH = "search"
     const val TRANSFER = "transfer"
     const val TRANSFER_ROUTE = "transfer?openScanner={openScanner}"
 
@@ -80,6 +77,8 @@ object HaronRoutes {
         return "transfer?openScanner=$openScanner"
     }
     const val TERMINAL = "terminal"
+    const val LIBRARY = "library"
+    const val LIBRARY_SETTINGS = "library_settings"
     const val GESTURES_VOICE = "gestures_voice"
     const val GESTURES_VOICE_ROUTE = "gestures_voice?tab={tab}"
 
@@ -220,7 +219,6 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                     GestureAction.OPEN_SETTINGS -> HaronRoutes.SETTINGS
                     GestureAction.OPEN_TERMINAL -> HaronRoutes.TERMINAL
                     GestureAction.OPEN_TRANSFER -> HaronRoutes.transfer()
-                    GestureAction.GLOBAL_SEARCH -> HaronRoutes.SEARCH
                     GestureAction.OPEN_STORAGE -> HaronRoutes.STORAGE_ANALYSIS
                     GestureAction.OPEN_DUPLICATES -> HaronRoutes.DUPLICATE_DETECTOR
                     GestureAction.OPEN_APPS -> HaronRoutes.APP_MANAGER
@@ -401,14 +399,14 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenSupport = {
                     navController.navigate(HaronRoutes.SUPPORT)
                 },
-                onOpenGlobalSearch = {
-                    navController.navigate(HaronRoutes.SEARCH)
-                },
                 onOpenTransfer = {
                     navController.navigate(HaronRoutes.transfer())
                 },
                 onOpenTerminal = {
                     navController.navigate(HaronRoutes.TERMINAL)
+                },
+                onNavigateToLibrary = {
+                    navController.navigate(HaronRoutes.LIBRARY)
                 },
                 onOpenComparison = {
                     navController.navigate(HaronRoutes.COMPARISON)
@@ -488,12 +486,42 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                     TransferHolder.pendingNavigationPath.value = path
                     navController.popBackStack()
                 },
+                onOpenMediaPlayer = { startIndex ->
+                    navController.navigate(HaronRoutes.mediaPlayer(startIndex))
+                },
                 openScanner = backStackEntry.arguments?.getBoolean("openScanner") ?: false
             )
         }
         composable(HaronRoutes.TERMINAL) {
             TerminalScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.LIBRARY) {
+            val activity = LocalContext.current as androidx.activity.ComponentActivity
+            com.vamp.haron.presentation.library.LibraryScreen(
+                viewModel = androidx.hilt.navigation.compose.hiltViewModel(viewModelStoreOwner = activity),
+                onBack = { navController.popBackStack() },
+                onOpenReader = { filePath, fileName ->
+                    val ext = fileName.substringAfterLast('.', "").lowercase()
+                    when {
+                        ext == "pdf" ->
+                            navController.navigate(HaronRoutes.pdfReader(filePath, fileName))
+                        else ->
+                            navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
+                    }
+                },
+                onOpenSettings = {
+                    navController.navigate(HaronRoutes.LIBRARY_SETTINGS)
+                }
+            )
+        }
+        composable(HaronRoutes.LIBRARY_SETTINGS) {
+            // Share ViewModel with LibraryScreen via Activity scope
+            val activity = LocalContext.current as androidx.activity.ComponentActivity
+            com.vamp.haron.presentation.library.LibrarySettingsScreen(
+                onBack = { navController.popBackStack() },
+                viewModel = androidx.hilt.navigation.compose.hiltViewModel(viewModelStoreOwner = activity)
             )
         }
         composable(HaronRoutes.COMPARISON) {
@@ -504,32 +532,6 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         composable(HaronRoutes.STEGANOGRAPHY) {
             SteganographyScreen(
                 onBack = { navController.popBackStack() }
-            )
-        }
-        composable(HaronRoutes.SEARCH) {
-            SearchScreen(
-                onBack = { navController.popBackStack() },
-                onNavigateToFile = { _ ->
-                    navController.popBackStack()
-                },
-                onOpenMediaPlayer = { startIndex ->
-                    navController.navigate(HaronRoutes.mediaPlayer(startIndex))
-                },
-                onOpenTextEditor = { filePath, fileName ->
-                    navController.navigate(HaronRoutes.textEditor(filePath, fileName))
-                },
-                onOpenGallery = { startIndex ->
-                    navController.navigate(HaronRoutes.gallery(startIndex))
-                },
-                onOpenPdfReader = { filePath, fileName ->
-                    navController.navigate(HaronRoutes.pdfReader(filePath, fileName))
-                },
-                onOpenArchiveViewer = { filePath, fileName ->
-                    navController.navigate(HaronRoutes.archiveViewer(filePath, fileName))
-                },
-                onOpenDocumentViewer = { filePath, fileName ->
-                    navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
-                }
             )
         }
         composable(HaronRoutes.DUPLICATE_DETECTOR) {

@@ -82,7 +82,6 @@ import com.vamp.haron.presentation.navigation.HaronNavigation
 import com.vamp.haron.presentation.voice.VoiceFab
 import com.vamp.haron.common.util.IntentHandler
 import com.vamp.haron.common.util.ReceivedFile
-import com.vamp.haron.presentation.search.IndexNotificationViewModel
 import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.presentation.transfer.GlobalReceiveViewModel
 import com.vamp.haron.presentation.transfer.ReceiveNotificationViewModel
@@ -281,13 +280,6 @@ class MainActivity : FragmentActivity() {
                             // Cast remote control overlay
                             CastOverlay()
 
-                            // Index complete notification overlay
-                            val indexNotifVm = hiltViewModel<IndexNotificationViewModel>()
-                            val showIndexComplete by indexNotifVm.showNotification.collectAsState()
-                            if (showIndexComplete) {
-                                IndexCompleteOverlay(onDismiss = { indexNotifVm.dismiss() })
-                            }
-
                             if (lockState.isLocked) {
                                 LockScreen(
                                     lockMethod = lockState.lockMethod,
@@ -434,41 +426,6 @@ class MainActivity : FragmentActivity() {
             .setNegativeButtonText(getString(R.string.biometric_use_pin))
             .build()
         prompt.authenticate(info)
-    }
-}
-
-@Composable
-private fun IndexCompleteOverlay(onDismiss: () -> Unit) {
-    val transition = rememberInfiniteTransition(label = "pulse")
-    val alpha by transition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
-                modifier = Modifier.size(32.dp)
-            )
-        }
     }
 }
 
