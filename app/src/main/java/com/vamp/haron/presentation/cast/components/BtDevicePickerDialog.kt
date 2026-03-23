@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +41,7 @@ fun BtDevicePickerDialog(
     isDiscoverable: Boolean,
     onConnectDevice: (BluetoothDevice) -> Unit,
     onMakeDiscoverable: () -> Unit,
+    onWifiRemote: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -54,6 +56,24 @@ fun BtDevicePickerDialog(
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                        if (onWifiRemote != null) {
+                            Spacer(Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onWifiRemote()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Filled.Wifi,
+                                    contentDescription = null, // decorative
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.bt_hid_try_wifi))
+                            }
+                        }
                     }
                     is HidConnectionState.Connected -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {

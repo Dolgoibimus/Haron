@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -110,6 +111,7 @@ fun DrawerMenu(
 
     onRefreshNetwork: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
     cloudAccounts: List<CloudAccount> = emptyList(),
     onOpenCloudAuth: () -> Unit = {},
     onNavigateToCloud: (String) -> Unit = {},
@@ -154,25 +156,28 @@ fun DrawerMenu(
             items(safRoots, key = { "vol_${it.label}" }) { root ->
                 val context = LocalContext.current
                 val hasAccess = root.safUri.isNotEmpty()
+                // Direct File API access: if path exists and readable, navigate directly
+                val directAccess = root.path != null && java.io.File(root.path).let { it.exists() && it.canRead() }
+                val canNavigate = hasAccess || directAccess
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (hasAccess) Modifier.clickable { onNavigate(root.safUri) } else Modifier)
+                        .then(if (canNavigate) Modifier.clickable {
+                            if (directAccess && root.path != null) onNavigate(root.path) else onNavigate(root.safUri)
+                        } else Modifier)
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         Icons.Filled.SdCard, null,
                         Modifier.size(24.dp),
-                        tint = if (hasAccess) MaterialTheme.colorScheme.secondary
+                        tint = if (canNavigate) MaterialTheme.colorScheme.secondary
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(root.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (!hasAccess) {
-                            Text(stringResource(R.string.no_access), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else if (root.totalSpace > 0) {
+                        if (canNavigate && root.totalSpace > 0) {
                             Text(
                                 stringResource(
                                     R.string.usb_free_space,
@@ -182,13 +187,15 @@ fun DrawerMenu(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        } else if (!canNavigate) {
+                            Text(stringResource(R.string.no_access), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (hasAccess) {
                         IconButton(onClick = { onRevokeVolumeAccess(root.safUri) }) {
                             Icon(Icons.Filled.Delete, stringResource(R.string.disconnect), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else {
+                    } else if (!directAccess) {
                         TextButton(onClick = onGrantVolumeAccess) { Text(stringResource(R.string.connect)) }
                     }
                 }
@@ -531,6 +538,13 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Code, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
                     title = stringResource(R.string.terminal_title),
                     onClick = { onOpenTerminal(); onDismiss() }
+                )
+            }
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.MenuBook, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                    title = stringResource(R.string.library_title),
+                    onClick = { onOpenLibrary(); onDismiss() }
                 )
             }
             // TV Remote — temporarily hidden from menu (code preserved)

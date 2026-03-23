@@ -1006,6 +1006,24 @@
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Терминал</string>
+
+    <!-- Library -->
+    <string name="library_title">Библиотека</string>
+    <string name="library_empty">Книги не найдены</string>
+    <string name="library_scan">Сканировать хранилище</string>
+    <string name="library_first_launch_title">Книжная полка</string>
+    <string name="library_first_launch_text">Где искать книги? Можно просканировать всё хранилище или выбрать конкретные папки. Папки можно добавить позже.</string>
+    <string name="library_scan_all">Сканировать всё</string>
+    <string name="library_pick_folders">Выбрать папки</string>
+    <string name="add_folder">Добавить папку</string>
+    <string name="library_read">Читать</string>
+    <string name="library_tab_books">Книги</string>
+    <string name="library_tab_reading">Читаю</string>
+    <string name="library_tab_other">Остальные</string>
+    <string name="library_scan_folders">Папки сканирования</string>
+    <string name="library_no_folders">Папки не добавлены</string>
+    <string name="library_excluded_folders">Исключённые папки</string>
+    <string name="library_no_excluded">Нет исключений</string>
     <string name="tv_remote_title">Пульт ТВ</string>
     <string name="terminal_input_hint">Введите команду\u2026</string>
     <string name="terminal_send">Отправить</string>
@@ -1153,6 +1171,7 @@
     <string name="smb_shares">Общие папки</string>
     <string name="smb_discovered">Обнаруженные</string>
     <string name="smb_saved_servers">Сохранённые</string>
+    <string name="smb_server_nickname">Имя сервера</string>
     <string name="smb_no_servers">Серверы не найдены</string>
     <string name="smb_download">Скачать</string>
     <string name="smb_upload">Загрузить</string>
@@ -1263,7 +1282,8 @@
 
     <!-- Bluetooth HID Remote -->
     <string name="bt_remote_title">Bluetooth-пульт</string>
-    <string name="bt_hid_not_supported">Bluetooth HID не поддерживается на этом устройстве (требуется Android 9+)</string>
+    <string name="bt_hid_not_supported">Bluetooth-пульт не поддерживается на этом устройстве. В Bluetooth-стеке телефона отсутствует профиль HID Device.</string>
+    <string name="bt_hid_try_wifi">Использовать Wi-Fi пульт</string>
     <string name="bt_hid_connecting">Подключение…</string>
     <string name="bt_hid_select_device">Выберите устройство</string>
     <string name="bt_hid_connected">Подключено по Bluetooth</string>

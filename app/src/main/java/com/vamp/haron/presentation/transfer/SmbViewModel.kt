@@ -12,6 +12,7 @@ import com.vamp.haron.data.network.NetworkDeviceScanner
 import com.vamp.haron.data.network.NetworkDeviceType
 import com.vamp.haron.data.smb.SmbCredential
 import com.vamp.haron.data.smb.SmbCredentialStore
+import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.data.smb.SmbFileInfo
 import com.vamp.haron.data.smb.SmbManager
 import com.vamp.haron.data.smb.SmbShareInfo
@@ -35,7 +36,8 @@ import javax.inject.Inject
 
 data class SmbSavedServer(
     val host: String,
-    val name: String = host
+    val name: String = host,
+    val displayName: String = ""
 )
 
 data class SmbNavEntry(
@@ -87,7 +89,20 @@ class SmbViewModel @Inject constructor(
     private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastMessage = _toastMessage.asSharedFlow()
 
+    private val _playMediaStream = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val playMediaStream = _playMediaStream.asSharedFlow()
+
     private var transferJob: Job? = null
+
+    companion object {
+        private val MEDIA_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg",
+            "mp3", "flac", "ogg", "wav", "aac", "m4a", "wma", "opus", "aiff"
+        )
+        private val VIDEO_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg"
+        )
+    }
 
     init {
         viewModelScope.launch {
@@ -104,9 +119,15 @@ class SmbViewModel @Inject constructor(
 
     private fun loadSavedServers() {
         viewModelScope.launch {
-            val hosts = credentialStore.listSavedHosts()
+            val creds = credentialStore.listAll()
             _state.update {
-                it.copy(savedServers = hosts.map { h -> SmbSavedServer(h) })
+                it.copy(savedServers = creds.map { c ->
+                    SmbSavedServer(
+                        host = c.host,
+                        name = c.displayName.ifBlank { c.host },
+                        displayName = c.displayName
+                    )
+                })
             }
         }
     }
@@ -132,8 +153,11 @@ class SmbViewModel @Inject constructor(
 
     fun onSavedServerTap(host: String) {
         val savedCred = credentialStore.load(host)
-        if (savedCred != null) {
+        if (savedCred != null && savedCred.username.isNotBlank()) {
             connectWithCredential(host, 445, savedCred, save = false)
+        } else if (savedCred != null && savedCred.username.isBlank()) {
+            // Guest connection
+            onConnectAsGuest(host, 445)
         } else {
             _state.update {
                 it.copy(
@@ -158,6 +182,11 @@ class SmbViewModel @Inject constructor(
             val result = smbManager.connectAsGuest(host, port)
             if (result.isSuccess) {
                 EcosystemLogger.d(HaronConstants.TAG, "SmbVM: guest connected to $host")
+                // Save guest server so it appears in saved list
+                if (credentialStore.load(host) == null) {
+                    credentialStore.save(host, SmbCredential(host = host, username = "", password = "", displayName = "$host (${appContext.getString(R.string.smb_guest)})"))
+                    loadSavedServers()
+                }
                 _state.update { it.copy(isConnecting = false, connectedHost = host, connectedPort = port) }
                 loadShares(host)
                 loadLocalFiles()
@@ -224,8 +253,43 @@ class SmbViewModel @Inject constructor(
         if (file.isDirectory) {
             navigateToFolder(file)
         } else {
-            downloadSingleFile(file)
+            val ext = file.name.substringAfterLast('.', "").lowercase()
+            if (ext in MEDIA_EXTENSIONS) {
+                streamMediaFile(file)
+            } else {
+                downloadSingleFile(file)
+            }
         }
+    }
+
+    private fun streamMediaFile(file: SmbFileInfo) {
+        val s = _state.value
+        val host = s.connectedHost ?: return
+        val share = s.currentShare ?: return
+        val cred = credentialStore.load(host)
+        val userPart = if (cred != null && cred.username.isNotBlank()) {
+            "${java.net.URLEncoder.encode(cred.username, "UTF-8")}:${java.net.URLEncoder.encode(cred.password, "UTF-8")}@"
+        } else ""
+
+        val mediaFiles = s.files.filter { f ->
+            !f.isDirectory && f.name.substringAfterLast('.', "").lowercase() in MEDIA_EXTENSIONS
+        }
+
+        PlaylistHolder.items = mediaFiles.map { f ->
+            val fExt = f.name.substringAfterLast('.', "").lowercase()
+            val fPath = if (f.path.startsWith("/")) f.path else "/${f.path}"
+            PlaylistHolder.PlaylistItem(
+                filePath = "smb://${userPart}$host/$share$fPath",
+                fileName = f.name,
+                fileType = if (fExt in VIDEO_EXTENSIONS) "video" else "audio"
+            )
+        }
+        val startIndex = mediaFiles.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+        PlaylistHolder.startIndex = startIndex
+
+        val debugUrl = PlaylistHolder.items.getOrNull(startIndex)?.filePath ?: "?"
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: stream media ${file.name}, playlist=${mediaFiles.size}, url=$debugUrl")
+        _playMediaStream.tryEmit(startIndex)
     }
 
     fun onFileLongPress(file: SmbFileInfo) {
@@ -432,6 +496,19 @@ class SmbViewModel @Inject constructor(
 
     fun dismissRenameDialog() {
         _state.update { it.copy(showRenameDialog = null) }
+    }
+
+    fun removeSavedServer(host: String) {
+        credentialStore.remove(host)
+        loadSavedServers()
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: removed saved server $host")
+    }
+
+    fun renameSavedServer(host: String, newDisplayName: String) {
+        val cred = credentialStore.load(host) ?: return
+        credentialStore.save(host, cred.copy(displayName = newDisplayName))
+        loadSavedServers()
+        EcosystemLogger.d(HaronConstants.TAG, "SmbVM: renamed server $host → $newDisplayName")
     }
 
     fun onDisconnect() {

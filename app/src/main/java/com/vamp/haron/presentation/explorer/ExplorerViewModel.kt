@@ -2517,6 +2517,7 @@ class ExplorerViewModel @Inject constructor(
             SafRootInfo(
                 label = vol.label,
                 safUri = matchingUri?.toString() ?: "",
+                path = vol.path,
                 totalSpace = dir?.totalSpace ?: 0L,
                 freeSpace = dir?.freeSpace ?: 0L
             )

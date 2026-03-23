@@ -42,6 +42,8 @@ class FtpClientManager @Inject constructor(
                 val client = if (credential.useFtps) FTPSClient(true) else FTPClient()
                 client.connectTimeout = HaronConstants.FTP_CONNECT_TIMEOUT_MS
                 client.defaultTimeout = HaronConstants.FTP_SO_TIMEOUT_MS
+                client.controlEncoding = "UTF-8"
+                client.setAutodetectUTF8(true)
 
                 client.connect(credential.host, credential.port)
                 val reply = client.replyCode
@@ -63,7 +65,8 @@ class FtpClientManager @Inject constructor(
                 client.enterLocalPassiveMode()
                 client.setFileType(FTP.BINARY_FILE_TYPE)
                 client.soTimeout = HaronConstants.FTP_SO_TIMEOUT_MS
-                client.controlEncoding = "UTF-8"
+                // Request UTF-8 from server (IIS, vsftpd, etc.)
+                try { client.sendCommand("OPTS UTF8 ON") } catch (_: Exception) {}
 
                 connections[key] = FtpConnection(client, credential)
                 EcosystemLogger.d(HaronConstants.TAG, "FtpClientManager: connected to ${credential.host}:${credential.port}")
@@ -152,6 +155,40 @@ class FtpClientManager @Inject constructor(
         }
         EcosystemLogger.d(HaronConstants.TAG, "FtpClientManager: download completed ${remotePath.substringAfterLast("/")}")
     }.flowOn(Dispatchers.IO)
+
+    /** Get remote file size (for Content-Length in HTTP proxy) */
+    suspend fun getFileSize(host: String, port: Int, remotePath: String): Long = withContext(Dispatchers.IO) {
+        val key = FtpPathUtils.connectionKey(host, port)
+        val conn = connections[key] ?: return@withContext -1L
+        conn.mutex.withLock {
+            conn.lastUsed = System.currentTimeMillis()
+            conn.client.mlistFile(remotePath)?.size
+                ?: conn.client.listFiles(remotePath)?.firstOrNull()?.size
+                ?: -1L
+        }
+    }
+
+    /** Open InputStream for streaming (caller must call completePendingCommand after closing stream) */
+    suspend fun openInputStream(host: String, port: Int, remotePath: String, offset: Long = 0): Pair<java.io.InputStream, () -> Unit>? = withContext(Dispatchers.IO) {
+        val key = FtpPathUtils.connectionKey(host, port)
+        val conn = connections[key] ?: return@withContext null
+        conn.mutex.lock()
+        conn.lastUsed = System.currentTimeMillis()
+        if (offset > 0) {
+            conn.client.restartOffset = offset
+        }
+        val stream = conn.client.retrieveFileStream(remotePath)
+        if (stream == null) {
+            conn.mutex.unlock()
+            return@withContext null
+        }
+        // Return stream + cleanup function (must be called when done)
+        stream to {
+            try { stream.close() } catch (_: Exception) {}
+            try { conn.client.completePendingCommand() } catch (_: Exception) {}
+            conn.mutex.unlock()
+        }
+    }
 
     fun uploadFile(host: String, port: Int, remotePath: String, localSrc: File): Flow<FtpTransferProgress> = flow {
         val key = FtpPathUtils.connectionKey(host, port)

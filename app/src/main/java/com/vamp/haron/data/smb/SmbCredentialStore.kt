@@ -50,6 +50,8 @@ class SmbCredentialStore @Inject constructor(
 
     fun listSavedHosts(): List<String> = loadAll().keys.toList()
 
+    fun listAll(): List<SmbCredential> = loadAll().values.toList()
+
     private fun loadAll(): Map<String, SmbCredential> {
         val file = credentialFile
         if (!file.exists()) return emptyMap()
@@ -91,6 +93,7 @@ class SmbCredentialStore @Inject constructor(
             obj.put("username", cred.username)
             obj.put("password", cred.password)
             obj.put("domain", cred.domain)
+            obj.put("displayName", cred.displayName)
             root.put(host, obj)
         }
         return root.toString()
@@ -105,7 +108,8 @@ class SmbCredentialStore @Inject constructor(
                 host = host,
                 username = obj.optString("username", ""),
                 password = obj.optString("password", ""),
-                domain = obj.optString("domain", "")
+                domain = obj.optString("domain", ""),
+                displayName = obj.optString("displayName", "")
             )
         }
         return result

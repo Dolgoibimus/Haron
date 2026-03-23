@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.net.wifi.WifiManager
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
@@ -36,6 +37,7 @@ class CastMediaService : Service() {
         const val ACTION_DISCONNECT = "com.vamp.haron.CAST_DISCONNECT"
         const val EXTRA_TITLE = "title"
         const val EXTRA_DEVICE_NAME = "device_name"
+        const val EXTRA_DURATION_MS = "duration_ms"
         private const val IDLE_CHECK_INTERVAL_MS = 60_000L
         private const val IDLE_TIMEOUT_MS = 15 * 60 * 1000L // 15 min
 
@@ -48,6 +50,7 @@ class CastMediaService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var title: String = ""
     private var deviceName: String = ""
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -69,8 +72,9 @@ class CastMediaService : Service() {
             ACTION_START -> {
                 title = intent.getStringExtra(EXTRA_TITLE) ?: ""
                 deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME) ?: ""
+                val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
                 updateNotification(isPlaying = true)
-                acquireWakeLock()
+                acquireWakeLock(durationMs)
                 isRunning = true
                 touchActivity()
                 startIdleWatchdog()
@@ -184,12 +188,26 @@ class CastMediaService : Service() {
         nm.createNotificationChannel(channel)
     }
 
-    private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "haron:cast_service")
-            .apply { acquire(30 * 60 * 1000L) } // 30 min max
-        EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WakeLock acquired")
+    private fun acquireWakeLock(mediaDurationMs: Long = 0L) {
+        // Duration + 5 min buffer, minimum 30 min, max 6 hours
+        val timeoutMs = if (mediaDurationMs > 0) {
+            (mediaDurationMs + 5 * 60 * 1000L).coerceIn(30 * 60 * 1000L, 6 * 60 * 60 * 1000L)
+        } else {
+            4 * 60 * 60 * 1000L // fallback: 4 hours if duration unknown
+        }
+        if (wakeLock?.isHeld != true) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "haron:cast_service")
+                .apply { acquire(timeoutMs) }
+            EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WakeLock acquired (${timeoutMs / 60000} min)")
+        }
+        if (wifiLock?.isHeld != true) {
+            @Suppress("DEPRECATION")
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "haron:cast_wifi")
+                .apply { acquire() }
+            EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WifiLock acquired")
+        }
     }
 
     private fun releaseWakeLock() {
@@ -198,6 +216,11 @@ class CastMediaService : Service() {
             EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WakeLock released")
         }
         wakeLock = null
+        wifiLock?.let {
+            if (it.isHeld) it.release()
+            EcosystemLogger.d(HaronConstants.TAG, "CastMediaService WifiLock released")
+        }
+        wifiLock = null
     }
 
     override fun onDestroy() {

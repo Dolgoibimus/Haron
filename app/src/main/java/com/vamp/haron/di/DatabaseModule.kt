@@ -39,4 +39,10 @@ object DatabaseModule {
     fun provideReadingPositionDao(database: HaronDatabase): ReadingPositionDao {
         return database.readingPositionDao()
     }
+
+    @Provides
+    @Singleton
+    fun provideBookDao(database: HaronDatabase): com.vamp.haron.data.db.dao.BookDao {
+        return database.bookDao()
+    }
 }

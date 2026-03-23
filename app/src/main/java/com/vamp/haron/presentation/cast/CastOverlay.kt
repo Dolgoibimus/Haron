@@ -190,6 +190,7 @@ fun CastOverlay(
             isDiscoverable = btHidWaitingForTv,
             onConnectDevice = { castViewModel.connectBtHidToDevice(it) },
             onMakeDiscoverable = { castViewModel.requestBtDiscoverable() },
+            onWifiRemote = { /* TODO: Wi-Fi remote */ },
             onDismiss = { castViewModel.dismissBtDevicePicker() }
         )
     }

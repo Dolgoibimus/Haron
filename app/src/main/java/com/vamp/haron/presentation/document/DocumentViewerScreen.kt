@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -67,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.vamp.haron.R
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.TransferHolder
@@ -263,118 +269,245 @@ fun DocumentViewerScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+    // Reader theme: 0=Auto, 1=Light, 2=Sepia, 3=Dark
+    var readerTheme by remember { mutableIntStateOf(0) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val bgColor = when (readerTheme) {
+        1 -> Color(0xFFFAFAFA)
+        2 -> Color(0xFFF5E6CC)
+        3 -> Color(0xFF1A1A1A)
+        else -> if (isDark) MaterialTheme.colorScheme.surface else Color.White
+    }
+    val textColor = when (readerTheme) {
+        1 -> Color(0xFF212121)
+        2 -> Color(0xFF3E2723)
+        3 -> Color(0xFFCCCCCC)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    var showControls by remember { mutableStateOf(false) }
+    val navBarInsets = androidx.compose.foundation.layout.WindowInsets.navigationBars
+        .asPaddingValues()
+    val statusBarInsets = androidx.compose.foundation.layout.WindowInsets.statusBars
+        .asPaddingValues()
+
+    when {
+        isLoading -> Box(Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        error != null -> Box(Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
+            Text(error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+        }
+        docItems != null -> {
+            val items = docItems!!
+            var textScale by remember { mutableFloatStateOf(savedZoomScale) }
+            val listState = rememberLazyListState(
+                initialFirstVisibleItemIndex = savedItemIndex.coerceIn(0, items.lastIndex),
+                initialFirstVisibleItemScrollOffset = savedItemOffset
+            )
+
+            // Save reading position + zoom (debounced)
+            LaunchedEffect(filePath) {
+                snapshotFlow {
+                    Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, textScale)
+                }.collectLatest { (index, offset, zoom) ->
+                    delay(1000)
+                    withContext(Dispatchers.IO) {
+                        ReadingPositionManager.save(filePath, index, offset.toLong())
+                        ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
                     }
                 }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            when {
-                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                error != null -> Text(
-                    text = error ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(16.dp)
-                )
-                docItems != null -> {
-                    val items = docItems!!
-                    var textScale by remember { mutableFloatStateOf(savedZoomScale) }
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = savedItemIndex.coerceIn(0, items.lastIndex),
-                        initialFirstVisibleItemScrollOffset = savedItemOffset
+            }
+
+            // Save on exit
+            DisposableEffect(filePath) {
+                onDispose {
+                    ReadingPositionManager.saveAsync(
+                        filePath,
+                        listState.firstVisibleItemIndex,
+                        listState.firstVisibleItemScrollOffset.toLong()
                     )
+                    ReadingPositionManager.saveAsync("zoom:$filePath", (textScale * 100).toInt())
+                }
+            }
 
-                    // Save reading position + zoom (debounced)
-                    LaunchedEffect(filePath) {
-                        snapshotFlow {
-                            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, textScale)
-                        }.collectLatest { (index, offset, zoom) ->
-                            delay(1000)
-                            withContext(Dispatchers.IO) {
-                                ReadingPositionManager.save(filePath, index, offset.toLong())
-                                ReadingPositionManager.save("zoom:$filePath", (zoom * 100).toInt())
-                            }
-                        }
-                    }
+            // Progress
+            val totalItems = items.size.coerceAtLeast(1)
+            val progress = (listState.firstVisibleItemIndex.toFloat() / totalItems).coerceIn(0f, 1f)
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-                    // Save on exit
-                    DisposableEffect(filePath) {
-                        onDispose {
-                            ReadingPositionManager.saveAsync(
-                                filePath,
-                                listState.firstVisibleItemIndex,
-                                listState.firstVisibleItemScrollOffset.toLong()
-                            )
-                            ReadingPositionManager.saveAsync("zoom:$filePath", (textScale * 100).toInt())
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.White)
-                            .pointerInput(Unit) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    val wasConsumed = down.isConsumed
-                                    var wasPinch = false
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.size >= 2) {
-                                            wasPinch = true
-                                            val zoom = event.calculateZoom()
-                                            textScale = (textScale * zoom).coerceIn(0.5f, 3f)
-                                            event.changes.forEach { c -> c.consume() }
-                                        }
-                                    } while (event.changes.any { c -> c.pressed })
-                                    if (!wasPinch && !wasConsumed) {
-                                        micVisible = !micVisible
-                                    }
-                                }
-                            }
-                    ) {
-                        key(selectionKey) { SelectionContainer {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                items(items.size) { index ->
-                                    when (val item = items[index]) {
-                                        is DocItem.Para -> RichParagraph(item.paragraph, textScale)
-                                        is DocItem.Img -> EmbeddedImage(item.data)
-                                        is DocItem.TblRow -> CompactTableRow(
-                                            cells = item.cells,
-                                            colWeights = item.colWeights,
-                                            cellAligns = item.cellAligns,
-                                            cellBgs = item.cellBgs,
-                                            cellVMerge = item.cellVMerge,
-                                            cellGridSpans = item.cellGridSpans,
-                                            cellVAligns = item.cellVAligns,
-                                            hasBorders = item.hasBorders,
-                                            cellBorders = item.cellBorders,
-                                            textScale = textScale
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(bgColor)
+                    .padding(top = 4.dp)
+                    .pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val wasConsumed = down.isConsumed
+                            val startPos = down.position
+                            var wasPinch = false
+                            var wasDrag = false
+                            do {
+                                val event = awaitPointerEvent()
+                                if (event.changes.size >= 2) {
+                                    wasPinch = true
+                                    val zoom = event.calculateZoom()
+                                    textScale = (textScale * zoom).coerceIn(0.5f, 3f)
+                                    event.changes.forEach { c -> c.consume() }
+                                } else if (!wasDrag) {
+                                    val pos = event.changes.firstOrNull()?.position
+                                    if (pos != null) {
+                                        val dist = kotlin.math.hypot(
+                                            (pos.x - startPos.x).toDouble(),
+                                            (pos.y - startPos.y).toDouble()
                                         )
+                                        if (dist > slop) wasDrag = true
                                     }
                                 }
-                                item { Spacer(Modifier.height(32.dp)) }
+                            } while (event.changes.any { c -> c.pressed })
+                            if (!wasPinch && !wasDrag && !wasConsumed) {
+                                showControls = !showControls
+                                micVisible = showControls
                             }
-                        } }
+                        }
+                    }
+            ) {
+                // Content
+                key(selectionKey) { SelectionContainer {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 12.dp, end = 12.dp,
+                            top = 0.dp,
+                            bottom = 4.dp + navBarInsets.calculateBottomPadding()
+                        ),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(items.size) { index ->
+                            when (val item = items[index]) {
+                                is DocItem.Para -> RichParagraph(item.paragraph, textScale, textColor, bgColor)
+                                is DocItem.Img -> EmbeddedImage(item.data)
+                                is DocItem.TblRow -> CompactTableRow(
+                                    cells = item.cells,
+                                    colWeights = item.colWeights,
+                                    cellAligns = item.cellAligns,
+                                    cellBgs = item.cellBgs,
+                                    cellVMerge = item.cellVMerge,
+                                    cellGridSpans = item.cellGridSpans,
+                                    cellVAligns = item.cellVAligns,
+                                    hasBorders = item.hasBorders,
+                                    cellBorders = item.cellBorders,
+                                    textScale = textScale
+                                )
+                            }
+                        }
+                    }
+                } }
 
+                // Overlay controls — shown on tap
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showControls,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                ) {
+                    // Top bar: back + filename
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(bgColor.copy(alpha = 0.9f))
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = textColor)
+                        }
+                        Text(
+                            text = fileName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = textColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Bottom: themes + progress — shown on tap
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showControls,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    androidx.compose.foundation.layout.Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(bgColor.copy(alpha = 0.9f))
+                            .padding(bottom = navBarInsets.calculateBottomPadding())
+                    ) {
+                        // Theme switcher
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = textColor
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val labels = listOf("A", "☀", "S", "🌙")
+                                val themeColors = listOf(
+                                    if (isDark) MaterialTheme.colorScheme.surface else Color.White,
+                                    Color(0xFFFAFAFA),
+                                    Color(0xFFF5E6CC),
+                                    Color(0xFF1A1A1A)
+                                )
+                                themeColors.forEachIndexed { i, c ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .padding(3.dp)
+                                            .background(c, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .border(
+                                                width = if (i == readerTheme) 2.dp else 1.dp,
+                                                color = if (i == readerTheme) MaterialTheme.colorScheme.primary
+                                                        else textColor.copy(alpha = 0.3f),
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                                            )
+                                            .then(Modifier.pointerInput(i) {
+                                                detectTapGestures { readerTheme = i }
+                                            }),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(labels[i], fontSize = 16.sp, color = if (i == 3) Color.White else Color.Black)
+                                    }
+                                }
+                            }
+                        }
+                        // Progress slider
+                        androidx.compose.material3.Slider(
+                            value = progress,
+                            onValueChange = { newVal ->
+                                scope.launch {
+                                    val targetIndex = (newVal * totalItems).toInt().coerceIn(0, items.lastIndex)
+                                    listState.scrollToItem(targetIndex)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
                     }
                 }
             }
@@ -406,7 +539,7 @@ private fun EmbeddedImage(data: ByteArray) {
 // ======================== Rich paragraph ========================
 
 @Composable
-private fun RichParagraph(paragraph: DocParagraph, textScale: Float) {
+private fun RichParagraph(paragraph: DocParagraph, textScale: Float, textColor: Color = Color.Black, themeBgColor: Color = Color.White) {
     val context = LocalContext.current
     val baseStyle = when (paragraph.headingLevel) {
         1 -> MaterialTheme.typography.headlineMedium
@@ -420,7 +553,7 @@ private fun RichParagraph(paragraph: DocParagraph, textScale: Float) {
         (scaledFontSize.value * paragraph.lineSpacingMultiplier).sp
     else scaledFontSize * 1.2f
     val style = baseStyle.copy(
-        color = Color.Black,
+        color = textColor,
         fontSize = scaledFontSize,
         lineHeight = lineH
     )
@@ -452,7 +585,14 @@ private fun RichParagraph(paragraph: DocParagraph, textScale: Float) {
 
             val baseFontSize = if (span.fontSize > 0f) span.fontSize else baseStyle.fontSize.value
             val fontSize = (baseFontSize * textScale).sp
-            val textColor = if (span.textColor != 0L) Color(span.textColor.toInt()) else Color.Unspecified
+            // Ignore document text color if it would be invisible on current theme background
+            val spanColor = if (span.textColor != 0L) {
+                val c = Color(span.textColor.toInt())
+                val cLum = c.red * 0.299f + c.green * 0.587f + c.blue * 0.114f
+                val bgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
+                // If contrast is too low — ignore document color
+                if (kotlin.math.abs(cLum - bgLum) > 0.3f) c else Color.Unspecified
+            } else Color.Unspecified
             val bgColor = if (span.highlightColor != 0L) Color(span.highlightColor.toInt()) else Color.Unspecified
 
             val baselineShift = when (span.verticalAlign) {
@@ -473,7 +613,7 @@ private fun RichParagraph(paragraph: DocParagraph, textScale: Float) {
                     fontStyle = fontStyle,
                     textDecoration = decoration,
                     fontSize = subSupSize,
-                    color = textColor,
+                    color = spanColor,
                     background = bgColor,
                     baselineShift = baselineShift,
                     fontFamily = mapFontFamily(span.fontFamily)

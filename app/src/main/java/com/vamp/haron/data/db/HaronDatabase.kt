@@ -8,14 +8,16 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vamp.haron.data.db.dao.FileContentDao
 import com.vamp.haron.data.db.dao.FileIndexDao
+import com.vamp.haron.data.db.dao.BookDao
 import com.vamp.haron.data.db.dao.ReadingPositionDao
+import com.vamp.haron.data.db.entity.BookEntity
 import com.vamp.haron.data.db.entity.FileContentEntity
 import com.vamp.haron.data.db.entity.FileIndexEntity
 import com.vamp.haron.data.db.entity.ReadingPositionEntity
 
 @Database(
-    entities = [FileIndexEntity::class, FileContentEntity::class, ReadingPositionEntity::class],
-    version = 4,
+    entities = [FileIndexEntity::class, FileContentEntity::class, ReadingPositionEntity::class, BookEntity::class],
+    version = 6,
     exportSchema = false
 )
 abstract class HaronDatabase : RoomDatabase() {
@@ -23,6 +25,7 @@ abstract class HaronDatabase : RoomDatabase() {
     abstract fun fileIndexDao(): FileIndexDao
     abstract fun fileContentDao(): FileContentDao
     abstract fun readingPositionDao(): ReadingPositionDao
+    abstract fun bookDao(): BookDao
 
     companion object {
         private const val TAG = "HaronDatabase"

@@ -22,6 +22,7 @@ class DndManager(
 
     private var originalInterruptionFilter: Int = NotificationManager.INTERRUPTION_FILTER_ALL
     private var originalRingerMode: Int = AudioManager.RINGER_MODE_NORMAL
+    private var originalNotificationVolume: Int = 0
     private var isActive = false
 
     val hasPermission: Boolean
@@ -33,6 +34,7 @@ class DndManager(
         // Save original state
         originalInterruptionFilter = notificationManager.currentInterruptionFilter
         originalRingerMode = audioManager.ringerMode
+        originalNotificationVolume = audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION)
         isActive = true
 
         // Build policy
@@ -74,7 +76,9 @@ class DndManager(
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
 
             if (prefs.playerDndSilentMode(isVideo)) {
-                audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+                // Mute notifications/ringtone but keep media volume untouched
+                audioManager.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+                audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
             }
 
             EcosystemLogger.d(HaronConstants.TAG, "DndManager: activated (${if (isVideo) "video" else "audio"}), categories=$priorityCategories, senders=$callSenders, suppressed=$suppressedEffects")
@@ -91,6 +95,7 @@ class DndManager(
         try {
             notificationManager.setInterruptionFilter(originalInterruptionFilter)
             audioManager.ringerMode = originalRingerMode
+            audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, originalNotificationVolume, 0)
             EcosystemLogger.d(HaronConstants.TAG, "DndManager: deactivated, restored filter=$originalInterruptionFilter, ringer=$originalRingerMode")
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "DndManager: failed to deactivate: ${e.message}")

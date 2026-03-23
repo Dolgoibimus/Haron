@@ -35,7 +35,7 @@ class TranscodeVideoUseCase @Inject constructor(
     private val chromecastFormats = setOf("mp4", "m4v", "webm")
 
     /** Start HLS cast after 30 sec of content (3 segments × 10 sec) */
-    private val streamThresholdMs = 30_000L
+    private val streamThresholdMs = 60_000L
 
     private val cacheDir: File
         get() = File(context.filesDir, "transcode_cache").also { it.mkdirs() }
@@ -138,7 +138,7 @@ class TranscodeVideoUseCase @Inject constructor(
             append("-vf \"scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease\" ")
             append("-g 60 -r 30 ")
             append("-c:a aac -ac 2 -b:a 192k ")
-            append("-f hls -hls_time 10 -hls_list_size 0 ")
+            append("-f hls -hls_time 30 -hls_list_size 0 ")
             append("-hls_segment_type mpegts ")
             append("-hls_playlist_type event ")
             append("-hls_segment_filename \"$segPattern\" ")

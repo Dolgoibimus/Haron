@@ -158,6 +158,9 @@ object ThumbnailCache {
             null
         }
 
+        if (bitmap == null && (path.lowercase().endsWith(".fb2") || path.lowercase().endsWith(".fb2.zip"))) {
+            EcosystemLogger.d(HaronConstants.TAG, "ThumbnailCache: no cover for ${path.substringAfterLast('/')}")
+        }
         bitmap?.let { cache.put(path, it) }
         bitmap
     }
@@ -449,13 +452,22 @@ object ThumbnailCache {
     ): Bitmap? {
         val file = if (isContentUri) copyToTemp(context, path, "zip") else File(path)
         return try {
-            ZipFile(file).use { zip ->
-                val fb2Entry = zip.entries().asSequence()
-                    .firstOrNull { it.name.lowercase().endsWith(".fb2") }
-                    ?: return null
-                val xml = zip.getInputStream(fb2Entry).bufferedReader().readText()
-                parseFb2Content(xml)
+            // Read via FileInputStream to workaround FUSE reporting 0 size
+            val zipBytes = file.inputStream().use { it.readBytes() }
+            if (zipBytes.isEmpty()) return null
+            val zipStream = java.util.zip.ZipInputStream(zipBytes.inputStream())
+            var result: Bitmap? = null
+            var entry = zipStream.nextEntry
+            while (entry != null) {
+                if (entry.name.lowercase().endsWith(".fb2")) {
+                    val xml = zipStream.bufferedReader().readText()
+                    result = parseFb2Content(xml)
+                    break
+                }
+                entry = zipStream.nextEntry
             }
+            zipStream.close()
+            result
         } catch (_: Exception) { null }
         finally { if (isContentUri) file.delete() }
     }
@@ -488,8 +500,9 @@ object ThumbnailCache {
             ?: return null
 
         // Find matching <binary> tag with this id
+        val escapedHref = Regex.escape(coverHref)
         val binaryRegex = Regex(
-            """<binary[^>]+id="$coverHref"[^>]*>(.*?)</binary>""",
+            """<binary[^>]*\bid="$escapedHref"[^>]*>(.*?)</binary>""",
             RegexOption.DOT_MATCHES_ALL
         )
         val base64Data = binaryRegex.find(xml)?.groupValues?.get(1)

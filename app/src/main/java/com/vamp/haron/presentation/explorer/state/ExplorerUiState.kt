@@ -224,6 +224,7 @@ enum class FileTemplate(val labelRes: Int, val extension: String) {
 data class SafRootInfo(
     val label: String,
     val safUri: String, // empty if no access
+    val path: String? = null, // direct filesystem path (e.g. /storage/877E-B1EE)
     val totalSpace: Long = 0L,
     val freeSpace: Long = 0L
 )

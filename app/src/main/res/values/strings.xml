@@ -1007,6 +1007,24 @@
 
     <!-- Terminal (Batch 32 + 37) -->
     <string name="terminal_title">Terminal</string>
+
+    <!-- Library -->
+    <string name="library_title">Library</string>
+    <string name="library_empty">No books found</string>
+    <string name="library_scan">Scan storage</string>
+    <string name="library_first_launch_title">Book Library</string>
+    <string name="library_first_launch_text">Where to look for books? You can scan all storage or choose specific folders. Folders can be added later.</string>
+    <string name="library_scan_all">Scan all storage</string>
+    <string name="library_pick_folders">Choose folders</string>
+    <string name="add_folder">Add folder</string>
+    <string name="library_read">Read</string>
+    <string name="library_tab_books">Books</string>
+    <string name="library_tab_reading">Reading</string>
+    <string name="library_tab_other">Other</string>
+    <string name="library_scan_folders">Scan folders</string>
+    <string name="library_no_folders">No folders added</string>
+    <string name="library_excluded_folders">Excluded folders</string>
+    <string name="library_no_excluded">No exclusions</string>
     <string name="tv_remote_title">TV Remote</string>
     <string name="terminal_input_hint">Enter command\u2026</string>
     <string name="terminal_send">Send</string>
@@ -1154,6 +1172,7 @@
     <string name="smb_shares">Shared folders</string>
     <string name="smb_discovered">Discovered</string>
     <string name="smb_saved_servers">Saved</string>
+    <string name="smb_server_nickname">Server name</string>
     <string name="smb_no_servers">No servers found</string>
     <string name="smb_download">Download</string>
     <string name="smb_upload">Upload</string>
@@ -1265,7 +1284,8 @@
 
     <!-- Bluetooth HID Remote -->
     <string name="bt_remote_title">Bluetooth Remote</string>
-    <string name="bt_hid_not_supported">Bluetooth HID is not supported on this device (requires Android 9+)</string>
+    <string name="bt_hid_not_supported">Bluetooth remote is not supported on this device. The HID Device profile is missing from your phone\'s Bluetooth stack.</string>
+    <string name="bt_hid_try_wifi">Use Wi-Fi remote instead</string>
     <string name="bt_hid_connecting">Connecting…</string>
     <string name="bt_hid_select_device">Select device</string>
     <string name="bt_hid_connected">Connected via Bluetooth</string>

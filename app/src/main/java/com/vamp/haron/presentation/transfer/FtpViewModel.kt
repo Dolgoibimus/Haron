@@ -29,13 +29,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.vamp.haron.data.transfer.HttpFileServer
+import com.vamp.haron.domain.model.PlaylistHolder
 import java.io.File
+import java.net.URLEncoder
 import javax.inject.Inject
 
 data class FtpSavedServer(
     val host: String,
     val port: Int = 21,
     val name: String = host,
+    val displayName: String = "",
     val useFtps: Boolean = false,
     val isSftp: Boolean = false
 )
@@ -71,7 +75,8 @@ class FtpViewModel @Inject constructor(
     private val ftpClientManager: FtpClientManager,
     private val credentialStore: FtpCredentialStore,
     private val sftpClientManager: SftpClientManager,
-    private val sshCredentialStore: SshCredentialStore
+    private val sshCredentialStore: SshCredentialStore,
+    private val httpFileServer: HttpFileServer
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FtpUiState())
@@ -80,7 +85,21 @@ class FtpViewModel @Inject constructor(
     private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastMessage = _toastMessage.asSharedFlow()
 
+    /** Emitted when a media file should be played via streaming (no download) */
+    private val _playMediaStream = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val playMediaStream = _playMediaStream.asSharedFlow()
+
     private var transferJob: Job? = null
+
+    companion object {
+        private val MEDIA_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg",
+            "mp3", "flac", "ogg", "wav", "aac", "m4a", "wma", "opus", "aiff"
+        )
+        private val VIDEO_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg"
+        )
+    }
 
     init {
         loadSavedServers()
@@ -89,10 +108,20 @@ class FtpViewModel @Inject constructor(
     private fun loadSavedServers() {
         viewModelScope.launch {
             val ftpServers = credentialStore.listAll().map { c ->
-                FtpSavedServer(c.host, c.port, c.displayName, c.useFtps, isSftp = false)
+                FtpSavedServer(
+                    host = c.host, port = c.port,
+                    name = c.displayName.ifBlank { "${c.host}:${c.port}" },
+                    displayName = c.displayName,
+                    useFtps = c.useFtps, isSftp = false
+                )
             }
             val sftpServers = sshCredentialStore.listAll().map { c ->
-                FtpSavedServer(c.host, c.port, "${c.user}@${c.host}", isSftp = true)
+                FtpSavedServer(
+                    host = c.host, port = c.port,
+                    name = "${c.user}@${c.host}",
+                    displayName = "",
+                    isSftp = true
+                )
             }
             _state.update {
                 it.copy(savedServers = ftpServers + sftpServers)
@@ -173,6 +202,11 @@ class FtpViewModel @Inject constructor(
             val result = ftpClientManager.connectAnonymous(host, port)
             if (result.isSuccess) {
                 EcosystemLogger.d(HaronConstants.TAG, "FtpVM: anonymous connected to $host")
+                // Save anonymous server so it appears in saved list
+                if (credentialStore.load(host, port) == null) {
+                    credentialStore.save(FtpCredential(host, port, "anonymous", "", displayName = "$host:$port (${appContext.getString(R.string.ftp_anonymous)})"))
+                    loadSavedServers()
+                }
                 _state.update {
                     it.copy(
                         isConnecting = false,
@@ -213,9 +247,61 @@ class FtpViewModel @Inject constructor(
         if (file.isDirectory) {
             navigateToFolder(file)
         } else {
-            downloadSingleFile(file)
+            val ext = file.name.substringAfterLast('.', "").lowercase()
+            if (ext in MEDIA_EXTENSIONS) {
+                streamMediaFile(file)
+            } else {
+                downloadSingleFile(file)
+            }
         }
     }
+
+    private fun streamMediaFile(file: FtpFileInfo) {
+        val s = _state.value
+        val host = s.connectedHost ?: return
+        val port = s.connectedPort
+
+        viewModelScope.launch {
+            // Ensure HTTP server is running for FTP proxy
+            if (httpFileServer.actualPort == 0) {
+                httpFileServer.start(emptyList())
+            }
+
+            val allMedia = s.files.filter { f ->
+                !f.isDirectory && f.name.substringAfterLast('.', "").lowercase() in MEDIA_EXTENSIONS
+            }
+
+            // Limit playlist to 50 files around the selected one to avoid ANR on large folders
+            val clickedIndex = allMedia.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+            val windowStart = (clickedIndex - 25).coerceAtLeast(0)
+            val windowEnd = (windowStart + 50).coerceAtMost(allMedia.size)
+            val mediaFiles = allMedia.subList(windowStart, windowEnd)
+
+            PlaylistHolder.items = mediaFiles.map { f ->
+                val fExt = f.name.substringAfterLast('.', "").lowercase()
+                PlaylistHolder.PlaylistItem(
+                    filePath = buildStreamUrl(host, port, f.path, s.isSftp),
+                    fileName = f.name,
+                    fileType = if (fExt in VIDEO_EXTENSIONS) "video" else "audio"
+                )
+            }
+            val startIndex = mediaFiles.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+            PlaylistHolder.startIndex = startIndex
+
+            EcosystemLogger.d(HaronConstants.TAG, "FtpVM: stream media ${file.name}, playlist=${mediaFiles.size} (of ${allMedia.size})")
+            _playMediaStream.tryEmit(startIndex)
+        }
+    }
+
+    private fun buildStreamUrl(host: String, port: Int, filePath: String, isSftp: Boolean): String {
+        // Proxy FTP/SFTP through local HTTP server (VLC can't handle non-ASCII FTP paths)
+        val proto = if (isSftp) "sftp" else "ftp"
+        val path = if (filePath.startsWith("/")) filePath else "/$filePath"
+        val httpPort = httpFileServer.actualPort.takeIf { it > 0 } ?: 8080
+        return "http://127.0.0.1:$httpPort/ftp-proxy?host=${enc(host)}&port=$port&path=${enc(path)}&proto=$proto"
+    }
+
+    private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     fun onFileLongPress(file: FtpFileInfo) {
         toggleSelection(file.path)
@@ -253,9 +339,10 @@ class FtpViewModel @Inject constructor(
         val s = _state.value
         val host = s.connectedHost ?: return
 
-        // index 0 = host → disconnect
+        // index 0 = host → go to root
         if (index == 0) {
-            onDisconnect()
+            _state.update { it.copy(currentPath = "/") }
+            loadFiles(host, s.connectedPort, "/")
             return
         }
 
@@ -472,6 +559,17 @@ class FtpViewModel @Inject constructor(
             }
         } else {
             credentialStore.remove(server.host, server.port)
+        }
+        loadSavedServers()
+    }
+
+    fun renameSavedServer(server: FtpSavedServer, newDisplayName: String) {
+        if (server.isSftp) {
+            // SFTP renaming not supported yet
+        } else {
+            val cred = credentialStore.load(server.host, server.port) ?: return
+            credentialStore.save(cred.copy(displayName = newDisplayName))
+            EcosystemLogger.d(HaronConstants.TAG, "FtpVM: renamed server ${server.host}:${server.port} → $newDisplayName")
         }
         loadSavedServers()
     }

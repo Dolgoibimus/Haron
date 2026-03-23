@@ -41,7 +41,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import com.vamp.haron.service.ScreenMirrorService
+import android.media.MediaMetadataRetriever
 import java.io.File
 import javax.inject.Inject
 
@@ -238,12 +241,13 @@ class CastViewModel @Inject constructor(
         }
     }
 
-    private fun startCastService(mediaTitle: String) {
+    private fun startCastService(mediaTitle: String, durationMs: Long = 0L) {
         val deviceName = connectedDeviceName.value ?: ""
         val intent = Intent(appContext, CastMediaService::class.java).apply {
             action = CastMediaService.ACTION_START
             putExtra(CastMediaService.EXTRA_TITLE, mediaTitle)
             putExtra(CastMediaService.EXTRA_DEVICE_NAME, deviceName)
+            putExtra(CastMediaService.EXTRA_DURATION_MS, durationMs)
         }
         ContextCompat.startForegroundService(appContext, intent)
     }
@@ -325,7 +329,8 @@ class CastViewModel @Inject constructor(
             if (!file.exists()) return@launch
 
             httpFileServer.start(listOf(file))
-            startCastService(title.ifEmpty { file.name })
+            val durationMs = getMediaDurationMs(filePath)
+            startCastService(title.ifEmpty { file.name }, durationMs)
             val streamUrl = httpFileServer.getStreamUrl(0) ?: return@launch
             val mimeType = guessMimeType(file.extension)
             dlnaManager.castMedia(device.id, streamUrl, mimeType, title.ifEmpty { file.name })
@@ -391,7 +396,8 @@ class CastViewModel @Inject constructor(
                     } else {
                         httpFileServer.start(listOf(file))
                     }
-                    startCastService(title.ifEmpty { file.name })
+                    val durationMs = if (!isImage) getMediaDurationMs(filePath) else 0L
+                    startCastService(title.ifEmpty { file.name }, durationMs)
                     val streamIndex = if (isImage) castImageIndex else 0
                     val streamUrl = httpFileServer.getStreamUrl(streamIndex) ?: return@launch
                     val mimeType = guessMimeType(file.extension)
@@ -408,12 +414,18 @@ class CastViewModel @Inject constructor(
         }
     }
 
+    private var lastTranscodeDurationMs: Long = 0L
+
     private fun startTranscodedCast(filePath: String, title: String) {
+        // Start foreground service immediately (with 0 duration) so WakeLock+WifiLock protect the process
+        startCastService(title.ifEmpty { File(filePath).name }, 0L)
         transcodeJob?.cancel()
         _transcodeProgress.value = TranscodeProgress(percent = 0)
         EcosystemLogger.d(HaronConstants.TAG, "startTranscodedCast ENTER: $filePath")
 
         transcodeJob = viewModelScope.launch {
+            // Get duration in background, update service wake lock
+            lastTranscodeDurationMs = withContext(Dispatchers.IO) { getMediaDurationMs(filePath) }
             try {
                 var castStarted = false
                 var lastLoggedPercent = -1
@@ -463,7 +475,7 @@ class CastViewModel @Inject constructor(
             }
             httpFileServer.start(emptyList())
             httpFileServer.setupHls(dir)
-            startCastService(title)
+            startCastService(title, lastTranscodeDurationMs)
             val hlsUrl = httpFileServer.getHlsUrl()
             if (hlsUrl != null) {
                 if (!castManager.isConnected.value) {
@@ -793,6 +805,19 @@ class CastViewModel @Inject constructor(
         httpFileServer.stop()
         stopCastService()
         // Don't cleanupTempFiles — keep transcode cache for reuse
+    }
+
+    private fun getMediaDurationMs(filePath: String): Long {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(filePath)
+            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            retriever.release()
+            durationStr?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            EcosystemLogger.d(HaronConstants.TAG, "getMediaDurationMs: failed for $filePath: ${e.message}")
+            0L
+        }
     }
 
     private fun guessMimeType(ext: String): String {

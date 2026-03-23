@@ -130,6 +130,7 @@ fun ExplorerScreen(
     onOpenGlobalSearch: () -> Unit = { },
     onOpenTransfer: () -> Unit = { },
     onOpenTerminal: () -> Unit = { },
+    onNavigateToLibrary: () -> Unit = { },
     onOpenComparison: () -> Unit = { },
     onOpenSteganography: () -> Unit = { },
     onOpenScanner: () -> Unit = { },
@@ -312,7 +313,7 @@ fun ExplorerScreen(
 
     val activePanel = state.activePanel
 
-    // SAF document tree picker
+    // SAF document tree picker (SD card access)
     val safLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -1196,7 +1197,8 @@ fun ExplorerScreen(
         showCloudAuthDialog = showCloudAuthDialog,
         onShowCloudAuthDialogChange = { showCloudAuthDialog = it },
         onOpenTvRemote = { castVmForBt?.connectForRemote() },
-        onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() }
+        onOpenBtRemote = { castVmForBt?.connectForBluetoothRemote() },
+        onNavigateToLibrary = onNavigateToLibrary
     )
 }
 
@@ -1718,7 +1720,8 @@ private fun ExplorerOverlays(
     showCloudAuthDialog: Boolean,
     onShowCloudAuthDialogChange: (Boolean) -> Unit,
     onOpenTvRemote: () -> Unit = {},
-    onOpenBtRemote: () -> Unit = {}
+    onOpenBtRemote: () -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {}
 ) {
     // Shield auth overlay
     if (state.showShieldAuth) {
@@ -1869,6 +1872,10 @@ private fun ExplorerOverlays(
                     onNetworkDeviceTap = { device -> viewModel.onNetworkDeviceTap(device) },
 
                     onRefreshNetwork = { viewModel.refreshNetwork() },
+                    onOpenLibrary = {
+                        viewModel.dismissDrawer()
+                        onNavigateToLibrary()
+                    },
                     onOpenSettings = { viewModel.openSettings() },
                     onOpenFeatures = { viewModel.openFeatures() },
                     onOpenSupport = { viewModel.openSupport() },

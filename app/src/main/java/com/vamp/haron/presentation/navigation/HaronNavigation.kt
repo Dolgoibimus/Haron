@@ -52,6 +52,8 @@ import com.vamp.haron.presentation.cast.CastViewModel
 import com.vamp.haron.presentation.comparison.ComparisonScreen
 import com.vamp.haron.presentation.steganography.SteganographyScreen
 import com.vamp.haron.presentation.document.DocumentViewerScreen
+import com.vamp.haron.presentation.library.LibraryScreen
+import com.vamp.haron.presentation.library.LibrarySettingsScreen
 import com.vamp.haron.presentation.terminal.TerminalScreen
 import com.vamp.haron.presentation.transfer.TransferScreen
 
@@ -90,6 +92,8 @@ object HaronRoutes {
     const val SUPPORT = "support"
     const val COMPARISON = "comparison"
     const val STEGANOGRAPHY = "steganography"
+    const val LIBRARY = "library"
+    const val LIBRARY_SETTINGS = "library_settings"
     const val LOGS = "logs"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
@@ -407,6 +411,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenTransfer = {
                     navController.navigate(HaronRoutes.transfer())
                 },
+                onNavigateToLibrary = {
+                    navController.navigate(HaronRoutes.LIBRARY)
+                },
                 onOpenTerminal = {
                     navController.navigate(HaronRoutes.TERMINAL)
                 },
@@ -664,6 +671,25 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             DocumentViewerScreen(
                 filePath = filePath,
                 fileName = fileName,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.LIBRARY) {
+            LibraryScreen(
+                onBack = { navController.popBackStack() },
+                onOpenReader = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.documentViewer(filePath, fileName))
+                },
+                onOpenPdfReader = { filePath, fileName ->
+                    navController.navigate(HaronRoutes.pdfReader(filePath, fileName))
+                },
+                onOpenSettings = {
+                    navController.navigate(HaronRoutes.LIBRARY_SETTINGS)
+                }
+            )
+        }
+        composable(HaronRoutes.LIBRARY_SETTINGS) {
+            LibrarySettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

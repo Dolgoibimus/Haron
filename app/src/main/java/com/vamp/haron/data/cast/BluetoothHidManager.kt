@@ -166,14 +166,17 @@ class BluetoothHidManager @Inject constructor(
 
         try {
             EcosystemLogger.d(HaronConstants.TAG, "BT HID: requesting HID_DEVICE profile proxy...")
+            var proxyConnected = false
             val proxyResult = adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
+                    proxyConnected = true
                     hidDevice = proxy as? BluetoothHidDevice
                     EcosystemLogger.d(HaronConstants.TAG, "BT HID: profile proxy connected, hidDevice=${hidDevice != null}, profile=$profile")
                     if (hidDevice != null) {
                         registerApp()
                     } else {
                         EcosystemLogger.e(HaronConstants.TAG, "BT HID: profile proxy connected but cast to BluetoothHidDevice failed, proxy=${proxy?.javaClass?.name}")
+                        _connectionState.value = HidConnectionState.NotSupported
                     }
                 }
 
@@ -184,6 +187,20 @@ class BluetoothHidManager @Inject constructor(
                 }
             }, BluetoothProfile.HID_DEVICE)
             EcosystemLogger.d(HaronConstants.TAG, "BT HID: getProfileProxy returned $proxyResult")
+
+            if (proxyResult == true) {
+                // Timeout: if onServiceConnected doesn't fire in 3s, device doesn't support HID Device profile
+                scope.launch {
+                    delay(3000)
+                    if (!proxyConnected && hidDevice == null) {
+                        EcosystemLogger.e(HaronConstants.TAG, "BT HID: profile proxy timeout (3s) — device does not support HID Device profile")
+                        _connectionState.value = HidConnectionState.NotSupported
+                    }
+                }
+            } else {
+                EcosystemLogger.e(HaronConstants.TAG, "BT HID: getProfileProxy returned false — HID Device profile not available")
+                _connectionState.value = HidConnectionState.NotSupported
+            }
         } catch (e: SecurityException) {
             EcosystemLogger.e(HaronConstants.TAG, "BT HID: init security error: ${e.message}")
             _connectionState.value = HidConnectionState.Error(e.message ?: "Security error")

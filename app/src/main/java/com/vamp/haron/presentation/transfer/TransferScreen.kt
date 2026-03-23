@@ -50,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,6 +85,7 @@ import com.vamp.haron.common.constants.HaronConstants
 fun TransferScreen(
     onBack: () -> Unit,
     onOpenFolder: (String) -> Unit = {},
+    onOpenMediaPlayer: (Int) -> Unit = {},
     openScanner: Boolean = false,
     viewModel: TransferViewModel = hiltViewModel(),
     smbViewModel: SmbViewModel = hiltViewModel(),
@@ -97,7 +99,7 @@ fun TransferScreen(
     val webDavState by webDavViewModel.state.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(openScanner) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     // Runtime permissions for Bluetooth and Wi-Fi Direct
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -122,6 +124,24 @@ fun TransferScreen(
     LaunchedEffect(Unit) {
         ftpViewModel.toastMessage.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        ftpViewModel.playMediaStream.collect { startIndex ->
+            onOpenMediaPlayer(startIndex)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        smbViewModel.playMediaStream.collect { startIndex ->
+            onOpenMediaPlayer(startIndex)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        webDavViewModel.playMediaStream.collect { startIndex ->
+            onOpenMediaPlayer(startIndex)
         }
     }
 

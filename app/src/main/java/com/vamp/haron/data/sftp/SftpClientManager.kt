@@ -125,6 +125,30 @@ class SftpClientManager @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    suspend fun getFileSize(host: String, port: Int, remotePath: String): Long = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                val ch = channel ?: return@withLock -1L
+                ch.stat(remotePath).size
+            } catch (_: Exception) { -1L }
+        }
+    }
+
+    suspend fun openInputStream(host: String, port: Int, remotePath: String, offset: Long = 0): Pair<java.io.InputStream, () -> Unit>? = withContext(Dispatchers.IO) {
+        mutex.lock()
+        try {
+            val ch = channel ?: run { mutex.unlock(); return@withContext null }
+            val stream = ch.get(remotePath, null as SftpProgressMonitor?, offset)
+            stream to {
+                try { stream.close() } catch (_: Exception) {}
+                mutex.unlock()
+            }
+        } catch (e: Exception) {
+            mutex.unlock()
+            null
+        }
+    }
+
     fun uploadFile(localSrc: File, remotePath: String): Flow<SftpTransferProgress> = flow {
         mutex.withLock {
             val ch = channel ?: throw IllegalStateException("Not connected")

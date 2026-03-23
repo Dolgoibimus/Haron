@@ -4,5 +4,6 @@ data class SmbCredential(
     val host: String,
     val username: String,
     val password: String,
-    val domain: String = ""
+    val domain: String = "",
+    val displayName: String = ""
 )

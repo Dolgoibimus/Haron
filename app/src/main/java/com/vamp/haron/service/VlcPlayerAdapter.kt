@@ -129,9 +129,25 @@ class VlcPlayerAdapter(
 
         currentIndex = index
         val item = playlist.getOrNull(index) ?: return
-        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: playing item [$index] ${item.fileName}")
+        EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: playing item [$index] ${item.fileName}, path=${item.filePath}")
         val uri = when {
             item.filePath.startsWith("http://") || item.filePath.startsWith("https://") -> Uri.parse(item.filePath)
+            item.filePath.startsWith("ftp://") || item.filePath.startsWith("ftps://") ||
+            item.filePath.startsWith("sftp://") || item.filePath.startsWith("smb://") -> {
+                // Network paths with spaces/cyrillic: encode path segments, keep scheme+authority raw
+                val schemeEnd = item.filePath.indexOf("://") + 3
+                val authorityEnd = item.filePath.indexOf('/', schemeEnd)
+                if (authorityEnd > 0) {
+                    val schemePlusAuthority = item.filePath.substring(0, authorityEnd)
+                    val rawPath = item.filePath.substring(authorityEnd)
+                    val encodedPath = rawPath.split("/").joinToString("/") {
+                        java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                    }
+                    Uri.parse("$schemePlusAuthority$encodedPath")
+                } else {
+                    Uri.parse(item.filePath)
+                }
+            }
             item.filePath.startsWith("content://") -> Uri.parse(item.filePath)
             else -> Uri.fromFile(java.io.File(item.filePath))
         }

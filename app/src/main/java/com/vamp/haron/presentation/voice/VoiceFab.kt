@@ -80,7 +80,12 @@ fun VoiceFab(
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_STOP -> viewModel.pauseWakeWord()
+                Lifecycle.Event.ON_STOP -> {
+                    viewModel.pauseWakeWord()
+                    if (viewModel.voiceState.value == VoiceState.LISTENING) {
+                        viewModel.stopListening()
+                    }
+                }
                 Lifecycle.Event.ON_START -> viewModel.resumeWakeWord()
                 else -> {}
             }
@@ -179,12 +184,14 @@ fun VoiceFab(
                     else Modifier
                 )
                 .pointerInput(Unit) {
-                    val touchSlop = 10f
+                    val touchSlop = viewConfiguration.touchSlop
                     val longPressMs = 400L
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         down.consume()
                         var dragged = false
+                        var totalDx = 0f
+                        var totalDy = 0f
                         val longPressed = withTimeoutOrNull(longPressMs) {
                             // Wait for drag or up during long-press window
                             while (true) {
@@ -196,12 +203,14 @@ fun VoiceFab(
                                     return@withTimeoutOrNull false
                                 }
                                 val moved = change.positionChange()
-                                if (abs(moved.x) > touchSlop || abs(moved.y) > touchSlop) {
+                                totalDx += moved.x
+                                totalDy += moved.y
+                                if (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop) {
                                     // Started dragging
                                     dragged = true
-                                    val newX = (offsetX + moved.x)
+                                    val newX = (offsetX + totalDx)
                                         .coerceIn(-(boxW - fabW).toFloat(), fabW.toFloat())
-                                    val newY = (offsetY + moved.y)
+                                    val newY = (offsetY + totalDy)
                                         .coerceIn(-fabH.toFloat() * 4, (boxH - fabH).toFloat())
                                     offsetX = newX
                                     offsetY = newY

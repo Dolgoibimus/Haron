@@ -127,6 +127,7 @@ private fun FtpClientContent(viewModel: FtpViewModel) {
             isConnecting = state.isConnecting,
             onSavedServerTap = { viewModel.onSavedServerTap(it) },
             onRemoveSaved = { viewModel.onRemoveSavedServer(it) },
+            onRenameSaved = { server, newName -> viewModel.renameSavedServer(server, newName) },
             onManualConnect = { viewModel.onShowManualConnect() }
         )
     } else {
@@ -584,6 +585,7 @@ private fun FtpServerList(
     isConnecting: Boolean,
     onSavedServerTap: (FtpSavedServer) -> Unit,
     onRemoveSaved: (FtpSavedServer) -> Unit,
+    onRenameSaved: (FtpSavedServer, String) -> Unit,
     onManualConnect: () -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -597,6 +599,9 @@ private fun FtpServerList(
                 )
             }
             items(savedServers, key = { "${it.host}:${it.port}" }) { server ->
+                var showRenameDialog by remember { mutableStateOf(false) }
+                var editName by remember(server.displayName) { mutableStateOf(server.displayName.ifBlank { server.name }) }
+
                 Card(
                     onClick = { onSavedServerTap(server) },
                     modifier = Modifier
@@ -616,7 +621,10 @@ private fun FtpServerList(
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(server.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                server.displayName.ifBlank { server.name },
+                                style = MaterialTheme.typography.bodyLarge
+                            )
                             Text(
                                 "${server.host}:${server.port}" +
                                     when {
@@ -628,6 +636,15 @@ private fun FtpServerList(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        if (!server.isSftp) {
+                            IconButton(onClick = { showRenameDialog = true }) {
+                                Icon(
+                                    Icons.Filled.DriveFileRenameOutline,
+                                    contentDescription = stringResource(R.string.smb_server_nickname),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         IconButton(onClick = { onRemoveSaved(server) }) {
                             Icon(
                                 Icons.Filled.LinkOff,
@@ -636,6 +653,32 @@ private fun FtpServerList(
                             )
                         }
                     }
+                }
+
+                if (showRenameDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showRenameDialog = false },
+                        title = { Text(stringResource(R.string.smb_server_nickname)) },
+                        text = {
+                            OutlinedTextField(
+                                value = editName,
+                                onValueChange = { editName = it },
+                                label = { Text(stringResource(R.string.smb_server_nickname)) },
+                                singleLine = true
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                onRenameSaved(server, editName.trim())
+                                showRenameDialog = false
+                            }) { Text(stringResource(R.string.save)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showRenameDialog = false }) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                        }
+                    )
                 }
             }
         }

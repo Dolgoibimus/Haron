@@ -18,7 +18,19 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-Терминал Termux-стиль + SSH — завершён (Batch 98). Закоммичено.
+**Читалка — Этап 1 в процессе (Batch 101):**
+- ✅ `BookEntity` + `BookDao` — Room таблица книг (title, author, cover, format, progress, series)
+- ✅ `ScanBooksUseCase` — сканер папок, извлечение метаданных FB2 + EPUB (title, author, cover, annotation, series)
+- ✅ HaronDatabase v5, Hilt DI для BookDao
+- ✅ LibraryViewModel — сканирование, grid columns (pinch-zoom), первый запуск диалог
+- ✅ LibraryScreen — grid обложек, прогресс скана, пустое состояние, pinch-zoom 1-6 колонок
+- ✅ Навигация: route LIBRARY, боковое меню (иконка MenuBook), ExplorerOverlays прокидка
+- ✅ `BookContent` / `BookElement` — модели: Chapter, Paragraph, Title, Epigraph, Poem, Citation, ImageBlock, EmptyLine
+- ✅ `ParseFb2UseCase` — XmlPullParser: парсит body/sections/poems/epigraphs/images, binary base64 → Bitmap
+- ✅ `BookReaderViewModel` — загрузка, сохранение позиции, настройки (шрифт, межстрочный, тема)
+- ✅ `BookReaderScreen` — Compose-рендеринг FB2: LazyColumn, тап→контролы, 4 темы (Auto/Light/Dark/Sepia), размер шрифта ±
+- ✅ Навигация: route BOOK_READER, из Library FB2→BookReaderScreen, остальные→PdfReaderScreen
+- ✅ Сборка проходит
 
 ---
 
@@ -1639,6 +1651,54 @@ RU:
 - [ ] Чистильщик мессенджеров (Telegram/WhatsApp кэш и медиа)
 - [ ] Root-режим (опциональный): chmod, /data, системные папки
 - [ ] Телефон как пульт (тачпад + клавиатура)
+- [ ] Книжная полка + Универсальная читалка (BookReader)
+
+### Книжная полка + Универсальная читалка — план
+
+**Исследование проведено** (Batch 99): EPUB, FB2, MOBI/AZW3, DJVU — структура форматов, библиотеки, UX топовых читалок (Moon Reader, ReadEra, KOReader, Librera, FBReader, CoolReader).
+
+#### LibraryScreen (книжная полка)
+- Одна панель, grid обложек (1-6 рядов, pinch-zoom как в панели проводника)
+- Первый запуск → диалог: "Сканировать всё хранилище" или "Выбрать папки". Папки можно добавлять позже
+- Сканирование: расширения `.epub`, `.fb2`, `.fb2.zip`, `.mobi`, `.azw3`, `.djvu`, `.pdf`
+- Имя книги — из метаданных файла (title), fallback на имя файла
+- Обложка — из метаданных (cover image), fallback на иконку формата
+- Докачка инфы — Google Books API (без ключа, GET запрос по title+author → обложка, описание, жанр)
+- Короткий тап → QuickPreviewDialog (как в панели)
+- Долгий тап → сразу открыть в читалке
+- Сортировка по дате добавления (по умолчанию)
+- Room таблица: BookEntry (path, title, author, cover, format, lastRead, progress, scanFolder)
+
+#### BookReaderScreen (единая читалка)
+Два режима внутри одного экрана:
+
+**Reflow-режим** (EPUB, FB2, MOBI):
+- EPUB: свой парсер (ZIP → container.xml → OPF → XHTML) + WebView с CSS columns для пагинации
+- FB2: XmlPullParser → Compose-нативный рендеринг (LazyColumn + AnnotatedString). Улучшить существующий парсер
+- MOBI/AZW3: libmobi (C, Apache-2.0, JNI) → конвертация в EPUB-like → тот же WebView рендерер
+- Настройки: шрифт, размер, межстрочный, поля, тема (Day/Night/Sepia)
+
+**Page-режим** (PDF, DJVU):
+- PDF: PDFBox (уже есть в проекте)
+- DJVU: DjVuLibre (C, GPL v2, JNI, dynamic linking .so). LRU-кеш 3-5 bitmap страниц, tile-рендеринг при zoom, RGB_565
+- Zoom + pan (transformable), слайдер страниц
+
+**Общее для обоих режимов:**
+- Тап-зоны: лево=назад, право=вперёд, центр=показать/скрыть UI
+- Оглавление (TOC из метаданных файла)
+- Закладки (Room, привязка к позиции)
+- Прогресс чтения (процент, страница)
+- Поиск по тексту
+- 3 темы: Day / Night / Sepia
+
+**Нативные зависимости (JNI/NDK):**
+- libmobi (Apache-2.0) — парсинг MOBI/AZW3, конвертация в EPUB
+- DjVuLibre (GPL v2, dynamic linking .so) — рендеринг DJVU страниц
+
+#### Этапы реализации
+- **Этап 1 (база):** BookReaderScreen + EPUB парсер/рендерер + FB2 улучшенный + LibraryScreen (grid + сканирование)
+- **Этап 2 (форматы):** MOBI/AZW3 через libmobi JNI + DJVU через DjVuLibre JNI
+- **Этап 3 (полировка):** Popup-сноски, highlights, аннотации, анимации перелистывания, TTS, per-document настройки, докачка инфы (Google Books API)
 
 #### Уже сделано (Phase 4):
 - [x] Пакетное переименование ← Batch 19
@@ -1740,6 +1800,62 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+### Batch 100 — Сетевой стриминг + DND фикс + SMB/FTP сохранение серверов ✅ проверено
+
+**Стриминг медиа по сети (без скачивания):**
+- FTP/FTPS/SFTP: тап на медиа-файл → HTTP-прокси (телефон читает с FTP, отдаёт VLC по HTTP). Обходит баг VLC с кириллицей/пробелами в FTP-путях
+- SMB: тап на медиа-файл → VLC стримит по `smb://` URL напрямую
+- WebDAV: тап на медиа-файл → VLC стримит по `http://`/`https://` URL напрямую
+- Плейлист: медиа-файлы в текущей папке (до 50 вокруг выбранного) добавляются в плейлист
+- `VlcPlayerAdapter` — поддержка `smb://`, `http://`, `https://` URI напрямую; FTP/SFTP через HTTP-прокси
+- `HttpFileServer` — новый endpoint `/ftp-proxy?host=X&port=Y&path=Z&proto=ftp|sftp` с Range-поддержкой (перемотка)
+- `FtpClientManager` — новые методы `getFileSize()`, `openInputStream(offset)` для стриминга
+- `SftpClientManager` — аналогичные методы для SFTP
+- Не-медиа файлы — по-прежнему скачиваются
+- **Известный баг VLC**: libVLC не поддерживает FTP с не-ASCII путями (баг #26963, #1475, не исправлен). Наш HTTP-прокси решает проблему
+
+**DND фикс — звук при плеере:**
+- `DndManager`: заменён `RINGER_MODE_SILENT` на `RINGER_MODE_VIBRATE` + заглушение `STREAM_NOTIFICATION`
+- Медиа-громкость не блокируется, кнопки громкости работают при DND
+- Уведомления подавляются, рингтон на вибрации — не мешает смотреть видео
+
+**SMB — сохранение серверов с никнеймами:**
+- `SmbCredential` — добавлено поле `displayName`, сохраняется в зашифрованном хранилище
+- `SmbSavedServerItem` — показывает никнейм (крупно) + адрес (мелко серым)
+- Кнопка карандаша → диалог переименования сервера
+- Кнопка удаления (LinkOff) — удаление из сохранённых
+- Гостевое подключение автоматически сохраняется с пометкой "(Гость)"
+- При тапе на сохранённый гостевой сервер → подключение без пароля
+
+**FTP — сохранение серверов с никнеймами:**
+- Анонимное подключение автоматически сохраняется с пометкой "(Анонимно)"
+- Кнопка карандаша → диалог переименования, кнопка удаления
+- Хлебные крошки: тап на IP → переход в корень FTP (вместо отключения)
+- UTF-8 поддержка: `setAutodetectUTF8(true)` + `OPTS UTF8 ON` — русские имена файлов отображаются корректно
+
+**Навигация:**
+- `selectedTab` в TransferScreen через `rememberSaveable` — при возврате из плеера остаётся на том же табе (SMB/FTP/WebDAV)
+
+### Batch 99 — BT HID таймаут + каст при выключенном экране ⚠️ BT HID не проверено / ✅ каст проверено
+
+**BT HID — таймаут при отсутствии поддержки:**
+- `BluetoothHidManager.init()` — добавлен таймаут 3 сек на ожидание `onServiceConnected`. Если профиль HID Device отсутствует в Bluetooth-стеке (Sony, некоторые OEM) — через 3 сек выставляется `HidConnectionState.NotSupported` вместо бесконечного ожидания
+- `getProfileProxy returned false` — тоже сразу ставит `NotSupported`
+- `BtDevicePickerDialog` — при `NotSupported` показывает понятное сообщение + кнопку «Wi-Fi пульт» (пока TODO)
+- Обновлены строки EN/RU — вместо "требуется Android 9+" теперь "отсутствует профиль HID Device"
+
+**Каст при выключенном экране:**
+- `CastMediaService` — добавлен `WifiLock` (`WIFI_MODE_FULL_HIGH_PERF`): Wi-Fi не отключается при выключении экрана, HTTP-сервер остаётся доступным для ТВ
+- `WakeLock` привязан к длительности медиа: duration файла + 5 минут буфер (мин 30 мин, макс 6 часов). Fallback 4 часа если duration неизвестен
+- `CastViewModel` — добавлен `getMediaDurationMs()` через `MediaMetadataRetriever`, duration передаётся в сервис во всех 3 сценариях: DLNA прямой, Chromecast прямой, HLS (транскод)
+- Foreground сервис стартует **до** транскода (а не после), чтобы WakeLock+WifiLock защищали процесс во время подготовки
+- HLS сегменты увеличены 10→30 сек, порог начала каста 30→60 сек (2 сегмента буфера)
+
+**TODO каст — буферизация при 100% транскоде:**
+- Сегменты ~10-12 МБ = нужна стабильная скорость Wi-Fi ~10 Мбит/с. При просадках — кружок загрузки на ТВ
+- Вариант 1: снизить битрейт транскода (8M → 4-5M) — меньше размер сегментов, визуально минимальная разница на ТВ
+- Вариант 2: 30-сек сегменты (уже сделано) дают больший буфер, устойчивость к просадкам
 
 ### Batch 98 — Termux-стиль терминал, SSH через JSch, VT100 эмуляция ⚠️ не проверено
 

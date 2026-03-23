@@ -41,7 +41,9 @@ data class HttpDownloadEvent(
 @Singleton
 class HttpFileServer @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val remoteInputChannel: RemoteInputChannel
+    private val remoteInputChannel: RemoteInputChannel,
+    private val ftpClientManager: com.vamp.haron.data.ftp.FtpClientManager,
+    private val sftpClientManager: com.vamp.haron.data.sftp.SftpClientManager
 ) {
     private var engine: ApplicationEngine? = null
     private var sharedFiles: List<File> = emptyList()
@@ -362,6 +364,109 @@ class HttpFileServer @Inject constructor(
                         call.respondBytes(pngBytes, ContentType.Image.PNG)
                     } else {
                         call.respondText("Render error", status = HttpStatusCode.InternalServerError)
+                    }
+                }
+
+                // --- FTP/SFTP proxy for media streaming ---
+                get("/ftp-proxy") {
+                    val host = call.request.queryParameters["host"]
+                    val port = call.request.queryParameters["port"]?.toIntOrNull()
+                    val path = call.request.queryParameters["path"]
+                    val proto = call.request.queryParameters["proto"] ?: "ftp" // ftp or sftp
+
+                    if (host == null || port == null || path == null) {
+                        call.respondText("Missing params", status = HttpStatusCode.BadRequest)
+                        return@get
+                    }
+
+                    try {
+                        val fileSize = if (proto == "sftp") {
+                            sftpClientManager.getFileSize(host, port, path)
+                        } else {
+                            ftpClientManager.getFileSize(host, port, path)
+                        }
+                        val ext = path.substringAfterLast('.', "").lowercase()
+                        val mimeType = when (ext) {
+                            "mp4", "m4v" -> "video/mp4"
+                            "mkv" -> "video/x-matroska"
+                            "avi" -> "video/x-msvideo"
+                            "mov" -> "video/quicktime"
+                            "webm" -> "video/webm"
+                            "mp3" -> "audio/mpeg"
+                            "flac" -> "audio/flac"
+                            "ogg" -> "audio/ogg"
+                            "wav" -> "audio/wav"
+                            "aac", "m4a" -> "audio/mp4"
+                            else -> "application/octet-stream"
+                        }
+                        val ct = ContentType.parse(mimeType)
+
+                        // Parse Range header
+                        val rangeHeader = call.request.headers[HttpHeaders.Range]
+                        val offset = if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                            rangeHeader.removePrefix("bytes=").substringBefore('-').toLongOrNull() ?: 0L
+                        } else 0L
+
+                        if (proto == "sftp") {
+                            val stream = sftpClientManager.openInputStream(host, port, path, offset)
+                            if (stream == null) {
+                                call.respondText("Cannot open remote file", status = HttpStatusCode.NotFound)
+                                return@get
+                            }
+                            val (inputStream, cleanup) = stream
+                            try {
+                                call.response.header(HttpHeaders.AcceptRanges, "bytes")
+                                if (fileSize > 0 && offset > 0) {
+                                    call.response.header(HttpHeaders.ContentRange, "bytes $offset-${fileSize - 1}/$fileSize")
+                                    call.response.header(HttpHeaders.ContentLength, (fileSize - offset).toString())
+                                    call.respondOutputStream(ct, HttpStatusCode.PartialContent) {
+                                        withContext(Dispatchers.IO) {
+                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
+                                        }
+                                    }
+                                } else {
+                                    if (fileSize > 0) call.response.header(HttpHeaders.ContentLength, fileSize.toString())
+                                    call.respondOutputStream(ct, HttpStatusCode.OK) {
+                                        withContext(Dispatchers.IO) {
+                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                cleanup()
+                            }
+                        } else {
+                            val stream = ftpClientManager.openInputStream(host, port, path, offset)
+                            if (stream == null) {
+                                call.respondText("Cannot open remote file", status = HttpStatusCode.NotFound)
+                                return@get
+                            }
+                            val (inputStream, cleanup) = stream
+                            try {
+                                call.response.header(HttpHeaders.AcceptRanges, "bytes")
+                                if (fileSize > 0 && offset > 0) {
+                                    call.response.header(HttpHeaders.ContentRange, "bytes $offset-${fileSize - 1}/$fileSize")
+                                    call.response.header(HttpHeaders.ContentLength, (fileSize - offset).toString())
+                                    call.respondOutputStream(ct, HttpStatusCode.PartialContent) {
+                                        withContext(Dispatchers.IO) {
+                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
+                                        }
+                                    }
+                                } else {
+                                    if (fileSize > 0) call.response.header(HttpHeaders.ContentLength, fileSize.toString())
+                                    call.respondOutputStream(ct, HttpStatusCode.OK) {
+                                        withContext(Dispatchers.IO) {
+                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                cleanup()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        EcosystemLogger.e(HaronConstants.TAG, "FTP proxy error: ${e.javaClass.simpleName}: ${e.message}")
+                        call.respondText("Proxy error: ${e.message}", status = HttpStatusCode.InternalServerError)
                     }
                 }
 

@@ -89,7 +89,8 @@ fun SmbBrowserTab(
             isConnecting = state.isConnecting,
             onServerTap = { viewModel.onServerTap(it) },
             onSavedServerTap = { viewModel.onSavedServerTap(it) },
-            onRemoveSaved = { viewModel.onRemoveSavedServer(it) },
+            onRemoveSaved = { viewModel.removeSavedServer(it) },
+            onRenameSaved = { host, newName -> viewModel.renameSavedServer(host, newName) },
             onManualConnect = { viewModel.onShowManualConnect() },
             onRefresh = { viewModel.onRefreshServers() }
         )
@@ -389,6 +390,7 @@ private fun SmbServerList(
     onServerTap: (NetworkDevice) -> Unit,
     onSavedServerTap: (String) -> Unit,
     onRemoveSaved: (String) -> Unit,
+    onRenameSaved: (String, String) -> Unit,
     onManualConnect: () -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -448,8 +450,10 @@ private fun SmbServerList(
             items(savedServers, key = { it.host }) { server ->
                 SmbSavedServerItem(
                     host = server.host,
+                    displayName = server.displayName,
                     onClick = { onSavedServerTap(server.host) },
-                    onRemove = { onRemoveSaved(server.host) }
+                    onRemove = { onRemoveSaved(server.host) },
+                    onRename = { newName -> onRenameSaved(server.host, newName) }
                 )
             }
         }
@@ -512,9 +516,14 @@ private fun SmbServerItem(
 @Composable
 private fun SmbSavedServerItem(
     host: String,
+    displayName: String,
     onClick: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onRename: (String) -> Unit
 ) {
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var editName by remember(displayName) { mutableStateOf(displayName.ifBlank { host }) }
+
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -532,7 +541,26 @@ private fun SmbSavedServerItem(
                 tint = MaterialTheme.colorScheme.tertiary
             )
             Spacer(Modifier.width(12.dp))
-            Text(host, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    displayName.ifBlank { host },
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                if (displayName.isNotBlank()) {
+                    Text(
+                        host,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            IconButton(onClick = { showRenameDialog = true }) {
+                Icon(
+                    Icons.Filled.DriveFileRenameOutline,
+                    contentDescription = stringResource(R.string.smb_server_nickname),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Filled.LinkOff,
@@ -541,6 +569,32 @@ private fun SmbSavedServerItem(
                 )
             }
         }
+    }
+
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text(stringResource(R.string.smb_server_nickname)) },
+            text = {
+                OutlinedTextField(
+                    value = editName,
+                    onValueChange = { editName = it },
+                    label = { Text(stringResource(R.string.smb_server_nickname)) },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRename(editName.trim())
+                    showRenameDialog = false
+                }) { Text(stringResource(R.string.save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 }
 

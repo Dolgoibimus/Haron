@@ -10,6 +10,7 @@ import com.vamp.haron.R
 import com.vamp.haron.data.ftp.FtpTransferProgress
 import com.vamp.haron.data.webdav.WebDavCredential
 import com.vamp.haron.data.webdav.WebDavCredentialStore
+import com.vamp.haron.domain.model.PlaylistHolder
 import com.vamp.haron.data.webdav.WebDavFileInfo
 import com.vamp.haron.data.webdav.WebDavManager
 import com.vamp.haron.domain.model.PanelId
@@ -67,6 +68,19 @@ class WebDavViewModel @Inject constructor(
     private val _toastMessage = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastMessage = _toastMessage.asSharedFlow()
 
+    private val _playMediaStream = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val playMediaStream = _playMediaStream.asSharedFlow()
+
+    companion object {
+        private val MEDIA_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg",
+            "mp3", "flac", "ogg", "wav", "aac", "m4a", "wma", "opus", "aiff"
+        )
+        private val VIDEO_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp", "ts", "m2ts", "mpg", "mpeg"
+        )
+    }
+
     private var transferJob: Job? = null
 
     init {
@@ -119,8 +133,44 @@ class WebDavViewModel @Inject constructor(
         if (file.isDirectory) {
             navigateToFolder(file)
         } else {
-            downloadSingleFile(file)
+            val ext = file.name.substringAfterLast('.', "").lowercase()
+            if (ext in MEDIA_EXTENSIONS) {
+                streamMediaFile(file)
+            } else {
+                downloadSingleFile(file)
+            }
         }
+    }
+
+    private fun streamMediaFile(file: WebDavFileInfo) {
+        val s = _state.value
+        val baseUrl = s.connectedUrl ?: return
+        val cred = credentialStore.listAll().find { baseUrl.startsWith(it.url) }
+        val mediaFiles = s.files.filter { f ->
+            !f.isDirectory && f.name.substringAfterLast('.', "").lowercase() in MEDIA_EXTENSIONS
+        }
+
+        PlaylistHolder.items = mediaFiles.map { f ->
+            val fExt = f.name.substringAfterLast('.', "").lowercase()
+            // WebDAV = HTTP(S) URL with Basic Auth in URL
+            val fullUrl = if (cred != null && cred.username.isNotBlank()) {
+                val parsedUrl = java.net.URL(baseUrl)
+                val userInfo = "${java.net.URLEncoder.encode(cred.username, "UTF-8")}:${java.net.URLEncoder.encode(cred.password, "UTF-8")}"
+                "${parsedUrl.protocol}://$userInfo@${parsedUrl.host}${if (parsedUrl.port > 0) ":${parsedUrl.port}" else ""}${f.path}"
+            } else {
+                "$baseUrl${f.path}"
+            }
+            PlaylistHolder.PlaylistItem(
+                filePath = fullUrl,
+                fileName = f.name,
+                fileType = if (fExt in VIDEO_EXTENSIONS) "video" else "audio"
+            )
+        }
+        val startIndex = mediaFiles.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+        PlaylistHolder.startIndex = startIndex
+
+        EcosystemLogger.d(HaronConstants.TAG, "WebDavVM: stream media ${file.name}, playlist=${mediaFiles.size}")
+        _playMediaStream.tryEmit(startIndex)
     }
 
     fun onFileLongPress(file: WebDavFileInfo) {

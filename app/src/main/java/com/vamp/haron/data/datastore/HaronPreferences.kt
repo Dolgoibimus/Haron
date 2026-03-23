@@ -266,6 +266,19 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getString(KEY_LAST_MEDIA_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_MEDIA_FILE, value).apply()
 
+    fun getLibraryGridColumns(tab: Int): Int = prefs.getInt("${KEY_LIBRARY_GRID_COLUMNS}_$tab", 3)
+    fun setLibraryGridColumns(tab: Int, columns: Int) = prefs.edit().putInt("${KEY_LIBRARY_GRID_COLUMNS}_$tab", columns).apply()
+
+    /** Folders manually removed by user — won't reappear after rescan */
+    var libraryRemovedFolders: Set<String>
+        get() = prefs.getStringSet("library_removed_folders", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("library_removed_folders", value).apply()
+
+    /** Folders excluded from scanning */
+    var libraryExcludedFolders: Set<String>
+        get() = prefs.getStringSet("library_excluded_folders", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("library_excluded_folders", value).apply()
+
     var lastDocumentFile: String?
         get() = prefs.getString(KEY_LAST_DOCUMENT_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_DOCUMENT_FILE, value).apply()
@@ -695,6 +708,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
         const val KEY_TRANSCODE_CACHE_TTL_HOURS = "transcode_cache_ttl_hours"
         const val KEY_ARCHIVE_THUMB_CACHE_SIZE_MB = "archive_thumb_cache_size_mb"
+        const val KEY_LIBRARY_GRID_COLUMNS = "library_grid_columns"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }
