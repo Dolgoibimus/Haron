@@ -760,6 +760,24 @@ class HaronPreferences @Inject constructor(
         const val KEY_MATRIX_OPACITY = "matrix_opacity"
         const val KEY_MATRIX_CHARSET = "matrix_charset"
         const val KEY_MATRIX_ONLY_CHARGING = "matrix_only_charging"
+        const val KEY_SNOWFALL_ENABLED = "snowfall_enabled"
+        const val KEY_SNOWFALL_SPEED = "snowfall_speed"
+        const val KEY_SNOWFALL_DENSITY = "snowfall_density"
+        const val KEY_SNOWFALL_OPACITY = "snowfall_opacity"
+        const val KEY_SNOWFALL_SIZE = "snowfall_size"
+        const val KEY_SNOWFALL_ONLY_CHARGING = "snowfall_only_charging"
+        const val KEY_STARFIELD_ENABLED = "starfield_enabled"
+        const val KEY_STARFIELD_SPEED = "starfield_speed"
+        const val KEY_STARFIELD_DENSITY = "starfield_density"
+        const val KEY_STARFIELD_OPACITY = "starfield_opacity"
+        const val KEY_STARFIELD_SIZE = "starfield_size"
+        const val KEY_STARFIELD_ONLY_CHARGING = "starfield_only_charging"
+        const val KEY_DUST_ENABLED = "dust_enabled"
+        const val KEY_DUST_SPEED = "dust_speed"
+        const val KEY_DUST_DENSITY = "dust_density"
+        const val KEY_DUST_OPACITY = "dust_opacity"
+        const val KEY_DUST_SIZE = "dust_size"
+        const val KEY_DUST_ONLY_CHARGING = "dust_only_charging"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }
@@ -797,4 +815,46 @@ class HaronPreferences @Inject constructor(
     var matrixOnlyCharging: Boolean
         get() = prefs.getBoolean(KEY_MATRIX_ONLY_CHARGING, false)
         set(value) = prefs.edit().putBoolean(KEY_MATRIX_ONLY_CHARGING, value).apply()
+
+    // --- Snowfall ---
+
+    var snowfallEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SNOWFALL_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SNOWFALL_ENABLED, value).apply()
+
+    var snowfallSpeed: Float
+        get() = prefs.getFloat(KEY_SNOWFALL_SPEED, 1f)
+        set(value) = prefs.edit().putFloat(KEY_SNOWFALL_SPEED, value).apply()
+
+    var snowfallDensity: Float
+        get() = prefs.getFloat(KEY_SNOWFALL_DENSITY, 0.5f)
+        set(value) = prefs.edit().putFloat(KEY_SNOWFALL_DENSITY, value).apply()
+
+    var snowfallOpacity: Float
+        get() = prefs.getFloat(KEY_SNOWFALL_OPACITY, 0.7f)
+        set(value) = prefs.edit().putFloat(KEY_SNOWFALL_OPACITY, value).apply()
+
+    var snowfallSize: Float
+        get() = prefs.getFloat(KEY_SNOWFALL_SIZE, 1f)
+        set(value) = prefs.edit().putFloat(KEY_SNOWFALL_SIZE, value).apply()
+
+    var snowfallOnlyCharging: Boolean
+        get() = prefs.getBoolean(KEY_SNOWFALL_ONLY_CHARGING, false)
+        set(value) = prefs.edit().putBoolean(KEY_SNOWFALL_ONLY_CHARGING, value).apply()
+
+    // --- Starfield ---
+    var starfieldEnabled: Boolean get() = prefs.getBoolean(KEY_STARFIELD_ENABLED, false); set(v) = prefs.edit().putBoolean(KEY_STARFIELD_ENABLED, v).apply()
+    var starfieldSpeed: Float get() = prefs.getFloat(KEY_STARFIELD_SPEED, 1f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_SPEED, v).apply()
+    var starfieldDensity: Float get() = prefs.getFloat(KEY_STARFIELD_DENSITY, 0.5f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_DENSITY, v).apply()
+    var starfieldOpacity: Float get() = prefs.getFloat(KEY_STARFIELD_OPACITY, 0.6f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_OPACITY, v).apply()
+    var starfieldSize: Float get() = prefs.getFloat(KEY_STARFIELD_SIZE, 1f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_SIZE, v).apply()
+    var starfieldOnlyCharging: Boolean get() = prefs.getBoolean(KEY_STARFIELD_ONLY_CHARGING, false); set(v) = prefs.edit().putBoolean(KEY_STARFIELD_ONLY_CHARGING, v).apply()
+
+    // --- Dust ---
+    var dustEnabled: Boolean get() = prefs.getBoolean(KEY_DUST_ENABLED, false); set(v) = prefs.edit().putBoolean(KEY_DUST_ENABLED, v).apply()
+    var dustSpeed: Float get() = prefs.getFloat(KEY_DUST_SPEED, 1f); set(v) = prefs.edit().putFloat(KEY_DUST_SPEED, v).apply()
+    var dustDensity: Float get() = prefs.getFloat(KEY_DUST_DENSITY, 0.5f); set(v) = prefs.edit().putFloat(KEY_DUST_DENSITY, v).apply()
+    var dustOpacity: Float get() = prefs.getFloat(KEY_DUST_OPACITY, 0.5f); set(v) = prefs.edit().putFloat(KEY_DUST_OPACITY, v).apply()
+    var dustSize: Float get() = prefs.getFloat(KEY_DUST_SIZE, 1f); set(v) = prefs.edit().putFloat(KEY_DUST_SIZE, v).apply()
+    var dustOnlyCharging: Boolean get() = prefs.getBoolean(KEY_DUST_ONLY_CHARGING, false); set(v) = prefs.edit().putBoolean(KEY_DUST_ONLY_CHARGING, v).apply()
 }

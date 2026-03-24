@@ -66,7 +66,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenGesturesVoice: () -> Unit = {},
     onOpenNavbarSettings: () -> Unit = {},
-    onOpenMatrixSettings: () -> Unit = {},
+    onOpenThemes: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -583,12 +583,12 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
-                onClick = onOpenMatrixSettings,
+                onClick = onOpenThemes,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Filled.BugReport, contentDescription = null)
+                Icon(Icons.Filled.DarkMode, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.matrix_rain_title))
+                Text(stringResource(R.string.themes_title))
             }
 
             Spacer(Modifier.height(16.dp))

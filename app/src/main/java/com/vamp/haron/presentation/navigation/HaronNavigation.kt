@@ -101,7 +101,11 @@ object HaronRoutes {
     const val LIBRARY_SETTINGS = "library_settings"
     const val NAVBAR_SETTINGS = "navbar_settings"
     const val NAVBAR_ICONS = "navbar_icons"
+    const val THEMES = "themes"
     const val MATRIX_SETTINGS = "matrix_settings"
+    const val SNOWFALL_SETTINGS = "snowfall_settings"
+    const val STARFIELD_SETTINGS = "starfield_settings"
+    const val DUST_SETTINGS = "dust_settings"
     const val LOGS = "logs"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
@@ -381,26 +385,53 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             onlyCharging = matrixPrefs.matrixOnlyCharging
         )
     }
+    fun readSnowfallConfig(): com.vamp.haron.presentation.matrix.SnowfallConfig {
+        val isCharging = if (matrixPrefs.snowfallOnlyCharging) {
+            val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            bm?.isCharging ?: false
+        } else true
+        return com.vamp.haron.presentation.matrix.SnowfallConfig(
+            enabled = matrixPrefs.snowfallEnabled && isCharging,
+            speed = matrixPrefs.snowfallSpeed,
+            density = matrixPrefs.snowfallDensity,
+            opacity = matrixPrefs.snowfallOpacity,
+            size = matrixPrefs.snowfallSize,
+            onlyCharging = matrixPrefs.snowfallOnlyCharging
+        )
+    }
+    fun readStarfieldConfig() = com.vamp.haron.presentation.matrix.StarfieldConfig(
+        enabled = matrixPrefs.starfieldEnabled, speed = matrixPrefs.starfieldSpeed, density = matrixPrefs.starfieldDensity,
+        opacity = matrixPrefs.starfieldOpacity, size = matrixPrefs.starfieldSize, onlyCharging = matrixPrefs.starfieldOnlyCharging)
+    fun readDustConfig() = com.vamp.haron.presentation.matrix.DustConfig(
+        enabled = matrixPrefs.dustEnabled, speed = matrixPrefs.dustSpeed, density = matrixPrefs.dustDensity,
+        opacity = matrixPrefs.dustOpacity, size = matrixPrefs.dustSize, onlyCharging = matrixPrefs.dustOnlyCharging)
+
     var matrixConfig by remember { mutableStateOf(readMatrixConfig()) }
-    // React to any SharedPreferences change (instant update from settings)
+    var snowfallConfig by remember { mutableStateOf(readSnowfallConfig()) }
+    var starfieldConfig by remember { mutableStateOf(readStarfieldConfig()) }
+    var dustConfig by remember { mutableStateOf(readDustConfig()) }
     DisposableEffect(Unit) {
         val sharedPrefs = context.getSharedPreferences(
             com.vamp.haron.common.constants.HaronConstants.PREFS_NAME,
             android.content.Context.MODE_PRIVATE
         )
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("matrix_") == true) {
-                matrixConfig = readMatrixConfig()
-            }
+            if (key?.startsWith("matrix_") == true) matrixConfig = readMatrixConfig()
+            if (key?.startsWith("snowfall_") == true) snowfallConfig = readSnowfallConfig()
+            if (key?.startsWith("starfield_") == true) starfieldConfig = readStarfieldConfig()
+            if (key?.startsWith("dust_") == true) dustConfig = readDustConfig()
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    val matrixExcludedRoutes = remember { setOf("pdf_reader", "document_viewer", "media_player") }
-    val matrixCurrentRoute = navController.currentBackStackEntry?.destination?.route?.substringBefore("?")
-    val matrixShow = matrixConfig.enabled && matrixCurrentRoute !in matrixExcludedRoutes
-
+    val animExcludedRoutes = remember { setOf("pdf_reader", "document_viewer", "media_player") }
+    val animCurrentRoute = navController.currentBackStackEntry?.destination?.route?.substringBefore("?")
+    val notExcluded = animCurrentRoute !in animExcludedRoutes
+    val matrixShow = matrixConfig.enabled && notExcluded
+    val snowfallShow = snowfallConfig.enabled && notExcluded
+    val starfieldShow = starfieldConfig.enabled && notExcluded
+    val dustShow = dustConfig.enabled && notExcluded
     Box(modifier = modifier) {
     NavHost(
         navController = navController,
@@ -498,7 +529,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onBack = { navController.popBackStack() },
                 onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
                 onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
-                onOpenMatrixSettings = { navController.navigate(HaronRoutes.MATRIX_SETTINGS) },
+                onOpenThemes = { navController.navigate(HaronRoutes.THEMES) },
                 onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
             )
         }
@@ -759,6 +790,45 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(HaronRoutes.THEMES) {
+            com.vamp.haron.presentation.matrix.ThemesScreen(
+                onBack = { navController.popBackStack() },
+                onOpenMatrix = { navController.navigate(HaronRoutes.MATRIX_SETTINGS) },
+                onOpenSnowfall = { navController.navigate(HaronRoutes.SNOWFALL_SETTINGS) },
+                onOpenStarfield = { navController.navigate(HaronRoutes.STARFIELD_SETTINGS) },
+                onOpenDust = { navController.navigate(HaronRoutes.DUST_SETTINGS) }
+            )
+        }
+        composable(HaronRoutes.SNOWFALL_SETTINGS) {
+            com.vamp.haron.presentation.matrix.SnowfallSettingsScreen(
+                prefs = matrixPrefs,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.STARFIELD_SETTINGS) {
+            val p = matrixPrefs
+            fun disableOthers() { p.matrixEnabled = false; p.snowfallEnabled = false; p.dustEnabled = false }
+            com.vamp.haron.presentation.matrix.AnimSettingsScreen(
+                title = context.getString(R.string.starfield_title), initialEnabled = p.starfieldEnabled, initialSpeed = p.starfieldSpeed,
+                initialDensity = p.starfieldDensity, initialOpacity = p.starfieldOpacity, initialSize = p.starfieldSize, initialOnlyCharging = p.starfieldOnlyCharging,
+                onEnabledChange = { if (it) disableOthers(); p.starfieldEnabled = it }, onSpeedChange = { p.starfieldSpeed = it },
+                onDensityChange = { p.starfieldDensity = it }, onOpacityChange = { p.starfieldOpacity = it },
+                onSizeChange = { p.starfieldSize = it }, onOnlyChargingChange = { p.starfieldOnlyCharging = it },
+                onBack = { navController.popBackStack() }, previewBgColor = androidx.compose.ui.graphics.Color(0xFF0A0A1A)
+            ) { spd, den, opa, sz -> com.vamp.haron.presentation.matrix.StarfieldCanvas(config = com.vamp.haron.presentation.matrix.StarfieldConfig(enabled = true, speed = spd, density = den, opacity = opa, size = sz)) }
+        }
+        composable(HaronRoutes.DUST_SETTINGS) {
+            val p = matrixPrefs
+            fun disableOthers() { p.matrixEnabled = false; p.snowfallEnabled = false; p.starfieldEnabled = false }
+            com.vamp.haron.presentation.matrix.AnimSettingsScreen(
+                title = context.getString(R.string.dust_title), initialEnabled = p.dustEnabled, initialSpeed = p.dustSpeed,
+                initialDensity = p.dustDensity, initialOpacity = p.dustOpacity, initialSize = p.dustSize, initialOnlyCharging = p.dustOnlyCharging,
+                onEnabledChange = { if (it) disableOthers(); p.dustEnabled = it }, onSpeedChange = { p.dustSpeed = it },
+                onDensityChange = { p.dustDensity = it }, onOpacityChange = { p.dustOpacity = it },
+                onSizeChange = { p.dustSize = it }, onOnlyChargingChange = { p.dustOnlyCharging = it },
+                onBack = { navController.popBackStack() }, previewBgColor = androidx.compose.ui.graphics.Color.Black
+            ) { spd, den, opa, sz -> com.vamp.haron.presentation.matrix.DustCanvas(config = com.vamp.haron.presentation.matrix.DustConfig(enabled = true, speed = spd, density = den, opacity = opa, size = sz)) }
+        }
         composable(HaronRoutes.MATRIX_SETTINGS) {
             com.vamp.haron.presentation.matrix.MatrixSettingsScreen(
                 prefs = matrixPrefs,
@@ -766,10 +836,28 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             )
         }
     }
-    // Matrix canvas on top of content
+    // Animation overlays on top of content
     if (matrixShow) {
         com.vamp.haron.presentation.matrix.MatrixRainCanvas(
             config = matrixConfig.copy(enabled = true),
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+    if (snowfallShow) {
+        com.vamp.haron.presentation.matrix.SnowfallCanvas(
+            config = snowfallConfig.copy(enabled = true),
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+    if (starfieldShow) {
+        com.vamp.haron.presentation.matrix.StarfieldCanvas(
+            config = starfieldConfig.copy(enabled = true),
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+    if (dustShow) {
+        com.vamp.haron.presentation.matrix.DustCanvas(
+            config = dustConfig.copy(enabled = true),
             modifier = Modifier.fillMaxSize()
         )
     }

@@ -149,7 +149,7 @@ fun MatrixSettingsScreen(
                     Text(stringResource(R.string.matrix_enabled), modifier = Modifier.weight(1f))
                     Switch(
                         checked = enabled,
-                        onCheckedChange = { enabled = it; prefs.matrixEnabled = it }
+                        onCheckedChange = { enabled = it; if (it) { prefs.snowfallEnabled = false; prefs.starfieldEnabled = false; prefs.dustEnabled = false }; prefs.matrixEnabled = it }
                     )
                 }
             }

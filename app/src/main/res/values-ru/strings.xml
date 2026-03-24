@@ -1550,6 +1550,7 @@
     <string name="player_tab_audio">Аудио</string>
     <string name="matrix_rain_title">Матричный дождь</string>
     <string name="matrix_enabled">Включить матричный дождь</string>
+    <string name="anim_enabled">Включить</string>
     <string name="matrix_mode">Режим</string>
     <string name="matrix_mode_1">За контентом</string>
     <string name="matrix_mode_2">Везде со свечением</string>
@@ -1564,4 +1565,9 @@
     <string name="matrix_charset_cyrillic">Кириллица (АБВ)</string>
     <string name="matrix_charset_mix">Микс</string>
     <string name="matrix_only_charging">Только при зарядке</string>
+    <string name="themes_title">Анимации</string>
+    <string name="snowfall_title">Снегопад</string>
+    <string name="snowfall_size">Размер</string>
+    <string name="starfield_title">Звёздное небо</string>
+    <string name="dust_title">Пылинки</string>
 </resources>
