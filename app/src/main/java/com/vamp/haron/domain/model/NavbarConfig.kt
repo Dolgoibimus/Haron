@@ -31,7 +31,11 @@ enum class NavbarAction(val labelRes: Int, val iconName: String) {
     MOVE(R.string.navbar_action_move, "move"),
     DELETE(R.string.navbar_action_delete, "delete"),
     RENAME(R.string.navbar_action_rename, "rename"),
-    APP_ICON(R.string.navbar_action_app_icon, "app_icon"),
+    COPY_MOVE(R.string.navbar_action_copy_move, "copy_move"),
+    DELETE_MENU(R.string.navbar_action_delete_menu, "delete_menu"),
+    CREATE_MENU(R.string.navbar_action_create_menu, "create_menu"),
+    FORCE_DELETE(R.string.navbar_action_delete, "force_delete"),
+    CREATE_FILE(R.string.navbar_action_create, "create_file"),
 }
 
 /**
@@ -54,11 +58,11 @@ data class NavbarPage(
  */
 data class NavbarConfig(
     val pages: List<NavbarPage> = listOf(
-        // Default page 1: [Back/Exit] [?] [AppIcon] [?] [?]
+        // Default page 1: [Back/Exit] [?] [Home] [?] [?]
         NavbarPage(listOf(
             NavbarButton(NavbarAction.BACK, NavbarAction.EXIT),
             NavbarButton(),
-            NavbarButton(NavbarAction.APP_ICON),
+            NavbarButton(NavbarAction.HOME),
             NavbarButton(),
             NavbarButton()
         )),

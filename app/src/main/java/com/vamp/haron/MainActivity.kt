@@ -9,6 +9,8 @@ import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -271,7 +273,10 @@ class MainActivity : FragmentActivity() {
 
             CompositionLocalProvider(LocalHaronScaling provides scaling) {
                 HaronTheme(darkTheme = darkTheme, fontScale = fontScale) {
-                    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        contentWindowInsets = WindowInsets.statusBars
+                    ) { innerPadding ->
                         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                             HaronNavigation(
                                 navigateToPath = navigateToPath,

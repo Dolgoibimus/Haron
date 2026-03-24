@@ -699,6 +699,69 @@
   - Refresh cache: обнови кэш, обнови голосовой кэш / refresh cache
   - Secure folder: защищённые, защита, сейф / secure, protected
 
+# Library [NEW]
+- Three tabs: FB2/EPUB, PDF, Other
+  > How to open: Side Menu → Library, or voice "library"
+  > FB2/EPUB tab — books with covers, author, title
+  > PDF tab — grouped by folders (folder name + path header)
+  > Other tab — DOC, DOCX, ODT, RTF, XLSX, XLS, CSV — also grouped by folders
+- Tap to open book in reader
+  > FB2/EPUB → Document Reader, PDF → PDF Reader
+- Info button on cover
+  > Shows metadata: author, title, format, size, path
+- Cover cache on disk
+  > Covers saved to filesDir/book_covers/ (WEBP), auto-synced with database
+- Grid columns per tab (saved per tab)
+- Rescan button in top bar
+- Excluded folders — folders you mark as excluded are never scanned
+- Removed folders — once removed, they don't come back after rescan
+
+# Document Reader — Fullscreen & Themes [NEW]
+- Fullscreen reading mode
+  > Text fills entire screen (no toolbar)
+  > Tap center → overlay: back button + file name (top), themes + progress slider (bottom)
+- 4 themes: Auto, Light, Sepia, Dark
+  > Buttons in overlay (42dp), switch instantly
+  > Smart color contrast: if document text color merges with theme background — ignored
+- Progress slider
+  > Shows reading position, drag to jump
+
+# Rename Overlay [NEW]
+- Floating rename field above keyboard
+  > When renaming a file, input field appears directly above the keyboard
+  > Up to 3 lines for long file names
+  > Enter = confirm rename, tap outside = cancel
+  > File in the list is highlighted with primary color marker
+
+# Custom Navbar [NEW]
+- System navbar replaced with custom navbar
+  > System navigation bar is hidden (immersive mode, status bar stays)
+  > Custom navbar: horizontal pages with 5-7 buttons each
+  > Swipe horizontally to switch pages, page dots indicator at top
+- 28 configurable actions
+  > Navigation: Back, Forward, Up, Home, Exit
+  > File operations: Copy, Move, Delete, Rename, Select All, Create, Toggle Hidden
+  > Screens: Settings, Terminal, Library, Transfer, Trash, Storage, Apps, Duplicates, Search, Scanner
+  > Special: Copy/Move (radial menu), Delete (radial menu), Create (radial menu), Refresh
+- Radial menu buttons
+  > Long tap on Copy/Move → two circles appear above button: Copy (left) and Move (right)
+  > Drag finger to desired circle → it highlights → release = action
+  > Same for Delete (Trash / Forever) and Create (File / Folder)
+  > Short tap = default action (Copy / Trash / Create folder)
+- Exit button with countdown
+  > Tap = system Back (closes drawer, search, selection, or navigates up)
+  > Hold 2 seconds = red countdown circle + exit app
+- Navbar settings
+  > How to open: Settings → Navbar settings
+  > Add/delete pages, slider for button count (5-7 per page)
+  > Tap any button → editor with all actions, two checkboxes: Tap (blue) and Long press (red)
+  > One action cannot be assigned to both tap and long press
+- Custom button icons
+  > Navbar settings → palette icon → Button Icons screen
+  > Tap action → pick image from gallery → crop editor (square/circle, zoom/pan)
+  > Custom icon replaces Material icon in the navbar
+  > Reset button (✕) to revert to default icon
+
 # Settings
 - Theme: system / light / dark (Material Design 3)
   > How to open: Side Menu → Settings, or voice "settings"

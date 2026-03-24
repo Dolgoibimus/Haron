@@ -21,8 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.fillMaxHeight
 import com.vamp.haron.R
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.domain.model.NavbarAction
@@ -57,31 +62,29 @@ import com.vamp.haron.domain.model.NavbarPage
 @Composable
 fun NavbarSettingsScreen(
     prefs: HaronPreferences,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenIcons: () -> Unit = {}
 ) {
     var config by remember { mutableStateOf(prefs.getNavbarConfig()) }
 
     // Editing state
     var editingPageIndex by remember { mutableIntStateOf(-1) }
     var editingBtnIndex by remember { mutableIntStateOf(-1) }
-    var editingIsLong by remember { mutableStateOf(false) }
 
     fun save(newConfig: NavbarConfig) {
         config = newConfig
         prefs.setNavbarConfig(newConfig)
     }
 
-    // Action picker dialog
+    // Button editor dialog — shows all actions with tap/long checkboxes
     if (editingPageIndex >= 0 && editingBtnIndex >= 0) {
-        ActionPickerDialog(
-            currentAction = if (editingIsLong) config.pages[editingPageIndex].buttons[editingBtnIndex].longAction
-                            else config.pages[editingPageIndex].buttons[editingBtnIndex].tapAction,
-            isLong = editingIsLong,
-            onSelect = { action ->
+        val currentBtn = config.pages[editingPageIndex].buttons[editingBtnIndex]
+        ButtonEditorDialog(
+            currentButton = currentBtn,
+            onSave = { newButton ->
                 val pages = config.pages.toMutableList()
                 val buttons = pages[editingPageIndex].buttons.toMutableList()
-                val btn = buttons[editingBtnIndex]
-                buttons[editingBtnIndex] = if (editingIsLong) btn.copy(longAction = action) else btn.copy(tapAction = action)
+                buttons[editingBtnIndex] = newButton
                 pages[editingPageIndex] = pages[editingPageIndex].copy(buttons = buttons)
                 save(config.copy(pages = pages))
                 editingPageIndex = -1
@@ -100,6 +103,9 @@ fun NavbarSettingsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenIcons) {
+                        Icon(Icons.Filled.Palette, contentDescription = stringResource(R.string.navbar_icons_title))
+                    }
                     IconButton(onClick = {
                         save(config.copy(pages = config.pages + NavbarPage()))
                     }) {
@@ -139,10 +145,9 @@ fun NavbarSettingsScreen(
                         pages[pageIndex] = pages[pageIndex].copy(buttons = newButtons)
                         save(config.copy(pages = pages))
                     },
-                    onButtonTap = { btnIndex, isLong ->
+                    onButtonTap = { btnIndex ->
                         editingPageIndex = pageIndex
                         editingBtnIndex = btnIndex
-                        editingIsLong = isLong
                     }
                 )
             }
@@ -157,7 +162,7 @@ private fun NavbarPageCard(
     canDelete: Boolean,
     onDelete: () -> Unit,
     onButtonCountChange: (Int) -> Unit,
-    onButtonTap: (btnIndex: Int, isLong: Boolean) -> Unit
+    onButtonTap: (btnIndex: Int) -> Unit
 ) {
     val context = LocalContext.current
     Card(
@@ -205,7 +210,7 @@ private fun NavbarPageCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Buttons preview — tap to edit tap action, long label to edit long action
+            // Buttons preview — tap to open editor
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -216,15 +221,16 @@ private fun NavbarPageCard(
                 page.buttons.forEachIndexed { btnIndex, btn ->
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onButtonTap(btnIndex) }
                     ) {
                         // Tap action
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                                .clickable { onButtonTap(btnIndex, false) },
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -244,8 +250,7 @@ private fun NavbarPageCard(
                             color = if (btn.longAction == NavbarAction.NONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                                     else MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            modifier = Modifier.clickable { onButtonTap(btnIndex, true) }
+                            maxLines = 1
                         )
                     }
                 }
@@ -254,53 +259,147 @@ private fun NavbarPageCard(
     }
 }
 
+/**
+ * Button editor dialog: list of all actions, each with two checkboxes (tap / long).
+ * One action cannot be both tap and long simultaneously.
+ * Hidden internal actions (FORCE_DELETE, CREATE_FILE) are excluded from the list.
+ */
 @Composable
-private fun ActionPickerDialog(
-    currentAction: NavbarAction,
-    isLong: Boolean,
-    onSelect: (NavbarAction) -> Unit,
+private fun ButtonEditorDialog(
+    currentButton: NavbarButton,
+    onSave: (NavbarButton) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                if (isLong) stringResource(R.string.navbar_long_action)
-                else stringResource(R.string.navbar_tap_action)
-            )
-        },
-        text = {
-            LazyColumn {
-                val actions = NavbarAction.entries
-                items(actions.size) { index ->
-                    val action = actions[index]
-                    val isSelected = action == currentAction
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(action) }
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surface
+    var tapAction by remember { mutableStateOf(currentButton.tapAction) }
+    var longAction by remember { mutableStateOf(currentButton.longAction) }
+
+    // Actions visible in picker (exclude internal-only actions)
+    val visibleActions = remember {
+        NavbarAction.entries.filter {
+            it != NavbarAction.FORCE_DELETE && it != NavbarAction.CREATE_FILE
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(5f / 6f),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Title
+                Text(
+                    stringResource(R.string.navbar_choose_action),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                // Header: Action | Tap | Long
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        stringResource(R.string.navbar_tap_action),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(48.dp)
+                    )
+                    Text(
+                        stringResource(R.string.navbar_long_action),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(48.dp)
+                    )
+                }
+
+                // Action list
+                val radialActions = listOf(
+                    NavbarAction.COPY_MOVE,
+                    NavbarAction.DELETE_MENU,
+                    NavbarAction.CREATE_MENU
+                )
+
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(visibleActions.size) { index ->
+                        val action = visibleActions[index]
+                        val isTap = tapAction == action
+                        val isLong = longAction == action
+                        val isRadial = action in radialActions
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(action.labelRes),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                                color = if (isTap || isLong) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(action.labelRes),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurface
-                        )
+                            // Tap checkbox
+                            Checkbox(
+                                checked = isTap,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        if (longAction == action) longAction = NavbarAction.NONE
+                                        tapAction = action
+                                    } else {
+                                        tapAction = NavbarAction.NONE
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp),
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            // Long checkbox — hidden for radial actions (long is built-in)
+                            if (isRadial) {
+                                Spacer(Modifier.size(36.dp))
+                            } else {
+                                Checkbox(
+                                    checked = isLong,
+                                    onCheckedChange = { checked ->
+                                        if (checked) {
+                                            if (tapAction == action) tapAction = NavbarAction.NONE
+                                            longAction = action
+                                        } else {
+                                            longAction = NavbarAction.NONE
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.error
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { onSave(NavbarButton(tapAction, longAction)) }) {
+                        Text("OK")
                     }
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
-    )
+    }
 }
 
 private fun actionShortLabel(action: NavbarAction): String = when (action) {
@@ -328,5 +427,9 @@ private fun actionShortLabel(action: NavbarAction): String = when (action) {
     NavbarAction.MOVE -> "📦"
     NavbarAction.DELETE -> "🗑"
     NavbarAction.RENAME -> "✏"
-    NavbarAction.APP_ICON -> "◉"
+    NavbarAction.COPY_MOVE -> "📋📦"
+    NavbarAction.DELETE_MENU -> "🗑⚡"
+    NavbarAction.CREATE_MENU -> "+📁"
+    NavbarAction.FORCE_DELETE -> "💀"
+    NavbarAction.CREATE_FILE -> "📄"
 }

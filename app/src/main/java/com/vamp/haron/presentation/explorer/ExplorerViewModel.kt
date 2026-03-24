@@ -3353,6 +3353,21 @@ class ExplorerViewModel @Inject constructor(
         _uiState.update { it.copy(dialogState = DialogState.CreateFromTemplate(templates)) }
     }
 
+    /** Create folder only (from navbar radial menu) */
+    fun requestCreateFolder() {
+        val activeId = _uiState.value.activePanel
+        val panel = getPanel(activeId)
+        if (isCloudPath(panel.currentPath)) {
+            showCloudCreateFolder()
+            return
+        }
+        if (panel.currentPath == HaronConstants.VIRTUAL_SECURE_PATH) {
+            _toastMessage.tryEmit(appContext.getString(R.string.cannot_create_in_virtual))
+            return
+        }
+        _uiState.update { it.copy(dialogState = DialogState.CreateFromTemplate(listOf(FileTemplate.FOLDER))) }
+    }
+
     fun confirmCreateFromTemplate(template: FileTemplate, name: String) {
         dismissDialog()
         val activeId = _uiState.value.activePanel

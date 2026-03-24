@@ -1246,13 +1246,18 @@ fun ExplorerScreen(
                     com.vamp.haron.domain.model.NavbarAction.DUPLICATES -> viewModel.openDuplicateDetector()
                     com.vamp.haron.domain.model.NavbarAction.SELECT_ALL -> viewModel.selectAll(panelId)
                     com.vamp.haron.domain.model.NavbarAction.TOGGLE_HIDDEN -> viewModel.toggleShowHidden(panelId)
-                    com.vamp.haron.domain.model.NavbarAction.CREATE_NEW -> viewModel.requestCreateFromTemplate()
+                    com.vamp.haron.domain.model.NavbarAction.CREATE_NEW -> viewModel.requestCreateFolder()
                     com.vamp.haron.domain.model.NavbarAction.COPY -> viewModel.copySelectedToOtherPanel()
                     com.vamp.haron.domain.model.NavbarAction.MOVE -> viewModel.moveSelectedToOtherPanel()
                     com.vamp.haron.domain.model.NavbarAction.DELETE -> viewModel.requestDeleteSelected()
                     com.vamp.haron.domain.model.NavbarAction.RENAME -> viewModel.requestRename()
                     com.vamp.haron.domain.model.NavbarAction.LIBRARY -> onNavigateToLibrary()
                     com.vamp.haron.domain.model.NavbarAction.SCANNER -> {} // TODO: open scanner
+                    com.vamp.haron.domain.model.NavbarAction.COPY_MOVE -> viewModel.copySelectedToOtherPanel() // default tap = copy
+                    com.vamp.haron.domain.model.NavbarAction.DELETE_MENU -> viewModel.requestDeleteSelected() // default tap = trash
+                    com.vamp.haron.domain.model.NavbarAction.CREATE_MENU -> viewModel.requestCreateFromTemplate() // default tap = create
+                    com.vamp.haron.domain.model.NavbarAction.FORCE_DELETE -> viewModel.requestForceDelete()
+                    com.vamp.haron.domain.model.NavbarAction.CREATE_FILE -> viewModel.requestCreateFromTemplate()
                     else -> {}
                 }
             },

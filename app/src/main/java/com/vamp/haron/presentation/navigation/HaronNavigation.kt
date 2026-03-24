@@ -95,6 +95,7 @@ object HaronRoutes {
     const val LIBRARY = "library"
     const val LIBRARY_SETTINGS = "library_settings"
     const val NAVBAR_SETTINGS = "navbar_settings"
+    const val NAVBAR_ICONS = "navbar_icons"
     const val LOGS = "logs"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
@@ -702,6 +703,12 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             }
             com.vamp.haron.presentation.settings.NavbarSettingsScreen(
                 prefs = prefs,
+                onBack = { navController.popBackStack() },
+                onOpenIcons = { navController.navigate(HaronRoutes.NAVBAR_ICONS) }
+            )
+        }
+        composable(HaronRoutes.NAVBAR_ICONS) {
+            com.vamp.haron.presentation.settings.NavbarIconsScreen(
                 onBack = { navController.popBackStack() }
             )
         }
