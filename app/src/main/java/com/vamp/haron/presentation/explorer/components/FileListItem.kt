@@ -103,14 +103,21 @@ fun FileListItem(
     archivePath: String? = null,
     archivePassword: String? = null,
     thumbnailVersion: Int = 0,
+    isFocused: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
         isDragHovered -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
         isRenaming -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
         else -> MaterialTheme.colorScheme.surface
     }
+
+    val focusBorder = if (isFocused) Modifier.border(
+        width = 2.dp,
+        color = MaterialTheme.colorScheme.primary,
+        shape = RoundedCornerShape(4.dp)
+    ) else Modifier
 
     val clickModifier = when {
         isRenaming -> Modifier
@@ -213,6 +220,7 @@ fun FileListItem(
         // Grid mode: square container, image fitted inside preserving aspect ratio
         Box(
             modifier = modifier
+                .then(focusBorder)
                 .background(bgColor)
                 .padding(2.dp),
             contentAlignment = Alignment.TopCenter
@@ -278,26 +286,7 @@ fun FileListItem(
                                 .padding(horizontal = 3.dp, vertical = 1.dp)
                         )
                     }
-                    // Selection indicator (top-end)
-                    if (isSelectionMode && !isRenaming) {
-                        Icon(
-                            imageVector = if (isSelected) {
-                                Icons.Filled.CheckCircle
-                            } else {
-                                Icons.Filled.RadioButtonUnchecked
-                            },
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .align(Alignment.TopEnd)
-                                .padding(2.dp),
-                            tint = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
+                    // Selection indicator removed — Windows-style full highlight only
                     // Protected file lock badge (top-start)
                     if (entry.isProtected) {
                         Icon(
@@ -366,28 +355,13 @@ fun FileListItem(
         Row(
             modifier = modifier
                 .fillMaxWidth()
+                .then(focusBorder)
                 .background(bgColor)
                 .then(clickModifier)
                 .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isSelectionMode && !isRenaming) {
-                Icon(
-                    imageVector = if (isSelected) {
-                        Icons.Filled.CheckCircle
-                    } else {
-                        Icons.Filled.RadioButtonUnchecked
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
+            // Selection indicator removed — Windows-style full highlight only
 
             Box(
                 modifier = Modifier

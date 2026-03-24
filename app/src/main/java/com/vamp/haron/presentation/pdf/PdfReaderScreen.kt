@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
@@ -72,6 +73,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -112,7 +116,8 @@ private const val CACHE_SIZE = 5
 fun PdfReaderScreen(
     filePath: String,
     fileName: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToLibrary: (() -> Unit)? = null
 ) {
     // Hide VoiceFab in reader, show on tap
     var micVisible by remember { mutableStateOf(false) }
@@ -131,7 +136,7 @@ fun PdfReaderScreen(
         }
     }
 
-    PdfReaderContent(filePath, fileName, onBack, onTap = { micVisible = !micVisible })
+    PdfReaderContent(filePath, fileName, onBack, onTap = { micVisible = !micVisible }, onNavigateToLibrary = onNavigateToLibrary)
 }
 
 // --- PDF reader (existing logic) ---
@@ -142,7 +147,8 @@ private fun PdfReaderContent(
     filePath: String,
     fileName: String,
     onBack: () -> Unit,
-    onTap: () -> Unit = {}
+    onTap: () -> Unit = {},
+    onNavigateToLibrary: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
@@ -174,6 +180,7 @@ private fun PdfReaderContent(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var lastDoubleTapCheck by remember { mutableLongStateOf(0L) }
 
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         val newScale = (scale * zoomChange).coerceIn(1f, 5f)
@@ -427,6 +434,11 @@ private fun PdfReaderContent(
                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                     }
+                    if (onNavigateToLibrary != null) {
+                        IconButton(onClick = onNavigateToLibrary) {
+                            Icon(Icons.Filled.LibraryBooks, contentDescription = stringResource(R.string.navbar_action_library))
+                        }
+                    }
                 }
             )
         },
@@ -466,16 +478,46 @@ private fun PdfReaderContent(
                 .fillMaxSize()
                 .padding(padding)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onTap() },
-                        onDoubleTap = {
-                            if (scale > 1.1f) {
-                                scale = 1f; offsetX = 0f; offsetY = 0f
+                    val slop = viewConfiguration.touchSlop
+                    val edgePx = 30.dp.toPx()
+                    val swipeThreshold = 80.dp.toPx()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startPos = down.position
+                        val isFromLeftEdge = startPos.x < edgePx
+                        var wasDrag = false
+                        var totalDx = 0f
+                        var lastTapTime = 0L
+                        do {
+                            val event = awaitPointerEvent()
+                            val pos = event.changes.firstOrNull()?.position
+                            if (pos != null) {
+                                val dist = kotlin.math.hypot(
+                                    (pos.x - startPos.x).toDouble(),
+                                    (pos.y - startPos.y).toDouble()
+                                )
+                                if (dist > slop) wasDrag = true
+                                totalDx = pos.x - startPos.x
+                            }
+                        } while (event.changes.any { c -> c.pressed })
+                        if (isFromLeftEdge && totalDx > swipeThreshold) {
+                            onBack()
+                        } else if (!wasDrag) {
+                            // Check double-tap
+                            val now = System.currentTimeMillis()
+                            if (now - lastDoubleTapCheck < 300) {
+                                if (scale > 1.1f) {
+                                    scale = 1f; offsetX = 0f; offsetY = 0f
+                                } else {
+                                    scale = 2f
+                                }
+                                lastDoubleTapCheck = 0L
                             } else {
-                                scale = 2f
+                                lastDoubleTapCheck = now
+                                onTap()
                             }
                         }
-                    )
+                    }
                 }
         ) {
             LazyColumn(

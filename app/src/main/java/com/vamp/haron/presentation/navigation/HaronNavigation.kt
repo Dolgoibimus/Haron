@@ -644,7 +644,8 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             PdfReaderScreen(
                 filePath = filePath,
                 fileName = fileName,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToLibrary = { navController.navigate(HaronRoutes.LIBRARY) }
             )
         }
         composable(
@@ -674,7 +675,8 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             DocumentViewerScreen(
                 filePath = filePath,
                 fileName = fileName,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToLibrary = { navController.navigate(HaronRoutes.LIBRARY) }
             )
         }
         composable(HaronRoutes.LIBRARY) {

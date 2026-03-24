@@ -1625,13 +1625,13 @@ class ExplorerViewModel @Inject constructor(
                 scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
             }
 
-            // Clear search when navigating to a different folder
+            // Clear search and cursor when navigating to a different folder
             if (isNewFolder) {
                 contentSearchJobs[panelId]?.cancel()
                 folderIndexJobs[panelId]?.cancel()
-                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null, focusedIndex = -1, shiftMode = false, shiftAnchor = -1, lockedPaths = emptySet()) }
             } else {
-                updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, focusedIndex = -1, shiftMode = false, shiftAnchor = -1, lockedPaths = emptySet()) }
             }
 
             val panel = getPanel(panelId)
@@ -1877,13 +1877,13 @@ class ExplorerViewModel @Inject constructor(
                 scrollCache[currentPath] = panelScrollIndex[panelId] ?: 0
             }
 
-            // Clear search when navigating to a different folder
+            // Clear search and cursor when navigating to a different folder
             if (isNewFolder) {
                 contentSearchJobs[panelId]?.cancel()
                 folderIndexJobs[panelId]?.cancel()
-                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null, focusedIndex = -1, shiftMode = false, shiftAnchor = -1, lockedPaths = emptySet()) }
             } else {
-                updatePanel(panelId) { it.copy(isLoading = true, error = null) }
+                updatePanel(panelId) { it.copy(isLoading = true, error = null, focusedIndex = -1, shiftMode = false, shiftAnchor = -1, lockedPaths = emptySet()) }
             }
 
             val panel = getPanel(panelId)
@@ -5253,6 +5253,121 @@ class ExplorerViewModel @Inject constructor(
         if (cachedPath.isNotEmpty()) {
             navigateTo(panelId, cachedPath, pushHistory = false)
         }
+    }
+
+    // --- Cursor (Arrow navigation) ---
+    // Cursor = selection: moving cursor selects the file under it
+
+    fun moveFocusUp(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val fileCount = panel.files.size
+        if (fileCount == 0) return
+        val current = panel.focusedIndex
+        val newIndex = if (current <= 0) {
+            if (current < 0) startIndexForPanel(panelId, fileCount) else fileCount - 1
+        } else current - 1
+        applyCursorMove(panelId, newIndex, directionDown = false)
+    }
+
+    fun moveFocusDown(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val fileCount = panel.files.size
+        if (fileCount == 0) return
+        val current = panel.focusedIndex
+        val newIndex = if (current < 0) {
+            startIndexForPanel(panelId, fileCount)
+        } else if (current >= fileCount - 1) 0 else current + 1
+        applyCursorMove(panelId, newIndex, directionDown = true)
+    }
+
+    fun moveFocusLeft(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val fileCount = panel.files.size
+        if (fileCount == 0) return
+        val current = panel.focusedIndex
+        val newIndex = if (current <= 0) {
+            if (current < 0) startIndexForPanel(panelId, fileCount) else fileCount - 1
+        } else current - 1
+        applyCursorMove(panelId, newIndex, directionDown = false)
+    }
+
+    fun moveFocusRight(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        val fileCount = panel.files.size
+        if (fileCount == 0) return
+        val current = panel.focusedIndex
+        val newIndex = if (current < 0) {
+            startIndexForPanel(panelId, fileCount)
+        } else if (current >= fileCount - 1) 0 else current + 1
+        applyCursorMove(panelId, newIndex, directionDown = true)
+    }
+
+    /** Start cursor at the first visible file, not at index 0 */
+    private fun startIndexForPanel(panelId: PanelId, fileCount: Int): Int {
+        val scrollIdx = panelScrollIndex[panelId] ?: 0
+        return scrollIdx.coerceIn(0, fileCount - 1)
+    }
+
+    fun toggleShiftMode(panelId: PanelId) {
+        val panel = getPanel(panelId)
+        if (panel.shiftMode) {
+            // Shift OFF — lock current selection, keep cursor file selected
+            updatePanel(panelId) {
+                it.copy(
+                    shiftMode = false,
+                    shiftAnchor = -1,
+                    lockedPaths = it.selectedPaths // lock everything currently selected
+                )
+            }
+        } else {
+            // Shift ON — set anchor at current cursor
+            val anchor = if (panel.focusedIndex >= 0) panel.focusedIndex else 0
+            updatePanel(panelId) { it.copy(shiftMode = true, shiftAnchor = anchor) }
+        }
+    }
+
+    private fun applyCursorMove(panelId: PanelId, newIndex: Int, directionDown: Boolean) {
+        val panel = getPanel(panelId)
+        val file = panel.files.getOrNull(newIndex) ?: return
+        val cols = panel.gridColumns.coerceAtLeast(1)
+        val isFirstTap = panel.focusedIndex < 0
+        val scrollIdx = panelScrollIndex[panelId] ?: 0
+
+        // Always scroll to the cursor file itself
+        val scrollTarget = newIndex
+
+        // Selection logic
+        val newSelection = if (panel.shiftMode && panel.shiftAnchor >= 0) {
+            // Shift mode: range from anchor to cursor + locked paths
+            val from = minOf(panel.shiftAnchor, newIndex)
+            val to = maxOf(panel.shiftAnchor, newIndex)
+            val rangeSelection = (from..to).mapNotNull { i -> panel.files.getOrNull(i)?.path }.toSet()
+            panel.lockedPaths + rangeSelection
+        } else {
+            // Normal: locked paths + cursor file only
+            panel.lockedPaths + file.path
+        }
+
+        updatePanel(panelId) {
+            it.copy(
+                focusedIndex = newIndex,
+                selectedPaths = newSelection,
+                isSelectionMode = if (isFirstTap) it.isSelectionMode else newSelection.isNotEmpty(),
+                scrollToIndex = scrollTarget,
+                scrollToTrigger = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun clearFocus(panelId: PanelId) {
+        updatePanel(panelId) { it.copy(focusedIndex = -1, shiftMode = false, shiftAnchor = -1, lockedPaths = emptySet()) }
+    }
+
+    /** Get the focused file entry (for actions when no selection) */
+    fun getFocusedFile(panelId: PanelId): com.vamp.haron.domain.model.FileEntry? {
+        val panel = getPanel(panelId)
+        val idx = panel.focusedIndex
+        return if (idx in panel.files.indices) panel.files[idx] else null
     }
 
     private fun refreshBothIfSamePath(panelId: PanelId) {

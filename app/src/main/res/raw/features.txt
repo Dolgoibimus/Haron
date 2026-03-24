@@ -105,6 +105,13 @@
   > 3 destinations: subfolder here, other panel (subfolder), other panel (open folder)
   > Copy names: filename(1).ext, filename(2).ext, etc.
   > Folder size updates in real time during duplication
+- File duplication [NEW]
+  > Long tap on Copy → dialog with copy count and 3 directions [NEW]
+  > Into subfolder here: creates folder with file name, copies inside [NEW]
+  > Into other panel (subfolder): same, but in the other panel's folder [NEW]
+  > Into other panel (open folder): copies directly into current folder of other panel [NEW]
+  > Copy names: file(1).ext, file(2).ext etc. [NEW]
+  > Folder size updates in real-time during duplication [NEW]
 - Conflict dialog: replace / rename / skip
 
 # Trash
@@ -305,6 +312,13 @@
   > Works with single or multiple archives at once
 - "1 to 1" archiving
   > Select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
+- Quick extraction from file list [NEW]
+  > Select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract [NEW]
+  > Tap pulsing icon → choose where: next to archive / current panel / other panel [NEW]
+  > Each archive extracts into subfolder with archive name (created automatically) [NEW]
+  > Works with one or multiple archives simultaneously [NEW]
+- Archive 1-in-1 [NEW]
+  > Select multiple files → Archive → "1 in 1" — each file into separate ZIP [NEW]
 
 # Text Editor
 - View and edit text and code files
@@ -330,6 +344,7 @@
   > If there are unsaved changes and you press "Back" — dialog: "Save / Cancel / Discard"
 - Cursor position saved between sessions
   > Close a file and open it later — cursor stays at the same position
+- Large files (600KB+) open in Sora Editor without freezing [NEW]
 
 # File Properties
 - Name, path, size, date, MIME-type, permissions
@@ -345,9 +360,19 @@
   > Title, author, subject, keywords, creator, producer, creation date, page count
 - FB2 metadata
   > Title, author, genre, language, series, date, annotation
-- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512
+- Audio tag editing [NEW]
+  > Title, artist, album, year, genre, duration, bitrate (editable) [NEW]
+  > Save/edit directly in file properties [NEW]
+  > Album cover search from internet (Deezer + iTunes) with save to file [NEW]
+  > Cover search by filename — automatic parsing of artist and title [NEW]
+  > Smart search: one query fills all missing tags (title, artist, album, year, genre) + cover [NEW]
+  > "Save all" button: saves tags and cover in one tap [NEW]
+- PDF metadata: title, author, subject, keywords, creator, generator, creation date, page count [NEW]
+- FB2 metadata: title, author, genre, language, series, date, annotation [NEW]
+- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 [NEW]
   > Tap "Calculate" → choose hash type
   > Paste expected hash → instant match/mismatch check
+- Hash comparison: paste a reference hash — instant match verification [NEW]
 
 # Storage Analyzer
 - Pie chart by file type
@@ -489,6 +514,12 @@
   >   Tab "Haron": one QR — second Haron scans, auto-connects to hotspot and downloads
   >   Tab "Others": two QR codes — first to connect to Wi-Fi, second to download in browser
   > Hotspot is temporary — turns off automatically when dialog is closed
+- QR transfer — two modes (tap QR to switch) [NEW]
+  > Wi-Fi mode (both devices on same network): QR with download link [NEW]
+  > Hotspot mode (different networks or no Wi-Fi): [NEW]
+  > Tab "Haron": one QR — second Haron scans, auto-connects and downloads [NEW]
+  > Tab "Others": two QRs for any device — first for Wi-Fi connection, second for download link [NEW]
+  > Temporary hotspot, turns off automatically when dialog closes [NEW]
 - Progress, resume, retry on disconnect
   > Progress bar with percentage and speed
   > Auto-retry on connection drop
@@ -524,6 +555,16 @@
   > Shares phone files to a computer — open ftp://IP:port in a browser or FTP client on your PC
   > Anonymous or password-protected access
   > Read-only mode — download allowed, upload blocked
+- FTP client [NEW]
+  > Connect to remote FTP servers [NEW]
+  > Browse, download, upload files with progress [NEW]
+  > Two-panel mode: FTP files on top, local on bottom [NEW]
+  > FTPS (TLS) support [NEW]
+  > Saved FTP connections (encrypted credentials) [NEW]
+- FTP server [NEW]
+  > Share phone files to PC [NEW]
+  > Anonymous or password access [NEW]
+  > Read-only mode [NEW]
 
 # TV
 - Chromecast, Miracast, DLNA support
@@ -551,6 +592,10 @@
   > Touchpad mode: phone = touchpad for TV. Finger movement = cursor, tap = click, long tap = right click, two-finger swipe = scroll
   > Virtual keyboard: type on your phone — text appears on the TV screen (Latin + Cyrillic)
   > How to connect: pair TV via Bluetooth → in Haron: Transfer → BT HID → select device
+- Bluetooth HID remote [NEW]
+  > Touchpad mode: cursor movement on TV, tap, long tap, scroll [NEW]
+  > Virtual keyboard: text input on TV screen (Latin + Cyrillic) [NEW]
+  > Connect to paired Bluetooth devices [NEW]
 
 # Terminal
 - Built-in terminal [NEW]
@@ -626,6 +671,8 @@
 - Cloud file management
   > Rename, delete, create folders — directly in the cloud
   > Delete from preview — no need to go back to the panel
+- Reliable upload: 8-10MB chunks with auto-retry on network loss [NEW]
+- Parallel transfers with individual cancel for each [NEW]
 
 # Gestures & Voice
 - 4 customizable edge swipes
@@ -700,67 +747,79 @@
   - Secure folder: защищённые, защита, сейф / secure, protected
 
 # Library [NEW]
-- Three tabs: FB2/EPUB, PDF, Other
-  > How to open: Side Menu → Library, or voice "library"
-  > FB2/EPUB tab — books with covers, author, title
-  > PDF tab — grouped by folders (folder name + path header)
-  > Other tab — DOC, DOCX, ODT, RTF, XLSX, XLS, CSV — also grouped by folders
-- Tap to open book in reader
-  > FB2/EPUB → Document Reader, PDF → PDF Reader
-- Info button on cover
-  > Shows metadata: author, title, format, size, path
-- Cover cache on disk
-  > Covers saved to filesDir/book_covers/ (WEBP), auto-synced with database
-- Grid columns per tab (saved per tab)
-- Rescan button in top bar
-- Excluded folders — folders you mark as excluded are never scanned
-- Removed folders — once removed, they don't come back after rescan
+- Three tabs: FB2/EPUB, PDF, Other [NEW]
+  > How to open: Side Menu → Library, or voice "library" [NEW]
+  > FB2/EPUB tab — books with covers, author, title [NEW]
+  > PDF tab — grouped by folders (folder name + path header) [NEW]
+  > Other tab — DOC, DOCX, ODT, RTF, XLSX, XLS, CSV — also grouped by folders [NEW]
+- Tap to open book in reader [NEW]
+  > FB2/EPUB → Document Reader, PDF → PDF Reader [NEW]
+- Info button on cover [NEW]
+  > Shows metadata: author, title, format, size, path [NEW]
+- Cover cache on disk [NEW]
+  > Covers saved to filesDir/book_covers/ (WEBP), auto-synced with database [NEW]
+- Grid columns per tab (saved per tab) [NEW]
+- Rescan button in top bar [NEW]
+- Excluded folders — folders you mark as excluded are never scanned [NEW]
+- Removed folders — once removed, they don't come back after rescan [NEW]
 
 # Document Reader — Fullscreen & Themes [NEW]
-- Fullscreen reading mode
-  > Text fills entire screen (no toolbar)
-  > Tap center → overlay: back button + file name (top), themes + progress slider (bottom)
-- 4 themes: Auto, Light, Sepia, Dark
-  > Buttons in overlay (42dp), switch instantly
-  > Smart color contrast: if document text color merges with theme background — ignored
-- Progress slider
-  > Shows reading position, drag to jump
+- Fullscreen reading mode [NEW]
+  > Text fills entire screen (no toolbar) [NEW]
+  > Tap center → overlay: back button + file name (top), themes + progress slider (bottom) [NEW]
+- 4 themes: Auto, Light, Sepia, Dark [NEW]
+  > Buttons in overlay (42dp), switch instantly [NEW]
+  > Smart color contrast: if document text color merges with theme background — ignored [NEW]
+- Progress slider [NEW]
+  > Shows reading position, drag to jump [NEW]
 
 # Rename Overlay [NEW]
-- Floating rename field above keyboard
-  > When renaming a file, input field appears directly above the keyboard
-  > Up to 3 lines for long file names
-  > Enter = confirm rename, tap outside = cancel
-  > File in the list is highlighted with primary color marker
+- Floating rename field above keyboard [NEW]
+  > When renaming a file, input field appears directly above the keyboard [NEW]
+  > Up to 3 lines for long file names [NEW]
+  > Enter = confirm rename, tap outside = cancel [NEW]
+  > File in the list is highlighted with primary color marker [NEW]
 
 # Custom Navbar [NEW]
-- System navbar replaced with custom navbar
-  > System navigation bar is hidden (immersive mode, status bar stays)
-  > Custom navbar: horizontal pages with 5-7 buttons each
-  > Swipe horizontally to switch pages, page dots indicator at top
-- 28 configurable actions
-  > Navigation: Back, Forward, Up, Home, Exit
-  > File operations: Copy, Move, Delete, Rename, Select All, Create, Toggle Hidden
-  > Screens: Settings, Terminal, Library, Transfer, Trash, Storage, Apps, Duplicates, Search, Scanner
-  > Special: Copy/Move (radial menu), Delete (radial menu), Create (radial menu), Refresh
-- Radial menu buttons
-  > Long tap on Copy/Move → two circles appear above button: Copy (left) and Move (right)
-  > Drag finger to desired circle → it highlights → release = action
-  > Same for Delete (Trash / Forever) and Create (File / Folder)
-  > Short tap = default action (Copy / Trash / Create folder)
-- Exit button with countdown
-  > Tap = system Back (closes drawer, search, selection, or navigates up)
-  > Hold 2 seconds = red countdown circle + exit app
-- Navbar settings
-  > How to open: Settings → Navbar settings
-  > Add/delete pages, slider for button count (5-7 per page)
-  > Tap any button → editor with all actions, two checkboxes: Tap (blue) and Long press (red)
-  > One action cannot be assigned to both tap and long press
-- Custom button icons
-  > Navbar settings → palette icon → Button Icons screen
-  > Tap action → pick image from gallery → crop editor (square/circle, zoom/pan)
-  > Custom icon replaces Material icon in the navbar
-  > Reset button (✕) to revert to default icon
+- System navbar replaced with custom navbar [NEW]
+  > System navigation bar is hidden (immersive mode, status bar stays) [NEW]
+  > Custom navbar: horizontal pages with 5-7 buttons each [NEW]
+  > Swipe horizontally to switch pages, page dots indicator at top [NEW]
+- 28 configurable actions [NEW]
+  > Navigation: Back, Forward, Up, Home, Exit [NEW]
+  > File operations: Copy, Move, Delete, Rename, Select All, Create, Toggle Hidden [NEW]
+  > Screens: Settings, Terminal, Library, Transfer, Trash, Storage, Apps, Duplicates, Search, Scanner [NEW]
+  > Special: Copy/Move (radial menu), Delete (radial menu), Create (radial menu), Refresh [NEW]
+- Radial menu buttons [NEW]
+  > Long tap on Copy/Move → two circles appear above button: Copy (left) and Move (right) [NEW]
+  > Drag finger to desired circle → it highlights → release = action [NEW]
+  > Same for Delete (Trash / Forever) and Create (File / Folder) [NEW]
+  > Short tap = default action (Copy / Trash / Create folder) [NEW]
+- Exit button with countdown [NEW]
+  > Tap = system Back (closes drawer, search, selection, or navigates up) [NEW]
+  > Hold 2 seconds = red countdown circle + exit app [NEW]
+- Navbar settings [NEW]
+  > How to open: Settings → Navbar settings [NEW]
+  > Add/delete pages, slider for button count (5-7 per page) [NEW]
+  > Tap any button → editor with all actions, two checkboxes: Tap (blue) and Long press (red) [NEW]
+  > One action cannot be assigned to both tap and long press [NEW]
+- Custom button icons [NEW]
+  > Navbar settings → palette icon → Button Icons screen [NEW]
+  > Tap action → pick image from gallery → crop editor (square/circle, zoom/pan) [NEW]
+  > Custom icon replaces Material icon in the navbar [NEW]
+  > Reset button (✕) to revert to default icon [NEW]
+- Arrow navigation (Cursor ↑↓←→) [NEW]
+  > Cursor ↑/↓: tap = move cursor up/down through files, long tap ↑ = switch panel, long tap ↓ = toggle Shift mode [NEW]
+  > Cursor ←/→: tap ← = back in history, tap → = forward in history, long ← = parent folder, long → = enter folder under cursor [NEW]
+  > Cursor highlights the file with a border, file is selected (Windows-style full highlight) [NEW]
+  > Auto-scroll: the file under cursor is always visible [NEW]
+  > First tap starts from the currently visible file, not from the beginning [NEW]
+- Shift mode (multi-select) [NEW]
+  > Long tap ↓ = toggle Shift mode (button glows when active) [NEW]
+  > Shift ON: all files from anchor to cursor are selected as a range [NEW]
+  > Shift OFF: selection is preserved, normal single-file cursor resumes [NEW]
+  > Multi-range: turn Shift ON in a new location to select additional ranges [NEW]
+  > Useful for selecting multiple groups of files without touching the screen [NEW]
 
 # Settings
 - Theme: system / light / dark (Material Design 3)
@@ -782,3 +841,8 @@
 - Shizuku status and control
   > Shows: whether Shizuku is installed, running, permission granted
   > Buttons: install, start, grant permission — all in one place
+- Navbar settings [NEW]
+  > Configure custom navbar: pages, buttons, actions, custom icons [NEW]
+  > See "Custom Navbar" section for full details [NEW]
+- Gestures & Voice settings [NEW]
+  > Configure 4 edge swipes + voice commands [NEW]

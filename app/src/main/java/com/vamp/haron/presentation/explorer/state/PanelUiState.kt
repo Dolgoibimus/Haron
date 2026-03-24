@@ -37,7 +37,11 @@ data class PanelUiState(
     // Cloud breadcrumb stack: list of (displayName, cloudPath) from root to current
     val cloudBreadcrumbs: List<Pair<String, String>> = emptyList(),
     // Increment to force thumbnail reload (e.g. after album cover save)
-    val thumbnailVersion: Int = 0
+    val thumbnailVersion: Int = 0,
+    val focusedIndex: Int = -1, // -1 = no cursor
+    val shiftMode: Boolean = false, // Shift-selection active
+    val shiftAnchor: Int = -1, // anchor index for Shift range selection
+    val lockedPaths: Set<String> = emptySet() // files locked by Shift selections
 ) {
     val isArchiveMode: Boolean get() = archivePath != null
 }

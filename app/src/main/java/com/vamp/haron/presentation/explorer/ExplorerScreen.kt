@@ -1213,6 +1213,7 @@ fun ExplorerScreen(
         // Custom navbar (replaces system navbar)
         CustomNavbar(
             config = navbarConfig,
+            shiftModeActive = activePanelState.shiftMode,
             onAction = { action ->
                 val panelId = state.activePanel
                 when (action) {
@@ -1258,6 +1259,24 @@ fun ExplorerScreen(
                     com.vamp.haron.domain.model.NavbarAction.CREATE_MENU -> viewModel.requestCreateFromTemplate() // default tap = create
                     com.vamp.haron.domain.model.NavbarAction.FORCE_DELETE -> viewModel.requestForceDelete()
                     com.vamp.haron.domain.model.NavbarAction.CREATE_FILE -> viewModel.requestCreateFromTemplate()
+                    com.vamp.haron.domain.model.NavbarAction.ARROW_UP -> viewModel.moveFocusUp(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.ARROW_DOWN -> viewModel.moveFocusDown(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.ARROW_LEFT -> viewModel.navigateBack(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.ARROW_RIGHT -> viewModel.navigateForward(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.ENTER_FOLDER -> {
+                        val focused = viewModel.getFocusedFile(panelId)
+                        if (focused != null && focused.isDirectory) {
+                            viewModel.navigateTo(panelId, focused.path)
+                        }
+                    }
+                    com.vamp.haron.domain.model.NavbarAction.CURSOR_LEFT -> viewModel.moveFocusLeft(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.CURSOR_RIGHT -> viewModel.moveFocusRight(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.TOGGLE_SHIFT -> viewModel.toggleShiftMode(panelId)
+                    com.vamp.haron.domain.model.NavbarAction.SWITCH_PANEL -> {
+                        val other = if (panelId == com.vamp.haron.domain.model.PanelId.TOP)
+                            com.vamp.haron.domain.model.PanelId.BOTTOM else com.vamp.haron.domain.model.PanelId.TOP
+                        viewModel.setActivePanel(other)
+                    }
                     else -> {}
                 }
             },

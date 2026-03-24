@@ -201,11 +201,11 @@ private fun NavbarPageCard(
                 Slider(
                     value = page.buttons.size.toFloat(),
                     onValueChange = { onButtonCountChange(it.toInt()) },
-                    valueRange = 5f..7f,
-                    steps = 1,
+                    valueRange = 5f..9f,
+                    steps = 3,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                 )
-                Text("7", style = MaterialTheme.typography.bodySmall)
+                Text("9", style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -235,7 +235,7 @@ private fun NavbarPageCard(
                         ) {
                             Text(
                                 text = actionShortLabel(btn.tapAction),
-                                fontSize = 9.sp,
+                                fontSize = 22.sp,
                                 textAlign = TextAlign.Center,
                                 color = if (btn.tapAction == NavbarAction.NONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                                         else MaterialTheme.colorScheme.onSurface,
@@ -246,7 +246,7 @@ private fun NavbarPageCard(
                         // Long action label
                         Text(
                             text = if (btn.longAction == NavbarAction.NONE) "—" else actionShortLabel(btn.longAction),
-                            fontSize = 8.sp,
+                            fontSize = 20.sp,
                             color = if (btn.longAction == NavbarAction.NONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                                     else MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center,
@@ -276,7 +276,10 @@ private fun ButtonEditorDialog(
     // Actions visible in picker (exclude internal-only actions)
     val visibleActions = remember {
         NavbarAction.entries.filter {
-            it != NavbarAction.FORCE_DELETE && it != NavbarAction.CREATE_FILE
+            it != NavbarAction.FORCE_DELETE && it != NavbarAction.CREATE_FILE &&
+            it != NavbarAction.SWITCH_PANEL && it != NavbarAction.ENTER_FOLDER &&
+            it != NavbarAction.CURSOR_LEFT && it != NavbarAction.CURSOR_RIGHT &&
+            it != NavbarAction.TOGGLE_SHIFT
         }
     }
 
@@ -331,6 +334,10 @@ private fun ButtonEditorDialog(
                         val action = visibleActions[index]
                         val isTap = tapAction == action
                         val isLong = longAction == action
+                        val isArrow = action in listOf(
+                            NavbarAction.ARROW_UP, NavbarAction.ARROW_DOWN,
+                            NavbarAction.ARROW_LEFT, NavbarAction.ARROW_RIGHT
+                        )
                         val isRadial = action in radialActions
 
                         Row(
@@ -363,7 +370,7 @@ private fun ButtonEditorDialog(
                                 )
                             )
                             // Long checkbox — hidden for radial actions (long is built-in)
-                            if (isRadial) {
+                            if (isRadial || isArrow) {
                                 Spacer(Modifier.size(36.dp))
                             } else {
                                 Checkbox(
@@ -432,4 +439,13 @@ private fun actionShortLabel(action: NavbarAction): String = when (action) {
     NavbarAction.CREATE_MENU -> "+📁"
     NavbarAction.FORCE_DELETE -> "💀"
     NavbarAction.CREATE_FILE -> "📄"
+    NavbarAction.ARROW_UP -> "▲"
+    NavbarAction.ARROW_DOWN -> "▼"
+    NavbarAction.ARROW_LEFT -> "◀"
+    NavbarAction.ARROW_RIGHT -> "▶"
+    NavbarAction.SWITCH_PANEL -> "⇅"
+    NavbarAction.ENTER_FOLDER -> "▶"
+    NavbarAction.CURSOR_LEFT -> "◁"
+    NavbarAction.CURSOR_RIGHT -> "▷"
+    NavbarAction.TOGGLE_SHIFT -> "⇧"
 }

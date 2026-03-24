@@ -36,6 +36,15 @@ enum class NavbarAction(val labelRes: Int, val iconName: String) {
     CREATE_MENU(R.string.navbar_action_create_menu, "create_menu"),
     FORCE_DELETE(R.string.navbar_action_delete, "force_delete"),
     CREATE_FILE(R.string.navbar_action_create, "create_file"),
+    ARROW_UP(R.string.navbar_action_arrow_up, "arrow_up"),
+    ARROW_DOWN(R.string.navbar_action_arrow_down, "arrow_down"),
+    ARROW_LEFT(R.string.navbar_action_arrow_left, "arrow_left"),
+    ARROW_RIGHT(R.string.navbar_action_arrow_right, "arrow_right"),
+    SWITCH_PANEL(R.string.navbar_action_switch_panel, "switch_panel"),
+    ENTER_FOLDER(R.string.navbar_action_arrow_right, "enter_folder"),
+    CURSOR_LEFT(R.string.navbar_action_arrow_left, "cursor_left"),
+    CURSOR_RIGHT(R.string.navbar_action_arrow_right, "cursor_right"),
+    TOGGLE_SHIFT(R.string.navbar_action_switch_panel, "toggle_shift"),
 }
 
 /**

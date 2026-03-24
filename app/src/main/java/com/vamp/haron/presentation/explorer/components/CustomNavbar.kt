@@ -32,6 +32,10 @@ import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -84,6 +88,7 @@ import kotlin.math.abs
 fun CustomNavbar(
     config: NavbarConfig,
     onAction: (NavbarAction) -> Unit,
+    shiftModeActive: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -171,12 +176,21 @@ fun CustomNavbar(
             ) {
                 for (btn in page.buttons) {
                     val hasTap = btn.tapAction != NavbarAction.NONE
-                    val hasLong = btn.longAction != NavbarAction.NONE
                     val isRadial = btn.tapAction in listOf(
                         NavbarAction.COPY_MOVE,
                         NavbarAction.DELETE_MENU,
                         NavbarAction.CREATE_MENU
                     )
+                    // Arrow keys have built-in long actions
+                    val arrowLong = when (btn.tapAction) {
+                        NavbarAction.ARROW_UP -> NavbarAction.SWITCH_PANEL
+                        NavbarAction.ARROW_DOWN -> NavbarAction.TOGGLE_SHIFT
+                        NavbarAction.ARROW_LEFT -> NavbarAction.UP // go up/parent
+                        NavbarAction.ARROW_RIGHT -> NavbarAction.ENTER_FOLDER
+                        else -> null
+                    }
+                    val effectiveLong = arrowLong ?: btn.longAction
+                    val hasLong = effectiveLong != NavbarAction.NONE
 
                     if (isRadial) {
                         NavbarRadialButton(
@@ -201,11 +215,16 @@ fun CustomNavbar(
                             onClick = { if (hasTap) onAction(btn.tapAction) }
                         )
                     } else {
+                        val isArrow = btn.tapAction in listOf(
+                            NavbarAction.ARROW_UP, NavbarAction.ARROW_DOWN,
+                            NavbarAction.ARROW_LEFT, NavbarAction.ARROW_RIGHT
+                        )
+                        val isShiftBtn = btn.tapAction == NavbarAction.ARROW_DOWN && shiftModeActive
                         NavbarHoldButton(
                             tapAction = btn.tapAction,
-                            longAction = btn.longAction,
+                            longAction = effectiveLong,
                             onTap = { if (hasTap) onAction(btn.tapAction) },
-                            onLongComplete = { onAction(btn.longAction) },
+                            onLongComplete = { onAction(effectiveLong) },
                             onCountdownStart = { action, pos ->
                                 countdownAction = action
                                 countdownPosInRoot = pos
@@ -213,7 +232,9 @@ fun CustomNavbar(
                                 countdownProgress = 0f
                             },
                             onCountdownProgress = { countdownProgress = it },
-                            onCountdownEnd = { showCountdown = false }
+                            onCountdownEnd = { showCountdown = false },
+                            holdDurationMs = if (isArrow) 1300L else 2600L,
+                            highlighted = isShiftBtn
                         )
                     }
                 }
@@ -390,7 +411,9 @@ private fun NavbarHoldButton(
     onLongComplete: () -> Unit,
     onCountdownStart: (NavbarAction, Offset) -> Unit,
     onCountdownProgress: (Float) -> Unit,
-    onCountdownEnd: () -> Unit
+    onCountdownEnd: () -> Unit,
+    holdDurationMs: Long = 2600L,
+    highlighted: Boolean = false
 ) {
     val context = LocalContext.current
     val customBmp = remember(tapAction) { loadCustomNavbarIcon(context, tapAction) }
@@ -399,15 +422,19 @@ private fun NavbarHoldButton(
     Box(
         modifier = Modifier
             .size(48.dp)
+            .then(if (highlighted) Modifier.background(
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                shape = CircleShape
+            ) else Modifier)
             .onGloballyPositioned { coords -> posInRoot = coords.positionInRoot() }
-            .pointerInput(Unit) {
+            .pointerInput(holdDurationMs) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startPos = down.position
                     val startTime = System.currentTimeMillis()
                     val tapThreshold = 500L
-                    val countdownDelay = 600L
-                    val duration = 2600L
+                    val countdownDelay = holdDurationMs * 600L / 2600L
+                    val duration = holdDurationMs
                     val slop = viewConfiguration.touchSlop
 
                     // Phase 1: detect quick tap (await UP directly, no polling)
@@ -630,6 +657,7 @@ private fun NavbarRadialButton(
     }
 }
 
+
 @Composable
 private fun actionTint(action: NavbarAction) = when (action) {
     NavbarAction.NONE -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
@@ -669,4 +697,13 @@ private fun actionIcon(action: NavbarAction): ImageVector = when (action) {
     NavbarAction.CREATE_MENU -> Icons.Filled.Add
     NavbarAction.FORCE_DELETE -> Icons.Filled.DeleteForever
     NavbarAction.CREATE_FILE -> Icons.Filled.InsertDriveFile
+    NavbarAction.ARROW_UP -> Icons.Filled.KeyboardArrowUp
+    NavbarAction.ARROW_DOWN -> Icons.Filled.KeyboardArrowDown
+    NavbarAction.ARROW_LEFT -> Icons.Filled.KeyboardArrowLeft
+    NavbarAction.ARROW_RIGHT -> Icons.Filled.KeyboardArrowRight
+    NavbarAction.SWITCH_PANEL -> Icons.Filled.SwapHoriz
+    NavbarAction.ENTER_FOLDER -> Icons.Filled.KeyboardArrowRight
+    NavbarAction.CURSOR_LEFT -> Icons.Filled.KeyboardArrowLeft
+    NavbarAction.CURSOR_RIGHT -> Icons.Filled.KeyboardArrowRight
+    NavbarAction.TOGGLE_SHIFT -> Icons.Filled.SelectAll
 }

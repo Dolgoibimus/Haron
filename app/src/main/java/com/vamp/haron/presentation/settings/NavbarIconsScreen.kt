@@ -98,7 +98,10 @@ fun NavbarIconsScreen(
     val actions = remember {
         NavbarAction.entries.filter {
             it != NavbarAction.NONE &&
-            it != NavbarAction.FORCE_DELETE && it != NavbarAction.CREATE_FILE
+            it != NavbarAction.FORCE_DELETE && it != NavbarAction.CREATE_FILE &&
+            it != NavbarAction.SWITCH_PANEL && it != NavbarAction.ENTER_FOLDER &&
+            it != NavbarAction.TOGGLE_SHIFT &&
+            it != NavbarAction.CURSOR_LEFT && it != NavbarAction.CURSOR_RIGHT
         }
     }
 

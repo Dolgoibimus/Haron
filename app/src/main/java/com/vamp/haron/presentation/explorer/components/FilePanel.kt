@@ -1435,7 +1435,7 @@ fun FilePanel(
                             if (state.renamingPath == entry.path) GridItemSpan(maxLineSpan)
                             else GridItemSpan(1)
                         }
-                    ) { _, entry ->
+                    ) { index, entry ->
                         val entryTagColors = fileTags[entry.path]
                             ?.mapNotNull { name -> tagDefinitions.find { it.name == name } }
                             ?.map { TagColors.palette.getOrElse(it.colorIndex) { TagColors.palette[0] } }
@@ -1461,7 +1461,8 @@ fun FilePanel(
                             archiveThumbnailCache = archiveThumbnailCache,
                             archivePath = state.archivePath,
                             archivePassword = state.archivePassword,
-                            thumbnailVersion = state.thumbnailVersion
+                            thumbnailVersion = state.thumbnailVersion,
+                            isFocused = state.focusedIndex == index
                         )
                     }
                 }

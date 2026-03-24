@@ -19,8 +19,8 @@ android {
         applicationId = "com.vamp.haron"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.4"
+        versionCode = 4
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

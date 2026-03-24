@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -196,7 +197,8 @@ private fun buildDocItems(paragraphs: List<DocParagraph>): List<DocItem> {
 fun DocumentViewerScreen(
     filePath: String,
     fileName: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToLibrary: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var docItems by remember { mutableStateOf<List<DocItem>?>(null) }
@@ -343,12 +345,16 @@ fun DocumentViewerScreen(
                     .padding(top = 4.dp)
                     .pointerInput(Unit) {
                         val slop = viewConfiguration.touchSlop
+                        val edgePx = 30.dp.toPx()
+                        val swipeThreshold = 80.dp.toPx()
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val wasConsumed = down.isConsumed
                             val startPos = down.position
+                            val isFromLeftEdge = startPos.x < edgePx
                             var wasPinch = false
                             var wasDrag = false
+                            var totalDx = 0f
                             do {
                                 val event = awaitPointerEvent()
                                 if (event.changes.size >= 2) {
@@ -364,10 +370,13 @@ fun DocumentViewerScreen(
                                             (pos.y - startPos.y).toDouble()
                                         )
                                         if (dist > slop) wasDrag = true
+                                        totalDx = pos.x - startPos.x
                                     }
                                 }
                             } while (event.changes.any { c -> c.pressed })
-                            if (!wasPinch && !wasDrag && !wasConsumed) {
+                            if (isFromLeftEdge && totalDx > swipeThreshold) {
+                                onBack()
+                            } else if (!wasPinch && !wasDrag && !wasConsumed) {
                                 showControls = !showControls
                                 micVisible = showControls
                             }
@@ -399,7 +408,9 @@ fun DocumentViewerScreen(
                                     cellVAligns = item.cellVAligns,
                                     hasBorders = item.hasBorders,
                                     cellBorders = item.cellBorders,
-                                    textScale = textScale
+                                    textScale = textScale,
+                                    textColor = textColor,
+                                    themeBgColor = bgColor
                                 )
                             }
                         }
@@ -432,6 +443,11 @@ fun DocumentViewerScreen(
                             color = textColor,
                             modifier = Modifier.weight(1f)
                         )
+                        if (onNavigateToLibrary != null) {
+                            IconButton(onClick = onNavigateToLibrary) {
+                                Icon(Icons.Filled.LibraryBooks, stringResource(R.string.navbar_action_library), tint = textColor)
+                            }
+                        }
                     }
                 }
 
@@ -585,15 +601,34 @@ private fun RichParagraph(paragraph: DocParagraph, textScale: Float, textColor: 
 
             val baseFontSize = if (span.fontSize > 0f) span.fontSize else baseStyle.fontSize.value
             val fontSize = (baseFontSize * textScale).sp
-            // Ignore document text color if it would be invisible on current theme background
+            // Smart contrast: handle both text color and background color from document
+            val themeBgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
+
+            // (logging removed)
+
+            // 1. Check document background (highlight) — ignore if it merges with theme background
+            val rawBg = if (span.highlightColor != 0L) Color(span.highlightColor.toInt()) else null
+            val bgColor = if (rawBg != null) {
+                val bgLum = rawBg.red * 0.299f + rawBg.green * 0.587f + rawBg.blue * 0.114f
+                if (kotlin.math.abs(bgLum - themeBgLum) > 0.4f) {
+                    // Clashes with theme — invert
+                    Color(1f - rawBg.red, 1f - rawBg.green, 1f - rawBg.blue, rawBg.alpha)
+                } else rawBg
+            } else Color.Unspecified
+
+            // 2. Check text color — compare against effective background (document bg if visible, else theme bg)
+            val effectiveBgForContrast = if (bgColor != Color.Unspecified) bgColor else themeBgColor
+            val effectiveBgLum = effectiveBgForContrast.red * 0.299f + effectiveBgForContrast.green * 0.587f + effectiveBgForContrast.blue * 0.114f
             val spanColor = if (span.textColor != 0L) {
                 val c = Color(span.textColor.toInt())
                 val cLum = c.red * 0.299f + c.green * 0.587f + c.blue * 0.114f
-                val bgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
-                // If contrast is too low — ignore document color
-                if (kotlin.math.abs(cLum - bgLum) > 0.3f) c else Color.Unspecified
+                if (kotlin.math.abs(cLum - effectiveBgLum) > 0.25f) {
+                    c // good contrast — keep original
+                } else {
+                    // Bad contrast — invert the color (mirror light↔dark)
+                    Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha)
+                }
             } else Color.Unspecified
-            val bgColor = if (span.highlightColor != 0L) Color(span.highlightColor.toInt()) else Color.Unspecified
 
             val baselineShift = when (span.verticalAlign) {
                 VerticalAlign.SUPERSCRIPT -> BaselineShift.Superscript
@@ -637,7 +672,13 @@ private fun RichParagraph(paragraph: DocParagraph, textScale: Float, textColor: 
 
         val indentStart = (paragraph.indentLeft * textScale).dp
         val bgMod = if (paragraph.backgroundColor != 0L) {
-            Modifier.background(Color(paragraph.backgroundColor.toInt()))
+            val paraBg = Color(paragraph.backgroundColor.toInt())
+            val paraBgLum = paraBg.red * 0.299f + paraBg.green * 0.587f + paraBg.blue * 0.114f
+            val tBgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
+            val effectiveParaBg = if (kotlin.math.abs(paraBgLum - tBgLum) > 0.4f) {
+                Color(1f - paraBg.red, 1f - paraBg.green, 1f - paraBg.blue, paraBg.alpha)
+            } else paraBg
+            Modifier.background(effectiveParaBg)
         } else Modifier
         val modifier = Modifier
             .fillMaxWidth()
@@ -685,10 +726,13 @@ private fun CompactTableRow(
     cellVAligns: List<String>? = null,
     hasBorders: Boolean = true,
     cellBorders: List<Int>? = null,
-    textScale: Float
+    textScale: Float,
+    textColor: Color = Color.Black,
+    themeBgColor: Color = Color.White
 ) {
     val context = LocalContext.current
-    val borderColor = Color(0xFFBDBDBD)
+    val themeBgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
+    val borderColor = if (themeBgLum < 0.5f) Color(0xFF555555) else Color(0xFFBDBDBD)
     val cellFontSize = (11f * textScale).sp
 
     Row(modifier = Modifier.fillMaxWidth()) {
@@ -724,8 +768,25 @@ private fun CompactTableRow(
                     if (span.strikethrough) decorations += TextDecoration.LineThrough
                     val decoration = if (decorations.isNotEmpty()) TextDecoration.combine(decorations) else TextDecoration.None
 
-                    val textColor = if (span.textColor != 0L) Color(span.textColor.toInt()) else Color.Unspecified
-                    val bgColor = if (span.highlightColor != 0L) Color(span.highlightColor.toInt()) else Color.Unspecified
+                    // Smart contrast for table cells (same logic as RichParagraph)
+                    val cellThemeBgLum = themeBgColor.red * 0.299f + themeBgColor.green * 0.587f + themeBgColor.blue * 0.114f
+                    val rawCellBg = if (span.highlightColor != 0L) Color(span.highlightColor.toInt()) else null
+                    val bgColor = if (rawCellBg != null) {
+                        val bgLum = rawCellBg.red * 0.299f + rawCellBg.green * 0.587f + rawCellBg.blue * 0.114f
+                        if (kotlin.math.abs(bgLum - cellThemeBgLum) > 0.4f) {
+                            // Clashes with theme — invert
+                            Color(1f - rawCellBg.red, 1f - rawCellBg.green, 1f - rawCellBg.blue, rawCellBg.alpha)
+                        } else rawCellBg
+                    } else Color.Unspecified
+                    val effectiveCellBg = if (bgColor != Color.Unspecified) bgColor else themeBgColor
+                    val effectiveCellBgLum = effectiveCellBg.red * 0.299f + effectiveCellBg.green * 0.587f + effectiveCellBg.blue * 0.114f
+                    val themeTextColor = textColor // outer textColor (theme color)
+                    val spanTextColor = if (span.textColor != 0L) {
+                        val c = Color(span.textColor.toInt())
+                        val cLum = c.red * 0.299f + c.green * 0.587f + c.blue * 0.114f
+                        if (kotlin.math.abs(cLum - effectiveCellBgLum) > 0.25f) c
+                        else Color(1f - c.red, 1f - c.green, 1f - c.blue, c.alpha)
+                    } else themeTextColor // no color from doc → use theme text color
 
                     if (span.hyperlink != null) pushStringAnnotation(tag = "URL", annotation = span.hyperlink)
 
@@ -735,7 +796,7 @@ private fun CompactTableRow(
                             fontStyle = if (span.italic) FontStyle.Italic else FontStyle.Normal,
                             textDecoration = decoration,
                             fontSize = if (span.fontSize > 0f) (span.fontSize * textScale).sp else cellFontSize,
-                            color = textColor,
+                            color = spanTextColor,
                             background = bgColor,
                             fontFamily = mapFontFamily(span.fontFamily)
                         )
@@ -749,17 +810,29 @@ private fun CompactTableRow(
 
             val hasLinks = cellSpans.any { it.hyperlink != null }
             val cellStyle = MaterialTheme.typography.bodySmall.copy(
-                color = Color.Black,
+                color = textColor,
                 fontSize = cellFontSize,
                 lineHeight = (cellFontSize.value * 1.2f).sp,
                 textAlign = textAlign
             )
 
-            val cellBgColor = cellBgs?.getOrNull(i)?.takeIf { it != 0L }
+            val rawCellBgColor = cellBgs?.getOrNull(i)?.takeIf { it != 0L }
+            // Smart contrast: invert cell background if it clashes with theme
+            val cellBgColor = if (rawCellBgColor != null) {
+                val cb = Color(rawCellBgColor.toInt())
+                val cbLum = cb.red * 0.299f + cb.green * 0.587f + cb.blue * 0.114f
+                if (kotlin.math.abs(cbLum - themeBgLum) > 0.4f) {
+                    // Clashes — invert the background color
+                    Color(1f - cb.red, 1f - cb.green, 1f - cb.blue, cb.alpha)
+                } else cb
+            } else null
+            // Effective cell background: explicit cellBg (inverted if needed), or theme bg for tables
+            val effectiveCellBg = cellBgColor ?: themeBgColor
             Box(
                 contentAlignment = boxAlign,
                 modifier = Modifier
                     .weight(combinedWeight)
+                    .background(effectiveCellBg)
                     .then(
                         when {
                             !hasBorders -> Modifier
@@ -777,10 +850,6 @@ private fun CompactTableRow(
                             }
                             else -> Modifier.border(0.5.dp, borderColor)
                         }
-                    )
-                    .then(
-                        if (cellBgColor != null) Modifier.background(Color(cellBgColor.toInt()))
-                        else Modifier
                     )
                     .padding(horizontal = 3.dp, vertical = 1.dp)
             ) {

@@ -1054,6 +1054,11 @@
     <string name="navbar_action_copy_move">Копировать / Переместить</string>
     <string name="navbar_action_delete_menu">Удалить (меню)</string>
     <string name="navbar_action_create_menu">Создать (меню)</string>
+    <string name="navbar_action_arrow_up">Курсор ↑</string>
+    <string name="navbar_action_arrow_down">Курсор ↓</string>
+    <string name="navbar_action_arrow_left">← Назад / Вверх</string>
+    <string name="navbar_action_arrow_right">→ Вперёд / Войти</string>
+    <string name="navbar_action_switch_panel">Сменить панель</string>
     <string name="navbar_settings_title">Настройки навбара</string>
     <string name="navbar_page_title">Страница %d</string>
     <string name="navbar_buttons_count">%d кнопок</string>
