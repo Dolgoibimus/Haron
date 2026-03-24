@@ -1548,4 +1548,20 @@
     <string name="player_dnd_vibration">Беззвучный режим (без вибрации)</string>
     <string name="player_tab_video">Видео</string>
     <string name="player_tab_audio">Аудио</string>
+    <string name="matrix_rain_title">Матричный дождь</string>
+    <string name="matrix_enabled">Включить матричный дождь</string>
+    <string name="matrix_mode">Режим</string>
+    <string name="matrix_mode_1">За контентом</string>
+    <string name="matrix_mode_2">Везде со свечением</string>
+    <string name="matrix_color">Цвет</string>
+    <string name="matrix_speed">Скорость</string>
+    <string name="matrix_density">Плотность</string>
+    <string name="matrix_opacity">Прозрачность</string>
+    <string name="matrix_charset">Набор символов</string>
+    <string name="matrix_charset_katakana">Катакана (カタカナ)</string>
+    <string name="matrix_charset_binary">Бинарный (01)</string>
+    <string name="matrix_charset_latin">Латиница (ABC)</string>
+    <string name="matrix_charset_cyrillic">Кириллица (АБВ)</string>
+    <string name="matrix_charset_mix">Микс</string>
+    <string name="matrix_only_charging">Только при зарядке</string>
 </resources>

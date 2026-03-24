@@ -89,6 +89,7 @@ fun CustomNavbar(
     config: NavbarConfig,
     onAction: (NavbarAction) -> Unit,
     shiftModeActive: Boolean = false,
+    transparentBackground: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -166,7 +167,7 @@ fun CustomNavbar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .background(if (transparentBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer)
         ) { pageIndex ->
             val page = config.pages.getOrNull(pageIndex) ?: return@HorizontalPager
             Row(

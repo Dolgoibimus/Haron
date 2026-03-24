@@ -1550,4 +1550,20 @@
     <string name="player_dnd_vibration">Silent mode (no vibration)</string>
     <string name="player_tab_video">Video</string>
     <string name="player_tab_audio">Audio</string>
+    <string name="matrix_rain_title">Matrix Rain</string>
+    <string name="matrix_enabled">Enable Matrix Rain</string>
+    <string name="matrix_mode">Mode</string>
+    <string name="matrix_mode_1">Behind content</string>
+    <string name="matrix_mode_2">Everywhere with glow</string>
+    <string name="matrix_color">Color</string>
+    <string name="matrix_speed">Speed</string>
+    <string name="matrix_density">Density</string>
+    <string name="matrix_opacity">Opacity</string>
+    <string name="matrix_charset">Character set</string>
+    <string name="matrix_charset_katakana">Katakana (カタカナ)</string>
+    <string name="matrix_charset_binary">Binary (01)</string>
+    <string name="matrix_charset_latin">Latin (ABC)</string>
+    <string name="matrix_charset_cyrillic">Cyrillic (АБВ)</string>
+    <string name="matrix_charset_mix">Mix</string>
+    <string name="matrix_only_charging">Only while charging</string>
 </resources>

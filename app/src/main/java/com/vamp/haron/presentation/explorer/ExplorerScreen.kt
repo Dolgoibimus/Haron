@@ -1211,9 +1211,11 @@ fun ExplorerScreen(
         }
 
         // Custom navbar (replaces system navbar)
+        val matrixPrefsForNavbar = remember { com.vamp.haron.data.datastore.HaronPreferences(context) }
         CustomNavbar(
             config = navbarConfig,
             shiftModeActive = activePanelState.shiftMode,
+            transparentBackground = matrixPrefsForNavbar.matrixEnabled,
             onAction = { action ->
                 val panelId = state.activePanel
                 when (action) {

@@ -7,7 +7,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -96,6 +101,7 @@ object HaronRoutes {
     const val LIBRARY_SETTINGS = "library_settings"
     const val NAVBAR_SETTINGS = "navbar_settings"
     const val NAVBAR_ICONS = "navbar_icons"
+    const val MATRIX_SETTINGS = "matrix_settings"
     const val LOGS = "logs"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
@@ -357,10 +363,48 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         }
     }
 
+    // Matrix Rain animation — reactive config via SharedPreferences listener
+    val matrixPrefs = remember { com.vamp.haron.data.datastore.HaronPreferences(context) }
+    fun readMatrixConfig(): com.vamp.haron.presentation.matrix.MatrixRainConfig {
+        val isCharging = if (matrixPrefs.matrixOnlyCharging) {
+            val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            bm?.isCharging ?: false
+        } else true
+        return com.vamp.haron.presentation.matrix.MatrixRainConfig(
+            enabled = matrixPrefs.matrixEnabled && isCharging,
+            mode = matrixPrefs.matrixMode,
+            color = androidx.compose.ui.graphics.Color(matrixPrefs.matrixColor.toInt() or 0xFF000000.toInt()),
+            speed = matrixPrefs.matrixSpeed,
+            density = matrixPrefs.matrixDensity,
+            opacity = matrixPrefs.matrixOpacity,
+            charset = matrixPrefs.matrixCharset,
+            onlyCharging = matrixPrefs.matrixOnlyCharging
+        )
+    }
+    var matrixConfig by remember { mutableStateOf(readMatrixConfig()) }
+    // React to any SharedPreferences change (instant update from settings)
+    DisposableEffect(Unit) {
+        val sharedPrefs = context.getSharedPreferences(
+            com.vamp.haron.common.constants.HaronConstants.PREFS_NAME,
+            android.content.Context.MODE_PRIVATE
+        )
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key?.startsWith("matrix_") == true) {
+                matrixConfig = readMatrixConfig()
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    val matrixExcludedRoutes = remember { setOf("pdf_reader", "document_viewer", "media_player") }
+    val matrixCurrentRoute = navController.currentBackStackEntry?.destination?.route?.substringBefore("?")
+    val matrixShow = matrixConfig.enabled && matrixCurrentRoute !in matrixExcludedRoutes
+
+    Box(modifier = modifier) {
     NavHost(
         navController = navController,
-        startDestination = startDestination,
-        modifier = modifier
+        startDestination = startDestination
     ) {
         composable(HaronRoutes.PERMISSION) {
             PermissionScreen(
@@ -454,6 +498,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onBack = { navController.popBackStack() },
                 onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
                 onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
+                onOpenMatrixSettings = { navController.navigate(HaronRoutes.MATRIX_SETTINGS) },
                 onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
             )
         }
@@ -714,7 +759,21 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(HaronRoutes.MATRIX_SETTINGS) {
+            com.vamp.haron.presentation.matrix.MatrixSettingsScreen(
+                prefs = matrixPrefs,
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
+    // Matrix canvas on top of content
+    if (matrixShow) {
+        com.vamp.haron.presentation.matrix.MatrixRainCanvas(
+            config = matrixConfig.copy(enabled = true),
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+    } // Box
 }
 
 private fun saveReceivedFilesToDownloads(context: android.content.Context, files: List<ReceivedFile>) {

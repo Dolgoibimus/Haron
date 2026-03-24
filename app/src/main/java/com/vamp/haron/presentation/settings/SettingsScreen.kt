@@ -66,6 +66,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenGesturesVoice: () -> Unit = {},
     onOpenNavbarSettings: () -> Unit = {},
+    onOpenMatrixSettings: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -579,6 +580,15 @@ fun SettingsScreen(
                 Icon(Icons.Filled.Tune, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.navbar_settings_title))
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenMatrixSettings,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.BugReport, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.matrix_rain_title))
             }
 
             Spacer(Modifier.height(16.dp))

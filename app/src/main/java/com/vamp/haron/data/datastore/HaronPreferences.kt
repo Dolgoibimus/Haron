@@ -752,7 +752,49 @@ class HaronPreferences @Inject constructor(
         const val KEY_TRANSCODE_CACHE_TTL_HOURS = "transcode_cache_ttl_hours"
         const val KEY_ARCHIVE_THUMB_CACHE_SIZE_MB = "archive_thumb_cache_size_mb"
         const val KEY_LIBRARY_GRID_COLUMNS = "library_grid_columns"
+        const val KEY_MATRIX_ENABLED = "matrix_enabled"
+        const val KEY_MATRIX_MODE = "matrix_mode"
+        const val KEY_MATRIX_COLOR = "matrix_color"
+        const val KEY_MATRIX_SPEED = "matrix_speed"
+        const val KEY_MATRIX_DENSITY = "matrix_density"
+        const val KEY_MATRIX_OPACITY = "matrix_opacity"
+        const val KEY_MATRIX_CHARSET = "matrix_charset"
+        const val KEY_MATRIX_ONLY_CHARGING = "matrix_only_charging"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }
+
+    // --- Matrix Rain ---
+
+    var matrixEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MATRIX_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_MATRIX_ENABLED, value).apply()
+
+    var matrixMode: Int
+        get() = prefs.getInt(KEY_MATRIX_MODE, 1)
+        set(value) = prefs.edit().putInt(KEY_MATRIX_MODE, value).apply()
+
+    var matrixColor: Long
+        get() = prefs.getLong(KEY_MATRIX_COLOR, 0xFF00FF00L)
+        set(value) = prefs.edit().putLong(KEY_MATRIX_COLOR, value).apply()
+
+    var matrixSpeed: Float
+        get() = prefs.getFloat(KEY_MATRIX_SPEED, 1f)
+        set(value) = prefs.edit().putFloat(KEY_MATRIX_SPEED, value).apply()
+
+    var matrixDensity: Float
+        get() = prefs.getFloat(KEY_MATRIX_DENSITY, 0.6f)
+        set(value) = prefs.edit().putFloat(KEY_MATRIX_DENSITY, value).apply()
+
+    var matrixOpacity: Float
+        get() = prefs.getFloat(KEY_MATRIX_OPACITY, 0.5f)
+        set(value) = prefs.edit().putFloat(KEY_MATRIX_OPACITY, value).apply()
+
+    var matrixCharset: String
+        get() = prefs.getString(KEY_MATRIX_CHARSET, "katakana") ?: "katakana"
+        set(value) = prefs.edit().putString(KEY_MATRIX_CHARSET, value).apply()
+
+    var matrixOnlyCharging: Boolean
+        get() = prefs.getBoolean(KEY_MATRIX_ONLY_CHARGING, false)
+        set(value) = prefs.edit().putBoolean(KEY_MATRIX_ONLY_CHARGING, value).apply()
 }
