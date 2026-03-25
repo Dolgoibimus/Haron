@@ -1,5 +1,6 @@
 package com.vamp.haron.domain.usecase
 
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.model.SortDirection
 import com.vamp.haron.data.model.SortField
@@ -22,6 +23,7 @@ class GetFilesUseCase @Inject constructor(
     ): Result<List<FileEntry>> {
         // Virtual secure path — show only top-level protected entries
         if (path == HaronConstants.VIRTUAL_SECURE_PATH) {
+            EcosystemLogger.d(HaronConstants.TAG, "GetFiles: virtual secure path")
             return try {
                 val allEntries = secureFolderRepository.getAllProtectedEntries()
                 // Collect paths of all protected directories
@@ -45,6 +47,7 @@ class GetFilesUseCase @Inject constructor(
 
         // Protected directory (dir itself is in the secure index — was deleted when protected)
         if (showProtected && secureFolderRepository.isFileProtected(path)) {
+            EcosystemLogger.d(HaronConstants.TAG, "GetFiles: protected directory $path")
             return buildProtectedDirListing(path, sortOrder)
         }
 
@@ -72,6 +75,7 @@ class GetFilesUseCase @Inject constructor(
 
         // getFiles failed (dir doesn't exist) — check if virtual protected subdirectory
         if (showProtected && secureFolderRepository.hasProtectedDescendants(path)) {
+            EcosystemLogger.d(HaronConstants.TAG, "GetFiles: virtual protected subdirectory $path")
             return buildProtectedDirListing(path, sortOrder)
         }
 

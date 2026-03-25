@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import java.io.File
 import javax.inject.Inject
 
@@ -19,6 +21,7 @@ class GetInstalledAppsUseCase @Inject constructor(
 ) {
     @Suppress("DEPRECATION")
     operator fun invoke(): Flow<List<InstalledAppInfo>> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "GetInstalledApps: start scanning")
         val pm = context.packageManager
         val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
         val result = mutableListOf<InstalledAppInfo>()
@@ -63,6 +66,7 @@ class GetInstalledAppsUseCase @Inject constructor(
             }
         }
         // Final emit
+        EcosystemLogger.d(HaronConstants.TAG, "GetInstalledApps: done, found ${result.size} apps")
         emit(result.toList())
     }.flowOn(Dispatchers.IO)
 }

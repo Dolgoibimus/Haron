@@ -9,6 +9,8 @@ import android.provider.MediaStore
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.service.FileIndexWorker
 
 class FileContentObserver(
@@ -23,6 +25,7 @@ class FileContentObserver(
         // Debounce: at most once per 30 seconds to avoid constant re-indexing
         if (now - lastTriggerTime < 30_000) return
         lastTriggerTime = now
+        EcosystemLogger.d(HaronConstants.TAG, "FileContentObserver: MediaStore changed, triggering re-index")
 
         val request = OneTimeWorkRequestBuilder<FileIndexWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(

@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.service.FileIndexWorker
 
 class ScreenOnReceiver : BroadcastReceiver() {
@@ -20,6 +22,7 @@ class ScreenOnReceiver : BroadcastReceiver() {
         // Throttle: re-index at most once per 30 minutes on screen on
         if (now - lastIndexTime < 30 * 60 * 1000L) return
         lastIndexTime = now
+        EcosystemLogger.d(HaronConstants.TAG, "ScreenOnReceiver: screen on, triggering re-index")
 
         val request = OneTimeWorkRequestBuilder<FileIndexWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(

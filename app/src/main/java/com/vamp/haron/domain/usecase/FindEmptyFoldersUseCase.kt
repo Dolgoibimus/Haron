@@ -1,5 +1,7 @@
 package com.vamp.haron.domain.usecase
 
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -10,6 +12,7 @@ import javax.inject.Inject
 class FindEmptyFoldersUseCase @Inject constructor() {
 
     operator fun invoke(rootPath: String, recursive: Boolean): Flow<List<String>> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "FindEmptyFolders: root=$rootPath, recursive=$recursive")
         val root = File(rootPath)
         if (!root.isDirectory) {
             emit(emptyList())
@@ -34,6 +37,7 @@ class FindEmptyFoldersUseCase @Inject constructor() {
                     }
                 }
         }
+        EcosystemLogger.d(HaronConstants.TAG, "FindEmptyFolders: found ${result.size} empty folders")
         emit(result.sorted())
     }.flowOn(Dispatchers.IO)
 

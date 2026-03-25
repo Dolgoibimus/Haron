@@ -1,14 +1,15 @@
 package com.vamp.haron.domain.usecase
 
 import android.content.Context
+import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import java.io.File
-import java.io.InputStream
 import java.security.MessageDigest
 import java.util.zip.CRC32
 import javax.inject.Inject
@@ -26,8 +27,10 @@ class CalculateHashUseCase @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     operator fun invoke(path: String): Flow<HashResult> = flow {
+        EcosystemLogger.d(HaronConstants.TAG, "CalculateHash: start path=$path")
         val file = File(path)
         if (!file.exists() || !file.isFile) {
+            EcosystemLogger.e(HaronConstants.TAG, "CalculateHash: file not found or not a file: $path")
             val err = context.getString(R.string.hash_error)
             emit(HashResult(crc32 = err, md5 = err, sha1 = err, sha256 = err, sha512 = err, progress = 1f))
             return@flow
@@ -80,41 +83,7 @@ class CalculateHashUseCase @Inject constructor(
         val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
         val sha512Hex = sha512Digest.digest().joinToString("") { "%02x".format(it) }
 
-        emit(HashResult(crc32 = crc32Hex, md5 = md5Hex, sha1 = sha1Hex, sha256 = sha256Hex, sha512 = sha512Hex, progress = 1f))
-    }.flowOn(Dispatchers.IO)
-
-    fun invokeFromUri(uri: android.net.Uri): Flow<HashResult> = flow {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-        if (inputStream == null) {
-            val err = context.getString(R.string.hash_error)
-            emit(HashResult(crc32 = err, md5 = err, sha1 = err, sha256 = err, sha512 = err, progress = 1f))
-            return@flow
-        }
-
-        val crc32 = CRC32()
-        val md5Digest = MessageDigest.getInstance("MD5")
-        val sha1Digest = MessageDigest.getInstance("SHA-1")
-        val sha256Digest = MessageDigest.getInstance("SHA-256")
-        val sha512Digest = MessageDigest.getInstance("SHA-512")
-
-        val buffer = ByteArray(8192)
-        inputStream.buffered().use { input ->
-            var read: Int
-            while (input.read(buffer).also { read = it } != -1) {
-                crc32.update(buffer, 0, read)
-                md5Digest.update(buffer, 0, read)
-                sha1Digest.update(buffer, 0, read)
-                sha256Digest.update(buffer, 0, read)
-                sha512Digest.update(buffer, 0, read)
-            }
-        }
-
-        val crc32Hex = "%08x".format(crc32.value)
-        val md5Hex = md5Digest.digest().joinToString("") { "%02x".format(it) }
-        val sha1Hex = sha1Digest.digest().joinToString("") { "%02x".format(it) }
-        val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
-        val sha512Hex = sha512Digest.digest().joinToString("") { "%02x".format(it) }
-
+        EcosystemLogger.d(HaronConstants.TAG, "CalculateHash: done path=$path, size=${file.length()}")
         emit(HashResult(crc32 = crc32Hex, md5 = md5Hex, sha1 = sha1Hex, sha256 = sha256Hex, sha512 = sha512Hex, progress = 1f))
     }.flowOn(Dispatchers.IO)
 }

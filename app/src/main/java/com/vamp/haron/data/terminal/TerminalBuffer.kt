@@ -1,9 +1,9 @@
 package com.vamp.haron.data.terminal
 
-import android.util.Log
 import androidx.compose.ui.graphics.Color
+import com.vamp.core.logger.EcosystemLogger
 
-private const val TLOG = "TermBuf"
+private const val TLOG = "Haron/TermBuf"
 
 private val DEFAULT_FG = Color(0xFFD4D4D4)
 private val DEFAULT_BG = Color.Transparent
@@ -151,7 +151,7 @@ class TerminalBuffer(
         if (displayWidth <= 0) return // combining/zero-width — skip for now
         // Log non-space chars to trace where text lands
         if (ch != ' ' && ch.code >= 33) {
-            Log.d(TLOG, "PUT '$ch'(U+${ch.code.toString(16).uppercase()}) @$cursorRow,$cursorCol w=$displayWidth")
+            EcosystemLogger.d(TLOG, "PUT '$ch'(U+${ch.code.toString(16).uppercase()}) @$cursorRow,$cursorCol w=$displayWidth")
         }
 
         val cursorInLastCol = cursorCol >= cols - 1
@@ -325,14 +325,14 @@ class TerminalBuffer(
         aboutToAutoWrap = false
 
         when (finalChar) {
-            'A' -> { val old = cursorRow; cursorRow = maxOf(0, cursorRow - maxOf(1, p1)); Log.d(TLOG, "CUU($p1) row:$old→$cursorRow col:$cursorCol") }
-            'B' -> { val old = cursorRow; cursorRow = minOf(rows - 1, cursorRow + maxOf(1, p1)); Log.d(TLOG, "CUD($p1) row:$old→$cursorRow col:$cursorCol") }
-            'C' -> { val old = cursorCol; cursorCol = minOf(cols - 1, cursorCol + maxOf(1, p1)); Log.d(TLOG, "CUF($p1) col:$old→$cursorCol row:$cursorRow") }
+            'A' -> { val old = cursorRow; cursorRow = maxOf(0, cursorRow - maxOf(1, p1)); EcosystemLogger.d(TLOG, "CUU($p1) row:$old→$cursorRow col:$cursorCol") }
+            'B' -> { val old = cursorRow; cursorRow = minOf(rows - 1, cursorRow + maxOf(1, p1)); EcosystemLogger.d(TLOG, "CUD($p1) row:$old→$cursorRow col:$cursorCol") }
+            'C' -> { val old = cursorCol; cursorCol = minOf(cols - 1, cursorCol + maxOf(1, p1)); EcosystemLogger.d(TLOG, "CUF($p1) col:$old→$cursorCol row:$cursorRow") }
             'D' -> cursorCol = maxOf(0, cursorCol - maxOf(1, p1))
             'E' -> { cursorCol = 0; cursorRow = minOf(rows - 1, cursorRow + maxOf(1, p1)) }
             'F' -> { cursorCol = 0; cursorRow = maxOf(0, cursorRow - maxOf(1, p1)) }
-            'G' -> { val old = cursorCol; cursorCol = (if (p1 > 0) p1 - 1 else 0).coerceIn(0, cols - 1); Log.d(TLOG, "CHA($p1) col:$old→$cursorCol row:$cursorRow") }
-            'H', 'f' -> { val oldR = cursorRow; val oldC = cursorCol; setCursorPosition(p1, p2); Log.d(TLOG, "CUP($p1,$p2) $oldR,$oldC→$cursorRow,$cursorCol") }
+            'G' -> { val old = cursorCol; cursorCol = (if (p1 > 0) p1 - 1 else 0).coerceIn(0, cols - 1); EcosystemLogger.d(TLOG, "CHA($p1) col:$old→$cursorCol row:$cursorRow") }
+            'H', 'f' -> { val oldR = cursorRow; val oldC = cursorCol; setCursorPosition(p1, p2); EcosystemLogger.d(TLOG, "CUP($p1,$p2) $oldR,$oldC→$cursorRow,$cursorCol") }
             'J' -> {
                 when (p1) {
                     0 -> eraseFromCursorToEnd()
