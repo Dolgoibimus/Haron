@@ -139,7 +139,7 @@
   > Copy, move, delete, archive, extract — all run in a background service
   > You can swipe Haron away from recent apps — the operation will continue until complete
   > Notification shade: progress bar + current file name + cancel button
-- Progress bar at bottom of screen [NEW]
+- Progress bar at bottom of screen
   > Collapsed by default into a thin strip — visible but doesn't block your work
   > Tap the strip → expands to show: file name, speed, percentage, cancel button
   > Automatically collapses when a new operation starts
@@ -226,18 +226,18 @@
 - Seekbar + ±10s rewind
   > Tap left zone → rewind 10s, tap right zone → forward 10s, tap center → play/pause
 - Position saved between sessions
-- Player settings: separate tabs for video and audio [NEW]
+- Player settings: separate tabs for video and audio
   > Tap gear icon (⚙) in player header → fullscreen settings overlay
   > Video and Audio tabs with independent DND settings
-- Do Not Disturb mode: block notifications during playback with fine-grained control [NEW]
+- Do Not Disturb mode: block notifications during playback with fine-grained control
   > Choose what to allow: calls, messages, alarms, repeat callers
   > Choose who can reach you: no one, starred contacts, all contacts, anyone
   > Block visual effects: pop-ups, status bar, screen wake
   > Silent mode: disable vibration during playback
 ## Video
 - Fullscreen, immersive mode
-- Hardware video acceleration (MediaCodec) — smooth playback of large MKV files (7GB+) [NEW]
-- Swipe gestures: brightness (left half), volume (right half), back (left edge) [NEW]
+- Hardware video acceleration (MediaCodec) — smooth playback of large MKV files (7GB+)
+- Swipe gestures: brightness (left half), volume (right half), back (left edge)
   > Swipe up/down on left half of screen → adjust brightness (0–100)
   > Swipe up/down on right half → adjust volume (0–100)
   > Swipe right from left edge → exit player
@@ -310,7 +310,7 @@
   > Tap pulsing icon → choose destination: next to archive / current panel / other panel
   > Each archive extracts into a subfolder with its name (created automatically)
   > Works with single or multiple archives at once
-- Archive "1 to 1" [NEW]
+- Archive "1 to 1"
   > Select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
   > Voice: "archive" / "zip"
 
@@ -319,14 +319,14 @@
   > How to open: tap a text/code file, or via preview → "Editor"
   > Opens in view mode by default (read-only) — to avoid accidental edits
   > Tap pencil icon (✏) → switch to edit mode
-- Syntax highlighting for 30+ languages [NEW]
+- Syntax highlighting for 30+ languages
   > Kotlin, Java, Python, JS, HTML, CSS, JSON, XML, SQL, C/C++, Go, Rust, PHP, Ruby, Swift, etc.
   > Language detected automatically by file extension
-- 11 color themes [NEW]
+- 11 color themes
   > Darcula, Dracula, Monokai, Nord, One Dark Pro, GitHub Dark/Light, Tokyo Night, Solarized Dark/Light, Quiet Light
-- Theme picker in editor toolbar [NEW]
+- Theme picker in editor toolbar
   > Tap palette icon (🎨) in editor header → theme list → tap a theme → applied instantly
-- Line numbers [NEW]
+- Line numbers
   > Displayed to the left of the text — useful for code navigation
 - View mode (default) and edit mode
   > View (default): text can be scrolled and copied, but not changed
@@ -338,7 +338,7 @@
   > If there are unsaved changes and you press "Back" — dialog: "Save / Cancel / Discard"
 - Cursor position saved between sessions
   > Close a file and open it later — cursor stays at the same position
-- Large files (600KB+) open in Sora Editor without freezing [NEW]
+- Large files (600KB+) open in Sora Editor without freezing
 
 # File Properties
 - Name, path, size, date, MIME-type, permissions
@@ -508,12 +508,12 @@
   >   Tab "Haron": one QR — second Haron scans, auto-connects to hotspot and downloads
   >   Tab "Others": two QR codes — first to connect to Wi-Fi, second to download in browser
   > Hotspot is temporary — turns off automatically when dialog is closed
-- QR transfer — two modes (tap QR to switch) [NEW]
-  > Wi-Fi mode (both devices on same network): QR with download link [NEW]
-  > Hotspot mode (different networks or no Wi-Fi): [NEW]
-  > Tab "Haron": one QR — second Haron scans, auto-connects and downloads [NEW]
-  > Tab "Others": two QRs for any device — first for Wi-Fi connection, second for download link [NEW]
-  > Temporary hotspot, turns off automatically when dialog closes [NEW]
+- QR transfer — two modes (tap QR to switch)
+  > Wi-Fi mode (both devices on same network): QR with download link
+  > Hotspot mode (different networks or no Wi-Fi):
+  > Tab "Haron": one QR — second Haron scans, auto-connects and downloads
+  > Tab "Others": two QRs for any device — first for Wi-Fi connection, second for download link
+  > Temporary hotspot, turns off automatically when dialog closes
 - Progress, resume, retry on disconnect
   > Progress bar with percentage and speed
   > Auto-retry on connection drop
@@ -529,12 +529,15 @@
   > Browse shared folders in dual-panel mode — just like local files
   > Upload and download files with progress bar
   > Saved connections with encrypted credentials
-  > Server nicknames: rename saved servers for easy identification [NEW]
-  > Guest connections saved automatically with "(Guest)" label [NEW]
-- Network media streaming [NEW]
+  > Server nicknames: rename saved servers for easy identification
+  > Guest connections saved automatically with "(Guest)" label
+- Network media streaming
   > Tap a video or audio file on FTP/SMB/WebDAV/SFTP → plays instantly without downloading
+  > Cloud (Yandex, Google Drive, Dropbox) — streaming via HTTP proxy
   > Full playlist: all media files in the folder are added to the playlist
-  > Supports FTP, FTPS, SFTP, SMB, WebDAV protocols
+  > FTP/SFTP: HTTP proxy bypasses VLC bug with cyrillic paths
+  > SMB: direct streaming via smb:// protocol
+  > WebDAV: direct streaming via http/https
 - FTP client
   > Side Menu → Transfer → FTP
   > Connect to remote FTP servers by address, login and password
@@ -542,23 +545,23 @@
   > Dual-panel mode: FTP files on top, local files on bottom
   > FTPS (TLS) support for secure connections
   > Saved connections with encrypted credentials
-  > Server nicknames and anonymous auto-save [NEW]
-  > Full UTF-8 support: Cyrillic filenames display correctly [NEW]
+  > Server nicknames and anonymous auto-save
+  > Full UTF-8 support: Cyrillic filenames display correctly
 - Built-in FTP server
   > Side Menu → Transfer → FTP Server → Start
   > Shares phone files to a computer — open ftp://IP:port in a browser or FTP client on your PC
   > Anonymous or password-protected access
   > Read-only mode — download allowed, upload blocked
-- FTP client [NEW]
-  > Connect to remote FTP servers [NEW]
-  > Browse, download, upload files with progress [NEW]
-  > Two-panel mode: FTP files on top, local on bottom [NEW]
-  > FTPS (TLS) support [NEW]
-  > Saved FTP connections (encrypted credentials) [NEW]
-- FTP server [NEW]
-  > Share phone files to PC [NEW]
-  > Anonymous or password access [NEW]
-  > Read-only mode [NEW]
+- FTP client
+  > Connect to remote FTP servers
+  > Browse, download, upload files with progress
+  > Two-panel mode: FTP files on top, local on bottom
+  > FTPS (TLS) support
+  > Saved FTP connections (encrypted credentials)
+- FTP server
+  > Share phone files to PC
+  > Anonymous or password access
+  > Read-only mode
 
 # TV
 - Chromecast, Miracast, DLNA support
@@ -578,7 +581,7 @@
   > Cache: previously transcoded files play instantly on repeat cast
 - Automatic audio fallback
   > If the TV doesn't support the audio codec (AC3/DTS) — audio track is converted automatically
-- Background playback [NEW]
+- Background playback
   > Cast continues when the phone screen is turned off
   > Transcoding also continues in background — no need to keep the screen on
   > Wi-Fi stays active via WifiLock, CPU stays active via WakeLock
@@ -586,28 +589,28 @@
   > Touchpad mode: phone = touchpad for TV. Finger movement = cursor, tap = click, long tap = right click, two-finger swipe = scroll
   > Virtual keyboard: type on your phone — text appears on the TV screen (Latin + Cyrillic)
   > How to connect: pair TV via Bluetooth → in Haron: Transfer → BT HID → select device
-- Bluetooth HID remote [NEW]
-  > Touchpad mode: cursor movement on TV, tap, long tap, scroll [NEW]
-  > Virtual keyboard: text input on TV screen (Latin + Cyrillic) [NEW]
-  > Connect to paired Bluetooth devices [NEW]
+- Bluetooth HID remote
+  > Touchpad mode: cursor movement on TV, tap, long tap, scroll
+  > Virtual keyboard: text input on TV screen (Latin + Cyrillic)
+  > Connect to paired Bluetooth devices
 
 # Terminal
-- Built-in terminal [NEW]
+- Built-in terminal
   > Single window, direct keyboard input
   > Tap on terminal to show keyboard
   > DejaVu Sans Mono font with full Unicode support
-- Persistent shell with real PTY [NEW]
+- Persistent shell with real PTY
   > Single bash process stays alive — export, alias, cd persist between commands
   > Real PTY (pseudoterminal) via native JNI
   > Ctrl+C instantly interrupts commands (real SIGINT through PTY)
-- Fullscreen apps: vi, nano, htop, Claude Code [NEW]
+- Fullscreen apps: vi, nano, htop, Claude Code
   > Full VT100/xterm emulation: alternate screen buffer, scroll regions, cursor positioning
   > vi, nano, htop, less, Claude Code — all work correctly
   > Cursor save/restore, origin mode, auto-wrap mode
 - Color output (16/256/RGB)
   > Full ANSI support: colors, cursor positioning, screen clear, line insert/delete
   > Bold, italic, underline, reverse video
-- SSH connection [NEW]
+- SSH connection
   > SSH button in header → connection dialog (host, user, port, password)
   > Password encrypted with AES-256, can be saved
   > Keepalive every 30s — session won't drop on idle
@@ -617,7 +620,7 @@
   > Esc, Tab, ^C, ^D, ^Z, ^L, Paste, ↑↓←→, Home, End
   > Symbols: ~ / | > < & ; " ' . - _
   > Works in local shell and SSH
-- Command history [NEW]
+- Command history
   > Long tap ↑ — sliding list of recent commands (up to 200)
   > Tap command — inserts into terminal
   > Delete button (✕) next to each command
@@ -645,7 +648,7 @@
   > Clickable breadcrumbs for cloud folder navigation
   > File count displayed for each cloud folder
   > Quick Preview: tap icon → preview with large thumbnail (no download needed)
-- Cloud gallery [NEW]
+- Cloud gallery
   > Tap an image → fullscreen viewing straight from the cloud without downloading
   > Swipe left/right — browse photos in the cloud folder
 - Streaming media from cloud
@@ -653,7 +656,7 @@
   > File streams as you watch/listen
 - Edit text from cloud
   > Open a text file from cloud → edit → on save: three options — to cloud, locally, or both
-- Download and upload [NEW]
+- Download and upload
   > Download: select cloud files/folders → Copy → paste into a local folder
   > Upload: select local files/folders → Copy → paste into a cloud folder
   > Recursive: entire folder structure is preserved
@@ -665,8 +668,8 @@
 - Cloud file management
   > Rename, delete, create folders — directly in the cloud
   > Delete from preview — no need to go back to the panel
-- Reliable upload: 8-10MB chunks with auto-retry on network loss [NEW]
-- Parallel transfers with individual cancel for each [NEW]
+- Reliable upload: 8-10MB chunks with auto-retry on network loss
+- Parallel transfers with individual cancel for each
 
 # Gestures & Voice
 - 4 customizable edge swipes
@@ -740,80 +743,80 @@
   - Refresh cache: обнови кэш, обнови голосовой кэш / refresh cache
   - Secure folder: защищённые, защита, сейф / secure, protected
 
-# Library [NEW]
-- Three tabs: FB2/EPUB, PDF, Other [NEW]
-  > How to open: Side Menu → Library, or voice "library" [NEW]
-  > FB2/EPUB tab — books with covers, author, title [NEW]
-  > PDF tab — grouped by folders (folder name + path header) [NEW]
-  > Other tab — DOC, DOCX, ODT, RTF, XLSX, XLS, CSV — also grouped by folders [NEW]
-- Tap to open book in reader [NEW]
-  > FB2/EPUB → Document Reader, PDF → PDF Reader [NEW]
-- Info button on cover [NEW]
-  > Shows metadata: author, title, format, size, path [NEW]
-- Cover cache on disk [NEW]
-  > Covers saved to filesDir/book_covers/ (WEBP), auto-synced with database [NEW]
-- Grid columns per tab (saved per tab) [NEW]
-- Rescan button in top bar [NEW]
-- Excluded folders — folders you mark as excluded are never scanned [NEW]
-- Removed folders — once removed, they don't come back after rescan [NEW]
+# Library
+- Three tabs: FB2/EPUB, PDF, Other
+  > How to open: Side Menu → Library, or voice "library"
+  > FB2/EPUB tab — books with covers, author, title
+  > PDF tab — grouped by folders (folder name + path header)
+  > Other tab — DOC, DOCX, ODT, RTF, XLSX, XLS, CSV — also grouped by folders
+- Tap to open book in reader
+  > FB2/EPUB → Document Reader, PDF → PDF Reader
+- Info button on cover
+  > Shows metadata: author, title, format, size, path
+- Cover cache on disk
+  > Covers saved to filesDir/book_covers/ (WEBP), auto-synced with database
+- Grid columns per tab (saved per tab)
+- Rescan button in top bar
+- Excluded folders — folders you mark as excluded are never scanned
+- Removed folders — once removed, they don't come back after rescan
 
-# Document Reader — Fullscreen & Themes [NEW]
-- Fullscreen reading mode [NEW]
-  > Text fills entire screen (no toolbar) [NEW]
-  > Tap center → overlay: back button + file name (top), themes + progress slider (bottom) [NEW]
-- 4 themes: Auto, Light, Sepia, Dark [NEW]
-  > Buttons in overlay (42dp), switch instantly [NEW]
-  > Smart color contrast: if document text color merges with theme background — ignored [NEW]
-- Progress slider [NEW]
-  > Shows reading position, drag to jump [NEW]
+# Document Reader — Fullscreen & Themes
+- Fullscreen reading mode
+  > Text fills entire screen (no toolbar)
+  > Tap center → overlay: back button + file name (top), themes + progress slider (bottom)
+- 4 themes: Auto, Light, Sepia, Dark
+  > Buttons in overlay (42dp), switch instantly
+  > Smart color contrast: if document text color merges with theme background — ignored
+- Progress slider
+  > Shows reading position, drag to jump
 
-# Rename Overlay [NEW]
-- Floating rename field above keyboard [NEW]
-  > When renaming a file, input field appears directly above the keyboard [NEW]
-  > Up to 3 lines for long file names [NEW]
-  > Enter = confirm rename, tap outside = cancel [NEW]
-  > File in the list is highlighted with primary color marker [NEW]
+# Rename Overlay
+- Floating rename field above keyboard
+  > When renaming a file, input field appears directly above the keyboard
+  > Up to 3 lines for long file names
+  > Enter = confirm rename, tap outside = cancel
+  > File in the list is highlighted with primary color marker
 
-# Custom Navbar [NEW]
-- System navbar replaced with custom navbar [NEW]
-  > System navigation bar is hidden (immersive mode, status bar stays) [NEW]
-  > Custom navbar: horizontal pages with 5-7 buttons each [NEW]
-  > Swipe horizontally to switch pages, page dots indicator at top [NEW]
-- 28 configurable actions [NEW]
-  > Navigation: Back, Forward, Up, Home, Exit [NEW]
-  > File operations: Copy, Move, Delete, Rename, Select All, Create, Toggle Hidden [NEW]
-  > Screens: Settings, Terminal, Library, Transfer, Trash, Storage, Apps, Duplicates, Search, Scanner [NEW]
-  > Special: Copy/Move (radial menu), Delete (radial menu), Create (radial menu), Refresh [NEW]
-- Radial menu buttons [NEW]
-  > Long tap on Copy/Move → two circles appear above button: Copy (left) and Move (right) [NEW]
-  > Drag finger to desired circle → it highlights → release = action [NEW]
-  > Same for Delete (Trash / Forever) and Create (File / Folder) [NEW]
-  > Short tap = default action (Copy / Trash / Create folder) [NEW]
-- Exit button with countdown [NEW]
-  > Tap = system Back (closes drawer, search, selection, or navigates up) [NEW]
-  > Hold 2 seconds = red countdown circle + exit app [NEW]
-- Navbar settings [NEW]
-  > How to open: Settings → Navbar settings [NEW]
-  > Add/delete pages, slider for button count (5-7 per page) [NEW]
-  > Tap any button → editor with all actions, two checkboxes: Tap (blue) and Long press (red) [NEW]
-  > One action cannot be assigned to both tap and long press [NEW]
-- Custom button icons [NEW]
-  > Navbar settings → palette icon → Button Icons screen [NEW]
-  > Tap action → pick image from gallery → crop editor (square/circle, zoom/pan) [NEW]
-  > Custom icon replaces Material icon in the navbar [NEW]
-  > Reset button (✕) to revert to default icon [NEW]
-- Arrow navigation (Cursor ↑↓←→) [NEW]
-  > Cursor ↑/↓: tap = move cursor up/down through files, long tap ↑ = switch panel, long tap ↓ = toggle Shift mode [NEW]
-  > Cursor ←/→: tap ← = back in history, tap → = forward in history, long ← = parent folder, long → = enter folder under cursor [NEW]
-  > Cursor highlights the file with a border, file is selected (Windows-style full highlight) [NEW]
-  > Auto-scroll: the file under cursor is always visible [NEW]
-  > First tap starts from the currently visible file, not from the beginning [NEW]
-- Shift mode (multi-select) [NEW]
-  > Long tap ↓ = toggle Shift mode (button glows when active) [NEW]
-  > Shift ON: all files from anchor to cursor are selected as a range [NEW]
-  > Shift OFF: selection is preserved, normal single-file cursor resumes [NEW]
-  > Multi-range: turn Shift ON in a new location to select additional ranges [NEW]
-  > Useful for selecting multiple groups of files without touching the screen [NEW]
+# Custom Navbar
+- System navbar replaced with custom navbar
+  > System navigation bar is hidden (immersive mode, status bar stays)
+  > Custom navbar: horizontal pages with 5-7 buttons each
+  > Swipe horizontally to switch pages, page dots indicator at top
+- 28 configurable actions
+  > Navigation: Back, Forward, Up, Home, Exit
+  > File operations: Copy, Move, Delete, Rename, Select All, Create, Toggle Hidden
+  > Screens: Settings, Terminal, Library, Transfer, Trash, Storage, Apps, Duplicates, Search, Scanner
+  > Special: Copy/Move (radial menu), Delete (radial menu), Create (radial menu), Refresh
+- Radial menu buttons
+  > Long tap on Copy/Move → two circles appear above button: Copy (left) and Move (right)
+  > Drag finger to desired circle → it highlights → release = action
+  > Same for Delete (Trash / Forever) and Create (File / Folder)
+  > Short tap = default action (Copy / Trash / Create folder)
+- Exit button with countdown
+  > Tap = system Back (closes drawer, search, selection, or navigates up)
+  > Hold 2 seconds = red countdown circle + exit app
+- Navbar settings
+  > How to open: Settings → Navbar settings
+  > Add/delete pages, slider for button count (5-7 per page)
+  > Tap any button → editor with all actions, two checkboxes: Tap (blue) and Long press (red)
+  > One action cannot be assigned to both tap and long press
+- Custom button icons
+  > Navbar settings → palette icon → Button Icons screen
+  > Tap action → pick image from gallery → crop editor (square/circle, zoom/pan)
+  > Custom icon replaces Material icon in the navbar
+  > Reset button (✕) to revert to default icon
+- Arrow navigation (Cursor ↑↓←→)
+  > Cursor ↑/↓: tap = move cursor up/down through files, long tap ↑ = switch panel, long tap ↓ = toggle Shift mode
+  > Cursor ←/→: tap ← = back in history, tap → = forward in history, long ← = parent folder, long → = enter folder under cursor
+  > Cursor highlights the file with a border, file is selected (Windows-style full highlight)
+  > Auto-scroll: the file under cursor is always visible
+  > First tap starts from the currently visible file, not from the beginning
+- Shift mode (multi-select)
+  > Long tap ↓ = toggle Shift mode (button glows when active)
+  > Shift ON: all files from anchor to cursor are selected as a range
+  > Shift OFF: selection is preserved, normal single-file cursor resumes
+  > Multi-range: turn Shift ON in a new location to select additional ranges
+  > Useful for selecting multiple groups of files without touching the screen
 
 # Settings
 - Theme: system / light / dark (Material Design 3)
@@ -835,49 +838,49 @@
 - Shizuku status and control
   > Shows: whether Shizuku is installed, running, permission granted
   > Buttons: install, start, grant permission — all in one place
-- Navbar settings [NEW]
-  > Configure custom navbar: pages, buttons, actions, custom icons [NEW]
-  > See "Custom Navbar" section for full details [NEW]
-- Gestures & Voice settings [NEW]
-  > Configure 4 edge swipes + voice commands [NEW]
-- Animated Themes (Settings → Animations) [NEW]
-  > 4 overlay animations with live preview cards [NEW]
-  > Animations render on top of all backgrounds — text, buttons and icons remain visible [NEW]
-  > Only one animation active at a time (auto-disable others) [NEW]
-  > Works everywhere except document readers and video player [NEW]
-- Matrix Rain [NEW]
-  > Falling symbols (Katakana, Binary, Latin, Cyrillic, Mix) [NEW]
-  > Color: 8 presets + custom RGB, speed, density, opacity [NEW]
-  > Glow effect on symbol heads [NEW]
-- Snowfall [NEW]
-  > Snowflakes with Perlin noise drift and rotation (❄❅❆✻✼✽❋) [NEW]
-  > Larger flakes fall faster (realistic physics), global wind oscillation [NEW]
-  > Speed, density, opacity, size sliders [NEW]
-- Starfield [NEW]
-  > Twinkling stars with warm/cool color variation and cross-sparkle [NEW]
-  > Shooting stars (comets) with gradient tail and glowing head [NEW]
-  > Speed, density, opacity, size sliders [NEW]
-- Dust Particles [NEW]
-  > Golden floating motes with Perlin noise drift and brightness pulsation [NEW]
-  > Gentle upward drift simulating warm air currents [NEW]
-  > Speed, density, opacity, size sliders [NEW]
-- All animations: "Only while charging" option, auto-pause on background [NEW]
-- Power Saving (Settings → Power saving) [NEW]
-  > Toggle "Power save mode" — disables all animations and reduces background activity [NEW]
-  > Battery threshold slider (0–50%) — animations auto-disable when battery drops below threshold [NEW]
-  > Default threshold: 15%. Set to 0 to never auto-disable [NEW]
-- Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens [NEW]
-  > Swipe right from left edge (40dp zone) to go back [NEW]
-- FPS slider for all animations (10-60fps, default 30) [NEW]
-  > Lower FPS saves battery, higher FPS is smoother [NEW]
-- Procedural snowflakes — unique 6-fold crystals [NEW]
-  > Each snowflake is unique (seed-based procedural generation) [NEW]
-  > 3D spin around vertical axis [NEW]
-  > Separate count sliders for small/medium/large flakes [NEW]
-  > Side edge spawning: 15% of flakes enter from sides [NEW]
-- About screen with version, changelog, privacy, copyright [NEW]
-- Wake lock optimization: released after 5 min idle in cast service [NEW]
-- Audio player improvements [NEW]
-  > No autoplay on file open — press play when ready [NEW]
-  > Audio always starts from beginning (no position restore) [NEW]
-  > Correct track plays when tapping file name [NEW]
+- Navbar settings
+  > Configure custom navbar: pages, buttons, actions, custom icons
+  > See "Custom Navbar" section for full details
+- Gestures & Voice settings
+  > Configure 4 edge swipes + voice commands
+- Animated Themes (Settings → Animations)
+  > 4 overlay animations with live preview cards
+  > Animations render on top of all backgrounds — text, buttons and icons remain visible
+  > Only one animation active at a time (auto-disable others)
+  > Works everywhere except document readers and video player
+- Matrix Rain
+  > Falling symbols (Katakana, Binary, Latin, Cyrillic, Mix)
+  > Color: 8 presets + custom RGB, speed, density, opacity
+  > Glow effect on symbol heads
+- Snowfall
+  > Snowflakes with Perlin noise drift and rotation (❄❅❆✻✼✽❋)
+  > Larger flakes fall faster (realistic physics), global wind oscillation
+  > Speed, density, opacity, size sliders
+- Starfield
+  > Twinkling stars with warm/cool color variation and cross-sparkle
+  > Shooting stars (comets) with gradient tail and glowing head
+  > Speed, density, opacity, size sliders
+- Dust Particles
+  > Golden floating motes with Perlin noise drift and brightness pulsation
+  > Gentle upward drift simulating warm air currents
+  > Speed, density, opacity, size sliders
+- All animations: "Only while charging" option, auto-pause on background
+- Power Saving (Settings → Power saving)
+  > Toggle "Power save mode" — disables all animations and reduces background activity
+  > Battery threshold slider (0–50%) — animations auto-disable when battery drops below threshold
+  > Default threshold: 15%. Set to 0 to never auto-disable
+- Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
+  > Swipe right from left edge (40dp zone) to go back
+- FPS slider for all animations (10-60fps, default 30)
+  > Lower FPS saves battery, higher FPS is smoother
+- Procedural snowflakes — unique 6-fold crystals
+  > Each snowflake is unique (seed-based procedural generation)
+  > 3D spin around vertical axis
+  > Separate count sliders for small/medium/large flakes
+  > Side edge spawning: 15% of flakes enter from sides
+- About screen with version, changelog, privacy, copyright
+- Wake lock optimization: released after 5 min idle in cast service
+- Audio player improvements
+  > No autoplay on file open — press play when ready
+  > Audio always starts from beginning (no position restore)
+  > Correct track plays when tapping file name
