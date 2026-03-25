@@ -1586,6 +1586,9 @@
     <string name="matrix_charset_mix">Mix</string>
     <string name="matrix_only_charging">Only while charging</string>
     <string name="anim_fps">Frame rate (FPS)</string>
+    <string name="snowfall_small">Small flakes</string>
+    <string name="snowfall_medium">Medium crystals</string>
+    <string name="snowfall_large">Large crystals</string>
     <string name="themes_title">Animations</string>
     <string name="snowfall_title">Snowfall</string>
     <string name="snowfall_size">Size</string>

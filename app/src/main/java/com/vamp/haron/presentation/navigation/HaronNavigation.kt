@@ -415,7 +415,10 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             opacity = matrixPrefs.snowfallOpacity,
             size = matrixPrefs.snowfallSize,
             onlyCharging = matrixPrefs.snowfallOnlyCharging,
-            fps = matrixPrefs.snowfallFps
+            fps = matrixPrefs.snowfallFps,
+            smallCount = matrixPrefs.snowfallSmallCount,
+            mediumCount = matrixPrefs.snowfallMediumCount,
+            largeCount = matrixPrefs.snowfallLargeCount
         )
     }
     fun readStarfieldConfig(): com.vamp.haron.presentation.matrix.StarfieldConfig {

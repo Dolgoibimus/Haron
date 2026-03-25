@@ -780,6 +780,9 @@ class HaronPreferences @Inject constructor(
         const val KEY_SNOWFALL_SIZE = "snowfall_size"
         const val KEY_SNOWFALL_ONLY_CHARGING = "snowfall_only_charging"
         const val KEY_SNOWFALL_FPS = "snowfall_fps"
+        const val KEY_SNOWFALL_SMALL = "snowfall_small_count"
+        const val KEY_SNOWFALL_MEDIUM = "snowfall_medium_count"
+        const val KEY_SNOWFALL_LARGE = "snowfall_large_count"
         const val KEY_STARFIELD_ENABLED = "starfield_enabled"
         const val KEY_STARFIELD_SPEED = "starfield_speed"
         const val KEY_STARFIELD_DENSITY = "starfield_density"
@@ -867,6 +870,16 @@ class HaronPreferences @Inject constructor(
     var snowfallFps: Int
         get() = prefs.getInt(KEY_SNOWFALL_FPS, 30)
         set(value) = prefs.edit().putInt(KEY_SNOWFALL_FPS, value.coerceIn(10, 60)).apply()
+
+    var snowfallSmallCount: Int
+        get() = prefs.getInt(KEY_SNOWFALL_SMALL, 60)
+        set(value) = prefs.edit().putInt(KEY_SNOWFALL_SMALL, value.coerceIn(0, 200)).apply()
+    var snowfallMediumCount: Int
+        get() = prefs.getInt(KEY_SNOWFALL_MEDIUM, 25)
+        set(value) = prefs.edit().putInt(KEY_SNOWFALL_MEDIUM, value.coerceIn(0, 100)).apply()
+    var snowfallLargeCount: Int
+        get() = prefs.getInt(KEY_SNOWFALL_LARGE, 10)
+        set(value) = prefs.edit().putInt(KEY_SNOWFALL_LARGE, value.coerceIn(0, 50)).apply()
 
     // --- Starfield ---
     var starfieldEnabled: Boolean get() = prefs.getBoolean(KEY_STARFIELD_ENABLED, false); set(v) = prefs.edit().putBoolean(KEY_STARFIELD_ENABLED, v).apply()

@@ -53,6 +53,9 @@ fun SnowfallSettingsScreen(
     var flakeSize by remember { mutableFloatStateOf(prefs.snowfallSize) }
     var onlyCharging by remember { mutableStateOf(prefs.snowfallOnlyCharging) }
     var fps by remember { mutableIntStateOf(prefs.snowfallFps) }
+    var smallCount by remember { mutableIntStateOf(prefs.snowfallSmallCount) }
+    var mediumCount by remember { mutableIntStateOf(prefs.snowfallMediumCount) }
+    var largeCount by remember { mutableIntStateOf(prefs.snowfallLargeCount) }
 
     Scaffold(
         topBar = {
@@ -163,6 +166,33 @@ fun SnowfallSettingsScreen(
                         onCheckedChange = { onlyCharging = it; prefs.snowfallOnlyCharging = it }
                     )
                 }
+            }
+            item {
+                Text("${stringResource(R.string.snowfall_small)}: $smallCount")
+                Slider(
+                    value = smallCount.toFloat(),
+                    onValueChange = { smallCount = it.toInt(); prefs.snowfallSmallCount = it.toInt() },
+                    valueRange = 0f..200f,
+                    steps = 19
+                )
+            }
+            item {
+                Text("${stringResource(R.string.snowfall_medium)}: $mediumCount")
+                Slider(
+                    value = mediumCount.toFloat(),
+                    onValueChange = { mediumCount = it.toInt(); prefs.snowfallMediumCount = it.toInt() },
+                    valueRange = 0f..100f,
+                    steps = 9
+                )
+            }
+            item {
+                Text("${stringResource(R.string.snowfall_large)}: $largeCount")
+                Slider(
+                    value = largeCount.toFloat(),
+                    onValueChange = { largeCount = it.toInt(); prefs.snowfallLargeCount = it.toInt() },
+                    valueRange = 0f..50f,
+                    steps = 9
+                )
             }
             item {
                 Text("${stringResource(R.string.anim_fps)}: $fps")

@@ -32,7 +32,10 @@ data class SnowfallConfig(
     val opacity: Float = 0.7f,
     val size: Float = 1f,
     val onlyCharging: Boolean = false,
-    val fps: Int = 30
+    val fps: Int = 30,
+    val smallCount: Int = 60,
+    val mediumCount: Int = 25,
+    val largeCount: Int = 10
 )
 
 internal object SimpleNoise {
@@ -124,7 +127,7 @@ fun SnowfallCanvas(
     var tick by remember { mutableIntStateOf(0) }
     var dtFactor by remember { mutableFloatStateOf(1f) }
     var lastFrameMs by remember { mutableLongStateOf(0L) }
-    val flakesRef = remember(config.speed, config.density, config.size) { mutableStateOf<Array<Snowflake>?>(null) }
+    val flakesRef = remember(config.speed, config.density, config.size, config.smallCount, config.mediumCount, config.largeCount) { mutableStateOf<Array<Snowflake>?>(null) }
 
     val flakePaint = remember {
         android.graphics.Paint().apply {
@@ -169,29 +172,56 @@ fun SnowfallCanvas(
         val h = size.height
         if (w == 0f || h == 0f) return@Canvas
 
-        val targetCount = (w / 15f * config.density).toInt().coerceIn(10, 400)
+        val totalCount = config.smallCount + config.mediumCount + config.largeCount
 
         var flakes = flakesRef.value
-        if (flakes == null || flakes.size != targetCount) {
-            flakes = Array(targetCount) { i ->
-                val radius = (1.5f + Random.nextFloat() * 6f) * config.size
-                val isBig = radius > 4f * config.size
-                Snowflake(
-                    x = Random.nextFloat() * w,
-                    y = Random.nextFloat() * h * 1.5f - h * 0.3f,
-                    radius = radius,
-                    fallSpeed = (0.3f + radius * 0.25f) * config.speed,
-                    noiseOffset = Random.nextFloat() * 1000f,
-                    noiseScale = 15f + Random.nextFloat() * 25f,
-                    rotation = if (isBig) (Random.nextFloat() - 0.5f) * 2f else 0f,
-                    currentRotation = Random.nextFloat() * 360f,
-                    spinSpeed = if (isBig) (0.01f + Random.nextFloat() * 0.03f) * (if (Random.nextBoolean()) 1f else -1f) else 0f,
-                    spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
-                    time = Random.nextFloat() * 100f,
-                    isComplex = isBig,
-                    pattern = if (isBig) SnowflakePattern(i.toLong() * 7919L + 13L) else null
-                )
+        if (flakes == null || flakes.size != totalCount) {
+            val list = mutableListOf<Snowflake>()
+            var idx = 0
+            // Small: simple circles, fast fall
+            repeat(config.smallCount) {
+                val radius = (1f + Random.nextFloat() * 1.5f) * config.size
+                list.add(Snowflake(
+                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    radius = radius, fallSpeed = (0.3f + radius * 0.25f) * config.speed,
+                    noiseOffset = Random.nextFloat() * 1000f, noiseScale = 15f + Random.nextFloat() * 20f,
+                    rotation = 0f, currentRotation = 0f,
+                    spinSpeed = 0f, spinPhase = 0f,
+                    time = Random.nextFloat() * 100f, isComplex = false, pattern = null
+                ))
+                idx++
             }
+            // Medium: small crystals, moderate fall
+            repeat(config.mediumCount) {
+                val radius = (2.5f + Random.nextFloat() * 2f) * config.size
+                list.add(Snowflake(
+                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    radius = radius, fallSpeed = (0.3f + radius * 0.25f) * config.speed,
+                    noiseOffset = Random.nextFloat() * 1000f, noiseScale = 15f + Random.nextFloat() * 25f,
+                    rotation = (Random.nextFloat() - 0.5f) * 1.5f, currentRotation = Random.nextFloat() * 360f,
+                    spinSpeed = (0.008f + Random.nextFloat() * 0.02f) * (if (Random.nextBoolean()) 1f else -1f),
+                    spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
+                    time = Random.nextFloat() * 100f, isComplex = true,
+                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L)
+                ))
+                idx++
+            }
+            // Large: detailed crystals, slow fall
+            repeat(config.largeCount) {
+                val radius = (5f + Random.nextFloat() * 3f) * config.size
+                list.add(Snowflake(
+                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    radius = radius, fallSpeed = (0.3f + radius * 0.2f) * config.speed,
+                    noiseOffset = Random.nextFloat() * 1000f, noiseScale = 20f + Random.nextFloat() * 30f,
+                    rotation = (Random.nextFloat() - 0.5f) * 2f, currentRotation = Random.nextFloat() * 360f,
+                    spinSpeed = (0.01f + Random.nextFloat() * 0.03f) * (if (Random.nextBoolean()) 1f else -1f),
+                    spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
+                    time = Random.nextFloat() * 100f, isComplex = true,
+                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L)
+                ))
+                idx++
+            }
+            flakes = list.toTypedArray()
             flakesRef.value = flakes
         }
 
