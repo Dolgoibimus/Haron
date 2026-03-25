@@ -45,7 +45,8 @@ class CastMediaService : Service() {
         const val EXTRA_DEVICE_NAME = "device_name"
         const val EXTRA_DURATION_MS = "duration_ms"
         private const val IDLE_CHECK_INTERVAL_MS = 60_000L
-        private const val IDLE_TIMEOUT_MS = 15 * 60 * 1000L // 15 min
+        private const val WAKE_LOCK_IDLE_MS = 5 * 60 * 1000L // release wake lock after 5 min idle
+        private const val IDLE_TIMEOUT_MS = 15 * 60 * 1000L // stop service after 15 min idle
 
         var isRunning: Boolean = false
             private set
@@ -112,14 +113,26 @@ class CastMediaService : Service() {
 
     private fun touchActivity() {
         lastActivityTime = SystemClock.elapsedRealtime()
+        // Re-acquire wake lock if it was released during idle
+        if (wakeLock?.isHeld != true && isRunning) {
+            acquireWakeLock()
+        }
     }
 
     private fun startIdleWatchdog() {
         idleJob?.cancel()
         idleJob = serviceScope.launch {
+            var wakeLockReleased = false
             while (isActive) {
                 delay(IDLE_CHECK_INTERVAL_MS)
                 val idleMs = SystemClock.elapsedRealtime() - lastActivityTime
+                // Release wake lock after 5 min idle (save battery), keep service alive
+                if (idleMs >= WAKE_LOCK_IDLE_MS && !wakeLockReleased) {
+                    EcosystemLogger.d(HaronConstants.TAG, "CastMediaService idle 5min, releasing WakeLock (service stays)")
+                    releaseWakeLock()
+                    wakeLockReleased = true
+                }
+                // Stop service after 15 min idle
                 if (idleMs >= IDLE_TIMEOUT_MS) {
                     EcosystemLogger.d(HaronConstants.TAG, "CastMediaService idle timeout (${idleMs / 1000}s), stopping")
                     withContext(Dispatchers.Main) { stopSelfAndCleanup() }
