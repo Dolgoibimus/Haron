@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
@@ -39,13 +38,18 @@ import com.vamp.haron.common.util.swipeBackFromLeft
 
 private data class ChangelogEntry(
     val title: String,
-    val items: List<String>
+    val items: List<ChangelogItem>
+)
+
+private data class ChangelogItem(
+    val text: String,
+    val isFix: Boolean = false
 )
 
 private fun parseChangelog(raw: String): List<ChangelogEntry> {
     val entries = mutableListOf<ChangelogEntry>()
     var currentTitle = ""
-    var currentItems = mutableListOf<String>()
+    var currentItems = mutableListOf<ChangelogItem>()
 
     for (line in raw.lines()) {
         when {
@@ -57,7 +61,10 @@ private fun parseChangelog(raw: String): List<ChangelogEntry> {
                 currentItems = mutableListOf()
             }
             line.startsWith("- ") -> {
-                currentItems.add(line.removePrefix("- ").trim())
+                val text = line.removePrefix("- ").trim()
+                val isFix = text.startsWith("Fix:", ignoreCase = true) ||
+                    text.startsWith("Фикс:", ignoreCase = true)
+                currentItems.add(ChangelogItem(text, isFix))
             }
         }
     }
@@ -78,7 +85,6 @@ fun ChangelogScreen(onBack: () -> Unit) {
     val entries = remember(raw) { parseChangelog(raw) }
     val expanded = remember { mutableStateMapOf<Int, Boolean>() }
 
-    // First entry expanded by default
     if (expanded.isEmpty() && entries.isNotEmpty()) {
         expanded[0] = true
     }
@@ -104,6 +110,8 @@ fun ChangelogScreen(onBack: () -> Unit) {
             items(entries.size) { index ->
                 val entry = entries[index]
                 val isExpanded = expanded[index] == true
+                val features = entry.items.filter { !it.isFix }
+                val fixes = entry.items.filter { it.isFix }
 
                 Column(
                     modifier = Modifier
@@ -122,6 +130,12 @@ fun ChangelogScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
                         )
+                        Text(
+                            text = "${entry.items.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
                         Icon(
                             if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             contentDescription = null,
@@ -132,19 +146,44 @@ fun ChangelogScreen(onBack: () -> Unit) {
 
                     AnimatedVisibility(visible = isExpanded) {
                         Column(modifier = Modifier.padding(top = 8.dp)) {
-                            entry.items.forEach { item ->
+                            features.forEach { item ->
                                 Row(modifier = Modifier.padding(vertical = 2.dp)) {
                                     Text(
                                         text = "•",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = item,
+                                        text = item.text,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
+                                }
+                            }
+                            if (fixes.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = stringResource(R.string.changelog_fixes),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                fixes.forEach { item ->
+                                    Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                                        Text(
+                                            text = "✓",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.tertiary
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = item.text.removePrefix("Fix: ").removePrefix("Фикс: "),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }

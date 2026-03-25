@@ -57,8 +57,8 @@ import java.io.FileWriter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** Regex to extract tag from log line: "2025-03-05 12:00:00.123 [D] Ecosystem/SomeTag: message" */
-private val TAG_REGEX = Regex("""\[\w] Ecosystem/(\w+):""")
+/** Regex to extract tag from log line: "2025-03-05 12:00:00.123 [D] Ecosystem/Haron: message" or "Ecosystem/Haron/TermBuf: ..." */
+private val TAG_REGEX = Regex("""\[\w] Ecosystem/([\w/]+):""")
 
 private fun extractTag(line: String): String? = TAG_REGEX.find(line)?.groupValues?.get(1)
 

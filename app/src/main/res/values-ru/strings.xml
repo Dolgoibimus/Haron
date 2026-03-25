@@ -1282,6 +1282,7 @@
     <string name="logs_button">Просмотр логов</string>
     <string name="changelog_title">Что нового</string>
     <string name="changelog_button">Что нового</string>
+    <string name="changelog_fixes">Исправления</string>
     <string name="about_title">О приложении</string>
     <string name="about_button">О приложении</string>
     <string name="about_version">Версия %s</string>

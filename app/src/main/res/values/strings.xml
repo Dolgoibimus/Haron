@@ -1284,6 +1284,7 @@
     <string name="logs_button">View logs</string>
     <string name="changelog_title">What\'s new</string>
     <string name="changelog_button">What\'s new</string>
+    <string name="changelog_fixes">Bug fixes</string>
     <string name="about_title">About</string>
     <string name="about_button">About app</string>
     <string name="about_version">Version %s</string>
