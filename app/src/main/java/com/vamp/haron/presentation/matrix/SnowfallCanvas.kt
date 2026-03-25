@@ -90,6 +90,7 @@ private class Snowflake(
     var y: Float,
     val radius: Float,
     val fallSpeed: Float,
+    val driftAngle: Float,       // base fall direction: 0 = straight down, negative = left, positive = right
     val noiseOffset: Float,
     val noiseScale: Float,
     val rotation: Float,         // flat rotation speed (Z-axis)
@@ -98,11 +99,24 @@ private class Snowflake(
     var spinPhase: Float,        // current spin phase (radians)
     var time: Float,
     val isComplex: Boolean,
-    val pattern: SnowflakePattern?
+    val pattern: SnowflakePattern?,
+    val spawnEdge: Int = 0       // 0=top, 1=left, 2=right
 ) {
     fun reset(canvasWidth: Float, canvasHeight: Float) {
-        x = Random.nextFloat() * canvasWidth
-        y = -radius * 4 - Random.nextFloat() * canvasHeight * 0.3f
+        when (spawnEdge) {
+            1 -> { // left edge
+                x = -radius * 2
+                y = Random.nextFloat() * canvasHeight * 0.33f
+            }
+            2 -> { // right edge
+                x = canvasWidth + radius * 2
+                y = Random.nextFloat() * canvasHeight * 0.33f
+            }
+            else -> { // top
+                x = Random.nextFloat() * canvasWidth
+                y = -radius * 4 - Random.nextFloat() * canvasHeight * 0.3f
+            }
+        }
         time = Random.nextFloat() * 100f
     }
 }
@@ -174,6 +188,23 @@ fun SnowfallCanvas(
 
         val totalCount = config.smallCount + config.mediumCount + config.largeCount
 
+        // Helper: pick spawn edge (0=top 85%, 1=left 7.5%, 2=right 7.5%)
+        // and drift angle accordingly
+        fun pickSpawn(): Pair<Int, Float> {
+            val r = Random.nextFloat()
+            return when {
+                r < 0.075f -> 1 to (0.3f + Random.nextFloat() * 0.5f)   // left edge → drift right
+                r < 0.15f -> 2 to -(0.3f + Random.nextFloat() * 0.5f)   // right edge → drift left
+                else -> 0 to (Random.nextFloat() - 0.5f) * 0.4f          // top → slight random drift
+            }
+        }
+
+        fun initXY(edge: Int): Pair<Float, Float> = when (edge) {
+            1 -> -10f to Random.nextFloat() * h * 0.33f
+            2 -> w + 10f to Random.nextFloat() * h * 0.33f
+            else -> Random.nextFloat() * w to (Random.nextFloat() * h * 1.5f - h * 0.3f)
+        }
+
         var flakes = flakesRef.value
         if (flakes == null || flakes.size != totalCount) {
             val list = mutableListOf<Snowflake>()
@@ -181,43 +212,55 @@ fun SnowfallCanvas(
             // Small: simple circles, fast fall
             repeat(config.smallCount) {
                 val radius = (1f + Random.nextFloat() * 1.5f) * config.size
+                val (edge, drift) = pickSpawn()
+                val (sx, sy) = initXY(edge)
                 list.add(Snowflake(
-                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    x = sx, y = sy,
                     radius = radius, fallSpeed = (0.3f + radius * 0.25f) * config.speed,
+                    driftAngle = drift,
                     noiseOffset = Random.nextFloat() * 1000f, noiseScale = 15f + Random.nextFloat() * 20f,
                     rotation = 0f, currentRotation = 0f,
                     spinSpeed = 0f, spinPhase = 0f,
-                    time = Random.nextFloat() * 100f, isComplex = false, pattern = null
+                    time = Random.nextFloat() * 100f, isComplex = false, pattern = null,
+                    spawnEdge = edge
                 ))
                 idx++
             }
             // Medium: small crystals, moderate fall
             repeat(config.mediumCount) {
                 val radius = (2.5f + Random.nextFloat() * 2f) * config.size
+                val (edge, drift) = pickSpawn()
+                val (sx, sy) = initXY(edge)
                 list.add(Snowflake(
-                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    x = sx, y = sy,
                     radius = radius, fallSpeed = (0.3f + radius * 0.25f) * config.speed,
+                    driftAngle = drift,
                     noiseOffset = Random.nextFloat() * 1000f, noiseScale = 15f + Random.nextFloat() * 25f,
                     rotation = (Random.nextFloat() - 0.5f) * 1.5f, currentRotation = Random.nextFloat() * 360f,
                     spinSpeed = (0.008f + Random.nextFloat() * 0.02f) * (if (Random.nextBoolean()) 1f else -1f),
                     spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
                     time = Random.nextFloat() * 100f, isComplex = true,
-                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L)
+                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L),
+                    spawnEdge = edge
                 ))
                 idx++
             }
             // Large: detailed crystals, slow fall
             repeat(config.largeCount) {
                 val radius = (5f + Random.nextFloat() * 3f) * config.size
+                val (edge, drift) = pickSpawn()
+                val (sx, sy) = initXY(edge)
                 list.add(Snowflake(
-                    x = Random.nextFloat() * w, y = Random.nextFloat() * h * 1.5f - h * 0.3f,
+                    x = sx, y = sy,
                     radius = radius, fallSpeed = (0.3f + radius * 0.2f) * config.speed,
+                    driftAngle = drift,
                     noiseOffset = Random.nextFloat() * 1000f, noiseScale = 20f + Random.nextFloat() * 30f,
                     rotation = (Random.nextFloat() - 0.5f) * 2f, currentRotation = Random.nextFloat() * 360f,
                     spinSpeed = (0.01f + Random.nextFloat() * 0.03f) * (if (Random.nextBoolean()) 1f else -1f),
                     spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
                     time = Random.nextFloat() * 100f, isComplex = true,
-                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L)
+                    pattern = SnowflakePattern(idx.toLong() * 7919L + 13L),
+                    spawnEdge = edge
                 ))
                 idx++
             }
@@ -230,15 +273,23 @@ fun SnowfallCanvas(
 
         for (flake in flakes) {
             flake.time += 0.01f * config.speed * dtFactor
+            // Fall direction: vertical + driftAngle (diagonal for side-spawned flakes)
             flake.y += flake.fallSpeed * dtFactor
+            val baseDrift = flake.fallSpeed * flake.driftAngle // horizontal component from fall angle
             val noiseDrift = SimpleNoise.noise1D(flake.time + flake.noiseOffset) * flake.noiseScale * 0.03f
-            flake.x += (noiseDrift + globalWind.toFloat()) * dtFactor
+            flake.x += (baseDrift + noiseDrift + globalWind.toFloat()) * dtFactor
             flake.currentRotation += flake.rotation * dtFactor
             flake.spinPhase += flake.spinSpeed * dtFactor
 
+            // Reset: off bottom, or off sides (for side-spawned going further out)
             if (flake.y > h + flake.radius * 4) flake.reset(w, h)
-            if (flake.x < -30f) flake.x += w + 60f
-            if (flake.x > w + 30f) flake.x -= w + 60f
+            // Only wrap top-spawned flakes horizontally; side-spawned reset when off opposite edge
+            if (flake.spawnEdge == 0) {
+                if (flake.x < -30f) flake.x += w + 60f
+                if (flake.x > w + 30f) flake.x -= w + 60f
+            } else {
+                if (flake.x < -flake.radius * 4 || flake.x > w + flake.radius * 4) flake.reset(w, h)
+            }
 
             val edgeFade = when {
                 flake.y < 0 -> (1f + flake.y / (flake.radius * 4)).coerceIn(0f, 1f)
