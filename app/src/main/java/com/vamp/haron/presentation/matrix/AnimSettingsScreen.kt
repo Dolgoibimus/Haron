@@ -37,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 
 /**
  * Generic animation settings screen with preview, sliders and switches.
@@ -84,7 +85,7 @@ fun AnimSettingsScreen(
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().swipeBackFromLeft(onBack = onBack).padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {

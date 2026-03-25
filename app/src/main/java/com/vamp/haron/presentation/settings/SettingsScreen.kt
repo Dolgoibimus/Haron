@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.AppLockMethod
 import com.vamp.haron.presentation.applock.PinSetupDialog
 
@@ -113,6 +114,7 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)

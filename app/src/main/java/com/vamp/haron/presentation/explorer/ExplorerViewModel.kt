@@ -2063,6 +2063,7 @@ class ExplorerViewModel @Inject constructor(
                     }
                     val startIndex = mediaFiles.indexOfFirst { it.path == entry.path }.coerceAtLeast(0)
                     PlaylistHolder.startIndex = startIndex
+                    EcosystemLogger.d(HaronConstants.TAG, "onFileClick: tapped=${entry.name}, startIndex=$startIndex, playlistSize=${mediaFiles.size}, actualFile=${mediaFiles.getOrNull(startIndex)?.name}")
                     preferences.lastMediaFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenMediaPlayer(startIndex)
@@ -2765,7 +2766,11 @@ class ExplorerViewModel @Inject constructor(
         val sourcePanel = getPanel(activeId)
         val targetPanel = getPanel(targetId)
         val paths = sourcePanel.selectedPaths.toList()
-        if (paths.isEmpty()) return
+        EcosystemLogger.d(HaronConstants.TAG, "copySelectedToOtherPanel: activePanel=$activeId, selectedPaths=${paths.size}, target=${targetPanel.currentPath}")
+        if (paths.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "copySelectedToOtherPanel: EMPTY selection, returning")
+            return
+        }
 
         // Cloud → local: download
         if (paths.any { isCloudPath(it) }) {
@@ -2806,6 +2811,7 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "copySelectedToOtherPanel: no conflicts, executing copy to ${targetPanel.currentPath}")
         executeCopy(paths, targetPanel.currentPath, ConflictResolution.RENAME)
     }
 
@@ -2819,6 +2825,8 @@ class ExplorerViewModel @Inject constructor(
         val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val sourcePanel = getPanel(activeId)
 
+        EcosystemLogger.d(HaronConstants.TAG, "executeCopy: paths=${paths.size}, dest=$destinationDir, resolution=$resolution")
+        for (p in paths) EcosystemLogger.d(HaronConstants.TAG, "executeCopy: src=$p")
         clearSelection(activeId)
         FileOperationService.start(appContext, paths, destinationDir, isMove = false, conflictResolution = resolution)
     }
@@ -2892,7 +2900,11 @@ class ExplorerViewModel @Inject constructor(
         val sourcePanel = getPanel(activeId)
         val targetPanel = getPanel(targetId)
         val paths = sourcePanel.selectedPaths.toList()
-        if (paths.isEmpty()) return
+        EcosystemLogger.d(HaronConstants.TAG, "moveSelectedToOtherPanel: activePanel=$activeId, selectedPaths=${paths.size}, target=${targetPanel.currentPath}")
+        if (paths.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "moveSelectedToOtherPanel: EMPTY selection, returning")
+            return
+        }
 
         // Cloud: move not supported (use copy + manual delete)
         if (paths.any { isCloudPath(it) } || isCloudPath(targetPanel.currentPath)) {
@@ -2928,6 +2940,7 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
+        EcosystemLogger.d(HaronConstants.TAG, "moveSelectedToOtherPanel: no conflicts, executing move to ${targetPanel.currentPath}")
         executeMove(paths, targetPanel.currentPath, ConflictResolution.RENAME)
     }
 
@@ -2941,6 +2954,8 @@ class ExplorerViewModel @Inject constructor(
         val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
         val sourcePanel = getPanel(activeId)
 
+        EcosystemLogger.d(HaronConstants.TAG, "executeMove: paths=${paths.size}, dest=$destinationDir, resolution=$resolution")
+        for (p in paths) EcosystemLogger.d(HaronConstants.TAG, "executeMove: src=$p")
         clearSelection(activeId)
         FileOperationService.start(appContext, paths, destinationDir, isMove = true, conflictResolution = resolution)
     }
@@ -3261,8 +3276,24 @@ class ExplorerViewModel @Inject constructor(
         clearSelection(_uiState.value.activePanel)
     }
 
+    /** Paths for returning from TagManage back to TagAssign */
+    private var tagAssignReturnPaths: List<String>? = null
+
     fun showTagManager() {
+        // Remember TagAssign paths so we can return to it
+        val current = _uiState.value.dialogState
+        tagAssignReturnPaths = if (current is DialogState.TagAssign) current.paths else null
         _uiState.update { it.copy(dialogState = DialogState.TagManage) }
+    }
+
+    fun dismissTagManager() {
+        val paths = tagAssignReturnPaths
+        tagAssignReturnPaths = null
+        if (paths != null) {
+            _uiState.update { it.copy(dialogState = DialogState.TagAssign(paths)) }
+        } else {
+            dismissDialog()
+        }
     }
 
     fun addTag(name: String, colorIndex: Int) {

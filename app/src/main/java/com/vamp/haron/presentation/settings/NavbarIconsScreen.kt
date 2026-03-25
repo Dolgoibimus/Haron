@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.NavbarAction
 import java.io.File
 
@@ -165,6 +166,7 @@ fun NavbarIconsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)

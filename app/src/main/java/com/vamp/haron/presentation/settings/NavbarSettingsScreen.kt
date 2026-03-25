@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.data.datastore.HaronPreferences
 import com.vamp.haron.domain.model.NavbarAction
 import com.vamp.haron.domain.model.NavbarButton
@@ -120,6 +121,7 @@ fun NavbarSettingsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)

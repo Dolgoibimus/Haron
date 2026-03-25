@@ -946,7 +946,7 @@ fun ExplorerScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
+                    .padding(bottom = if (hasSelection && !isDragging) 112.dp else 56.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
                     .clip(RoundedCornerShape(8.dp))
@@ -994,7 +994,7 @@ fun ExplorerScreen(
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (hasSelection && !isDragging) 64.dp else 8.dp)
+                .padding(bottom = if (hasSelection && !isDragging) 112.dp else 56.dp)
         ) {
             primaryProgress?.let { p ->
                 val hasFilePercent = p.filePercent in 0..100
@@ -1629,7 +1629,7 @@ private fun ExplorerDialogs(
                 onAddTag = { name, colorIndex -> viewModel.addTag(name, colorIndex) },
                 onEditTag = { oldName, newName, colorIndex -> viewModel.editTag(oldName, newName, colorIndex) },
                 onDeleteTag = { viewModel.deleteTag(it) },
-                onDismiss = viewModel::dismissDialog
+                onDismiss = viewModel::dismissTagManager
             )
         }
         is DialogState.CastModeSelect -> {

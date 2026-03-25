@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.NavigationEvent
@@ -240,6 +241,7 @@ fun DuplicateDetectorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(paddingValues)
         ) {
             if (state.isOriginalFolderMode) {

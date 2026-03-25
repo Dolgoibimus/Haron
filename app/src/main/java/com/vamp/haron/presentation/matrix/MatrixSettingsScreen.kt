@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.data.datastore.HaronPreferences
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,6 +114,7 @@ fun MatrixSettingsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)

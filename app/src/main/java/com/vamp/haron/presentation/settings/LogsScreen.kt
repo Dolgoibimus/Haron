@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileWriter
@@ -153,6 +154,7 @@ fun LogsScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
         ) {
             // Category filter chips

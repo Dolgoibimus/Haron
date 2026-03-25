@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.GestureAction
 import com.vamp.haron.domain.model.GestureType
 
@@ -71,6 +72,7 @@ fun GesturesVoiceScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
         ) {
             TabRow(selectedTabIndex = selectedTab) {

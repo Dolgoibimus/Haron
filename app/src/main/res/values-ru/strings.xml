@@ -675,6 +675,7 @@
     <string name="tags_manage">Управление метками</string>
     <string name="tags_assign">Метки</string>
     <string name="tags_create">Создать метку</string>
+    <string name="tag_create_title">Создание метки</string>
     <string name="tags_edit">Редактировать метку</string>
     <string name="tags_delete">Удалить метку</string>
     <string name="tags_name_hint">Название метки</string>

@@ -200,26 +200,28 @@ fun MediaPlayerScreen(
         }
     }
 
-    // Restore playback position (only if VideoPositionStore didn't reset it to 0 = track completed)
+    // Restore playback position — only for video (audio always starts from beginning)
     var positionRestored by remember { mutableStateOf(false) }
-    LaunchedEffect(controller, currentIndex) {
-        val ctrl = controller ?: return@LaunchedEffect
-        if (positionRestored) return@LaunchedEffect
-        val item = PlaylistHolder.items.getOrNull(currentIndex) ?: return@LaunchedEffect
-        val videoStorePos = withContext(Dispatchers.IO) {
-            com.vamp.haron.data.datastore.VideoPositionStore.load(context, item.filePath)
-        }
-        // If VideoPositionStore has 0, the track was played to completion — don't restore stale position
-        if (videoStorePos == 0L) {
+    if (isVideo) {
+        LaunchedEffect(controller, currentIndex) {
+            val ctrl = controller ?: return@LaunchedEffect
+            if (positionRestored) return@LaunchedEffect
+            val item = PlaylistHolder.items.getOrNull(currentIndex) ?: return@LaunchedEffect
+            val videoStorePos = withContext(Dispatchers.IO) {
+                com.vamp.haron.data.datastore.VideoPositionStore.load(context, item.filePath)
+            }
+            // If VideoPositionStore has 0, the track was played to completion — don't restore stale position
+            if (videoStorePos == 0L) {
+                positionRestored = true
+                return@LaunchedEffect
+            }
+            val saved = withContext(Dispatchers.IO) { ReadingPositionManager.get(item.filePath) }
+            if (saved != null && saved.positionExtra > 0) {
+                delay(500) // wait for playback to initialize
+                ctrl.seekTo(saved.positionExtra)
+            }
             positionRestored = true
-            return@LaunchedEffect
         }
-        val saved = withContext(Dispatchers.IO) { ReadingPositionManager.get(item.filePath) }
-        if (saved != null && saved.positionExtra > 0) {
-            delay(500) // wait for playback to initialize
-            ctrl.seekTo(saved.positionExtra)
-        }
-        positionRestored = true
     }
 
     // Save playback position every 5 seconds
@@ -399,6 +401,20 @@ fun MediaPlayerScreen(
         }
     }
 
+    // Audio: set playlist once service is ready (video does this after VLC attachViews)
+    if (!isVideo) {
+        LaunchedEffect(Unit) {
+            while (isActive) {
+                val adapter = PlaybackService.instance?.getAdapter()
+                if (adapter != null) {
+                    adapter.setPlaylist(PlaylistHolder.items, startIndex, autoPlay = false)
+                    break
+                }
+                delay(50)
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -430,6 +446,13 @@ fun MediaPlayerScreen(
                         val startPos = down.position
                         val w = size.width.toFloat()
                         val h = size.height.toFloat()
+
+                        // Audio mode: only handle edge swipe, skip everything else
+                        // so controls overlay receives taps normally
+                        if (!isVideo && startPos.x >= 30.dp.toPx()) {
+                            return@awaitEachGesture
+                        }
+
                         var moved = false
                         var gesture: SwipeGesture? = null
                         val initBrightness = brightnessLevel
@@ -442,11 +465,16 @@ fun MediaPlayerScreen(
                             if (!change.pressed) {
                                 // Finger up
                                 if (!moved) {
+                                    // For audio: controls are always visible, skip ALL gesture taps
+                                    // to avoid double-toggling play/pause with the UI buttons
+                                    if (!isVideo) {
+                                        // no-op: let controls overlay handle taps
+                                    } else {
                                     // Tap — determine zone by thirds
                                     val third = w / 3f
                                     when {
                                         startPos.x < third -> {
-                                            if (isVideo && !showControls) {
+                                            if (!showControls) {
                                                 showControls = true
                                             } else {
                                                 controller?.let { ctrl ->
@@ -459,7 +487,7 @@ fun MediaPlayerScreen(
                                             }
                                         }
                                         startPos.x > 2 * third -> {
-                                            if (isVideo && !showControls) {
+                                            if (!showControls) {
                                                 showControls = true
                                             } else {
                                                 controller?.let { ctrl ->
@@ -472,10 +500,10 @@ fun MediaPlayerScreen(
                                             }
                                         }
                                         else -> {
-                                            if (isVideo && !showControls) {
+                                            if (!showControls) {
                                                 showControls = true
                                             } else {
-                                                if (isVideo) showControls = !showControls
+                                                showControls = !showControls
                                                 controller?.let { ctrl ->
                                                     if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
                                                 }
@@ -484,11 +512,14 @@ fun MediaPlayerScreen(
                                             }
                                         }
                                     }
+                                    }
                                 } else if (gesture == SwipeGesture.EDGE_BACK) {
                                     val totalDx = change.position.x - startPos.x
                                     if (totalDx > backThresholdPx) {
-                                        PlaybackService.instance?.getVlcPlayer()?.detachViews()
-                                        context.stopService(Intent(context, PlaybackService::class.java))
+                                        if (isVideo) {
+                                            PlaybackService.instance?.getVlcPlayer()?.detachViews()
+                                            context.stopService(Intent(context, PlaybackService::class.java))
+                                        }
                                         onBack()
                                     }
                                 }
@@ -501,7 +532,7 @@ fun MediaPlayerScreen(
                             if (!moved && (abs(delta.x) > viewConfiguration.touchSlop || abs(delta.y) > viewConfiguration.touchSlop)) {
                                 moved = true
                                 gesture = when {
-                                    isVideo && startPos.x < edgePx && abs(delta.x) > abs(delta.y) -> SwipeGesture.EDGE_BACK
+                                    startPos.x < edgePx && abs(delta.x) > abs(delta.y) -> SwipeGesture.EDGE_BACK
                                     isVideo && abs(delta.y) > abs(delta.x) && startPos.x < w / 2 -> SwipeGesture.BRIGHTNESS
                                     abs(delta.y) > abs(delta.x) -> SwipeGesture.VOLUME
                                     else -> null

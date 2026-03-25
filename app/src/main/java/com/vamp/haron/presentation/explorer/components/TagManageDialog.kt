@@ -20,9 +20,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.FileTag
 import com.vamp.haron.domain.model.TagColors
 
@@ -63,150 +64,121 @@ fun TagManageDialog(
     onDeleteTag: (name: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Editing state
-    var editingTag by remember { mutableStateOf<FileTag?>(null) }
-    var isCreating by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf("") }
-    var editColorIndex by remember { mutableIntStateOf(0) }
-    var nameError by remember { mutableStateOf<String?>(null) }
+    // Sub-screen: null = list, FileTag = edit, "create" sentinel
+    var subScreen by remember { mutableStateOf<Any?>(null) }
     var deleteConfirmTag by remember { mutableStateOf<String?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.tags_manage)) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.close))
-                        }
-                    }
+        when (val screen = subScreen) {
+            is FileTag -> {
+                // Edit tag screen
+                TagCreateEditScreen(
+                    title = stringResource(R.string.tags_edit),
+                    initialName = screen.name,
+                    initialColorIndex = screen.colorIndex,
+                    existingNames = tagDefinitions.map { it.name }.filter { it != screen.name }.toSet(),
+                    confirmLabel = stringResource(R.string.save),
+                    onConfirm = { name, colorIndex ->
+                        onEditTag(screen.name, name, colorIndex)
+                        subScreen = null
+                    },
+                    onBack = { subScreen = null }
                 )
-            },
-            floatingActionButton = {
-                if (!isCreating && editingTag == null) {
-                    FloatingActionButton(onClick = {
-                        isCreating = true
-                        editName = ""
-                        editColorIndex = 0
-                        nameError = null
-                    }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.tags_create))
-                    }
-                }
             }
-        ) { paddingValues ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                // Inline create/edit form
-                if (isCreating || editingTag != null) {
-                    TagEditForm(
-                        name = editName,
-                        colorIndex = editColorIndex,
-                        nameError = nameError,
-                        isEdit = editingTag != null,
-                        onNameChange = {
-                            editName = it
-                            nameError = null
-                        },
-                        onColorChange = { editColorIndex = it },
-                        onConfirm = {
-                            val trimmed = editName.trim()
-                            if (trimmed.isEmpty()) {
-                                return@TagEditForm
-                            }
-                            if (editingTag != null) {
-                                val old = editingTag!!
-                                if (trimmed != old.name && tagDefinitions.any { it.name == trimmed }) {
-                                    nameError = "exists"
-                                    return@TagEditForm
+            "create" -> {
+                // Create tag screen
+                TagCreateEditScreen(
+                    title = stringResource(R.string.tag_create_title),
+                    initialName = "",
+                    initialColorIndex = 0,
+                    existingNames = tagDefinitions.map { it.name }.toSet(),
+                    confirmLabel = stringResource(R.string.tags_create),
+                    onConfirm = { name, colorIndex ->
+                        onAddTag(name, colorIndex)
+                        subScreen = null
+                    },
+                    onBack = { subScreen = null }
+                )
+            }
+            else -> {
+                // Main list screen
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(stringResource(R.string.tags_manage)) },
+                            navigationIcon = {
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                                 }
-                                onEditTag(old.name, trimmed, editColorIndex)
-                                editingTag = null
-                            } else {
-                                if (tagDefinitions.any { it.name == trimmed }) {
-                                    nameError = "exists"
-                                    return@TagEditForm
-                                }
-                                onAddTag(trimmed, editColorIndex)
-                                isCreating = false
                             }
-                            editName = ""
-                            nameError = null
-                        },
-                        onCancel = {
-                            isCreating = false
-                            editingTag = null
-                            editName = ""
-                            nameError = null
+                        )
+                    },
+                    floatingActionButton = {
+                        FloatingActionButton(onClick = { subScreen = "create" }) {
+                            Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.tags_create))
                         }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                if (tagDefinitions.isEmpty() && !isCreating) {
-                    Box(
+                    }
+                ) { paddingValues ->
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                            .swipeBackFromLeft(onBack = onDismiss)
+                            .padding(paddingValues)
                     ) {
-                        Text(
-                            text = stringResource(R.string.tags_no_tags),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                        items(tagDefinitions, key = { it.name }) { tag ->
-                            val color = TagColors.palette.getOrElse(tag.colorIndex) { TagColors.palette[0] }
-                            Row(
+                        if (tagDefinitions.isEmpty()) {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                )
-                                Spacer(Modifier.width(12.dp))
                                 Text(
-                                    text = tag.name,
+                                    text = stringResource(R.string.tags_no_tags),
                                     style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.weight(1f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                IconButton(onClick = {
-                                    editingTag = tag
-                                    isCreating = false
-                                    editName = tag.name
-                                    editColorIndex = tag.colorIndex
-                                    nameError = null
-                                }) {
-                                    Icon(
-                                        Icons.Filled.Edit,
-                                        contentDescription = stringResource(R.string.tags_edit),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    deleteConfirmTag = tag.name
-                                }) {
-                                    Icon(
-                                        Icons.Filled.Delete,
-                                        contentDescription = stringResource(R.string.tags_delete),
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
+                            }
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                                items(tagDefinitions, key = { it.name }) { tag ->
+                                    val color = TagColors.palette.getOrElse(tag.colorIndex) { TagColors.palette[0] }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(
+                                            text = tag.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(onClick = { subScreen = tag }) {
+                                            Icon(
+                                                Icons.Filled.Edit,
+                                                contentDescription = stringResource(R.string.tags_edit),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        IconButton(onClick = { deleteConfirmTag = tag.name }) {
+                                            Icon(
+                                                Icons.Filled.Delete,
+                                                contentDescription = stringResource(R.string.tags_delete),
+                                                modifier = Modifier.size(20.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -239,89 +211,113 @@ fun TagManageDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TagEditForm(
-    name: String,
-    colorIndex: Int,
-    nameError: String?,
-    isEdit: Boolean,
-    onNameChange: (String) -> Unit,
-    onColorChange: (Int) -> Unit,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit
+private fun TagCreateEditScreen(
+    title: String,
+    initialName: String,
+    initialColorIndex: Int,
+    existingNames: Set<String>,
+    confirmLabel: String,
+    onConfirm: (name: String, colorIndex: Int) -> Unit,
+    onBack: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = if (isEdit) stringResource(R.string.tags_edit) else stringResource(R.string.tags_create),
-            style = MaterialTheme.typography.titleSmall
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = onNameChange,
-            label = { Text(stringResource(R.string.tags_name_hint)) },
-            isError = nameError != null,
-            supportingText = if (nameError != null) {
-                { Text(stringResource(R.string.tags_name_exists)) }
-            } else null,
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onConfirm() }),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.tags_color),
-            style = MaterialTheme.typography.labelMedium
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TagColors.palette.forEachIndexed { idx, color ->
-                val isSelected = idx == colorIndex
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                        .then(
-                            if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                            else Modifier
-                        )
-                        .clickable { onColorChange(idx) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isSelected) {
-                        Icon(
-                            Icons.Filled.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.surface
-                        )
+    var name by remember { mutableStateOf(initialName) }
+    var colorIndex by remember { mutableIntStateOf(initialColorIndex) }
+    var nameError by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = {
+                            val trimmed = name.trim()
+                            if (trimmed.isEmpty()) return@TextButton
+                            if (trimmed in existingNames) {
+                                nameError = "exists"
+                                return@TextButton
+                            }
+                            onConfirm(trimmed, colorIndex)
+                        },
+                        enabled = name.trim().isNotEmpty()
+                    ) {
+                        Text(confirmLabel)
                     }
                 }
-            }
+            )
         }
-        Spacer(Modifier.height(12.dp))
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth()
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
+                .padding(paddingValues)
+                .padding(16.dp)
         ) {
-            TextButton(onClick = onCancel) {
-                Text(stringResource(R.string.cancel))
-            }
-            Spacer(Modifier.width(8.dp))
-            TextButton(
-                onClick = onConfirm,
-                enabled = name.trim().isNotEmpty()
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    nameError = null
+                },
+                label = { Text(stringResource(R.string.tags_name_hint)) },
+                isError = nameError != null,
+                supportingText = if (nameError != null) {
+                    { Text(stringResource(R.string.tags_name_exists)) }
+                } else null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    val trimmed = name.trim()
+                    if (trimmed.isEmpty()) return@KeyboardActions
+                    if (trimmed in existingNames) {
+                        nameError = "exists"
+                        return@KeyboardActions
+                    }
+                    onConfirm(trimmed, colorIndex)
+                }),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.tags_color),
+                style = MaterialTheme.typography.labelMedium
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(if (isEdit) stringResource(R.string.save) else stringResource(R.string.tags_create))
+                TagColors.palette.forEachIndexed { idx, color ->
+                    val isSelected = idx == colorIndex
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .then(
+                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                else Modifier
+                            )
+                            .clickable { colorIndex = idx },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.surface
+                            )
+                        }
+                    }
+                }
             }
         }
     }

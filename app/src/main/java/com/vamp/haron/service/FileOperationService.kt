@@ -134,14 +134,17 @@ class FileOperationService : Service() {
 
         // Default: copy/move (original flow)
         val sourcePaths = intent?.getStringArrayListExtra(EXTRA_SOURCE_PATHS) ?: run {
+            EcosystemLogger.e(HaronConstants.TAG, "FileOperationService: no source paths in intent, stopping")
             stopSelf()
             return START_NOT_STICKY
         }
         val destinationDir = intent.getStringExtra(EXTRA_DESTINATION_DIR) ?: run {
+            EcosystemLogger.e(HaronConstants.TAG, "FileOperationService: no destination dir in intent, stopping")
             stopSelf()
             return START_NOT_STICKY
         }
         val isMove = intent.getBooleanExtra(EXTRA_IS_MOVE, false)
+        EcosystemLogger.d(HaronConstants.TAG, "FileOperationService: start copy/move, isMove=$isMove, paths=${sourcePaths.size}, dest=$destinationDir")
         val resolutionName = intent.getStringExtra(EXTRA_CONFLICT_RESOLUTION)
         val conflictResolution = resolutionName?.let {
             try { ConflictResolution.valueOf(it) } catch (_: Exception) { ConflictResolution.RENAME }
@@ -394,6 +397,8 @@ class FileOperationService : Service() {
     ) {
         val type = if (isMove) OperationType.MOVE else OperationType.COPY
         val isDstSaf = destinationDir.startsWith("content://")
+        EcosystemLogger.d(HaronConstants.TAG, "executeOperation: type=$type, sources=${sourcePaths.size}, dest=$destinationDir, resolution=$conflictResolution")
+        for (p in sourcePaths) EcosystemLogger.d(HaronConstants.TAG, "executeOperation: src=$p, exists=${if (p.startsWith("content://")) "SAF" else File(p).exists()}")
 
         // Pre-count total files (flatten folders into individual files)
         val totalFiles = sourcePaths.sumOf { path ->
@@ -404,6 +409,7 @@ class FileOperationService : Service() {
                 else 1
             }
         }
+        EcosystemLogger.d(HaronConstants.TAG, "executeOperation: totalFiles=$totalFiles")
 
         _progress.value = OperationProgress(current = 0, total = totalFiles, currentFileName = "", type = type)
 
@@ -456,8 +462,14 @@ class FileOperationService : Service() {
                 when {
                     !isSrcSaf && !isDstSaf -> {
                         val src = File(srcPath)
-                        if (!src.exists()) continue
+                        if (!src.exists()) {
+                            EcosystemLogger.e(HaronConstants.TAG, "executeOperation: src does not exist: $srcPath")
+                            continue
+                        }
                         val destDir = File(destinationDir)
+                        if (!destDir.exists()) {
+                            EcosystemLogger.e(HaronConstants.TAG, "executeOperation: destDir does not exist: $destinationDir")
+                        }
                         val destFile = File(destDir, fileName)
                         val dest = resolveFileConflict(destFile, conflictResolution, destDir, fileName) ?: continue
                         if (src.isDirectory && dest.absolutePath.startsWith(src.absolutePath + File.separator)) {
@@ -482,6 +494,7 @@ class FileOperationService : Service() {
                             else { val sz = src.length(); src.copyTo(dest, overwrite = false); updateFileProgress(src.name, sz) }
                         }
                         itemsCompleted++
+                        EcosystemLogger.d(HaronConstants.TAG, "executeOperation: completed $fileName, itemsCompleted=$itemsCompleted")
                     }
                     isSrcSaf && !isDstSaf -> {
                         val destDir = File(destinationDir)
@@ -555,6 +568,7 @@ class FileOperationService : Service() {
     // ==================== Common helpers ====================
 
     private suspend fun finishOperation(completed: Int, total: Int, type: OperationType, error: String?) {
+        EcosystemLogger.d(HaronConstants.TAG, "finishOperation: completed=$completed/$total, type=$type, error=$error")
         idleJob?.cancel()
         _progress.value = OperationProgress(
             current = completed,
