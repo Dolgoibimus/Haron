@@ -39,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 
 private data class FeatureItem(
     val text: String,
@@ -86,6 +87,7 @@ fun FeaturesScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -165,6 +167,7 @@ private fun FeatureCategoryDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
