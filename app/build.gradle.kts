@@ -51,7 +51,7 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            isEnable = project.findProperty("enableAbiSplits")?.toString()?.toBoolean() != false
             reset()
             include("armeabi-v7a", "arm64-v8a")
             isUniversalApk = false
