@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Security
@@ -592,6 +593,54 @@ fun SettingsScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.themes_title))
             }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- Power saving ---
+            SectionHeader(
+                icon = Icons.Filled.BatterySaver,
+                title = stringResource(R.string.power_save_section)
+            )
+            Spacer(Modifier.height(8.dp))
+            val haronPrefs = remember { com.vamp.haron.data.datastore.HaronPreferences(context) }
+            var powerSave by remember { mutableStateOf(haronPrefs.powerSaveEnabled) }
+            var batteryThreshold by remember { mutableIntStateOf(haronPrefs.animBatteryThreshold) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.power_save_toggle), modifier = Modifier.weight(1f))
+                Switch(checked = powerSave, onCheckedChange = {
+                    powerSave = it
+                    haronPrefs.powerSaveEnabled = it
+                })
+            }
+            Text(
+                text = stringResource(R.string.power_save_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.anim_battery_threshold, batteryThreshold),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = batteryThreshold.toFloat(),
+                onValueChange = {
+                    batteryThreshold = it.toInt()
+                    haronPrefs.animBatteryThreshold = it.toInt()
+                },
+                valueRange = 0f..50f,
+                steps = 9
+            )
+            Text(
+                text = stringResource(R.string.anim_battery_threshold_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()

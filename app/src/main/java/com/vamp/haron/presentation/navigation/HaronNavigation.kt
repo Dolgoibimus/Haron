@@ -369,13 +369,27 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
 
     // Matrix Rain animation — reactive config via SharedPreferences listener
     val matrixPrefs = remember { com.vamp.haron.data.datastore.HaronPreferences(context) }
+
+    /** Check if animations should be globally suppressed (power save or low battery) */
+    fun isAnimSuppressed(): Boolean {
+        if (matrixPrefs.powerSaveEnabled) return true
+        val threshold = matrixPrefs.animBatteryThreshold
+        if (threshold > 0) {
+            val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            val level = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
+            if (level <= threshold) return true
+        }
+        return false
+    }
+
     fun readMatrixConfig(): com.vamp.haron.presentation.matrix.MatrixRainConfig {
+        val suppressed = isAnimSuppressed()
         val isCharging = if (matrixPrefs.matrixOnlyCharging) {
             val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
             bm?.isCharging ?: false
         } else true
         return com.vamp.haron.presentation.matrix.MatrixRainConfig(
-            enabled = matrixPrefs.matrixEnabled && isCharging,
+            enabled = matrixPrefs.matrixEnabled && isCharging && !suppressed,
             mode = matrixPrefs.matrixMode,
             color = androidx.compose.ui.graphics.Color(matrixPrefs.matrixColor.toInt() or 0xFF000000.toInt()),
             speed = matrixPrefs.matrixSpeed,
@@ -386,12 +400,13 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         )
     }
     fun readSnowfallConfig(): com.vamp.haron.presentation.matrix.SnowfallConfig {
+        val suppressed = isAnimSuppressed()
         val isCharging = if (matrixPrefs.snowfallOnlyCharging) {
             val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
             bm?.isCharging ?: false
         } else true
         return com.vamp.haron.presentation.matrix.SnowfallConfig(
-            enabled = matrixPrefs.snowfallEnabled && isCharging,
+            enabled = matrixPrefs.snowfallEnabled && isCharging && !suppressed,
             speed = matrixPrefs.snowfallSpeed,
             density = matrixPrefs.snowfallDensity,
             opacity = matrixPrefs.snowfallOpacity,
@@ -399,12 +414,18 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             onlyCharging = matrixPrefs.snowfallOnlyCharging
         )
     }
-    fun readStarfieldConfig() = com.vamp.haron.presentation.matrix.StarfieldConfig(
-        enabled = matrixPrefs.starfieldEnabled, speed = matrixPrefs.starfieldSpeed, density = matrixPrefs.starfieldDensity,
-        opacity = matrixPrefs.starfieldOpacity, size = matrixPrefs.starfieldSize, onlyCharging = matrixPrefs.starfieldOnlyCharging)
-    fun readDustConfig() = com.vamp.haron.presentation.matrix.DustConfig(
-        enabled = matrixPrefs.dustEnabled, speed = matrixPrefs.dustSpeed, density = matrixPrefs.dustDensity,
-        opacity = matrixPrefs.dustOpacity, size = matrixPrefs.dustSize, onlyCharging = matrixPrefs.dustOnlyCharging)
+    fun readStarfieldConfig(): com.vamp.haron.presentation.matrix.StarfieldConfig {
+        val suppressed = isAnimSuppressed()
+        return com.vamp.haron.presentation.matrix.StarfieldConfig(
+            enabled = matrixPrefs.starfieldEnabled && !suppressed, speed = matrixPrefs.starfieldSpeed, density = matrixPrefs.starfieldDensity,
+            opacity = matrixPrefs.starfieldOpacity, size = matrixPrefs.starfieldSize, onlyCharging = matrixPrefs.starfieldOnlyCharging)
+    }
+    fun readDustConfig(): com.vamp.haron.presentation.matrix.DustConfig {
+        val suppressed = isAnimSuppressed()
+        return com.vamp.haron.presentation.matrix.DustConfig(
+            enabled = matrixPrefs.dustEnabled && !suppressed, speed = matrixPrefs.dustSpeed, density = matrixPrefs.dustDensity,
+            opacity = matrixPrefs.dustOpacity, size = matrixPrefs.dustSize, onlyCharging = matrixPrefs.dustOnlyCharging)
+    }
 
     var matrixConfig by remember { mutableStateOf(readMatrixConfig()) }
     var snowfallConfig by remember { mutableStateOf(readSnowfallConfig()) }

@@ -77,6 +77,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.haron.common.constants.HaronConstants
+import com.vamp.haron.data.observer.FileContentObserver
 import com.vamp.haron.presentation.applock.AppLockViewModel
 import com.vamp.haron.presentation.applock.LockScreen
 import com.vamp.haron.presentation.cast.CastOverlay
@@ -111,6 +112,7 @@ class MainActivity : FragmentActivity() {
     lateinit var dlnaManager: com.vamp.haron.data.cast.DlnaManager
 
     private val appLockViewModel: AppLockViewModel by viewModels()
+    private var contentObserver: FileContentObserver? = null
 
     /** Received files from external intents (ACTION_VIEW / ACTION_SEND) */
     internal val receivedFiles = mutableStateOf<List<ReceivedFile>>(emptyList())
@@ -170,11 +172,20 @@ class MainActivity : FragmentActivity() {
             processExternalIntent(intent)
         }
 
-        // Lifecycle observer for app lock
+        // ContentObserver: register when foreground, unregister when background
+        contentObserver = FileContentObserver(applicationContext)
+
+        // Lifecycle observer for app lock + ContentObserver
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_STOP -> appLockViewModel.onStop()
-                Lifecycle.Event.ON_RESUME -> appLockViewModel.onResume()
+                Lifecycle.Event.ON_RESUME -> {
+                    appLockViewModel.onResume()
+                    contentObserver?.register()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    appLockViewModel.onStop()
+                    contentObserver?.unregister()
+                }
                 else -> {}
             }
         })

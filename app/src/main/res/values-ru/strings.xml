@@ -1273,6 +1273,11 @@
     <string name="logs_clear">Очистить</string>
     <string name="logs_share">Поделиться</string>
     <string name="logs_empty">Логов пока нет</string>
+    <string name="power_save_section">Энергосбережение</string>
+    <string name="power_save_toggle">Режим экономии энергии</string>
+    <string name="power_save_description">Отключает анимации и снижает фоновую активность</string>
+    <string name="anim_battery_threshold">Отключать анимации при заряде ниже %d%%</string>
+    <string name="anim_battery_threshold_hint">0 = не отключать автоматически</string>
     <string name="logs_section">Диагностика</string>
     <string name="logs_button">Просмотр логов</string>
     <string name="logs_all">Все</string>

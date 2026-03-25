@@ -67,8 +67,7 @@ class HaronApp : Application(), Configuration.Provider {
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
-        // Register ContentObserver for media changes
-        contentObserver = FileContentObserver(applicationContext).also { it.register() }
+        // ContentObserver moved to MainActivity lifecycle (register onResume, unregister onPause)
 
         // Register ScreenOnReceiver for auto-indexing on screen unlock
         val (receiver, filter) = ScreenOnReceiver.create()
@@ -95,7 +94,6 @@ class HaronApp : Application(), Configuration.Provider {
     }
 
     override fun onTerminate() {
-        contentObserver?.unregister()
         screenOnReceiver?.let { unregisterReceiver(it) }
         shizukuManager.cleanup()
         super.onTerminate()

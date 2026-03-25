@@ -1275,6 +1275,11 @@
     <string name="logs_clear">Clear</string>
     <string name="logs_share">Share</string>
     <string name="logs_empty">No logs yet</string>
+    <string name="power_save_section">Power saving</string>
+    <string name="power_save_toggle">Power save mode</string>
+    <string name="power_save_description">Disables animations and reduces background activity</string>
+    <string name="anim_battery_threshold">Disable animations below %d%%</string>
+    <string name="anim_battery_threshold_hint">0 = never auto-disable</string>
     <string name="logs_section">Diagnostics</string>
     <string name="logs_button">View logs</string>
     <string name="logs_all">All</string>

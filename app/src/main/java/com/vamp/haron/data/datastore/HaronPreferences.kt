@@ -702,6 +702,18 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, 100)
         set(value) = prefs.edit().putInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, value.coerceAtLeast(0)).apply()
 
+    // --- Power saving ---
+
+    /** Global power save mode: disables animations, reduces polling frequency */
+    var powerSaveEnabled: Boolean
+        get() = prefs.getBoolean(KEY_POWER_SAVE, false)
+        set(value) = prefs.edit().putBoolean(KEY_POWER_SAVE, value).apply()
+
+    /** Battery threshold (%) below which animations auto-disable. 0 = off. Default 15%. */
+    var animBatteryThreshold: Int
+        get() = prefs.getInt(KEY_ANIM_BATTERY_THRESHOLD, 15)
+        set(value) = prefs.edit().putInt(KEY_ANIM_BATTERY_THRESHOLD, value.coerceIn(0, 100)).apply()
+
     private companion object {
         const val KEY_SORT_FIELD = "sort_field"
         const val KEY_SORT_DIRECTION = "sort_direction"
@@ -778,6 +790,8 @@ class HaronPreferences @Inject constructor(
         const val KEY_DUST_OPACITY = "dust_opacity"
         const val KEY_DUST_SIZE = "dust_size"
         const val KEY_DUST_ONLY_CHARGING = "dust_only_charging"
+        const val KEY_POWER_SAVE = "power_save_enabled"
+        const val KEY_ANIM_BATTERY_THRESHOLD = "anim_battery_threshold"
         const val MAX_RECENT = 5
         const val MAX_RENAME_PATTERNS = 10
     }
