@@ -1928,6 +1928,124 @@ RU:
 
 ---
 
+## Архитектура — кто кого вызывает
+
+### Экраны → ViewModel → UseCase → Repository → Manager/Service
+
+```
+ExplorerScreen
+  └─ ExplorerViewModel
+       ├─ GetFilesUseCase → FileRepositoryImpl → File/SAF/ShizukuFileService
+       ├─ CopyFilesUseCase → FileRepositoryImpl
+       ├─ MoveFilesUseCase → FileRepositoryImpl
+       ├─ DeleteFilesUseCase → FileRepositoryImpl
+       ├─ MoveToTrashUseCase → TrashRepositoryImpl
+       ├─ RenameFileUseCase → FileRepositoryImpl
+       ├─ CreateFileUseCase / CreateDirectoryUseCase → FileRepositoryImpl
+       ├─ BatchRenameUseCase → FileRepositoryImpl
+       ├─ FindDuplicatesUseCase (standalone, file I/O)
+       ├─ FindEmptyFoldersUseCase (standalone, file I/O)
+       ├─ CompareFoldersUseCase / CompareTextFilesUseCase (standalone)
+       ├─ CreateZipUseCase / ExtractArchiveUseCase (standalone, Apache Commons Compress)
+       ├─ CalculateHashUseCase (standalone, MessageDigest)
+       ├─ SearchFilesUseCase → SearchRepositoryImpl → FileIndexDao (FTS5)
+       ├─ IndexFilesUseCase → SearchRepositoryImpl
+       ├─ HideInFileUseCase / ExtractHiddenUseCase → SteganographyRepositoryImpl
+       ├─ ForceDeleteUseCase → FileRepositoryImpl + ShizukuFileService
+       ├─ GetFilePropertiesUseCase (standalone, EXIF/audio/PDF metadata)
+       ├─ LoadPreviewUseCase (standalone, thumbnails/text preview)
+       ├─ LoadApkInstallInfoUseCase (standalone, APK parsing)
+       ├─ SecureFolderRepositoryImpl (AES-256 via Android Keystore)
+       ├─ CloudManager → YandexDiskProvider / GoogleDriveProvider / DropboxProvider
+       ├─ FtpClientManager / SftpClientManager / SmbManager / WebDavManager
+       └─ FileOperationService (foreground, copy/move/delete/archive/extract)
+
+MediaPlayerScreen
+  └─ PlaybackService (MediaSessionService)
+       └─ VlcPlayerAdapter (SimpleBasePlayer) → VLC MediaPlayer
+
+TransferScreen
+  └─ TransferViewModel
+       ├─ TransferRepositoryImpl
+       │    ├─ HttpFileServer (Ktor CIO)
+       │    ├─ WifiDirectManager
+       │    ├─ BluetoothTransferManager
+       │    └─ ReceiveFileManager
+       └─ TransferService (foreground)
+
+FtpScreen / SmbScreen / WebDavScreen
+  └─ FtpViewModel / SmbViewModel / WebDavViewModel
+       └─ FtpClientManager / SftpClientManager / SmbManager / WebDavManager
+
+CastScreen (overlay in Explorer)
+  └─ CastViewModel (Activity-scoped singleton)
+       ├─ CastRepositoryImpl
+       │    ├─ GoogleCastManager (Chromecast)
+       │    ├─ DlnaManager (UPnP/DLNA)
+       │    └─ MiracastManager
+       ├─ TranscodeVideoUseCase → FFmpegKit
+       ├─ HttpFileServer (HLS streaming)
+       ├─ CastMediaService (foreground)
+       └─ ScreenMirrorService (MediaProjection → MJPEG)
+
+TerminalScreen
+  └─ TerminalViewModel
+       ├─ ShellSession (local bash via ProcessBuilder)
+       ├─ SshSessionManager (remote SSH via JSch)
+       └─ TerminalBuffer (VT100/xterm emulation)
+
+LibraryScreen
+  └─ LibraryViewModel
+       ├─ ScanBooksUseCase → BookDao (Room)
+       └─ LoadPreviewUseCase (covers)
+
+SettingsScreen
+  └─ SettingsViewModel
+       ├─ HaronPreferences (SharedPreferences)
+       ├─ AuthManager (PIN/biometric/security question)
+       └─ ShizukuManager
+
+StorageAnalysisScreen
+  └─ StorageAnalysisViewModel
+       └─ AnalyzeStorageUseCase (file walk + categorization)
+
+DuplicateDetectorScreen
+  └─ DuplicateDetectorViewModel
+       └─ FindDuplicatesUseCase (hash-based dedup)
+```
+
+### Foreground Services
+
+| Service | Тип | Назначение | Запускается из |
+|---------|-----|-----------|----------------|
+| FileOperationService | dataSync | Copy/move/delete/archive/extract | ExplorerViewModel |
+| PlaybackService | mediaPlayback | VLC audio/video | MediaPlayerScreen |
+| TransferService | dataSync | HTTP/FTP server, Wi-Fi Direct, BT | TransferViewModel |
+| CastMediaService | mediaPlayback | Chromecast/DLNA notification | CastViewModel |
+| ScreenMirrorService | mediaProjection | Screen capture → MJPEG | CastViewModel |
+
+### Shared State (Singleton/Static)
+
+| Объект | Тип | Доступ |
+|--------|-----|--------|
+| PlaylistHolder | object (static) | MediaPlayerScreen ↔ PlaybackService |
+| OperationHolder | object (static) | ExplorerViewModel → FileOperationService |
+| TransferHolder | object (static) | TransferViewModel ↔ TransferService |
+| GalleryHolder | object (static) | ExplorerViewModel → GalleryScreen |
+| EcosystemLogger | singleton | Все слои |
+| EcosystemPreferences | singleton | Тема, язык, голос |
+| HaronPreferences | @Singleton | Все настройки Haron |
+
+### Observers & Workers
+
+| Компонент | Триггер | Действие |
+|-----------|---------|----------|
+| FileContentObserver | MediaStore change | → FileIndexWorker (FTS5 reindex) |
+| ScreenOnReceiver | Screen ON | → FileIndexWorker (throttled 30 min) |
+| FileIndexWorker | WorkManager | SearchRepositoryImpl.indexAll() |
+
+---
+
 ## Опасные места (найденные в процессе)
 
 > Сюда добавлять баги и ловушки обнаруженные при разработке.
