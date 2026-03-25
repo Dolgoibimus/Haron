@@ -62,10 +62,6 @@ internal object SimpleNoise {
 private class SnowflakePattern(seed: Long) {
     val armLength: Float
     val branches: List<Branch>
-    val hasEndFork: Boolean
-    val endForkAngle: Float
-    val endForkLength: Float
-
     data class Branch(
         val positionOnArm: Float, // 0..1 position along the arm
         val length: Float,        // relative to arm length
@@ -83,9 +79,6 @@ private class SnowflakePattern(seed: Long) {
                 angle = (PI.toFloat() / 6f) + rng.nextFloat() * (PI.toFloat() / 4f) // 30-75 degrees
             )
         }.sortedBy { it.positionOnArm }
-        hasEndFork = rng.nextFloat() > 0.3f // 70% chance
-        endForkAngle = (PI.toFloat() / 5f) + rng.nextFloat() * (PI.toFloat() / 5f) // 36-72 deg
-        endForkLength = 0.15f + rng.nextFloat() * 0.2f
     }
 }
 
@@ -96,8 +89,10 @@ private class Snowflake(
     val fallSpeed: Float,
     val noiseOffset: Float,
     val noiseScale: Float,
-    val rotation: Float,
+    val rotation: Float,         // flat rotation speed (Z-axis)
     var currentRotation: Float,
+    val spinSpeed: Float,        // 3D spin speed around vertical Y-axis
+    var spinPhase: Float,        // current spin phase (radians)
     var time: Float,
     val isComplex: Boolean,
     val pattern: SnowflakePattern?
@@ -190,6 +185,8 @@ fun SnowfallCanvas(
                     noiseScale = 15f + Random.nextFloat() * 25f,
                     rotation = if (isBig) (Random.nextFloat() - 0.5f) * 2f else 0f,
                     currentRotation = Random.nextFloat() * 360f,
+                    spinSpeed = if (isBig) (0.01f + Random.nextFloat() * 0.03f) * (if (Random.nextBoolean()) 1f else -1f) else 0f,
+                    spinPhase = Random.nextFloat() * (2f * PI.toFloat()),
                     time = Random.nextFloat() * 100f,
                     isComplex = isBig,
                     pattern = if (isBig) SnowflakePattern(i.toLong() * 7919L + 13L) else null
@@ -207,6 +204,7 @@ fun SnowfallCanvas(
             val noiseDrift = SimpleNoise.noise1D(flake.time + flake.noiseOffset) * flake.noiseScale * 0.03f
             flake.x += (noiseDrift + globalWind.toFloat()) * dtFactor
             flake.currentRotation += flake.rotation * dtFactor
+            flake.spinPhase += flake.spinSpeed * dtFactor
 
             if (flake.y > h + flake.radius * 4) flake.reset(w, h)
             if (flake.x < -30f) flake.x += w + 60f
@@ -224,17 +222,21 @@ fun SnowfallCanvas(
                 circlePaint.alpha = alpha
                 nCanvas.drawCircle(flake.x, flake.y, flake.radius, circlePaint)
             } else {
-                // Big: procedural 6-fold snowflake
+                // Big: procedural 6-fold snowflake with 3D vertical spin
                 val p = flake.pattern
                 val armPx = flake.radius * 3f * p.armLength
+                // 3D spin: cos(phase) gives horizontal squash [-1..1]
+                val spinScaleX = cos(flake.spinPhase).coerceIn(-1f, 1f)
                 flakePaint.alpha = alpha
                 flakePaint.strokeWidth = (flake.radius * 0.2f).coerceIn(0.5f, 2f)
 
                 nCanvas.save()
+                // Apply 3D spin as horizontal scale around flake center
+                nCanvas.scale(spinScaleX, 1f, flake.x, flake.y)
                 nCanvas.rotate(flake.currentRotation, flake.x, flake.y)
 
                 for (arm in 0 until 6) {
-                    val baseAngle = arm * (PI.toFloat() / 3f) // 60 degrees apart
+                    val baseAngle = arm * (PI.toFloat() / 3f)
                     val endX = flake.x + cos(baseAngle) * armPx
                     val endY = flake.y + sin(baseAngle) * armPx
 
@@ -247,21 +249,10 @@ fun SnowfallCanvas(
                         val by = flake.y + sin(baseAngle) * armPx * branch.positionOnArm
                         val bLen = armPx * branch.length
 
-                        // Branch on one side
                         val a1 = baseAngle + branch.angle
                         nCanvas.drawLine(bx, by, bx + cos(a1) * bLen, by + sin(a1) * bLen, flakePaint)
-                        // Mirror branch
                         val a2 = baseAngle - branch.angle
                         nCanvas.drawLine(bx, by, bx + cos(a2) * bLen, by + sin(a2) * bLen, flakePaint)
-                    }
-
-                    // End fork
-                    if (p.hasEndFork) {
-                        val fLen = armPx * p.endForkLength
-                        val fa1 = baseAngle + p.endForkAngle
-                        val fa2 = baseAngle - p.endForkAngle
-                        nCanvas.drawLine(endX, endY, endX + cos(fa1) * fLen, endY + sin(fa1) * fLen, flakePaint)
-                        nCanvas.drawLine(endX, endY, endX + cos(fa2) * fLen, endY + sin(fa2) * fLen, flakePaint)
                     }
                 }
 
