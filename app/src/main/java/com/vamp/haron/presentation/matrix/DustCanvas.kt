@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +61,8 @@ fun DustCanvas(
     }
 
     var tick by remember { mutableIntStateOf(0) }
+    var dtFactor by remember { mutableFloatStateOf(1f) }
+    var lastFrameMs by remember { mutableLongStateOf(0L) }
     val motesRef = remember(config.density, config.size) { mutableStateOf<Array<DustMote>?>(null) }
 
     val dotPaint = remember {
@@ -70,9 +74,16 @@ fun DustCanvas(
 
     val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
     LaunchedEffect(config.enabled, config.fps) {
+        lastFrameMs = System.currentTimeMillis()
         while (true) {
             delay(frameDelayMs)
-            if (!isPaused) tick++
+            if (!isPaused) {
+                val now = System.currentTimeMillis()
+                val dt = (now - lastFrameMs).coerceIn(1, 200)
+                lastFrameMs = now
+                dtFactor = dt / 16.667f
+                tick++
+            }
         }
     }
 
@@ -109,14 +120,14 @@ fun DustCanvas(
         }
 
         val nCanvas = drawContext.canvas.nativeCanvas
-        val time = tick * config.speed
+        val time = tick * config.speed * dtFactor
 
         for (mote in motes) {
             // Perlin noise drift — gentle floating in all directions
             val nx = SimpleNoise.noise1D(time * mote.driftSpeed + mote.noiseOffsetX) * 1.5f
             val ny = SimpleNoise.noise1D(time * mote.driftSpeed + mote.noiseOffsetY) * 1.0f
-            mote.x += nx
-            mote.y += ny - 0.05f // very slight upward drift (warm air)
+            mote.x += nx * dtFactor
+            mote.y += (ny - 0.05f) * dtFactor // very slight upward drift (warm air)
 
             // Wrap around edges
             if (mote.x < -10f) mote.x += w + 20f

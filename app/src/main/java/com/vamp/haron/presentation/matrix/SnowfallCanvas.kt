@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,6 +96,8 @@ fun SnowfallCanvas(
     }
 
     var tick by remember { mutableIntStateOf(0) }
+    var dtFactor by remember { mutableFloatStateOf(1f) }
+    var lastFrameMs by remember { mutableLongStateOf(0L) }
     val flakesRef = remember(config.speed, config.density, config.size) { mutableStateOf<Array<Snowflake>?>(null) }
 
     val circlePaint = remember {
@@ -114,9 +118,16 @@ fun SnowfallCanvas(
 
     val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
     LaunchedEffect(config.enabled, config.fps) {
+        lastFrameMs = System.currentTimeMillis()
         while (true) {
             delay(frameDelayMs)
-            if (!isPaused) tick++
+            if (!isPaused) {
+                val now = System.currentTimeMillis()
+                val dt = (now - lastFrameMs).coerceIn(1, 200)
+                lastFrameMs = now
+                dtFactor = dt / 16.667f
+                tick++
+            }
         }
     }
 
@@ -162,17 +173,17 @@ fun SnowfallCanvas(
 
         for (flake in flakes) {
             // Advance personal time
-            flake.time += 0.01f * config.speed
+            flake.time += 0.01f * config.speed * dtFactor
 
             // Vertical: gravity + slight variation
-            flake.y += flake.fallSpeed
+            flake.y += flake.fallSpeed * dtFactor
 
             // Horizontal: Perlin noise drift + global wind
             val noiseDrift = SimpleNoise.noise1D(flake.time + flake.noiseOffset) * flake.noiseScale * 0.03f
-            flake.x += noiseDrift + globalWind.toFloat()
+            flake.x += (noiseDrift + globalWind.toFloat()) * dtFactor
 
             // Rotation
-            flake.currentRotation += flake.rotation
+            flake.currentRotation += flake.rotation * dtFactor
 
             // Reset when off screen
             if (flake.y > h + flake.radius * 4) {

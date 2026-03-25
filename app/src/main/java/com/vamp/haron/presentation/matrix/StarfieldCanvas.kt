@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,6 +68,8 @@ fun StarfieldCanvas(
     }
 
     var tick by remember { mutableIntStateOf(0) }
+    var dtFactor by remember { mutableFloatStateOf(1f) }
+    var lastFrameMs by remember { mutableLongStateOf(0L) }
     val starsRef = remember(config.density, config.size) { mutableStateOf<Array<Star>?>(null) }
     val shootingRef = remember { mutableStateOf<MutableList<ShootingStar>>(mutableListOf()) }
 
@@ -87,9 +91,16 @@ fun StarfieldCanvas(
 
     val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
     LaunchedEffect(config.enabled, config.fps) {
+        lastFrameMs = System.currentTimeMillis()
         while (true) {
             delay(frameDelayMs)
-            if (!isPaused) tick++
+            if (!isPaused) {
+                val now = System.currentTimeMillis()
+                val dt = (now - lastFrameMs).coerceIn(1, 200)
+                lastFrameMs = now
+                dtFactor = dt / 16.667f
+                tick++
+            }
         }
     }
 
@@ -123,7 +134,7 @@ fun StarfieldCanvas(
         }
 
         val nCanvas = drawContext.canvas.nativeCanvas
-        val time = tick * config.speed
+        val time = tick * config.speed * dtFactor
 
         // Draw stars with twinkling
         for (star in stars) {
@@ -170,8 +181,8 @@ fun StarfieldCanvas(
             s.life++
             val cosA = kotlin.math.cos(s.angle.toDouble()).toFloat()
             val sinA = kotlin.math.sin(s.angle.toDouble()).toFloat()
-            s.x += cosA * s.speed
-            s.y += sinA * s.speed
+            s.x += cosA * s.speed * dtFactor
+            s.y += sinA * s.speed * dtFactor
 
             val fadeIn = if (s.life < 8) s.life / 8f else 1f
             val fadeOut = if (s.life > s.maxLife - 15) (s.maxLife - s.life) / 15f else 1f

@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -87,6 +89,9 @@ fun MatrixRainCanvas(
 
     // Tick counter — drives Canvas invalidation
     var tick by remember { mutableIntStateOf(0) }
+    // deltaTime factor: 1.0 at 60fps, 2.0 at 30fps, 6.0 at 10fps
+    var dtFactor by remember { mutableFloatStateOf(1f) }
+    var lastFrameMs by remember { mutableLongStateOf(0L) }
 
     // Column state — re-init on speed/density/charset change
     val columnsRef = remember(config.speed, config.density, config.charset) { mutableStateOf<Array<MatrixColumn>?>(null) }
@@ -108,12 +113,19 @@ fun MatrixRainCanvas(
         }
     }
 
-    // Animation loop — fps controlled by config
+    // Animation loop — fps controlled by config, deltaTime for speed independence
     val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
     LaunchedEffect(config.enabled, config.fps) {
+        lastFrameMs = System.currentTimeMillis()
         while (true) {
             delay(frameDelayMs)
-            if (!isPaused) tick++
+            if (!isPaused) {
+                val now = System.currentTimeMillis()
+                val dt = (now - lastFrameMs).coerceIn(1, 200)
+                lastFrameMs = now
+                dtFactor = dt / 16.667f // normalize to 60fps baseline
+                tick++
+            }
         }
     }
 
@@ -155,8 +167,8 @@ fun MatrixRainCanvas(
         val b = (baseColor.blue * 255).toInt()
 
         for (col in columns) {
-            // Move head down
-            col.headY += col.speed
+            // Move head down (speed independent of FPS)
+            col.headY += col.speed * dtFactor
 
             // Reset when fully off screen
             if (col.headY - col.length * charSizePx > h) {
