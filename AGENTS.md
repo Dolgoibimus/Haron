@@ -2127,6 +2127,32 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 
 > Выполненные задачи с описанием как решили.
 
+### Batch 103 — Энергосбережение ⚠️ не проверено
+
+- ContentObserver перенесён из Application в MainActivity lifecycle (register onResume, unregister onPause)
+- Настройка "Режим экономии энергии" — отключает все анимации
+- Слайдер порога батареи (0-50%) — автоотключение анимаций при низком заряде (по умолчанию 15%)
+- Все 4 анимации проверяют powerSave + batteryThreshold
+- USB polling оставлен (уже 60 сек, только при USB). DLNA discovery уже lifecycle-scoped.
+
+### Batch 102 — Аудит кода: логирование, KDoc, архитектура ⚠️ не проверено
+
+**Логирование:**
+- TerminalBuffer: android.util.Log → EcosystemLogger (6 вызовов)
+- FileContentObserver, ScreenOnReceiver: логи триггеров индексации
+- GetFilesUseCase: логи virtual/protected ветвлений
+- CalculateHashUseCase: start/done + удалена мёртвая invokeFromUri()
+- GetInstalledAppsUseCase, FindEmptyFoldersUseCase: start/done
+- SettingsViewModel: PIN, биометрия, жесты (6 вызовов, было 0)
+- LibraryViewModel: scan, delete
+
+**KDoc комментарии (36 файлов):**
+- 7 сервисов, 7 репозиториев, 14 managers, 8 ViewModels
+
+**Архитектура в AGENTS.md:**
+- Полное дерево зависимостей Screen → ViewModel → UseCase → Repository → Manager
+- Таблицы: foreground services, shared state objects, observers & workers
+
 ### Batch 101 — Свайп-назад, прогресс-бар, аудиоплеер фиксы ⚠️ не проверено
 
 **Свайп от левого края = назад (все экраны):**
