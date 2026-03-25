@@ -1,40 +1,92 @@
-# v0.91 — Power saving, swipe-back, audio fixes
-- Power save mode: disables animations, reduces background activity
-- Battery threshold: auto-disable animations below set level (default 15%)
-- Swipe back from left edge on all settings screens, terminal, library, storage, duplicates, tags
-- Audio player: no autoplay, always starts from beginning, correct track on file tap
-- Progress bar positioned above custom navbar
-- Tag screens redesigned: separate create/edit screen, back navigation
-- Code audit: logging gaps filled, KDoc comments, architecture docs
+# v1.5 — About screen, power saving, swipe-back, audio player fixes
+- "About" screen: app icon, version, features list, changelog, logs, GitHub, privacy policy, copyright
+- "What's new" screen: expandable version history
+- Power save mode toggle in Settings — disables all animations
+- Battery threshold slider (0–50%) — auto-disable animations below set level (default 15%)
+- ContentObserver: register on foreground only (saves battery in background)
+- Swipe back from left edge on all screens: settings, terminal, library, storage, duplicates, tags, about, features, themes, animations
+- Tag screens redesigned: separate management and create/edit screens with back navigation
+- Tag management → tag assign navigation preserved when returning
+- Fix: audio player played wrong track when opened via file name tap (setPlaylist was missing for audio)
+- Fix: audio player buttons (play/prev/next) unresponsive — gesture overlay was intercepting taps
+- Fix: audio no autoplay on file open — press play when ready
+- Fix: audio always starts from beginning (position no longer restored for audio)
+- Fix: progress bar hidden behind custom navbar — raised to 56dp/112dp
+- Fix: copy/move from radial menu — verified working, added diagnostic logging
+- Code audit: logging gaps filled in 9 files, dead code removed (invokeFromUri), android.util.Log replaced
+- KDoc comments added to 36 key classes (services, repos, managers, ViewModels)
+- Architecture documentation: full dependency tree in AGENTS.md
 
-# v0.90 — Animated themes
+# v1.4 — Animated themes
 - 4 overlay animations: Matrix Rain, Snowfall, Starfield, Dust Particles
+- ThemesScreen with live preview cards (2×2 grid)
 - Individual settings per animation: speed, density, opacity, size
-- Matrix Rain: 5 charsets, custom RGB color, glow effect
+- Matrix Rain: 5 charsets (Katakana, Binary, Latin, Cyrillic, Mix), custom RGB color, glow effect
+- Snowfall: Perlin noise drift, rotation, 7 snowflake symbols
+- Starfield: twinkling stars, shooting comets with gradient tail
+- Dust: golden floating motes with brightness pulsation
 - "Only while charging" option for each animation
 - Auto-pause when app in background or screen off
+- Only one animation active at a time
 
-# v0.89 — Custom navbar, radial menu
-- Custom navbar replaces system navigation bar
+# v1.3 — Custom navbar, radial menu, arrow navigation
+- Custom navbar replaces system navigation bar (immersive mode)
 - Configurable pages with 5-7 buttons each
 - Radial menu: long press for Copy/Move, Delete/Force Delete, Create File/Folder
-- Custom icons for navbar buttons (pick image, crop, apply)
-- Arrow key navigation with cursor highlight
-- Shift mode for multi-selection ranges
+- Custom icons for navbar buttons (pick from gallery, crop, apply)
+- Arrow key navigation with cursor highlight (Windows-style selection)
+- Shift mode (long press ↓) for multi-selection ranges
+- Button editor dialog with tap/long-press action configuration
+- Fix: navbar page swipe conflict with radial gesture
+- Fix: navbar height jitter on long press
 
-# v0.88 — Arrow navigation, reader improvements
-- D-pad style navigation with arrow keys on navbar
-- Smart contrast for text readability on any background
-- Reader improvements: better scrolling, position memory
-
-# v0.87 — Cloud uploads, batch operations
+# v1.2 — Cloud uploads, network streaming, terminal
 - Yandex Disk / Google Drive / Dropbox: chunked upload with resume
-- Parallel transfer protection (sequential upload via Mutex)
-- MIME-type throttling workaround for Yandex (.tmp rename trick)
-- Dropbox upload sessions with offset correction
-
-# v0.86 — Network streaming, DND
 - FTP/SFTP/SMB/WebDAV media streaming without download
-- HTTP proxy for FTP streams (VLC cyrillic path workaround)
+- HTTP proxy for FTP streams (VLC cyrillic/spaces path workaround)
 - DND mode in video player: mutes notifications during playback
 - Saved FTP/SMB server list with credentials
+- Full terminal with VT100/xterm emulation, ANSI colors, SSH via JSch
+- Terminal tabs (Shell/SSH), tab completion, clickable paths
+- Fix: parallel uploads killed connections — sequential via Mutex
+- Fix: Yandex MIME throttling — upload as .tmp + rename
+- Fix: Dropbox IncorrectOffsetError on resume
+- Fix: AVI artifacts in VLC — software decoder for non-standard codecs
+
+# v1.1 — Cast, transfers, security
+- Chromecast / DLNA / Miracast casting with device discovery
+- HLS transcoding via FFmpeg for incompatible formats
+- Screen mirroring via MediaProjection → MJPEG stream
+- Photo slideshow and PDF presentation on TV
+- Wi-Fi Direct P2P file transfer
+- Bluetooth OPP file transfer
+- FTP client + FTP server (receive files)
+- SFTP client, SMB browser, WebDAV browser
+- Protected folder with AES-256 encryption (Android Keystore)
+- Steganography: hide files inside PNG images (LSB encoding)
+- Trusted devices with auto-accept transfers
+- Fix: cast reconnect after transcode timeout
+- Fix: HLS version 3 for Chromecast compatibility
+- Fix: AAC stereo downmix for Chromecast
+
+# v1.0 — Core file manager
+- Dual-panel file explorer with drag-and-drop
+- Copy, move, delete, rename with conflict resolution (replace/rename/skip)
+- Trash (recycle bin) with 30-day auto-cleanup
+- Archive support: ZIP, 7z, RAR, TAR, TAR.GZ
+- Built-in text editor with syntax highlighting
+- PDF reader with text search and page navigation
+- Document viewer: EPUB, FB2, DOCX, ODT, XLSX
+- Media player (VLC): audio + video with playlist
+- Gallery with pinch-to-zoom and swipe navigation
+- File properties: EXIF, audio tags, PDF/FB2 metadata, checksums
+- Full-text search (FTS5) + content grep
+- Voice commands (30+ commands)
+- Gesture system (4 edge swipes)
+- Storage analyzer with pie chart
+- Duplicate detector (hash-based)
+- Folder comparison (side-by-side diff)
+- App manager: installed apps, extract/install APK
+- Bookmarks, tags, shelf (favorites panel)
+- Shizuku support for Android/data access
+- USB OTG storage
