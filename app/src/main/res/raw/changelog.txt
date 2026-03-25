@@ -1,67 +1,114 @@
-# v1.5 — In development
-- "About" screen: app icon, version, features list, changelog, logs, GitHub, privacy policy, copyright
-- "What's new" screen: expandable version history
-- Power save mode toggle in Settings — disables all animations
-- Battery threshold slider (0–50%) — auto-disable animations below set level (default 15%)
-- ContentObserver: register on foreground only (saves battery in background)
-- Swipe back from left edge on all screens: settings, terminal, library, storage, duplicates, tags, about, features, themes, animations
-- Tag screens redesigned: separate management and create/edit screens with back navigation
-- Code audit: logging gaps filled, dead code removed, KDoc comments on 36 classes, architecture docs
-- Fix: audio player played wrong track when opened via file name tap
-- Fix: audio player buttons (play/prev/next) unresponsive in full screen
-- Fix: audio no autoplay on open, always starts from beginning
+# Batch 103 — Power saving, About screen (v1.5)
+- "About" screen in drawer: icon, version, features, changelog, logs, GitHub, privacy, copyright
+- "What's new" screen with expandable version history
+- Power save mode: disables animations, reduces background activity
+- Battery threshold slider (0–50%): auto-disable animations below set level
+- ContentObserver: foreground-only registration (saves battery)
 - Fix: progress bar hidden behind custom navbar
 
-# v1.4 — Release 2
-- 4 overlay animations: Matrix Rain, Snowfall, Starfield, Dust Particles with individual settings
-- Custom navbar replaces system navigation bar with configurable pages and buttons
-- Radial menu: long press for Copy/Move, Delete/Force Delete, Create File/Folder
-- Arrow key navigation with cursor highlight, Shift mode for multi-selection
-- Chromecast / DLNA / Miracast casting with HLS transcoding (FFmpeg)
-- Screen mirroring via MediaProjection, photo slideshow and PDF presentation on TV
-- Yandex Disk / Google Drive / Dropbox: chunked upload with resume
-- FTP/SFTP/SMB/WebDAV media streaming without download
-- Full terminal: VT100/xterm emulation, ANSI colors, SSH via JSch, tabs
-- Wi-Fi Direct and Bluetooth OPP file transfer
-- FTP client + FTP server, SFTP client, SMB browser, WebDAV browser
-- Protected folder with AES-256 encryption (Android Keystore)
-- Steganography: hide files inside PNG images
-- Trusted devices with auto-accept transfers
-- Audio tag editing with album cover search (Deezer + iTunes)
-- PDF and FB2 metadata in file properties
-- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 with hash comparison
-- Archive "1 to 1": each file into separate ZIP
-- Thumbnails for images inside archives
-- DND mode in video player
-- File duplication with 3 destination modes
-- Per-file progress for folder operations with speed display
-- Fix: parallel uploads killed connections — sequential via Mutex
-- Fix: Yandex MIME throttling — upload as .tmp + rename
-- Fix: Dropbox offset correction on resume
-- Fix: AVI artifacts in VLC — software decoder for non-standard codecs
-- Fix: cast reconnect after transcode timeout
-- Fix: HLS version 3 and AAC stereo for Chromecast compatibility
-- Fix: navbar page swipe conflict with radial gesture
+# Batch 102 — Code audit
+- Logging added to 9 files, dead code removed (invokeFromUri)
+- android.util.Log replaced with EcosystemLogger in TerminalBuffer
+- KDoc comments on 36 key classes
+- Architecture dependency tree in AGENTS.md
 
-# v1.0 — Release 1
-- Dual-panel file explorer with drag-and-drop
-- Copy, move, delete, rename with conflict resolution (replace/rename/skip)
-- Trash (recycle bin) with 30-day auto-cleanup
-- Archive support: ZIP, 7z, RAR, TAR, TAR.GZ with password protection
-- Built-in text editor with syntax highlighting
-- PDF reader with text search and page navigation
-- Document viewer: EPUB, FB2, DOCX, ODT, XLSX
-- Media player (VLC): audio + video with playlist
-- Gallery with pinch-to-zoom and swipe navigation
-- File properties: EXIF data with removal option
-- Full-text search (FTS5) + content grep
-- Voice commands (30+ commands)
-- Gesture system (4 edge swipes)
-- Storage analyzer with pie chart
-- Duplicate detector (hash-based)
-- Folder and text file comparison (side-by-side diff)
-- App manager: installed apps, extract/install APK
-- Bookmarks, tags, shelf (favorites panel)
-- Shizuku support for Android/data access
-- USB OTG storage
-- Open files from other apps (ACTION_VIEW / ACTION_SEND)
+# Batch 101 — Swipe-back, audio player fixes
+- Swipe back from left edge on all settings/terminal/library/storage/duplicates/tags screens
+- Tag screens redesigned: separate create/edit with back navigation
+- Fix: audio played wrong track from file tap (setPlaylist missing for audio)
+- Fix: audio buttons unresponsive in full screen (gesture overlay intercepted taps)
+- Fix: audio no autoplay, always starts from beginning
+
+# Batch 100 — Network streaming, DND (v1.4)
+- FTP/SFTP/SMB/WebDAV media streaming without download
+- HTTP proxy for FTP streams (VLC cyrillic workaround)
+- DND mode in video player
+- Saved FTP/SMB server list with credentials
+- Fix: cast reconnect after transcode timeout
+
+# Batch 90 — Animated themes
+- 4 overlay animations: Matrix Rain, Snowfall, Starfield, Dust
+- Individual settings: speed, density, opacity, size
+- Matrix Rain: 5 charsets, custom RGB, glow effect
+- "Only while charging" option, auto-pause in background
+
+# Batch 89 — Custom navbar, radial menu
+- Custom navbar replaces system nav bar
+- Configurable pages with 5-7 buttons
+- Radial menu: Copy/Move, Delete/Forever, File/Folder
+- Custom icons for navbar buttons
+- Arrow navigation with cursor, Shift multi-select
+- Fix: navbar swipe conflict with radial gesture
+
+# Batch 87 — Cloud uploads
+- Yandex/GDrive/Dropbox chunked upload with resume
+- Fix: parallel uploads killed connections (Mutex)
+- Fix: Yandex MIME throttling (.tmp rename)
+- Fix: Dropbox offset correction on resume
+
+# Batch 83 — Foreground service file operations
+- Copy/move/delete run in foreground service (unkillable)
+- Per-file progress with speed display
+- Cancel button stops immediately
+
+# Batch 75 — File duplication, archive extraction
+- Duplicate files: long tap Copy → count + 3 destinations
+- Quick extract: select archives → pulsing icon → choose destination
+- Archive "1 to 1": each file into separate ZIP
+
+# Batch 68 — FTP server/client
+- FTP server for receiving files
+- FTP client with connection pooling
+
+# Batch 54 — Cast, TV remote
+- Chromecast/DLNA/Miracast with HLS transcoding (FFmpeg)
+- Screen mirroring, photo slideshow, PDF presentation on TV
+- Fix: HLS version 3 + AAC stereo for Chromecast
+
+# Batch 53 — HLS transcoding
+- FFmpeg progressive cast: play while transcoding
+- Transcode cache with configurable TTL
+
+# Batch 41 — Trusted devices, transfers
+- Wi-Fi Direct and Bluetooth file transfer
+- Trusted devices with auto-accept
+- Device rename and aliases
+
+# Batch 38 — Steganography, security
+- Hide files inside PNG images (LSB encoding)
+- Protected folder: AES-256 (Android Keystore)
+
+# Batch 37 — Terminal
+- Full VT100/xterm emulation with ANSI colors
+- SSH via JSch, tabs (Shell/SSH)
+- Tab completion, clickable paths
+
+# Batch 36 — File/folder comparison
+- Side-by-side text diff with color coding
+- Recursive folder comparison with MD5 hashes
+
+# Batch 22 — Full-text search (v1.0)
+- FTS5 index + content grep
+- ML Kit image labeling for search
+
+# Batch 14 — Duplicate detector, shelf
+- Hash-based duplicate detection
+- Favorites shelf panel
+
+# Batch 12 — Archives, gallery, PDF
+- ZIP/7z/RAR/TAR support with passwords
+- Built-in gallery with pinch-to-zoom
+- PDF reader with search
+
+# Batch 10 — Media player, text editor
+- VLC audio+video with playlist
+- Text editor with syntax highlighting
+
+# Batch 4 — Drag-and-drop, trash
+- Drag-and-drop between panels
+- Trash with 30-day auto-cleanup
+
+# Batch 1 — Core file manager (v1.0)
+- Dual-panel explorer
+- Copy, move, delete, rename
+- Sort, filter, hidden files
