@@ -105,13 +105,13 @@
   > 3 destinations: subfolder here, other panel (subfolder), other panel (open folder)
   > Copy names: filename(1).ext, filename(2).ext, etc.
   > Folder size updates in real time during duplication
-- File duplication [NEW]
-  > Long tap on Copy → dialog with copy count and 3 directions [NEW]
-  > Into subfolder here: creates folder with file name, copies inside [NEW]
-  > Into other panel (subfolder): same, but in the other panel's folder [NEW]
-  > Into other panel (open folder): copies directly into current folder of other panel [NEW]
-  > Copy names: file(1).ext, file(2).ext etc. [NEW]
-  > Folder size updates in real-time during duplication [NEW]
+- File duplication
+  > Long tap on Copy → dialog with copy count and 3 directions
+  > Into subfolder here: creates folder with file name, copies inside
+  > Into other panel (subfolder): same, but in the other panel's folder
+  > Into other panel (open folder): copies directly into current folder of other panel
+  > Copy names: file(1).ext, file(2).ext etc.
+  > Folder size updates in real-time during duplication
 - Conflict dialog: replace / rename / skip
 
 # Trash
@@ -143,11 +143,11 @@
   > Collapsed by default into a thin strip — visible but doesn't block your work
   > Tap the strip → expands to show: file name, speed, percentage, cancel button
   > Automatically collapses when a new operation starts
-- Per-file progress for folder operations [NEW]
+- Per-file progress for folder operations
   > When copying/moving/deleting a folder — shows each file individually, not just "folder"
-- Transfer speed display in all progress bars (except delete) [NEW]
+- Transfer speed display in all progress bars (except delete)
   > Shown in MB/s or KB/s in real time
-- Cancel button stops operation immediately [NEW]
+- Cancel button stops operation immediately
   > Tap "Cancel" → operation stops, already processed files are preserved
 
 # Side Menu (Drawer)
@@ -306,19 +306,13 @@
 - Extract options: extract here or into subfolder by archive name
 - Smart detection: if archive has single root folder — extract as-is without dialog
 - Quick extract from file list
-  > Select archives (ZIP/7z/RAR) in file list → Archive icon pulses and changes to Extract
+  > Select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract
   > Tap pulsing icon → choose destination: next to archive / current panel / other panel
-  > Each archive extracts into a subfolder with its name (auto-created)
+  > Each archive extracts into a subfolder with its name (created automatically)
   > Works with single or multiple archives at once
-- "1 to 1" archiving
+- Archive "1 to 1" [NEW]
   > Select multiple files → Archive → "1 to 1" — each file becomes a separate ZIP
-- Quick extraction from file list [NEW]
-  > Select archives (ZIP/7z/RAR) — Archive icon pulses and changes to Extract [NEW]
-  > Tap pulsing icon → choose where: next to archive / current panel / other panel [NEW]
-  > Each archive extracts into subfolder with archive name (created automatically) [NEW]
-  > Works with one or multiple archives simultaneously [NEW]
-- Archive 1-in-1 [NEW]
-  > Select multiple files → Archive → "1 in 1" — each file into separate ZIP [NEW]
+  > Voice: "archive" / "zip"
 
 # Text Editor
 - View and edit text and code files
@@ -360,19 +354,19 @@
   > Title, author, subject, keywords, creator, producer, creation date, page count
 - FB2 metadata
   > Title, author, genre, language, series, date, annotation
-- Audio tag editing [NEW]
-  > Title, artist, album, year, genre, duration, bitrate (editable) [NEW]
-  > Save/edit directly in file properties [NEW]
-  > Album cover search from internet (Deezer + iTunes) with save to file [NEW]
-  > Cover search by filename — automatic parsing of artist and title [NEW]
-  > Smart search: one query fills all missing tags (title, artist, album, year, genre) + cover [NEW]
-  > "Save all" button: saves tags and cover in one tap [NEW]
-- PDF metadata: title, author, subject, keywords, creator, generator, creation date, page count [NEW]
-- FB2 metadata: title, author, genre, language, series, date, annotation [NEW]
-- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512 [NEW]
+- Audio tag editing
+  > Title, artist, album, year, genre, duration, bitrate (editable)
+  > Save/edit directly in file properties
+  > Album cover search from internet (Deezer + iTunes) with save to file
+  > Cover search by filename — automatic parsing of artist and title
+  > Smart search: one query fills all missing tags (title, artist, album, year, genre) + cover
+  > "Save all" button: saves tags and cover in one tap
+- PDF metadata: title, author, subject, keywords, creator, generator, creation date, page count
+- FB2 metadata: title, author, genre, language, series, date, annotation
+- Checksums: CRC32, MD5, SHA-1, SHA-256, SHA-512
   > Tap "Calculate" → choose hash type
   > Paste expected hash → instant match/mismatch check
-- Hash comparison: paste a reference hash — instant match verification [NEW]
+- Hash comparison: paste a reference hash — instant match verification
 
 # Storage Analyzer
 - Pie chart by file type
