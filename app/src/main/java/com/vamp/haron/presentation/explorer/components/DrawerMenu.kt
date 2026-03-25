@@ -120,6 +120,7 @@ fun DrawerMenu(
     isListeningForTransfer: Boolean = false,
     onOpenSettings: () -> Unit,
     onOpenFeatures: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
     onSetTheme: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -613,6 +614,15 @@ fun DrawerMenu(
                     icon = { Icon(Icons.Filled.Info, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
                     title = stringResource(R.string.features_title),
                     onClick = { onOpenFeatures(); onDismiss() }
+                )
+            }
+
+            // --- About ---
+            item {
+                DrawerItem(
+                    icon = { Icon(Icons.Filled.Info, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                    title = stringResource(R.string.about_title),
+                    onClick = { onOpenAbout(); onDismiss() }
                 )
             }
 

@@ -146,6 +146,7 @@ fun ExplorerScreen(
     onOpenAppManager: () -> Unit = { },
     onOpenSettings: () -> Unit = { },
     onOpenFeatures: () -> Unit = { },
+    onOpenAbout: () -> Unit = { },
     onOpenSupport: () -> Unit = { },
     onOpenGlobalSearch: () -> Unit = { },
     onOpenTransfer: () -> Unit = { },
@@ -236,6 +237,9 @@ fun ExplorerScreen(
                 }
                 is NavigationEvent.OpenSupport -> {
                     onOpenSupport()
+                }
+                is NavigationEvent.OpenAbout -> {
+                    onOpenAbout()
                 }
                 is NavigationEvent.OpenGlobalSearch -> {
                     onOpenGlobalSearch()
@@ -2088,6 +2092,7 @@ private fun ExplorerOverlays(
                     },
                     onOpenSettings = { viewModel.openSettings() },
                     onOpenFeatures = { viewModel.openFeatures() },
+                    onOpenAbout = { viewModel.openAbout() },
                     onOpenSupport = { viewModel.openSupport() },
                     onSetTheme = { viewModel.setTheme(it) },
                     onDismiss = viewModel::dismissDrawer

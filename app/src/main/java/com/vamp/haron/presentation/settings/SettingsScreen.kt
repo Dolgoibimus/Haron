@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Cast
@@ -69,7 +68,6 @@ fun SettingsScreen(
     onOpenGesturesVoice: () -> Unit = {},
     onOpenNavbarSettings: () -> Unit = {},
     onOpenThemes: () -> Unit = {},
-    onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -645,21 +643,6 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-
-            // --- Diagnostics ---
-            SectionHeader(
-                icon = Icons.Filled.BugReport,
-                title = stringResource(R.string.logs_section)
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onOpenLogs,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.BugReport, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.logs_button))
-            }
 
             Spacer(Modifier.height(32.dp))
         }

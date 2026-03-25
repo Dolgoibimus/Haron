@@ -1,0 +1,40 @@
+# v0.91 — Power saving, swipe-back, audio fixes
+- Power save mode: disables animations, reduces background activity
+- Battery threshold: auto-disable animations below set level (default 15%)
+- Swipe back from left edge on all settings screens, terminal, library, storage, duplicates, tags
+- Audio player: no autoplay, always starts from beginning, correct track on file tap
+- Progress bar positioned above custom navbar
+- Tag screens redesigned: separate create/edit screen, back navigation
+- Code audit: logging gaps filled, KDoc comments, architecture docs
+
+# v0.90 — Animated themes
+- 4 overlay animations: Matrix Rain, Snowfall, Starfield, Dust Particles
+- Individual settings per animation: speed, density, opacity, size
+- Matrix Rain: 5 charsets, custom RGB color, glow effect
+- "Only while charging" option for each animation
+- Auto-pause when app in background or screen off
+
+# v0.89 — Custom navbar, radial menu
+- Custom navbar replaces system navigation bar
+- Configurable pages with 5-7 buttons each
+- Radial menu: long press for Copy/Move, Delete/Force Delete, Create File/Folder
+- Custom icons for navbar buttons (pick image, crop, apply)
+- Arrow key navigation with cursor highlight
+- Shift mode for multi-selection ranges
+
+# v0.88 — Arrow navigation, reader improvements
+- D-pad style navigation with arrow keys on navbar
+- Smart contrast for text readability on any background
+- Reader improvements: better scrolling, position memory
+
+# v0.87 — Cloud uploads, batch operations
+- Yandex Disk / Google Drive / Dropbox: chunked upload with resume
+- Parallel transfer protection (sequential upload via Mutex)
+- MIME-type throttling workaround for Yandex (.tmp rename trick)
+- Dropbox upload sessions with offset correction
+
+# v0.86 — Network streaming, DND
+- FTP/SFTP/SMB/WebDAV media streaming without download
+- HTTP proxy for FTP streams (VLC cyrillic path workaround)
+- DND mode in video player: mutes notifications during playback
+- Saved FTP/SMB server list with credentials

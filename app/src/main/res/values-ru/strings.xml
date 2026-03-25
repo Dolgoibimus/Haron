@@ -1280,6 +1280,17 @@
     <string name="anim_battery_threshold_hint">0 = не отключать автоматически</string>
     <string name="logs_section">Диагностика</string>
     <string name="logs_button">Просмотр логов</string>
+    <string name="changelog_title">Что нового</string>
+    <string name="changelog_button">Что нового</string>
+    <string name="about_title">О приложении</string>
+    <string name="about_button">О приложении</string>
+    <string name="about_version">Версия %s</string>
+    <string name="about_subtitle">Файловый менеджер экосистемы VAMP</string>
+    <string name="about_features">Список функций</string>
+    <string name="about_privacy">Политика конфиденциальности</string>
+    <string name="about_privacy_text">Haron не собирает, не хранит и не передаёт персональные данные. Все файлы, настройки и учётные данные хранятся локально на устройстве. Сетевые функции (FTP, SMB, WebDAV, облака) подключаются только к серверам, которые вы настроили. Без аналитики, телеметрии и рекламы.</string>
+    <string name="about_copyright_title">Авторские права и лицензия</string>
+    <string name="about_copyright_text">Haron — часть экосистемы VAMP, набора Android-приложений, работающих вместе. Создан на Kotlin, Jetpack Compose и библиотеках с открытым кодом. Все права защищены.</string>
     <string name="logs_all">Все</string>
     <string name="logs_share_title">Поделиться логами</string>
     <string name="logs_select_categories">Выберите категории для отправки:</string>

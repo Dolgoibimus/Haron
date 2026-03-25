@@ -1282,6 +1282,17 @@
     <string name="anim_battery_threshold_hint">0 = never auto-disable</string>
     <string name="logs_section">Diagnostics</string>
     <string name="logs_button">View logs</string>
+    <string name="changelog_title">What\'s new</string>
+    <string name="changelog_button">What\'s new</string>
+    <string name="about_title">About</string>
+    <string name="about_button">About app</string>
+    <string name="about_version">Version %s</string>
+    <string name="about_subtitle">File manager for VAMP Ecosystem</string>
+    <string name="about_features">Features list</string>
+    <string name="about_privacy">Privacy Policy</string>
+    <string name="about_privacy_text">Haron does not collect, store, or transmit any personal data. All files, settings, and credentials are stored locally on your device. Network features (FTP, SMB, WebDAV, cloud sync) connect only to servers you configure. No analytics, no telemetry, no ads.</string>
+    <string name="about_copyright_title">Copyright &amp; License</string>
+    <string name="about_copyright_text">Haron is part of the VAMP Ecosystem — a suite of Android apps designed to work together. Built with Kotlin, Jetpack Compose, and open-source libraries. All rights reserved.</string>
     <string name="logs_all">All</string>
     <string name="logs_share_title">Share logs</string>
     <string name="logs_select_categories">Select categories to share:</string>

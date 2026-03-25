@@ -1,0 +1,159 @@
+package com.vamp.haron.presentation.settings
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
+
+private data class ChangelogEntry(
+    val title: String,
+    val items: List<String>
+)
+
+private fun parseChangelog(raw: String): List<ChangelogEntry> {
+    val entries = mutableListOf<ChangelogEntry>()
+    var currentTitle = ""
+    var currentItems = mutableListOf<String>()
+
+    for (line in raw.lines()) {
+        when {
+            line.startsWith("# ") -> {
+                if (currentTitle.isNotEmpty()) {
+                    entries.add(ChangelogEntry(currentTitle, currentItems.toList()))
+                }
+                currentTitle = line.removePrefix("# ").trim()
+                currentItems = mutableListOf()
+            }
+            line.startsWith("- ") -> {
+                currentItems.add(line.removePrefix("- ").trim())
+            }
+        }
+    }
+    if (currentTitle.isNotEmpty()) {
+        entries.add(ChangelogEntry(currentTitle, currentItems.toList()))
+    }
+    return entries
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChangelogScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val raw = remember {
+        context.resources.openRawResource(R.raw.changelog)
+            .bufferedReader().readText()
+    }
+    val entries = remember(raw) { parseChangelog(raw) }
+    val expanded = remember { mutableStateMapOf<Int, Boolean>() }
+
+    // First entry expanded by default
+    if (expanded.isEmpty() && entries.isNotEmpty()) {
+        expanded[0] = true
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.changelog_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
+                .padding(padding)
+        ) {
+            items(entries.size) { index ->
+                val entry = entries[index]
+                val isExpanded = expanded[index] == true
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded[index] = !isExpanded }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = entry.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    AnimatedVisibility(visible = isExpanded) {
+                        Column(modifier = Modifier.padding(top = 8.dp)) {
+                            entry.items.forEach { item ->
+                                Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                                    Text(
+                                        text = "•",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = item,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (index < entries.size - 1) {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+        }
+    }
+}

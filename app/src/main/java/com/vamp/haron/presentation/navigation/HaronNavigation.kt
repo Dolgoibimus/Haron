@@ -107,6 +107,8 @@ object HaronRoutes {
     const val STARFIELD_SETTINGS = "starfield_settings"
     const val DUST_SETTINGS = "dust_settings"
     const val LOGS = "logs"
+    const val CHANGELOG = "changelog"
+    const val ABOUT = "about"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
     const val DOCUMENT_VIEWER = "document_viewer"
@@ -500,6 +502,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenFeatures = {
                     navController.navigate(HaronRoutes.FEATURES)
                 },
+                onOpenAbout = {
+                    navController.navigate(HaronRoutes.ABOUT)
+                },
                 onOpenSupport = {
                     navController.navigate(HaronRoutes.SUPPORT)
                 },
@@ -551,12 +556,24 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
                 onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
                 onOpenThemes = { navController.navigate(HaronRoutes.THEMES) },
-                onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
             )
         }
         composable(HaronRoutes.LOGS) {
             LogsScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.CHANGELOG) {
+            com.vamp.haron.presentation.settings.ChangelogScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.ABOUT) {
+            com.vamp.haron.presentation.settings.AboutScreen(
+                onBack = { navController.popBackStack() },
+                onOpenFeatures = { navController.navigate(HaronRoutes.FEATURES) },
+                onOpenChangelog = { navController.navigate(HaronRoutes.CHANGELOG) },
+                onOpenLogs = { navController.navigate(HaronRoutes.LOGS) }
             )
         }
         composable(HaronRoutes.FEATURES) {

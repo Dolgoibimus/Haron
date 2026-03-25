@@ -47,6 +47,7 @@ sealed interface NavigationEvent {
     data object OpenFeatures : NavigationEvent
 
     data object OpenSupport : NavigationEvent
+    data object OpenAbout : NavigationEvent
 
     data object OpenGlobalSearch : NavigationEvent
 
