@@ -1,5 +1,5 @@
 # Batch 103 — Power saving, About screen (v1.5)
-- "About" screen in drawer: icon, version, features, changelog, logs, GitHub, privacy, copyright
+- "About" screen: app icon, version, features, changelog, logs, GitHub, privacy, copyright
 - "What's new" screen with expandable version history
 - Power save mode: disables animations, reduces background activity
 - Battery threshold slider (0–50%): auto-disable animations below set level
@@ -7,108 +7,486 @@
 - Fix: progress bar hidden behind custom navbar
 
 # Batch 102 — Code audit
-- Logging added to 9 files, dead code removed (invokeFromUri)
+- Logging added to 9 files, dead code removed
 - android.util.Log replaced with EcosystemLogger in TerminalBuffer
-- KDoc comments on 36 key classes
-- Architecture dependency tree in AGENTS.md
+- KDoc comments on 36 key classes (services, repos, managers, ViewModels)
+- Architecture dependency tree added to project docs
 
 # Batch 101 — Swipe-back, audio player fixes
-- Swipe back from left edge on all settings/terminal/library/storage/duplicates/tags screens
+- Swipe back from left edge on all secondary screens
 - Tag screens redesigned: separate create/edit with back navigation
-- Fix: audio played wrong track from file tap (setPlaylist missing for audio)
-- Fix: audio buttons unresponsive in full screen (gesture overlay intercepted taps)
+- Fix: audio played wrong track from file tap
+- Fix: audio buttons unresponsive in full screen
 - Fix: audio no autoplay, always starts from beginning
 
-# Batch 100 — Network streaming, DND (v1.4)
+# Batch 100 — Network streaming, DND, server nicknames (v1.4)
 - FTP/SFTP/SMB/WebDAV media streaming without download
 - HTTP proxy for FTP streams (VLC cyrillic workaround)
 - DND mode in video player
-- Saved FTP/SMB server list with credentials
+- SMB/FTP saved servers with nicknames and rename
+- Fix: DND blocking media volume
 - Fix: cast reconnect after transcode timeout
 
-# Batch 90 — Animated themes
-- 4 overlay animations: Matrix Rain, Snowfall, Starfield, Dust
-- Individual settings: speed, density, opacity, size
-- Matrix Rain: 5 charsets, custom RGB, glow effect
-- "Only while charging" option, auto-pause in background
+# Batch 99 — BT HID timeout, cast with screen off
+- BT HID 3-second timeout when profile not supported
+- WifiLock for cast (Wi-Fi stays on with screen off)
+- WakeLock tied to media duration + 5 min buffer
+- HLS segments 10→30 sec for better buffering
 
-# Batch 89 — Custom navbar, radial menu
-- Custom navbar replaces system nav bar
-- Configurable pages with 5-7 buttons
-- Radial menu: Copy/Move, Delete/Forever, File/Folder
-- Custom icons for navbar buttons
-- Arrow navigation with cursor, Shift multi-select
-- Fix: navbar swipe conflict with radial gesture
+# Batch 98 — Termux-style terminal, SSH, VT100
+- Terminal rewrite: direct PTY input, hidden TextField
+- SSH via JSch with keepalive 30s
+- VT100/xterm: alt screen, scroll regions, wide chars
+- DejaVu Sans Mono font, quick keys panel
 
-# Batch 87 — Cloud uploads
-- Yandex/GDrive/Dropbox chunked upload with resume
-- Fix: parallel uploads killed connections (Mutex)
-- Fix: Yandex MIME throttling (.tmp rename)
-- Fix: Dropbox offset correction on resume
+# Batch 97 — Terminal: resize, raw mode, panel refresh
+- Pinch-to-zoom font with debounced PTY resize
+- Raw mode by ANSI output (not command name)
+- All file operations refresh both panels
 
-# Batch 83 — Foreground service file operations
-- Copy/move/delete run in foreground service (unkillable)
-- Per-file progress with speed display
-- Cancel button stops immediately
+# Batch 96 — Terminal: pinch-zoom, SSH resize, tab isolation
+- Pinch-to-zoom 4–24sp, SSH resize via setPtySize
+- Separate raw mode and history per tab
+- Paste from clipboard in quick keys
 
-# Batch 75 — File duplication, archive extraction
-- Duplicate files: long tap Copy → count + 3 destinations
-- Quick extract: select archives → pulsing icon → choose destination
-- Archive "1 to 1": each file into separate ZIP
+# Batch 95 — Terminal: grid renderer, tabs
+- Canvas grid renderer with full ANSI colors
+- Raw mode for vi/nano/htop
+- Shell/SSH tabs with separate buffers
+- SSH keepalive 30s
 
-# Batch 68 — FTP server/client
-- FTP server for receiving files
-- FTP client with connection pooling
+# Batch 94 — Terminal: persistent shell + PTY
+- Native JNI PTY (forkpty) for persistent shell
+- Ctrl+C = real SIGINT, Ctrl+D/Z supported
+- Shell auto-restart on crash
 
-# Batch 54 — Cast, TV remote
-- Chromecast/DLNA/Miracast with HLS transcoding (FFmpeg)
-- Screen mirroring, photo slideshow, PDF presentation on TV
-- Fix: HLS version 3 + AAC stereo for Chromecast
+# Batch 93 — Video player: swipes, DND settings
+- Brightness/volume swipe gestures
+- Player settings with Video/Audio DND tabs
+- Inactive panel guard (short tap only activates)
+- Features.txt reorganized
 
-# Batch 53 — HLS transcoding
-- FFmpeg progressive cast: play while transcoding
-- Transcode cache with configurable TTL
+# Batch 92 — AVI artifact fix
+- Fix: AVI artifacts from forced HW decoder
+- HW whitelist: mkv/mp4/mov, SW for avi/wmv/flv
+- Fix: deblocking filter restored
 
-# Batch 41 — Trusted devices, transfers
-- Wi-Fi Direct and Bluetooth file transfer
-- Trusted devices with auto-accept
-- Device rename and aliases
+# Batch 91 — Internet search: OD sources
+- mmnt.ru and FilePursuit sources added
+- Yandex HTML search engine
+- Streaming progress with per-source chips
 
-# Batch 38 — Steganography, security
-- Hide files inside PNG images (LSB encoding)
-- Protected folder: AES-256 (Android Keystore)
+# Batch 90 — Search: keywords, LibGen, Web Navigator
+- Content type keywords ("book" → epub+pdf)
+- Multi-type search, LibGen source
+- Web Navigator for directory pages
 
-# Batch 37 — Terminal
-- Full VT100/xterm emulation with ANSI colors
-- SSH via JSch, tabs (Shell/SSH)
+# Batch 89 — Search: SearXNG, smart dorks
+- SearXNG as primary search (3 instances)
+- Smart dorks per content type
+- ContentType in engine params
+
+# Batch 88 — Search: confirmation card, cloud progress
+- Confirmation card with type detection
+- Fix: cloud upload progress stuck at 0%
+
+# Batch 87 — Breadcrumb size, cloud speed, FB2 thumbs
+- Folder/storage size in breadcrumbs
+- Upload speed in cloud progress
+- Fix: FB2 thumbnails in cloud
+
+# Batch 86 — Selected files size in divider
+- Total size of selected files in panel divider
+- Separate for top and bottom panels
+
+# Batch 85 — Progress bar standardization
+- Transfer speed in all network providers
+- Unified progress bars (6dp, rounded)
+- Cancel button on all transfers
+- Per-file progress for folders
+
+# Batch 84 — Unified progress: speed/counter/percent
+- ProgressInfoRow composable applied to 14 bars
+- Speed field in OperationProgress model
+
+# Batch 83 — Unkillable file operations
+- FileOperationService survives app swipe
+- OperationHolder bypasses Intent 500KB limit
+- All operations through foreground service
+
+# Batch 82 — Internet file search
+- Open Directory, Torrent, Internet Archive sources
+- Download to Downloads/Haron/ with notification
+- Query parser for extension extraction
+
+# Batch 81 — PDF and FB2 metadata
+- PDF: title, author, subject, keywords, pages (PDFBox)
+- FB2: title, author, genre, series, annotation
+- Support for .fb2.zip
+
+# Batch 80 — Audio tags + checksums
+- Audio tag editing (JAudiotagger) + album cover search (Deezer/iTunes)
+- Smart search: one query fills all tags + cover
+- CRC32, MD5, SHA-1, SHA-256, SHA-512 checksums
+- Hash comparison with color match indicator
+
+# Batch 79 — TAR archive support
+- tar/tar.gz/tar.bz2/tar.xz browsing and extraction
+- Two-pass extraction with progress
+
+# Batch 78 — Archive "1 to 1"
+- Each selected file → separate ZIP
+- Shown only with 2+ files selected
+
+# Batch 77 — Archive thumbnails + cache
+- Image thumbnails inside archives without extraction
+- LRU memory + disk cache (0–500 MB configurable)
+- Preview any file type inside archives
+
+# Batch 76 — ANR fix + Sora Editor
+- Fix: ANR on 600KB+ text files
+- Sora Editor for files >256KB (Canvas rendering)
+- Undo/Redo in Sora, long line splitting
+
+# Batch 75 — File duplication + archive extraction
+- Long tap Copy → count + 3 destinations
+- Pulsing Extract icon for selected archives
+- Shizuku folder size for restricted paths
+
+# Batch 74 — Forced hotspot + QR auto-connect
+- Wi-Fi and Hotspot transfer modes
+- Combined JSON QR for Haron-to-Haron
+- Fix: hotspot auto-stop on exit
+- Fix: .fb2.zip opens as book
+
+# Batch 73 — Wi-Fi Direct P2P
+- Full WifiDirectManager rewrite
+- StateFlow connection tracking
+- P2P receive on both sides
+- Fix: TCP before P2P group ready
+
+# Batch 72 — SFTP + WebDAV browser
+- SFTP via JSch in FTP tab (protocol toggle)
+- WebDAV: OkHttp PROPFIND/GET/PUT/MKCOL/DELETE/MOVE
+- 4 tabs in Transfer screen
+
+# Batch 71 — Shizuku file operations
+- Copy/move/delete/rename via Shizuku for restricted paths
+- AIDL extended with 6 new methods
+- Android/media added to restricted detection
+
+# Batch 70 — DnD Copy/Move strip
+- Copy/Move selection on divider during drag
+- Left = Copy, Right = Move with haptic
+
+# Batch 69 — Bluetooth HID remote improvements
+- Paired device list for reconnect
+- Full Cyrillic ЙЦУКЕН→QWERTY mapping
+- Smart diff for voice input
+- Keyboard mutex for serialized events
+
+# Batch 68 — FTP server + client
+- Built-in FTP server (Apache FtpServer)
+- FTP client with connection pool
+- Encrypted credential store
+
+# Batch 67 — Battery optimizations
+- 15-min idle watchdog on all services
+- Wake lock release on pause
+- DLNA polling 2→3s, USB polling 30→60s
+
+# Batch 66 — Multi-account cloud
+- Multiple accounts per cloud provider
+- CloudTokenStore keyed by accountId
+- "+ Add" button in auth dialog
+
+# Batch 65 — OneDrive removal + QR fix
+- Removed OneDrive (never worked)
+- Fix: QR camera not initializing in Dialog
+
+# Batch 64 — Cloud upload reliability
+- Sequential upload mutex
+- Google Drive: retry on IOException, 10MB chunks
+- Yandex: Content-Range chunked upload, .tmp rename
+- Dropbox: 8MB chunks, IncorrectOffsetError handling
+- Fix: ConcurrentModificationException on job map
+
+# Batch 63 — Yandex: reliability, childCount, streaming
+- Folder childCount via API
+- HttpFileServer Yandex streaming
+- Cloud preview adaptation
+
+# Batch 62 — Cloud speed + preview fixes
+- Buffer 8KB→256KB (32x fewer syscalls)
+- Fix: phantom progress bar after cancel
+- Fix: cloud thumbnails wrong extension
+
+# Batch 61 — Parallel cloud transfers + OOM fix
+- Fix: OOM from setFixedLengthStreamingMode
+- Parallel transfers with per-transfer Job
+- Individual transfer cancellation
+
+# Batch 60 — Yandex Disk provider
+- Full REST API implementation
+- OAuth PKCE, two-step download/upload
+- Token refresh with auto-retry on 401
+
+# Batch 59 — Grid long press fix
+- Fix: long press triggered DnD instead of range selection
+
+# Batch 58 — Cloud previews + PDF/FB2 fixes
+- Cloud thumbnails for all file types
+- Fix: nested PDF pager conflict
+- Fix: FB2 preview for cloud files
+- Fix: preload job OOM
+
+# Batch 57 — Dropbox finalization
+- Token refresh + pagination for 500+ files
+- Chunked upload for >150MB files
+- HTTP proxy streaming for Dropbox media
+
+# Batch 56 — Three tap zones + Same-panel DnD + Cloud DnD
+- Left third = select, middle = DnD, right = QuickSend
+- Same-panel DnD (file onto folder)
+- Cloud↔Local DnD with progress
+
+# Batch 55 — Cloud files: full operations
+- Cloud delete, rename, gallery, streaming, text save
+- Auto-cleanup cloud cache (7 day TTL)
+
+# Batch 54 — Clouds + TV Remote
+- Google Drive, Dropbox, Yandex Disk via OAuth2 PKCE
+- Cloud navigation in panels
+- TV Remote: touchpad + virtual keyboard via WebSocket
+
+# Batch 53 — HLS transcoding + progressive cast
+- FFmpeg replaces Media3 Transformer
+- Playback starts in ~30s while transcode continues
+- Persistent transcode cache with TTL
+- Fix: HLS version 3 for Chromecast
+- Fix: AAC stereo downmix for Chromecast
+
+# Batch 52 — Trash fixes
+- Orphan file recovery from corrupted meta.json
+- Per-file deletion progress for folders
+- Fix: tap on empty space selecting nearest file
+
+# Batch 51 — SMB browser
+- smbj-based SMB client with encrypted credentials
+- Dual-panel mode: SMB + local files
+- Server list (NSD + saved), download/upload with progress
+
+# Batch 50 — Password ZIP + split archives
+- AES-256 encrypted ZIP (zip4j)
+- Split ZIP (100–2048 MB parts)
+- Cross-panel file comparison
+
+# Batch 49 — App manager improvements
+- APK uninstall with sweep animation
+- Fix: secure folder navigation
+- Fix: USB volume duplicates
+
+# Batch 48 — XLSX viewer
+- Column proportions from <cols> section
+- Per-cell borders from styles.xml
+- Title row auto-extraction
+
+# Batch 47 — DOCX/ODT table improvements
+- Borderless table detection
+- ODT column span support
+
+# Batch 46 — Microphone visibility + editor modes
+- Mic toggle in settings
+- Text editor view/edit mode split
+
+# Batch 45 — Inline archive browsing
+- Browse archives in panel without separate screen
+
+# Batch 44 — Passwords + FB2/ZIP + RAR5
+- Password dialog for encrypted archives
+- RAR5 via 7-Zip-JBinding
+- Encrypted PDF password flow
+- FB2 from ZIP with full formatting
+
+# Batch 43 — Reading position memory
+- Room entity for all reader positions
+- PDF: page + zoom, Docs: scroll + zoom
+- Media: position saved every 5s
+
+# Batch 42 — Document viewer: original formatting
+- DOCX styles.xml + numbering.xml parsing
+- Tab stops with leaders
+- Table grid spans + vertical alignment
+
+# Batch 41 — Trusted devices + transfers
+- Star icon for trusted devices with auto-accept
+- Device rename (long tap → alias)
+- Global incoming transfer dialog
+- WiFi socket binding over mobile data
+
+# Batch 40 — Quick Send DnD
+- Drag file to device circle for send
+- Arc layout during drag
+- Pulsing receive circle
+
+# Batch 39 — Extended TV sharing
+- 5 Cast modes: Media, Slideshow, PDF, Info, Mirror
+- Photo slideshow on TV, PDF presentation
+- Screen mirroring via MediaProjection
+
+# Batch 38 — Steganography
+- Hide files inside PNG (LSB encoding)
+- AES-256-GCM encryption via Keystore
+- Auto-detection of hidden data
+
+# Batch 37 — Full terminal
+- ANSI colors (16 + 256 + RGB true color)
 - Tab completion, clickable paths
+- 2000-line buffer, quick symbol panel
 
 # Batch 36 — File/folder comparison
-- Side-by-side text diff with color coding
-- Recursive folder comparison with MD5 hashes
+- Side-by-side text diff with sync scroll
+- Folder comparison with MD5 hashes
+
+# Batch 35 — Default file opener
+- ACTION_VIEW/SEND handler for all media types
+- Auto-open in built-in viewer
+
+# Batch 34 — Voice commands
+- 16 commands (Russian + English)
+- Draggable mic FAB with position memory
+
+# Batch 33 — Gesture system
+- 4 edge swipes with 13 configurable actions
+- Settings screen with dropdowns
+
+# Batch 32 — Simple terminal
+- ProcessBuilder shell with history
+- cd, pwd, clear, help, exit
+
+# Batch 31 — Badge + network discovery
+- Operations badge on app icon
+- NSD + subnet scan for devices
+
+# Batch 30 — Archive search + OCR + USB OTG
+- Search inside archives
+- OCR search on photos
+- USB OTG auto-detect
+
+# Batch 29 — File transfer: receive + QR
+- QR code generation (ZXing)
+- TCP receive with accept/decline
+- Bluetooth RFCOMM receive
+- Transfer resume via offset
+
+# Batch 24-28 — Transfer + Cast + Remote
+- Wi-Fi Direct, HTTP server, Bluetooth transfer
+- NSD device discovery + subnet scan
+- Chromecast + Miracast support
+- Media remote controls
+
+# Batch 23 — PDF search highlight
+- Text position extraction + yellow/orange highlights
+- Match counter and navigation arrows
 
 # Batch 22 — Full-text search (v1.0)
-- FTS5 index + content grep
-- ML Kit image labeling for search
+- FTS4/FTS5 index + content search
+- ML Kit Image Labeling (400 categories EN→RU)
+- Three indexing modes: Basic, Media, Visual
 
-# Batch 14 — Duplicate detector, shelf
-- Hash-based duplicate detection
-- Favorites shelf panel
+# Batch 21 — Room DB + global search
+- Room database with FTS5 triggers
+- Content Observer auto-update
+- WorkManager background indexing
 
-# Batch 12 — Archives, gallery, PDF
-- ZIP/7z/RAR/TAR support with passwords
-- Built-in gallery with pinch-to-zoom
-- PDF reader with search
+# Batch 20 — Biometric lock + secure folder
+- App lock via biometrics or PIN
+- AES-256 encrypted secure folder
 
-# Batch 10 — Media player, text editor
-- VLC audio+video with playlist
-- Text editor with syntax highlighting
+# Batch 19 — Tags + batch rename
+- Color tags system
+- Batch rename with patterns
 
-# Batch 4 — Drag-and-drop, trash
-- Drag-and-drop between panels
-- Trash with 30-day auto-cleanup
+# Batch 18 — Pie menu + search fix
+- Bookmark popup (6 slots)
+- Tools popup (trash, analyzer, duplicates, APK, player, reader)
+- Fix: search BackHandler closing
 
-# Batch 1 — Core file manager (v1.0)
-- Dual-panel explorer
+# Batch 17 — Settings + haptics + widget
+- Haptic feedback (5 patterns)
+- Night mode scheduling
+- Font/icon scaling (0.8x–1.4x)
+- Favorites widget (Glance)
+
+# Batch 16 — APK installer + app manager
+- APK installation with info dialog
+- Installed apps list
+
+# Batch 15 — Document reader + UX
+- DOCX, ODT, DOC, RTF text extraction
+- Zoomable document view (1x–5x)
+- Fix: icon tap zone 48dp minimum
+
+# Batch 14 — Duplicates + shelf + drawer
+- MD5 duplicate detection (two-phase scan)
+- Clipboard shelf (swipe from edge)
+- Drawer menu (5 sections)
+
+# Batch 13 — Properties + analyzer
+- File properties: EXIF, hashes, permissions
+- Open in external app (FileProvider)
+- Storage analyzer: pie chart + categories
+
+# Batch 12 — Archives + gallery + PDF
+- ZIP/7z/RAR browsing and extraction
+- ZIP creation, fullscreen gallery
+- PDF reader with go-to-page
+
+# Batch 11 — Playlist + background playback
+- VLC PlaybackService with folder playlist
+- Background audio, lock screen controls
+- Play/Pause in file panel
+
+# Batch 10 — SAF + media player + text editor
+- SAF storage in favorites
+- Video + audio player with album art
+- Text editor: monospace, line numbers, undo/redo
+
+# Batch 9 — Quick preview + grid
+- Preview dialog: image, video, audio, text, PDF, APK
+- Grid columns up to 6
+- Extension badges on icons
+
+# Batch 8 — Conflict version control
+- Version comparison card during conflicts
+
+# Batch 7 — Breadcrumbs + history + theme
+- Clickable breadcrumb segments
+- Navigation history (50 entries)
+- Theme cycling: system → light → dark
+
+# Batch 6 — Conflict dialog + panel persistence
+- Replace / Rename / Skip dialog
+- Grid rename, panel paths saved
+
+# Batch 5 — Pinch-to-grid + foreground service
+- Pinch-to-zoom grid (1–4 columns)
+- FileOperationService with notification
+
+# Batch 4 — Drag-and-Drop + trash
+- Cross-panel DnD (single + group)
+- Trash: 30-day auto-cleanup
+
+# Batch 3 — UX improvements
+- Quick search filter, file templates
+- Favorites, range selection, inline rename
+
+# Batch 2 — Dual-panel explorer
+- Two panels with shared ViewModel
 - Copy, move, delete, rename
-- Sort, filter, hidden files
+- Resizable divider, selection bar
+
+# Batch 1 — Core (v1.0)
+- File listing with sorting
+- MANAGE_EXTERNAL_STORAGE permission
+- Folders always on top
