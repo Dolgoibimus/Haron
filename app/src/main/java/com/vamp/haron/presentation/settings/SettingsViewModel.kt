@@ -10,6 +10,8 @@ import com.vamp.haron.data.shizuku.ShizukuState
 import com.vamp.haron.domain.model.AppLockMethod
 import com.vamp.haron.domain.model.GestureAction
 import com.vamp.haron.domain.model.GestureType
+import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -152,6 +154,7 @@ class SettingsViewModel @Inject constructor(
     // --- Security ---
 
     fun setAppLockMethod(method: AppLockMethod) {
+        EcosystemLogger.d(HaronConstants.TAG, "Settings: setAppLockMethod=$method")
         // If PIN-required method and no PIN set, prompt to set it
         if (method != AppLockMethod.NONE && method != AppLockMethod.BIOMETRIC_ONLY && !authManager.isPinSet()) {
             _state.update { it.copy(showPinSetupDialog = true, isPinChange = false) }
@@ -174,8 +177,10 @@ class SettingsViewModel @Inject constructor(
      */
     fun onPinSetupConfirm(currentPin: String?, newPin: String, question: String?, answer: String?): Boolean {
         if (currentPin != null && !authManager.verifyPin(currentPin)) {
+            EcosystemLogger.d(HaronConstants.TAG, "Settings: PIN verify failed (change attempt)")
             return false
         }
+        EcosystemLogger.d(HaronConstants.TAG, "Settings: PIN set/changed successfully")
         authManager.setPin(newPin)
         // Save security question if provided
         if (question != null && answer != null) {
@@ -206,6 +211,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun saveSecurityQuestion(question: String, answer: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "Settings: security question saved")
         authManager.setSecurityQuestion(question, answer)
         _state.update { it.copy(showSecurityQuestionDialog = false, hasSecurityQuestion = true) }
     }
@@ -218,6 +224,7 @@ class SettingsViewModel @Inject constructor(
     // --- Gestures ---
 
     fun setGestureAction(type: GestureType, action: GestureAction) {
+        EcosystemLogger.d(HaronConstants.TAG, "Settings: gesture $type → $action")
         preferences.setGestureAction(type, action)
         _state.update {
             it.copy(gestureMappings = it.gestureMappings.toMutableMap().apply { put(type, action) })
@@ -225,6 +232,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun resetGestures() {
+        EcosystemLogger.d(HaronConstants.TAG, "Settings: gestures reset to defaults")
         GestureType.entries.forEach { type ->
             preferences.setGestureAction(type, type.defaultAction)
         }

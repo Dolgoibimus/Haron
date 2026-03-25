@@ -232,6 +232,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     private fun startScan(folders: List<String>) {
+        EcosystemLogger.d(HaronConstants.TAG, "Library: startScan folders=${folders.size}")
         viewModelScope.launch {
             val excluded = prefs.libraryExcludedFolders
             scanBooksUseCase.scan(folders, excluded).collect { progress ->
@@ -281,6 +282,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun deleteBook(book: BookEntity) {
+        EcosystemLogger.d(HaronConstants.TAG, "Library: deleteBook ${book.title}")
         viewModelScope.launch {
             bookDao.delete(book.filePath)
         }
