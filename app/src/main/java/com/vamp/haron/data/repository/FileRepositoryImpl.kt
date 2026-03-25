@@ -21,6 +21,12 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Core file operations: list, copy, move, delete, rename, create.
+ * Handles normal paths, SAF (content://), and Shizuku (restricted Android/data).
+ * Delegates to [ShizukuFileService] when src/dst is in restricted path.
+ * Copy/move with conflict resolution: RENAME, REPLACE, SKIP.
+ */
 @Singleton
 class FileRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,

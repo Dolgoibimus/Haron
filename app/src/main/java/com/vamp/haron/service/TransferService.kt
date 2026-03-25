@@ -34,6 +34,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Foreground service for file transfers: HTTP upload/download, FTP server, receive mode.
+ * Idle watchdog (15 min) auto-stops service when no active transfers.
+ * Wake lock + Wi-Fi lock held during active operations.
+ */
 class TransferService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

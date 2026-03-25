@@ -40,6 +40,12 @@ data class UsbVolume(
     val unsupportedFs: Boolean = false
 )
 
+/**
+ * Detects and manages USB OTG storage devices connected to the Android device.
+ * Monitors USB attach/detach events via BroadcastReceiver and periodic polling,
+ * probes file system types (FAT32, exFAT, NTFS), and exposes connected volumes
+ * as a reactive StateFlow. Falls back to SAF for volumes without direct file access.
+ */
 @Singleton
 class UsbStorageManager @Inject constructor(
     @ApplicationContext private val context: Context,

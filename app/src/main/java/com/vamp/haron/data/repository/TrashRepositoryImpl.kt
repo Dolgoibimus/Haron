@@ -15,6 +15,11 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Manages trash (recycle bin) with per-file metadata (meta.json).
+ * Auto-eviction by max size (configurable). Atomic writes for crash safety.
+ * Recovery from orphan files when meta.json is empty/corrupted.
+ */
 @Singleton
 class TrashRepositoryImpl @Inject constructor() : TrashRepository {
 

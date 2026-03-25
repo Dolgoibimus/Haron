@@ -46,6 +46,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/**
+ * Foreground service for long-running file operations: copy, move, delete, archive, extract.
+ * Uses [FileRepository] and [TrashRepository] via Hilt EntryPoint.
+ * Reports progress via static [progress] StateFlow and system notification.
+ * Wake lock held for up to 30 min; idle watchdog stops service on stall.
+ */
 class FileOperationService : Service() {
 
     @EntryPoint

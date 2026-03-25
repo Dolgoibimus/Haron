@@ -10,6 +10,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 
+/**
+ * WorkManager background worker for FTS5 full-text indexing of file names.
+ * Triggered by [FileContentObserver] (MediaStore change) and [ScreenOnReceiver].
+ * Enqueued as unique work to prevent duplicate runs.
+ */
 class FileIndexWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,

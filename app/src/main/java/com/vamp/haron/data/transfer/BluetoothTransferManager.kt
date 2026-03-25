@@ -36,6 +36,12 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Handles Bluetooth file transfers using both RFCOMM custom protocol and OPP (OBEX Push).
+ * Discovers paired and nearby Bluetooth devices, sends files with progress tracking,
+ * and receives files via a Bluetooth server socket listener.
+ * Falls back to system Bluetooth OPP intent when direct RFCOMM transfer is unavailable.
+ */
 @Singleton
 class BluetoothTransferManager @Inject constructor(
     @ApplicationContext private val context: Context

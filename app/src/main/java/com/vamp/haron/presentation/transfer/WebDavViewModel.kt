@@ -55,6 +55,11 @@ data class WebDavUiState(
     val panelRatio: Float = 0.5f
 )
 
+/**
+ * WebDAV client: browse remote servers (Nextcloud, etc.), upload/download files.
+ * Manages connections, credentials, and saved server list.
+ * Delegates to [WebDavManager] (Sardine).
+ */
 @HiltViewModel
 class WebDavViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

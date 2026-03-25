@@ -27,6 +27,11 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Protected folder: AES-256 encryption via Android Keystore.
+ * Files encrypted at rest in app-private dir, decrypted on-the-fly for viewing.
+ * Maintains index of protected entries (path, name, size, addedAt).
+ */
 @Singleton
 class SecureFolderRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context

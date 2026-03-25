@@ -17,6 +17,12 @@ import com.vamp.haron.R
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.MediaPlayer as VlcMediaPlayer
 
+/**
+ * Media playback service using VLC under Media3 MediaSession API.
+ * Holds singleton [LibVLC] + [VlcMediaPlayer] + [VlcPlayerAdapter].
+ * Supports playlist, repeat modes (ALL/ONE/OFF), and custom media button for repeat toggle.
+ * Audio focus and notification handled by Media3 framework.
+ */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
 

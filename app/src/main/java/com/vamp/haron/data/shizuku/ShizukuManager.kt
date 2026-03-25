@@ -24,6 +24,12 @@ enum class ShizukuState {
     BOUND
 }
 
+/**
+ * Provides elevated file system access via Shizuku (ADB shell privileges).
+ * Used to bypass Android 11+ restrictions on /Android/data and /Android/obb paths
+ * that are inaccessible even with MANAGE_EXTERNAL_STORAGE permission.
+ * Manages Shizuku lifecycle (install check, permission, AIDL service binding).
+ */
 @Singleton
 class ShizukuManager @Inject constructor(
     @ApplicationContext private val context: Context

@@ -59,6 +59,11 @@ data class TransferUiState(
     val showWifiOffDialog: Boolean = false
 )
 
+/**
+ * Manages file transfer hub: HTTP server, Wi-Fi Direct, Bluetooth, receive mode.
+ * Handles device scanning, connection, upload/download with progress.
+ * Controls [TransferService] foreground service lifecycle.
+ */
 @HiltViewModel
 class TransferViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

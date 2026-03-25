@@ -20,6 +20,13 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer as VlcMediaPlayer
 
 @UnstableApi
+/**
+ * Bridges VLC [MediaPlayer] to Media3 [SimpleBasePlayer] interface.
+ * Manages playlist, repeat modes, position persistence via [VideoPositionStore].
+ * Handles URI encoding for network paths (FTP/SMB with cyrillic/spaces).
+ * HW decoder whitelist: mkv/mp4/mov/webm/ts; software for avi/wmv/flv.
+ * Audio always starts from beginning; video restores saved position.
+ */
 class VlcPlayerAdapter(
     private val context: Context,
     private val vlcPlayer: VlcMediaPlayer,

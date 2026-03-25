@@ -14,6 +14,10 @@ import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Cast facade: delegates to [GoogleCastManager], [DlnaManager], [MiracastManager].
+ * Provides unified API for device discovery, connect, play, stop across cast protocols.
+ */
 @Singleton
 class CastRepositoryImpl @Inject constructor(
     private val googleCastManager: GoogleCastManager,

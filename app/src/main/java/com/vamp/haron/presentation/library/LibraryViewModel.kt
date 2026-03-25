@@ -53,6 +53,10 @@ data class LibraryUiState(
 )
 
 @HiltViewModel
+/**
+ * Book library: scan device for EPUB/FB2/PDF/MOBI/DJVU, display covers,
+ * open in reader/PDF viewer. Manages book database, cover cache, scan progress.
+ */
 class LibraryViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val bookDao: BookDao,

@@ -35,6 +35,12 @@ enum class VoiceState {
     WAKE_ACTIVATED
 }
 
+/**
+ * Voice command recognition and dispatch engine using Android SpeechRecognizer.
+ * Supports wake-word activation ("Харон") and direct command mode.
+ * Parses recognized speech into file manager actions (navigate, sort, search,
+ * copy, move, delete, select, open, create) and dispatches them via callbacks.
+ */
 @Singleton
 class VoiceCommandManager @Inject constructor(
     @ApplicationContext private val appContext: Context

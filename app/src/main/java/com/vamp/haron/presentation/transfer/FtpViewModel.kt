@@ -69,6 +69,11 @@ data class FtpUiState(
     val panelRatio: Float = 0.5f
 )
 
+/**
+ * FTP/FTPS/SFTP client: browse remote servers, upload/download files.
+ * Manages connections, credentials, and saved server list.
+ * Delegates to [FtpClientManager] and [SftpClientManager].
+ */
 @HiltViewModel
 class FtpViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

@@ -15,6 +15,12 @@ import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Discovers nearby Haron instances on the local network using Android NSD (mDNS/DNS-SD).
+ * Registers the current device as a discoverable service (_haron._tcp.)
+ * and monitors for other Haron services to enable peer-to-peer file transfers.
+ * Emits discovered devices as a reactive Flow.
+ */
 @Singleton
 class NsdDiscoveryManager @Inject constructor(
     @ApplicationContext private val context: Context

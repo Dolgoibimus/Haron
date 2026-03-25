@@ -49,6 +49,10 @@ data class SettingsUiState(
     val gestureMappings: Map<GestureType, GestureAction> = GestureType.entries.associateWith { it.defaultAction }
 )
 
+/**
+ * Settings: night mode, font/icon scale, haptics, trash size, cache,
+ * security (PIN, biometric, security question), gesture mappings, Shizuku.
+ */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

@@ -28,6 +28,12 @@ data class FtpServerConfig(
     val readOnly: Boolean = false
 )
 
+/**
+ * Embedded FTP server for receiving files from other devices on the local network.
+ * Built on Apache FtpServer, supports anonymous and authenticated access,
+ * configurable read-only mode, and passive port ranges.
+ * Serves files from external storage root directory.
+ */
 @Singleton
 class FtpServerManager @Inject constructor(
     @ApplicationContext private val context: Context,

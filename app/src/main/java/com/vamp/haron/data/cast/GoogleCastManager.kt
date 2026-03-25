@@ -28,6 +28,12 @@ import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Manages Google Cast (Chromecast) device discovery and media playback.
+ * Uses the Cast SDK to discover devices via MediaRouter, establish sessions,
+ * and control remote media playback including play, pause, seek, and stop.
+ * Exposes availability and connection state as reactive StateFlows.
+ */
 @Singleton
 class GoogleCastManager @Inject constructor(
     @ApplicationContext private val context: Context

@@ -20,6 +20,12 @@ import java.util.Vector
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * SFTP client for secure file operations over SSH connections.
+ * Uses JSch library to establish SSH sessions and SFTP channels for browsing,
+ * uploading, and downloading files with transfer progress monitoring.
+ * Maintains a single active connection with mutex-guarded access.
+ */
 @Singleton
 class SftpClientManager @Inject constructor(
     private val credentialStore: SshCredentialStore

@@ -122,6 +122,16 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
+/**
+ * Main ViewModel for dual-panel file explorer. Manages:
+ * - File navigation, sorting, search (FTS5 + content grep)
+ * - File operations: copy, move, delete, rename, archive, extract
+ * - Selection, drag-and-drop, clipboard
+ * - Cloud providers (Yandex, GDrive, Dropbox), network protocols (FTP/SFTP/SMB/WebDAV)
+ * - Protected folder (AES-256), trash, tags, bookmarks
+ * - Media preview, gallery, playlist building
+ * - Voice commands, Shizuku fallback for restricted paths
+ */
 @HiltViewModel
 class ExplorerViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

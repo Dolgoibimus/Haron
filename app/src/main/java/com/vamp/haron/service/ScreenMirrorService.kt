@@ -37,6 +37,11 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * Captures device screen via MediaProjection and streams as JPEG/MJPEG over HTTP.
+ * Used for Chromecast screen mirroring. Runs Ktor CIO server on port 8080+.
+ * JPEG compression runs on background HandlerThread to avoid UI jank.
+ */
 class ScreenMirrorService : Service() {
 
     companion object {

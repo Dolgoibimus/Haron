@@ -48,6 +48,12 @@ import android.media.MediaMetadataRetriever
 import java.io.File
 import javax.inject.Inject
 
+/**
+ * Manages Chromecast, DLNA, and Miracast casting.
+ * Handles device discovery, media transcoding (FFmpeg), HLS streaming,
+ * screen mirroring, and file info display on TV.
+ * Scoped to Activity (singleton across destinations) for transcode persistence.
+ */
 @HiltViewModel
 class CastViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

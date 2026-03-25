@@ -26,6 +26,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Foreground service for Chromecast/DLNA media playback.
+ * Maintains notification with play/pause/disconnect controls.
+ * Idle watchdog (15 min) auto-stops when no active playback.
+ * No Hilt — uses static callbacks pattern to avoid DI crash on service restart.
+ */
 class CastMediaService : Service() {
 
     companion object {

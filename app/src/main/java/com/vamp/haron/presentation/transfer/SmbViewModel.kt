@@ -75,6 +75,11 @@ data class SmbUiState(
     val panelRatio: Float = 0.5f
 )
 
+/**
+ * SMB/CIFS client: browse Windows network shares, upload/download files.
+ * Manages connections, credentials, and saved server list.
+ * Delegates to [SmbManager] (jcifs-ng).
+ */
 @HiltViewModel
 class SmbViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,

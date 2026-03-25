@@ -33,6 +33,12 @@ import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Discovers and controls DLNA/UPnP media renderers on the local network.
+ * Uses SSDP multicast for device discovery and SOAP/XML for AVTransport control
+ * (SetAVTransportURI, Play, Pause, Stop, Seek, GetPositionInfo).
+ * Maintains a list of discovered renderers and tracks current playback state.
+ */
 @Singleton
 class DlnaManager @Inject constructor(
     @ApplicationContext private val context: Context

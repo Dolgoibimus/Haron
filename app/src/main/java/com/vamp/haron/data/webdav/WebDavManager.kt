@@ -24,6 +24,12 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * WebDAV client for browsing and transferring files on remote WebDAV servers.
+ * Uses OkHttp for HTTP requests and implements PROPFIND, GET, PUT, DELETE,
+ * MKCOL, and MOVE methods with XML response parsing.
+ * Supports Basic authentication and transfer progress tracking.
+ */
 @Singleton
 class WebDavManager @Inject constructor() {
 

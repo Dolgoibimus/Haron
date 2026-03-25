@@ -26,6 +26,12 @@ private data class FtpConnection(
     var lastUsed: Long = System.currentTimeMillis()
 )
 
+/**
+ * FTP/FTPS client for browsing and transferring files on remote FTP servers.
+ * Manages a pool of connections keyed by host:port, with automatic reconnection
+ * and thread-safe access via per-connection mutexes.
+ * Uses Apache Commons Net for FTP protocol operations.
+ */
 @Singleton
 class FtpClientManager @Inject constructor(
     private val credentialStore: FtpCredentialStore

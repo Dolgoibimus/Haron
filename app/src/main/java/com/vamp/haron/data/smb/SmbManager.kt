@@ -62,6 +62,12 @@ private data class SmbConnection(
     var lastUsed: Long = System.currentTimeMillis()
 )
 
+/**
+ * SMB/CIFS client for accessing Windows network shares and NAS devices.
+ * Uses smbj library for SMB2/3 protocol, supporting share enumeration via DCE/RPC,
+ * directory listing, file upload/download with progress, and credential management.
+ * Maintains a connection pool keyed by server address with automatic cleanup.
+ */
 @Singleton
 class SmbManager @Inject constructor(
     private val smbClient: SMBClient,

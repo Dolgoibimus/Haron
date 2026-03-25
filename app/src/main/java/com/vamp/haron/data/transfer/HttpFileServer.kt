@@ -38,6 +38,12 @@ data class HttpDownloadEvent(
     val fileSize: Long
 )
 
+/**
+ * Embedded HTTP server built on Ktor CIO for sharing files over the local network.
+ * Serves static files, directory listings, PDF page previews, and HLS streams.
+ * Supports WebSocket connections for remote input events and download event tracking.
+ * Auto-selects an available port starting from 8080.
+ */
 @Singleton
 class HttpFileServer @Inject constructor(
     @ApplicationContext private val context: Context,

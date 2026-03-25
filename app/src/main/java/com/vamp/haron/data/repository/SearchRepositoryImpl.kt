@@ -38,6 +38,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 
+/**
+ * Full-text search via FTS5 index + content search (grep-like) via file I/O.
+ * Fuzzy matching with Levenshtein distance for typo-tolerant filename search.
+ * Content indexing runs in batches with progress reporting.
+ */
 @Singleton
 class SearchRepositoryImpl @Inject constructor(
     private val fileIndexDao: FileIndexDao,

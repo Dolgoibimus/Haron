@@ -36,6 +36,11 @@ import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Orchestrates file transfers: HTTP upload/download, Wi-Fi Direct, Bluetooth OPP.
+ * Manages [HttpFileServer], [WifiDirectManager], [BluetoothTransferManager].
+ * Handles chunked upload with resume for cloud providers.
+ */
 @Singleton
 class TransferRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,

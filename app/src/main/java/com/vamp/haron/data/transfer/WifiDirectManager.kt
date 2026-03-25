@@ -49,6 +49,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
+/**
+ * Manages Wi-Fi Direct (P2P) connections for high-speed file transfers between devices.
+ * Handles peer discovery, group formation, and socket-based file transfer with progress.
+ * Supports both sending and receiving modes, with automatic role negotiation
+ * (group owner vs client) and transfer protocol handshake.
+ */
 @Singleton
 class WifiDirectManager @Inject constructor(
     @ApplicationContext private val context: Context

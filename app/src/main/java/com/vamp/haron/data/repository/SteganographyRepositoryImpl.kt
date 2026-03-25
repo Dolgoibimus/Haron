@@ -39,6 +39,11 @@ import javax.inject.Singleton
  * [headerOffset(8 bytes)]
  * [FOOTER: "HRNSTEG!" (8 bytes)]
  */
+/**
+ * Steganography: hide/extract files inside PNG images using LSB encoding.
+ * Payload stored in least significant bits of pixel channels.
+ * Header: magic bytes + original filename + file size.
+ */
 @Singleton
 class SteganographyRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
