@@ -398,7 +398,8 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             density = matrixPrefs.matrixDensity,
             opacity = matrixPrefs.matrixOpacity,
             charset = matrixPrefs.matrixCharset,
-            onlyCharging = matrixPrefs.matrixOnlyCharging
+            onlyCharging = matrixPrefs.matrixOnlyCharging,
+            fps = matrixPrefs.matrixFps
         )
     }
     fun readSnowfallConfig(): com.vamp.haron.presentation.matrix.SnowfallConfig {
@@ -413,20 +414,23 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             density = matrixPrefs.snowfallDensity,
             opacity = matrixPrefs.snowfallOpacity,
             size = matrixPrefs.snowfallSize,
-            onlyCharging = matrixPrefs.snowfallOnlyCharging
+            onlyCharging = matrixPrefs.snowfallOnlyCharging,
+            fps = matrixPrefs.snowfallFps
         )
     }
     fun readStarfieldConfig(): com.vamp.haron.presentation.matrix.StarfieldConfig {
         val suppressed = isAnimSuppressed()
         return com.vamp.haron.presentation.matrix.StarfieldConfig(
             enabled = matrixPrefs.starfieldEnabled && !suppressed, speed = matrixPrefs.starfieldSpeed, density = matrixPrefs.starfieldDensity,
-            opacity = matrixPrefs.starfieldOpacity, size = matrixPrefs.starfieldSize, onlyCharging = matrixPrefs.starfieldOnlyCharging)
+            opacity = matrixPrefs.starfieldOpacity, size = matrixPrefs.starfieldSize, onlyCharging = matrixPrefs.starfieldOnlyCharging,
+            fps = matrixPrefs.starfieldFps)
     }
     fun readDustConfig(): com.vamp.haron.presentation.matrix.DustConfig {
         val suppressed = isAnimSuppressed()
         return com.vamp.haron.presentation.matrix.DustConfig(
             enabled = matrixPrefs.dustEnabled && !suppressed, speed = matrixPrefs.dustSpeed, density = matrixPrefs.dustDensity,
-            opacity = matrixPrefs.dustOpacity, size = matrixPrefs.dustSize, onlyCharging = matrixPrefs.dustOnlyCharging)
+            opacity = matrixPrefs.dustOpacity, size = matrixPrefs.dustSize, onlyCharging = matrixPrefs.dustOnlyCharging,
+            fps = matrixPrefs.dustFps)
     }
 
     var matrixConfig by remember { mutableStateOf(readMatrixConfig()) }
@@ -852,6 +856,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onEnabledChange = { if (it) disableOthers(); p.starfieldEnabled = it }, onSpeedChange = { p.starfieldSpeed = it },
                 onDensityChange = { p.starfieldDensity = it }, onOpacityChange = { p.starfieldOpacity = it },
                 onSizeChange = { p.starfieldSize = it }, onOnlyChargingChange = { p.starfieldOnlyCharging = it },
+                initialFps = p.starfieldFps, onFpsChange = { p.starfieldFps = it },
                 onBack = { navController.popBackStack() }, previewBgColor = androidx.compose.ui.graphics.Color(0xFF0A0A1A)
             ) { spd, den, opa, sz -> com.vamp.haron.presentation.matrix.StarfieldCanvas(config = com.vamp.haron.presentation.matrix.StarfieldConfig(enabled = true, speed = spd, density = den, opacity = opa, size = sz)) }
         }
@@ -864,6 +869,7 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onEnabledChange = { if (it) disableOthers(); p.dustEnabled = it }, onSpeedChange = { p.dustSpeed = it },
                 onDensityChange = { p.dustDensity = it }, onOpacityChange = { p.dustOpacity = it },
                 onSizeChange = { p.dustSize = it }, onOnlyChargingChange = { p.dustOnlyCharging = it },
+                initialFps = p.dustFps, onFpsChange = { p.dustFps = it },
                 onBack = { navController.popBackStack() }, previewBgColor = androidx.compose.ui.graphics.Color.Black
             ) { spd, den, opa, sz -> com.vamp.haron.presentation.matrix.DustCanvas(config = com.vamp.haron.presentation.matrix.DustConfig(enabled = true, speed = spd, density = den, opacity = opa, size = sz)) }
         }

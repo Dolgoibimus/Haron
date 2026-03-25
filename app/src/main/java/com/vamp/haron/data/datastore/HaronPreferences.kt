@@ -772,24 +772,28 @@ class HaronPreferences @Inject constructor(
         const val KEY_MATRIX_OPACITY = "matrix_opacity"
         const val KEY_MATRIX_CHARSET = "matrix_charset"
         const val KEY_MATRIX_ONLY_CHARGING = "matrix_only_charging"
+        const val KEY_MATRIX_FPS = "matrix_fps"
         const val KEY_SNOWFALL_ENABLED = "snowfall_enabled"
         const val KEY_SNOWFALL_SPEED = "snowfall_speed"
         const val KEY_SNOWFALL_DENSITY = "snowfall_density"
         const val KEY_SNOWFALL_OPACITY = "snowfall_opacity"
         const val KEY_SNOWFALL_SIZE = "snowfall_size"
         const val KEY_SNOWFALL_ONLY_CHARGING = "snowfall_only_charging"
+        const val KEY_SNOWFALL_FPS = "snowfall_fps"
         const val KEY_STARFIELD_ENABLED = "starfield_enabled"
         const val KEY_STARFIELD_SPEED = "starfield_speed"
         const val KEY_STARFIELD_DENSITY = "starfield_density"
         const val KEY_STARFIELD_OPACITY = "starfield_opacity"
         const val KEY_STARFIELD_SIZE = "starfield_size"
         const val KEY_STARFIELD_ONLY_CHARGING = "starfield_only_charging"
+        const val KEY_STARFIELD_FPS = "starfield_fps"
         const val KEY_DUST_ENABLED = "dust_enabled"
         const val KEY_DUST_SPEED = "dust_speed"
         const val KEY_DUST_DENSITY = "dust_density"
         const val KEY_DUST_OPACITY = "dust_opacity"
         const val KEY_DUST_SIZE = "dust_size"
         const val KEY_DUST_ONLY_CHARGING = "dust_only_charging"
+        const val KEY_DUST_FPS = "dust_fps"
         const val KEY_POWER_SAVE = "power_save_enabled"
         const val KEY_ANIM_BATTERY_THRESHOLD = "anim_battery_threshold"
         const val MAX_RECENT = 5
@@ -830,6 +834,10 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getBoolean(KEY_MATRIX_ONLY_CHARGING, false)
         set(value) = prefs.edit().putBoolean(KEY_MATRIX_ONLY_CHARGING, value).apply()
 
+    var matrixFps: Int
+        get() = prefs.getInt(KEY_MATRIX_FPS, 30)
+        set(value) = prefs.edit().putInt(KEY_MATRIX_FPS, value.coerceIn(10, 60)).apply()
+
     // --- Snowfall ---
 
     var snowfallEnabled: Boolean
@@ -856,6 +864,10 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getBoolean(KEY_SNOWFALL_ONLY_CHARGING, false)
         set(value) = prefs.edit().putBoolean(KEY_SNOWFALL_ONLY_CHARGING, value).apply()
 
+    var snowfallFps: Int
+        get() = prefs.getInt(KEY_SNOWFALL_FPS, 30)
+        set(value) = prefs.edit().putInt(KEY_SNOWFALL_FPS, value.coerceIn(10, 60)).apply()
+
     // --- Starfield ---
     var starfieldEnabled: Boolean get() = prefs.getBoolean(KEY_STARFIELD_ENABLED, false); set(v) = prefs.edit().putBoolean(KEY_STARFIELD_ENABLED, v).apply()
     var starfieldSpeed: Float get() = prefs.getFloat(KEY_STARFIELD_SPEED, 1f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_SPEED, v).apply()
@@ -863,6 +875,7 @@ class HaronPreferences @Inject constructor(
     var starfieldOpacity: Float get() = prefs.getFloat(KEY_STARFIELD_OPACITY, 0.6f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_OPACITY, v).apply()
     var starfieldSize: Float get() = prefs.getFloat(KEY_STARFIELD_SIZE, 1f); set(v) = prefs.edit().putFloat(KEY_STARFIELD_SIZE, v).apply()
     var starfieldOnlyCharging: Boolean get() = prefs.getBoolean(KEY_STARFIELD_ONLY_CHARGING, false); set(v) = prefs.edit().putBoolean(KEY_STARFIELD_ONLY_CHARGING, v).apply()
+    var starfieldFps: Int get() = prefs.getInt(KEY_STARFIELD_FPS, 30); set(v) = prefs.edit().putInt(KEY_STARFIELD_FPS, v.coerceIn(10, 60)).apply()
 
     // --- Dust ---
     var dustEnabled: Boolean get() = prefs.getBoolean(KEY_DUST_ENABLED, false); set(v) = prefs.edit().putBoolean(KEY_DUST_ENABLED, v).apply()
@@ -871,4 +884,5 @@ class HaronPreferences @Inject constructor(
     var dustOpacity: Float get() = prefs.getFloat(KEY_DUST_OPACITY, 0.5f); set(v) = prefs.edit().putFloat(KEY_DUST_OPACITY, v).apply()
     var dustSize: Float get() = prefs.getFloat(KEY_DUST_SIZE, 1f); set(v) = prefs.edit().putFloat(KEY_DUST_SIZE, v).apply()
     var dustOnlyCharging: Boolean get() = prefs.getBoolean(KEY_DUST_ONLY_CHARGING, false); set(v) = prefs.edit().putBoolean(KEY_DUST_ONLY_CHARGING, v).apply()
+    var dustFps: Int get() = prefs.getInt(KEY_DUST_FPS, 30); set(v) = prefs.edit().putInt(KEY_DUST_FPS, v.coerceIn(10, 60)).apply()
 }

@@ -20,7 +20,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 data class MatrixRainConfig(
@@ -31,7 +31,8 @@ data class MatrixRainConfig(
     val density: Float = 0.6f,
     val opacity: Float = 0.5f,
     val charset: String = "katakana",
-    val onlyCharging: Boolean = false
+    val onlyCharging: Boolean = false,
+    val fps: Int = 30
 )
 
 private class MatrixColumn(
@@ -107,10 +108,11 @@ fun MatrixRainCanvas(
         }
     }
 
-    // Animation loop — runs ~30fps, increments tick to trigger Canvas redraw
-    LaunchedEffect(config.enabled) {
+    // Animation loop — fps controlled by config
+    val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
+    LaunchedEffect(config.enabled, config.fps) {
         while (true) {
-            awaitFrame()
+            delay(frameDelayMs)
             if (!isPaused) tick++
         }
     }

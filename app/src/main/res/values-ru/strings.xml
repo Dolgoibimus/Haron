@@ -1583,6 +1583,7 @@
     <string name="matrix_charset_cyrillic">Кириллица (АБВ)</string>
     <string name="matrix_charset_mix">Микс</string>
     <string name="matrix_only_charging">Только при зарядке</string>
+    <string name="anim_fps">Частота кадров (FPS)</string>
     <string name="themes_title">Анимации</string>
     <string name="snowfall_title">Снегопад</string>
     <string name="snowfall_size">Размер</string>

@@ -63,6 +63,7 @@ fun MatrixSettingsScreen(
     var opacity by remember { mutableFloatStateOf(prefs.matrixOpacity) }
     var charset by remember { mutableStateOf(prefs.matrixCharset) }
     var onlyCharging by remember { mutableStateOf(prefs.matrixOnlyCharging) }
+    var fps by remember { mutableIntStateOf(prefs.matrixFps) }
 
     // RGB sliders
     val color = Color(colorLong.toInt() or 0xFF000000.toInt())
@@ -245,6 +246,15 @@ fun MatrixSettingsScreen(
                         onCheckedChange = { onlyCharging = it; prefs.matrixOnlyCharging = it }
                     )
                 }
+            }
+            item {
+                Text("${stringResource(R.string.anim_fps)}: $fps")
+                Slider(
+                    value = fps.toFloat(),
+                    onValueChange = { fps = it.toInt(); prefs.matrixFps = it.toInt() },
+                    valueRange = 10f..60f,
+                    steps = 4
+                )
                 Spacer(Modifier.height(48.dp))
             }
         }

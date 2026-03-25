@@ -25,8 +25,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,12 +53,14 @@ fun AnimSettingsScreen(
     initialOpacity: Float,
     initialSize: Float,
     initialOnlyCharging: Boolean,
+    initialFps: Int = 30,
     onEnabledChange: (Boolean) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onDensityChange: (Float) -> Unit,
     onOpacityChange: (Float) -> Unit,
     onSizeChange: (Float) -> Unit,
     onOnlyChargingChange: (Boolean) -> Unit,
+    onFpsChange: (Int) -> Unit = {},
     onBack: () -> Unit,
     previewBgColor: Color = Color.Black,
     preview: @Composable (Float, Float, Float, Float) -> Unit // speed, density, opacity, size
@@ -69,6 +71,7 @@ fun AnimSettingsScreen(
     var opacity by remember { mutableFloatStateOf(initialOpacity) }
     var size by remember { mutableFloatStateOf(initialSize) }
     var onlyCharging by remember { mutableStateOf(initialOnlyCharging) }
+    var fps by remember { mutableIntStateOf(initialFps) }
 
     Scaffold(
         topBar = {
@@ -122,6 +125,15 @@ fun AnimSettingsScreen(
                     Text(stringResource(R.string.matrix_only_charging), Modifier.weight(1f))
                     Switch(checked = onlyCharging, onCheckedChange = { onlyCharging = it; onOnlyChargingChange(it) })
                 }
+            }
+            item {
+                Text("${stringResource(R.string.anim_fps)}: $fps")
+                Slider(
+                    value = fps.toFloat(),
+                    onValueChange = { fps = it.toInt(); onFpsChange(it.toInt()) },
+                    valueRange = 10f..60f,
+                    steps = 4
+                )
                 Spacer(Modifier.height(48.dp))
             }
         }

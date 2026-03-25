@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -25,7 +25,8 @@ data class DustConfig(
     val density: Float = 0.5f,
     val opacity: Float = 0.5f,
     val size: Float = 1f,
-    val onlyCharging: Boolean = false
+    val onlyCharging: Boolean = false,
+    val fps: Int = 30
 )
 
 private class DustMote(
@@ -67,9 +68,10 @@ fun DustCanvas(
         }
     }
 
-    LaunchedEffect(config.enabled) {
+    val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
+    LaunchedEffect(config.enabled, config.fps) {
         while (true) {
-            awaitFrame()
+            delay(frameDelayMs)
             if (!isPaused) tick++
         }
     }

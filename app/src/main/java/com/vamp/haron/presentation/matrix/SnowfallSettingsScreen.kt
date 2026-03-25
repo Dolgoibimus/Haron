@@ -25,6 +25,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,6 +52,7 @@ fun SnowfallSettingsScreen(
     var opacity by remember { mutableFloatStateOf(prefs.snowfallOpacity) }
     var flakeSize by remember { mutableFloatStateOf(prefs.snowfallSize) }
     var onlyCharging by remember { mutableStateOf(prefs.snowfallOnlyCharging) }
+    var fps by remember { mutableIntStateOf(prefs.snowfallFps) }
 
     Scaffold(
         topBar = {
@@ -161,6 +163,15 @@ fun SnowfallSettingsScreen(
                         onCheckedChange = { onlyCharging = it; prefs.snowfallOnlyCharging = it }
                     )
                 }
+            }
+            item {
+                Text("${stringResource(R.string.anim_fps)}: $fps")
+                Slider(
+                    value = fps.toFloat(),
+                    onValueChange = { fps = it.toInt(); prefs.snowfallFps = it.toInt() },
+                    valueRange = 10f..60f,
+                    steps = 4
+                )
                 Spacer(Modifier.height(48.dp))
             }
         }

@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.floor
@@ -29,8 +29,9 @@ data class SnowfallConfig(
     val speed: Float = 1f,
     val density: Float = 0.5f,
     val opacity: Float = 0.7f,
-    val size: Float = 1f, // multiplier for snowflake size
-    val onlyCharging: Boolean = false
+    val size: Float = 1f,
+    val onlyCharging: Boolean = false,
+    val fps: Int = 30
 )
 
 // Simple Perlin-like noise for smooth drift
@@ -111,9 +112,10 @@ fun SnowfallCanvas(
         }
     }
 
-    LaunchedEffect(config.enabled) {
+    val frameDelayMs = (1000L / config.fps.coerceIn(10, 60))
+    LaunchedEffect(config.enabled, config.fps) {
         while (true) {
-            awaitFrame()
+            delay(frameDelayMs)
             if (!isPaused) tick++
         }
     }
