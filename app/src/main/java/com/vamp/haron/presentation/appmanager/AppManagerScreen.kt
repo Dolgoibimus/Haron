@@ -33,6 +33,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +57,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +70,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -212,10 +220,13 @@ fun AppManagerScreen(
     if (selectedApp != null) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.selectApp(null) },
-            sheetState = rememberModalBottomSheetState()
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
         ) {
             AppActionsSheet(
                 app = selectedApp,
+                appFilesInfo = state.appFilesInfo,
+                isLoadingFiles = state.isLoadingFiles,
                 onExtract = { viewModel.extractApk(selectedApp) },
                 onUninstall = {
                     val pkg = selectedApp.packageName
@@ -231,7 +242,8 @@ fun AppManagerScreen(
                         Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                     }
                 },
-                onSettings = { viewModel.openAppSettings(selectedApp) }
+                onSettings = { viewModel.openAppSettings(selectedApp) },
+                onLoadFiles = { viewModel.loadAppFiles(selectedApp.packageName) }
             )
         }
     }
@@ -343,9 +355,12 @@ private fun AppItem(
 @Composable
 private fun AppActionsSheet(
     app: InstalledAppInfo,
+    appFilesInfo: com.vamp.haron.domain.model.AppFilesInfo?,
+    isLoadingFiles: Boolean,
     onExtract: () -> Unit,
     onUninstall: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onLoadFiles: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -408,6 +423,160 @@ private fun AppActionsSheet(
             subtitle = stringResource(R.string.open_in_system_settings),
             onClick = onSettings
         )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        // Files section
+        if (appFilesInfo == null && !isLoadingFiles) {
+            ActionItem(
+                icon = { Icon(Icons.Filled.FolderOpen, null) },
+                title = stringResource(R.string.app_files),
+                subtitle = stringResource(R.string.app_files_subtitle),
+                onClick = onLoadFiles
+            )
+        } else if (isLoadingFiles) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    stringResource(R.string.app_files_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (appFilesInfo != null) {
+            // Header with total size
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.FolderOpen, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.app_files_total, appFilesInfo.totalSize.toFileSize()),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // File entries — expandable
+            appFilesInfo.entries.forEach { entry ->
+                AppFileRowExpandable(entry = entry)
+            }
+
+            // Shizuku banner if not available and there are locked entries
+            if (!appFilesInfo.shizukuAvailable && appFilesInfo.entries.any { !it.isAccessible }) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Lock, null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.app_files_shizuku_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppFileRowExpandable(
+    entry: com.vamp.haron.domain.model.AppFileEntry,
+    indent: Int = 0
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val hasChildren = entry.children.isNotEmpty() || entry.isDirectory
+    val color = if (entry.isAccessible) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    val startPadding = (24 + indent * 16).dp
+
+    Column {
+        // Main row — clickable to expand/collapse
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(start = startPadding, end = 20.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Expand/lock icon
+            if (!entry.isAccessible) {
+                Icon(
+                    Icons.Filled.Lock, null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            } else if (hasChildren) {
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Spacer(Modifier.width(16.dp))
+            }
+            Spacer(Modifier.width(4.dp))
+
+            // Name
+            Text(
+                text = entry.name,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (entry.isDirectory) FontWeight.Medium else FontWeight.Normal,
+                color = color,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Size
+            Text(
+                text = if (entry.size >= 0) entry.size.toFileSize() else "—",
+                style = MaterialTheme.typography.labelSmall,
+                color = color
+            )
+        }
+
+        // Expanded: show path + children with animation
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+            Column {
+                // Path — full, no line limit
+                Text(
+                    text = entry.path,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = startPadding + 20.dp, end = 20.dp, bottom = 2.dp)
+                )
+
+                // Children
+                entry.children.forEach { child ->
+                    AppFileRowExpandable(entry = child, indent = indent + 1)
+                }
+            }
+        }
     }
 }
 

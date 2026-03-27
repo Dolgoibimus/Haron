@@ -496,6 +496,19 @@
     <string name="apk_reinstalling">Reinstalling version %1$s</string>
     <string name="apk_installed_toast">Installed: %1$s %2$s</string>
     <string name="apk_updated_toast">Updated: %1$s %2$s</string>
+    <string name="xapk_parsing">Reading XAPK…</string>
+    <string name="xapk_extracting">Extracting %1$s (%2$d APKs)…</string>
+    <string name="xapk_invalid">Invalid XAPK file — no APK found</string>
+    <string name="xapk_obb_copied">OBB data copied: %d file(s)</string>
+    <string name="xapk_split_installing">Installing %d split APKs… Confirm in system dialog.</string>
+    <string name="xapk_install_failed">XAPK install failed: %s</string>
+
+    <!-- App files -->
+    <string name="app_files">App files</string>
+    <string name="app_files_subtitle">View installed paths and sizes</string>
+    <string name="app_files_loading">Scanning files…</string>
+    <string name="app_files_total">Total size: %s</string>
+    <string name="app_files_shizuku_hint">Enable Shizuku for full access to internal data</string>
 
     <!-- Trash repository -->
     <string name="storage_root_internal">Internal storage</string>

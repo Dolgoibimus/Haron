@@ -1,5 +1,12 @@
 ## Release 1.6
 
+# Batch 106 — XAPK/APKS installer
+- Install XAPK and APKS files (split APK bundles with OBB data)
+- Parses manifest.json, extracts APKs, copies OBB to /Android/obb/
+- Split APK installation via PackageInstaller session API
+- System confirmation dialog for split installs
+- Works from file panel and from inside archives
+
 # Batch 105 — Multi-volume RAR + APK install from archive
 - Multi-volume RAR archives: browse and extract (part1.rar/part2.rar and .rar/.r00/.r01)
 - Install APK from any archive (ZIP, RAR, 7z) — tap .apk inside archive

@@ -50,7 +50,7 @@ fun FileEntry.iconRes(): String {
         extension in listOf("xls", "xlsx", "ods", "csv") -> "spreadsheet"
         extension in listOf("ppt", "pptx", "odp") -> "presentation"
         extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz", "gtar") -> "archive"
-        extension in listOf("apk") -> "apk"
+        extension in listOf("apk", "xapk", "apks") -> "apk"
         extension in listOf(
             "txt", "md", "log", "json", "xml", "yml", "yaml",
             "conf", "cfg", "ini", "properties", "env", "toml",

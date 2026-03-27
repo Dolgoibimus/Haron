@@ -7,8 +7,10 @@ import android.provider.Settings
 import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vamp.haron.domain.model.AppFilesInfo
 import com.vamp.haron.domain.model.InstalledAppInfo
 import com.vamp.haron.domain.usecase.ExtractApkUseCase
+import com.vamp.haron.domain.usecase.GetAppFilesUseCase
 import com.vamp.haron.domain.usecase.GetInstalledAppsUseCase
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
@@ -37,14 +39,17 @@ data class AppManagerUiState(
     val showSystemApps: Boolean = false,
     val selectedApp: InstalledAppInfo? = null,
     val uninstallingPackage: String? = null,
-    val removingPackage: String? = null
+    val removingPackage: String? = null,
+    val appFilesInfo: AppFilesInfo? = null,
+    val isLoadingFiles: Boolean = false
 )
 
 @HiltViewModel
 class AppManagerViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
-    private val extractApkUseCase: ExtractApkUseCase
+    private val extractApkUseCase: ExtractApkUseCase,
+    private val getAppFilesUseCase: GetAppFilesUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AppManagerUiState())
@@ -93,7 +98,20 @@ class AppManagerViewModel @Inject constructor(
     }
 
     fun selectApp(app: InstalledAppInfo?) {
-        _uiState.update { it.copy(selectedApp = app) }
+        _uiState.update { it.copy(selectedApp = app, appFilesInfo = null, isLoadingFiles = false) }
+    }
+
+    fun loadAppFiles(packageName: String) {
+        _uiState.update { it.copy(isLoadingFiles = true) }
+        viewModelScope.launch {
+            try {
+                val info = getAppFilesUseCase(packageName)
+                _uiState.update { it.copy(appFilesInfo = info, isLoadingFiles = false) }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "AppManagerVM: loadAppFiles failed: ${e.message}")
+                _uiState.update { it.copy(isLoadingFiles = false) }
+            }
+        }
     }
 
     fun extractApk(app: InstalledAppInfo) {

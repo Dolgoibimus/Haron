@@ -1852,7 +1852,7 @@ RU:
 - [x] Встроенный терминал (полный): VT100/ANSI, цветной вывод, автодополнение, кликабельные пути ← Batch 37
 - [x] Стеганография (Tail-Append метод, AES-256-GCM) ← Batch 38
 - [x] Расширенный шаринг на ТВ: слайд-шоу, PDF-презентация, инфо о файле, зеркалирование экрана ← Batch 39
-- [ ] Интеграция с облаком (Google Drive, Dropbox, Yandex Disk как папки)
+- [x] Интеграция с облаком (Google Drive, Dropbox, Yandex Disk как папки) ← Batch 54-66
 - [ ] Машина времени (версии текстовых файлов)
 - [ ] Переименование по содержимому (ML Kit предлагает имя для фото)
 - [ ] Мониторинг мусора в реальном времени (WorkManager, уведомление)
@@ -1860,8 +1860,10 @@ RU:
 - [ ] Монтажный стол (FFmpeg: обрезка, склейка видео, таймлайн)
 - [ ] Чистильщик мессенджеров (Telegram/WhatsApp кэш и медиа)
 - [ ] Root-режим (опциональный): chmod, /data, системные папки
-- [ ] Телефон как пульт (тачпад + клавиатура)
-- [ ] Книжная полка + Универсальная читалка (BookReader)
+- [x] Телефон как пульт (тачпад + клавиатура) ← Batch 54, 69
+- [x] Книжная полка + Универсальная читалка (BookReader) ← Batch 102
+- [ ] Вложенные архивы (tar.gz внутри ZIP — извлечь во temp, открыть как вложенный)
+- [ ] TV Remote Protocol v2 (нативный Android TV — TLS + protobuf)
 
 ### Книжная полка + Универсальная читалка — план
 
@@ -2174,6 +2176,55 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 
 ---
 #### Релиз 1.6
+---
+
+### Batch 107 — Файлы приложений в менеджере APK ✅ проверено
+
+**Новые файлы:**
+- `AppFileEntry.kt` — модель: путь, размер, доступность, дети (дерево)
+- `GetAppFilesUseCase.kt` — сбор путей и размеров для пакета (без/с Shizuku)
+
+**Что собирает без Shizuku:**
+- APK путь + размер (`sourceDir`)
+- Split APK пути (`splitSourceDirs`)
+- Native libs (`nativeLibraryDir`)
+- `/Android/obb/<pkg>/` — полный доступ (MANAGE_EXTERNAL_STORAGE)
+- `/Android/data/<pkg>/` — только если `listFiles()` не null
+
+**Что добавляет Shizuku:**
+- `/data/data/<pkg>/` — полное дерево с размерами подпапок
+- `/Android/data/<pkg>/` — полный доступ на чтение
+- `calculateDirSize()` для точных размеров
+
+**UI в ModalBottomSheet (AppManagerScreen):**
+- Кнопка "Файлы приложения" → загрузка → дерево путей
+- Каждый элемент кликабельный: тап → разворачивание с AnimatedVisibility → полный путь + дочерние элементы
+- Недоступные пути — серым + иконка замка
+- Баннер "Включите Shizuku для полного доступа" если есть заблокированные пути
+- BottomSheet: `skipPartiallyExpanded = true`, `containerColor` 92% alpha
+- Рекурсивный composable `AppFileRowExpandable` с отступами по уровням
+
+---
+
+### Batch 106 — Установка XAPK/APKS + файлы приложений в менеджере ✅ проверено
+
+**Установка XAPK/APKS:**
+- Новый файл `XapkInstaller.kt` — парсинг manifest.json, извлечение APK + OBB, установка split APK
+- Поддержка XAPK (manifest.json + APKs + OBB) и APKS (только split APKs в ZIP)
+- Один APK → стандартный `ACTION_VIEW`/`ACTION_INSTALL_PACKAGE` с проверкой версий
+- Split APK (несколько .apk) → `PackageInstaller` session API с runtime BroadcastReceiver
+- OBB файлы копируются в `/Android/obb/<package>/` (MANAGE_EXTERNAL_STORAGE, Shizuku не нужен)
+- Runtime BroadcastReceiver обрабатывает `STATUS_PENDING_USER_ACTION` → запускает системный диалог подтверждения
+- `setRequireUserAction(USER_ACTION_REQUIRED)` на API 31+
+- Тосты: парсинг → извлечение (имя + кол-во APK) → OBB скопированы → split установка
+- `iconRes()` обновлён — `.xapk` и `.apks` распознаются как `"apk"`
+- Работает из файловой панели и из архива (ZIP/RAR с xapk внутри)
+
+**Паттерны:**
+- `MANAGE_EXTERNAL_STORAGE` даёт полный доступ на **запись** в `/Android/obb/`. Ограничение FUSE — только на чтение `/Android/data/` и `/Android/obb/`, но запись через `File.mkdirs()` + `FileOutputStream` работает.
+- PackageInstaller session commit: `PendingIntent.getBroadcast()` + runtime receiver. При `STATUS_PENDING_USER_ACTION` — запустить `Intent.EXTRA_INTENT` с `FLAG_ACTIVITY_NEW_TASK`. `getActivity()` PendingIntent НЕ показывает диалог.
+- `FLAG_MUTABLE` обязателен для PackageInstaller commit (система добавляет extras). Explicit intent (`setPackage`) удовлетворяет требование targetSdk 34+.
+
 ---
 
 ### Batch 105 — Многотомные RAR + установка APK из архива + даунгрейд ✅ проверено

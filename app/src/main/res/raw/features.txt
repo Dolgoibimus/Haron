@@ -306,6 +306,11 @@
   > Works with multi-volume RAR too
   > Version check: shows update/reinstall info, warns on downgrade
   > Downgrade: offers to uninstall current version first, then installs older version automatically
+- [NEW] Install XAPK and APKS files
+  > Tap .xapk or .apks file → parses contents, copies OBB data, installs all APKs
+  > Split APK support: base + config APKs installed together via system PackageInstaller
+  > OBB files automatically placed in /Android/obb/ for the app to find
+  > Works from file panel and from inside archives
 - Navigate folders inside archive
 - Selective extraction
   > Select specific files inside archive → tap Extract icon
@@ -396,6 +401,22 @@
 - Source folders mode: files in selected folders are automatically treated as originals
   > Overflow menu → "Original folders" → choose folders where originals live
 - Auto-select copies for deletion
+
+# App Manager
+- List of installed apps with search, sort, system apps toggle
+  > Open: Tool Pie-Menu → APK, or Side Menu
+  > Sort by name, size, or install date
+  > Toggle to show/hide system apps
+- Extract APK to Downloads folder
+- Uninstall apps with sweep animation
+- Open app in system settings
+- [NEW] App files: view all installed paths and sizes
+  > Tap app → "App files" → expandable tree with APK, splits, OBB, data paths
+  > Each entry shows size; tap to expand and see full path
+  > Without Shizuku: APK, native libs, OBB, external data
+  > With Shizuku: + internal data (/data/data/) with subdirectory breakdown
+  > Locked paths shown in gray with lock icon
+  > Banner: "Enable Shizuku for full access" when locked paths exist
 
 # Tags (Labels)
 - Colored labels with text names (8 colors)

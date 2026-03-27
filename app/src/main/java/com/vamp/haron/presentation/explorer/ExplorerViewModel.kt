@@ -2016,8 +2016,9 @@ class ExplorerViewModel @Inject constructor(
             navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
             return
         } else if (panel.isArchiveMode && !entry.isDirectory) {
-            // APK inside archive — extract to temp and launch installer
-            if (entry.name.lowercase().endsWith(".apk")) {
+            // APK/XAPK inside archive — extract to temp and launch installer
+            val nameLc = entry.name.lowercase()
+            if (nameLc.endsWith(".apk") || nameLc.endsWith(".xapk") || nameLc.endsWith(".apks")) {
                 installApkFromArchive(panel.archivePath!!, entry, panel.archivePassword)
                 return
             }
@@ -2129,7 +2130,12 @@ class ExplorerViewModel @Inject constructor(
                     navigateIntoArchive(panelId, entry.path, "", null)
                 }
                 "apk" -> {
-                    showApkInstallDialog(entry)
+                    val ext = entry.name.lowercase().substringAfterLast('.')
+                    if (ext == "xapk" || ext == "apks") {
+                        installXapkFile(File(entry.path))
+                    } else {
+                        showApkInstallDialog(entry)
+                    }
                 }
                 else -> {
                     // No built-in handler — open with external app
@@ -6109,21 +6115,27 @@ class ExplorerViewModel @Inject constructor(
             try {
                 val tempDir = File(appContext.cacheDir, "apk_install")
                 tempDir.mkdirs()
-                // Clean old temp APKs
-                tempDir.listFiles()?.forEach { it.delete() }
+                tempDir.listFiles()?.forEach { it.deleteRecursively() }
 
                 val selectedEntries = setOf(entryFullPath)
                 extractArchiveUseCase(archivePath, tempDir.absolutePath, selectedEntries, password)
                     .collect { progress ->
                         if (progress.isComplete) {
-                            val apkFile = tempDir.walkTopDown().firstOrNull {
-                                it.isFile && it.name.lowercase().endsWith(".apk")
+                            val extractedFile = tempDir.walkTopDown().firstOrNull {
+                                it.isFile && it.length() > 0
                             }
-                            if (apkFile != null && apkFile.length() > 0) {
-                                EcosystemLogger.d(HaronConstants.TAG, "installApkFromArchive: extracted ${apkFile.name}, size=${apkFile.length()}")
-                                launchApkInstallOrDowngradeDialog(apkFile)
+                            if (extractedFile != null) {
+                                val nameLc = extractedFile.name.lowercase()
+                                if (nameLc.endsWith(".xapk") || nameLc.endsWith(".apks")) {
+                                    // XAPK/APKS — handle via XapkInstaller
+                                    installXapkFile(extractedFile)
+                                } else {
+                                    // Regular APK
+                                    EcosystemLogger.d(HaronConstants.TAG, "installApkFromArchive: extracted ${extractedFile.name}, size=${extractedFile.length()}")
+                                    launchApkInstallOrDowngradeDialog(extractedFile)
+                                }
                             } else {
-                                EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: APK not found or empty after extraction")
+                                EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: file not found or empty after extraction")
                                 _toastMessage.tryEmit(appContext.getString(R.string.extract_error_generic))
                             }
                         }
@@ -6135,6 +6147,47 @@ class ExplorerViewModel @Inject constructor(
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: exception: ${e.message}")
                 _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
+            }
+        }
+    }
+
+    /**
+     * Install XAPK/APKS file: parse manifest, copy OBB, install APK(s).
+     */
+    private fun installXapkFile(xapkFile: File) {
+        EcosystemLogger.d(HaronConstants.TAG, "installXapkFile: ${xapkFile.name}, size=${xapkFile.length()}")
+        _toastMessage.tryEmit(appContext.getString(R.string.xapk_parsing))
+
+        viewModelScope.launch {
+            val manifest = com.vamp.haron.common.util.XapkInstaller.parseManifest(xapkFile)
+            if (manifest == null) {
+                EcosystemLogger.e(HaronConstants.TAG, "installXapkFile: invalid XAPK — no manifest or APKs")
+                _toastMessage.tryEmit(appContext.getString(R.string.xapk_invalid))
+                return@launch
+            }
+
+            val apkCount = manifest.apkFiles.size
+            val obbCount = manifest.obbFiles.size
+            EcosystemLogger.d(HaronConstants.TAG, "installXapkFile: pkg=${manifest.packageName}, apks=$apkCount, obbs=$obbCount")
+            _toastMessage.tryEmit(appContext.getString(R.string.xapk_extracting, manifest.name, apkCount))
+
+            val result = com.vamp.haron.common.util.XapkInstaller.install(appContext, xapkFile, manifest)
+            if (!result.success) {
+                EcosystemLogger.e(HaronConstants.TAG, "installXapkFile: failed: ${result.error}")
+                _toastMessage.tryEmit(appContext.getString(R.string.xapk_install_failed, result.error ?: ""))
+                return@launch
+            }
+
+            if (result.obbCopied > 0) {
+                _toastMessage.tryEmit(appContext.getString(R.string.xapk_obb_copied, result.obbCopied))
+            }
+
+            if (!result.isSplitApk && result.singleApkFile != null) {
+                // Single APK — use standard install flow with version check
+                launchApkInstallOrDowngradeDialog(result.singleApkFile)
+            } else if (result.isSplitApk) {
+                // Split APK — already submitted to PackageInstaller session
+                _toastMessage.tryEmit(appContext.getString(R.string.xapk_split_installing, apkCount))
             }
         }
     }

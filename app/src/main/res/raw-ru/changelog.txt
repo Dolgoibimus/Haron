@@ -1,5 +1,12 @@
 ## Релиз 1.6
 
+# Batch 106 — Установка XAPK/APKS
+- Установка XAPK и APKS файлов (split APK + OBB данные)
+- Парсинг manifest.json, извлечение APK, копирование OBB в /Android/obb/
+- Установка split APK через PackageInstaller session API
+- Системный диалог подтверждения для split-установок
+- Работает из панели и из архивов
+
 # Batch 105 — Многотомные RAR + установка APK из архива
 - Многотомные RAR-архивы: просмотр и извлечение (part1.rar/part2.rar и .rar/.r00/.r01)
 - Установка APK из любого архива (ZIP, RAR, 7z) — тап по .apk внутри архива
