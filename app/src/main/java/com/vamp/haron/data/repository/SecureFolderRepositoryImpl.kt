@@ -1,9 +1,14 @@
 package com.vamp.haron.data.repository
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.webkit.MimeTypeMap
+import com.google.crypto.tink.Aead
+import com.google.crypto.tink.StreamingAead
+import com.google.crypto.tink.aead.AeadConfig
+import com.google.crypto.tink.aead.AeadKeyTemplates
+import com.google.crypto.tink.integration.android.AndroidKeysetManager
+import com.google.crypto.tink.streamingaead.StreamingAeadConfig
+import com.google.crypto.tink.streamingaead.StreamingAeadKeyTemplates
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.SecureFileEntry
@@ -16,21 +21,41 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.security.KeyStore
+import java.nio.ByteBuffer
 import java.util.UUID
-import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Protected folder: AES-256 encryption via Android Keystore.
- * Files encrypted at rest in app-private dir, decrypted on-the-fly for viewing.
- * Maintains index of protected entries (path, name, size, addedAt).
+ * Защищённая папка: файлы шифруются Tink Streaming AEAD (AES-256-GCM-HKDF, сегменты ~1МБ).
+ *
+ * ## Почему Tink Streaming AEAD
+ *
+ * Стандартный javax.crypto CipherInputStream с AES-GCM **буферит весь файл в RAM**
+ * для проверки MAC-тега (известный баг JDK-8298249). Файл 253МБ → OOM и GC-шторм.
+ *
+ * Tink Streaming AEAD разбивает файл на сегменты (~1МБ), каждый сегмент имеет свой
+ * MAC-тег и шифруется/расшифровывается независимо. RAM = 1 сегмент (~1МБ) независимо
+ * от размера файла.
+ *
+ * ## Формат зашифрованного файла (Tink internal)
+ *
+ * ```
+ * [Header: 1b header_size + salt(32b) + nonce_prefix(7b)]
+ * [Segment_0: AES-GCM(plaintext_chunk_0, nonce=prefix||0||0) + 16b tag]
+ * [Segment_1: AES-GCM(plaintext_chunk_1, nonce=prefix||1||0) + 16b tag]
+ * ...
+ * [Segment_N: AES-GCM(plaintext_chunk_N, nonce=prefix||N||1) + 16b tag]  // last=1
+ * ```
+ *
+ * ## Ключи
+ *
+ * - **Streaming AEAD keyset** — для шифрования файлов. Хранится в SharedPreferences
+ *   `__tink_secure_folder_streaming`, зашифрован Android Keystore master key.
+ * - **AEAD keyset** — для шифрования индекса (маленький JSON). Хранится в SharedPreferences
+ *   `__tink_secure_folder_aead`, зашифрован Android Keystore master key.
+ *
+ * Оба keyset генерируются один раз, Tink сам управляет ключами через AndroidKeysetManager.
  */
 @Singleton
 class SecureFolderRepositoryImpl @Inject constructor(
@@ -41,15 +66,52 @@ class SecureFolderRepositoryImpl @Inject constructor(
     private val indexFile = File(secureDir, HaronConstants.SECURE_INDEX_FILE)
     private val mutex = Mutex()
 
-    // In-memory index cache
     @Volatile
     private var indexCache: MutableList<SecureFileEntry>? = null
     @Volatile
     private var protectedPathsCache: MutableSet<String>? = null
 
+    companion object {
+        private const val TAG = "${HaronConstants.TAG}/Secure"
+        private const val STREAMING_KEYSET_PREF = "__tink_secure_folder_streaming"
+        private const val STREAMING_KEYSET_NAME = "secure_folder_streaming_keyset"
+        private const val AEAD_KEYSET_PREF = "__tink_secure_folder_aead"
+        private const val AEAD_KEYSET_NAME = "secure_folder_aead_keyset"
+        private const val KEYSTORE_URI = "android-keystore://haron_tink_master_key"
+        private const val BUFFER_SIZE = 1024 * 1024 // 1MB — размер буфера для streaming
+        /** AAD (Associated Authenticated Data) для файлов — пустой, не нужен */
+        private val FILE_AAD = ByteArray(0)
+    }
+
     init {
+        AeadConfig.register()
+        StreamingAeadConfig.register()
         secureDir.mkdirs()
     }
+
+    /** Lazy-инициализация Streaming AEAD для шифрования файлов */
+    private val streamingAead: StreamingAead by lazy {
+        val handle = AndroidKeysetManager.Builder()
+            .withSharedPref(context, STREAMING_KEYSET_NAME, STREAMING_KEYSET_PREF)
+            .withKeyTemplate(StreamingAeadKeyTemplates.AES256_GCM_HKDF_1MB)
+            .withMasterKeyUri(KEYSTORE_URI)
+            .build()
+            .keysetHandle
+        handle.getPrimitive(StreamingAead::class.java)
+    }
+
+    /** Lazy-инициализация AEAD для шифрования индекса (маленький JSON) */
+    private val indexAead: Aead by lazy {
+        val handle = AndroidKeysetManager.Builder()
+            .withSharedPref(context, AEAD_KEYSET_NAME, AEAD_KEYSET_PREF)
+            .withKeyTemplate(AeadKeyTemplates.AES256_GCM)
+            .withMasterKeyUri(KEYSTORE_URI)
+            .build()
+            .keysetHandle
+        handle.getPrimitive(Aead::class.java)
+    }
+
+    // ==================== PROTECT / UNPROTECT ====================
 
     override suspend fun protectFiles(
         paths: List<String>,
@@ -59,7 +121,6 @@ class SecureFolderRepositoryImpl @Inject constructor(
             try {
                 val index = loadIndex().toMutableList()
                 val protectedPaths = index.map { it.originalPath }.toMutableSet()
-                val key = getOrCreateKey()
                 var count = 0
 
                 // Expand directories recursively
@@ -82,24 +143,13 @@ class SecureFolderRepositoryImpl @Inject constructor(
                     val name = file.name
                     onProgress(count + 1, name)
 
-                    // Encrypt file (streaming — no full file in memory)
-                    val cipher = Cipher.getInstance(TRANSFORMATION)
-                    cipher.init(Cipher.ENCRYPT_MODE, key)
-                    val iv = cipher.iv
-
+                    // Encrypt file with Tink Streaming AEAD (1MB segments, no OOM)
                     val outFile = File(secureDir, id)
-                    outFile.outputStream().use { fos ->
-                        fos.write(iv)
-                        CipherOutputStream(fos, cipher).use { cos ->
-                            file.inputStream().use { fis ->
-                                fis.copyTo(cos, bufferSize = 8192)
-                            }
-                        }
-                    }
+                    encryptFile(file, outFile)
 
-                    // Build entry
                     val ext = file.extension.lowercase()
-                    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                        ?: "application/octet-stream"
                     val entry = SecureFileEntry(
                         id = id,
                         originalPath = file.absolutePath,
@@ -111,13 +161,11 @@ class SecureFolderRepositoryImpl @Inject constructor(
                     )
                     index.add(entry)
                     protectedPaths.add(file.absolutePath)
-
-                    // Delete original
                     file.delete()
                     count++
                 }
 
-                // After encrypting all files, also protect directories that were passed
+                // Protect directory entries
                 for (path in paths) {
                     val file = File(path)
                     if (file.isDirectory && file.absolutePath !in protectedPaths) {
@@ -140,9 +188,10 @@ class SecureFolderRepositoryImpl @Inject constructor(
 
                 saveIndex(index)
                 invalidateCache()
+                EcosystemLogger.i(TAG, "protectFiles: $count files encrypted")
                 Result.success(count)
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "protectFiles error: ${e.message}")
+                EcosystemLogger.e(TAG, "protectFiles error: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -155,7 +204,6 @@ class SecureFolderRepositoryImpl @Inject constructor(
         mutex.withLock {
             try {
                 val index = loadIndex().toMutableList()
-                val key = getOrCreateKey()
                 var count = 0
 
                 for (id in ids) {
@@ -163,7 +211,6 @@ class SecureFolderRepositoryImpl @Inject constructor(
                     onProgress(count + 1, entry.originalName)
 
                     if (entry.isDirectory) {
-                        // Directory entry — just recreate the folder
                         File(entry.originalPath).mkdirs()
                         index.removeAll { it.id == id }
                         count++
@@ -176,22 +223,10 @@ class SecureFolderRepositoryImpl @Inject constructor(
                         continue
                     }
 
-                    // Decrypt (streaming — no full file in memory)
                     val destFile = File(entry.originalPath)
                     destFile.parentFile?.mkdirs()
-                    encFile.inputStream().use { fis ->
-                        val iv = ByteArray(GCM_IV_LENGTH)
-                        fis.read(iv)
-                        val cipher = Cipher.getInstance(TRANSFORMATION)
-                        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
-                        CipherInputStream(fis, cipher).use { cis ->
-                            destFile.outputStream().use { fos ->
-                                cis.copyTo(fos, bufferSize = 8192)
-                            }
-                        }
-                    }
+                    decryptFile(encFile, destFile)
 
-                    // Cleanup
                     encFile.delete()
                     index.removeAll { it.id == id }
                     count++
@@ -199,13 +234,16 @@ class SecureFolderRepositoryImpl @Inject constructor(
 
                 saveIndex(index)
                 invalidateCache()
+                EcosystemLogger.i(TAG, "unprotectFiles: $count files decrypted")
                 Result.success(count)
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "unprotectFiles error: ${e.message}")
+                EcosystemLogger.e(TAG, "unprotectFiles error: ${e.message}")
                 Result.failure(e)
             }
         }
     }
+
+    // ==================== QUERIES ====================
 
     override suspend fun getProtectedEntriesForDir(dirPath: String): List<SecureFileEntry> =
         withContext(Dispatchers.IO) {
@@ -227,28 +265,15 @@ class SecureFolderRepositoryImpl @Inject constructor(
             val encFile = File(secureDir, id)
             if (!encFile.exists()) return@withContext Result.failure(Exception("Encrypted file missing"))
 
-            val key = getOrCreateKey()
-
             val tempDir = File(context.cacheDir, HaronConstants.SECURE_TEMP_DIR)
             tempDir.mkdirs()
             val tempFile = File(tempDir, "${id}_${entry.originalName}")
 
-            // Decrypt file (streaming — no full file in memory)
-            encFile.inputStream().use { fis ->
-                val iv = ByteArray(GCM_IV_LENGTH)
-                fis.read(iv)
-                val cipher = Cipher.getInstance(TRANSFORMATION)
-                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
-                CipherInputStream(fis, cipher).use { cis ->
-                    tempFile.outputStream().use { fos ->
-                        cis.copyTo(fos, bufferSize = 8192)
-                    }
-                }
-            }
+            decryptFile(encFile, tempFile)
 
             Result.success(tempFile)
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "decryptToCache error: ${e.message}")
+            EcosystemLogger.e(TAG, "decryptToCache error: ${e.message}")
             Result.failure(e)
         }
     }
@@ -267,9 +292,7 @@ class SecureFolderRepositoryImpl @Inject constructor(
                     onProgress(count + 1, entry.originalName)
 
                     if (!entry.isDirectory) {
-                        // Delete encrypted file
-                        val encFile = File(secureDir, id)
-                        encFile.delete()
+                        File(secureDir, id).delete()
                     }
                     index.removeAll { it.id == id }
                     count++
@@ -279,7 +302,7 @@ class SecureFolderRepositoryImpl @Inject constructor(
                 invalidateCache()
                 Result.success(count)
             } catch (e: Exception) {
-                EcosystemLogger.e(HaronConstants.TAG, "deleteFromSecureStorage error: ${e.message}")
+                EcosystemLogger.e(TAG, "deleteFromSecureStorage error: ${e.message}")
                 Result.failure(e)
             }
         }
@@ -308,63 +331,66 @@ class SecureFolderRepositoryImpl @Inject constructor(
         return paths
     }
 
-    // --- Keystore ---
+    // ==================== TINK STREAMING ENCRYPT/DECRYPT ====================
 
-    private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        val existingKey = keyStore.getKey(HaronConstants.SECURE_KEYSTORE_ALIAS, null)
-        if (existingKey != null) return existingKey as SecretKey
-
-        val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        keyGen.init(
-            KeyGenParameterSpec.Builder(
-                HaronConstants.SECURE_KEYSTORE_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
-        )
-        return keyGen.generateKey()
+    /**
+     * Шифрование файла через Tink Streaming AEAD.
+     * RAM = ~1МБ (один сегмент) независимо от размера файла.
+     */
+    private fun encryptFile(src: File, dest: File) {
+        src.inputStream().channel.use { inChannel ->
+            dest.outputStream().channel.use { outChannel ->
+                streamingAead.newEncryptingChannel(outChannel, FILE_AAD).use { encChannel ->
+                    val buf = ByteBuffer.allocate(BUFFER_SIZE)
+                    while (inChannel.read(buf) != -1) {
+                        buf.flip()
+                        encChannel.write(buf)
+                        buf.clear()
+                    }
+                }
+            }
+        }
     }
 
-    // --- Index ---
+    /**
+     * Расшифровка файла через Tink Streaming AEAD.
+     * RAM = ~1МБ (один сегмент) независимо от размера файла.
+     * Каждый сегмент проверяет свой MAC-тег — повреждение одного сегмента
+     * не убивает весь файл (в отличие от стандартного AES-GCM).
+     */
+    private fun decryptFile(enc: File, dest: File) {
+        enc.inputStream().channel.use { inChannel ->
+            streamingAead.newDecryptingChannel(inChannel, FILE_AAD).use { decChannel ->
+                dest.outputStream().channel.use { outChannel ->
+                    val buf = ByteBuffer.allocate(BUFFER_SIZE)
+                    while (decChannel.read(buf) != -1) {
+                        buf.flip()
+                        outChannel.write(buf)
+                        buf.clear()
+                    }
+                }
+            }
+        }
+    }
+
+    // ==================== INDEX (AEAD — маленький JSON, не streaming) ====================
 
     private fun loadIndex(): List<SecureFileEntry> {
         if (!indexFile.exists()) return emptyList()
         return try {
-            val key = getOrCreateKey()
-            val allBytes = indexFile.readBytes()
-            if (allBytes.size < GCM_IV_LENGTH) return emptyList()
-
-            val iv = allBytes.copyOfRange(0, GCM_IV_LENGTH)
-            val ciphertext = allBytes.copyOfRange(GCM_IV_LENGTH, allBytes.size)
-
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
-            val json = String(cipher.doFinal(ciphertext), Charsets.UTF_8)
-
+            val encrypted = indexFile.readBytes()
+            val json = String(indexAead.decrypt(encrypted, FILE_AAD), Charsets.UTF_8)
             parseIndexJson(json)
         } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "loadIndex error: ${e.message}")
+            EcosystemLogger.e(TAG, "loadIndex error: ${e.message}")
             emptyList()
         }
     }
 
     private fun saveIndex(entries: List<SecureFileEntry>) {
         val json = entriesToJson(entries)
-        val key = getOrCreateKey()
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-        val iv = cipher.iv
-        val encrypted = cipher.doFinal(json.toByteArray(Charsets.UTF_8))
-
-        indexFile.outputStream().use { out ->
-            out.write(iv)
-            out.write(encrypted)
-        }
+        val encrypted = indexAead.encrypt(json.toByteArray(Charsets.UTF_8), FILE_AAD)
+        indexFile.writeBytes(encrypted)
     }
 
     private fun parseIndexJson(json: String): List<SecureFileEntry> {
@@ -409,11 +435,5 @@ class SecureFolderRepositoryImpl @Inject constructor(
     private fun invalidateCache() {
         indexCache = null
         protectedPathsCache = null
-    }
-
-    companion object {
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val GCM_IV_LENGTH = 12
-        private const val GCM_TAG_LENGTH = 128
     }
 }

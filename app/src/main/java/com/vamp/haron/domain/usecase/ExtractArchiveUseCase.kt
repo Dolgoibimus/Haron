@@ -17,6 +17,7 @@ import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
+import com.vamp.haron.common.util.MultiVolumeRarHelper
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
@@ -201,6 +202,19 @@ class ExtractArchiveUseCase @Inject constructor(
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
+            // Multi-volume RAR — always use 7-Zip-JBinding (junrar doesn't support split)
+            if (!isContentUri && MultiVolumeRarHelper.isMultiVolumeRar(file)) {
+                val firstVolume = MultiVolumeRarHelper.findFirstVolume(file)
+                val missing = MultiVolumeRarHelper.findMissingVolumes(firstVolume)
+                if (missing.isNotEmpty()) {
+                    emit(ExtractProgress(0, 0, "", error = context.getString(R.string.extract_missing_volumes, missing.joinToString())))
+                    return
+                }
+                val volumeCount = MultiVolumeRarHelper.countVolumes(firstVolume)
+                EcosystemLogger.d(TAG, "extractRar: multi-volume RAR, $volumeCount volumes, first=${firstVolume.name}")
+                extractMultiVolumeRar(firstVolume, destinationDir, selectedEntries, password, basePrefix)
+                return
+            }
             // Try junrar first (RAR4)
             try {
                 val archive = if (password != null) Archive(file, password) else Archive(file)
@@ -284,6 +298,59 @@ class ExtractArchiveUseCase @Inject constructor(
             archive.close()
             stream.close()
             raf.close()
+        }
+    }
+
+    /** Extract multi-volume RAR using 7-Zip-JBinding with IArchiveOpenVolumeCallback */
+    private suspend fun FlowCollector<ExtractProgress>.extractMultiVolumeRar(
+        firstVolume: File,
+        destinationDir: String,
+        selectedEntries: Set<String>?,
+        password: String?,
+        basePrefix: String
+    ) {
+        SevenZip.initSevenZipFromPlatformJAR()
+        val volumeCallback = MultiVolumeRarHelper.VolumeCallback(firstVolume)
+        val raf = RandomAccessFile(firstVolume, "r")
+        val firstStream = RandomAccessFileInStream(raf)
+        val archive: IInArchive = SevenZip.openInArchive(null, firstStream, volumeCallback)
+        try {
+            val count = archive.numberOfItems
+            val toExtract = mutableListOf<Int>()
+            for (i in 0 until count) {
+                val isDir = archive.getProperty(i, PropID.IS_FOLDER) as? Boolean ?: false
+                if (isDir) continue
+                val path = (archive.getProperty(i, PropID.PATH) as? String ?: "").replace('\\', '/')
+                if (selectedEntries == null || selectedEntries.any { sel -> path.trimEnd('/').startsWith(sel) }) {
+                    toExtract.add(i)
+                }
+            }
+            val total = toExtract.size
+            var current = 0
+            EcosystemLogger.d(TAG, "extractMultiVolumeRar: extracting $total files")
+
+            for (idx in toExtract) {
+                val path = (archive.getProperty(idx, PropID.PATH) as? String ?: "").replace('\\', '/')
+                val fileName = path.substringAfterLast('/')
+                emit(ExtractProgress(current, total, fileName))
+                val outputName = stripPrefix(path, basePrefix)
+                val outFile = File(destinationDir, outputName)
+                outFile.parentFile?.mkdirs()
+                FileOutputStream(outFile).use { fos ->
+                    archive.extractSlow(idx, ISequentialOutStream { data ->
+                        fos.write(data)
+                        data.size
+                    }, password ?: "")
+                }
+                current++
+            }
+            EcosystemLogger.d(TAG, "extractMultiVolumeRar: complete, $total files extracted")
+            emit(ExtractProgress(total, total, "", isComplete = true))
+        } finally {
+            archive.close()
+            firstStream.close()
+            raf.close()
+            volumeCallback.close()
         }
     }
 

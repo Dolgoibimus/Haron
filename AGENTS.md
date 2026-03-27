@@ -18,6 +18,8 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
+**Batch 105 завершён** — многотомные RAR, установка APK из архива, даунгрейд.
+
 **Кастомный навбар — развитие (в процессе):**
 - ✅ Системный навбар скрыт (immersive mode, статус-бар остаётся)
 - ✅ Кастомный навбар: HorizontalPager, N страниц, 5-7 кнопок
@@ -2094,6 +2096,14 @@ DuplicateDetectorScreen
 - **findItemIndexAtPosition() fallback** → функция возвращала индекс ближайшего элемента при тапе на пустое место в LazyVerticalGrid. Решение: убрать fallback, возвращать `-1` для пустого пространства.
 - **deleteRecursively() не даёт прогресса** → для папки с 1000 файлами `deleteRecursively()` — одна операция, прогрессбар = 0% → готово. Решение: `walkBottomUp()` + удаление по одному файлу с колбэком прогресса.
 - **Media3 Transformer profile ignored for H264** → `setEncodingProfileLevel()` игнорируется при использовании `DefaultEncoderFactory` + H264. Вместо этого: `experimentalSetEnableHighQualityTargeting(true)` для автоподбора битрейта.
+- **CipherInputStream + AES-GCM буферит весь файл в RAM** → JDK-8298249. Для файлов 50МБ+ → OOM. Решение: Tink Streaming AEAD (сегменты 1МБ) в SecureFolderRepositoryImpl.
+- **KDoc с Unicode (em dashes, стрелки, backtick <>) ломает KSP в AGP 9.x** → KSP PROCESSING_ERROR без видимых ошибок Kotlin. Решение: ASCII-safe KDoc.
+- **readZipEntries читает бинарные файлы как String** → OOM при 90МБ APK в secure folder backup. Решение: пропускать `secure_folder/files/*` в readZipEntries.
+- **JSON теряет тип Float/Long** → `1.0` (Float) → `Integer(1)` при парсинге → ClassCastException в `getFloat()`. Решение: метки `__float_keys__`/`__long_keys__`.
+- **runCatching + suspend** → в некоторых версиях Kotlin/AGP suspend вызовы внутри inline `runCatching` не компилируются. Решение: обычный try/catch.
+- **ACTION_INSTALL_PACKAGE не поддерживает даунгрейд** → даже после удаления пакета, Android кеширует versionCode и `INSTALL_FAILED_VERSION_DOWNGRADE`. Решение: `ACTION_VIEW` с MIME `application/vnd.android.package-archive` направленный в `com.google.android.packageinstaller/InstallStart` — обходит проверку.
+- **BroadcastReceiver в Compose отписывается при уходе в фон** → DisposableEffect делает onDispose когда Activity уходит в фон (установщик на переднем плане). Решение: регистрировать receiver через `appContext` в ViewModel (живёт пока ViewModel жив).
+- **Ложные PACKAGE_REMOVED при установке (update)** → при обновлении APK система шлёт PACKAGE_REMOVED + PACKAGE_ADDED. Если receiver регистрируется ДО запуска ACTION_DELETE, он ловит ложные broadcasts от предыдущей установки. Решение: регистрировать receiver с задержкой 2с после запуска ACTION_DELETE.
 - **VLC HW decoder ломает AVI (XviD/DivX)** → `setHWDecoderEnabled(true, true)` (force=true) заставляет MediaCodec декодировать MPEG-4 ASP → артефакты, unknown output format (2130708361). `(true, false)` тоже не помогает — VLC всё равно выбирает HW. Решение: whitelist по расширению — HW для mkv/mp4/mov/webm/ts/m2ts, software для avi/wmv/flv и остального. Также `--avcodec-skiploopfilter=4` (skip ALL) даёт артефакты на старых кодеках → заменён на `=0` (не пропускать).
 
 ---
@@ -2162,6 +2172,111 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 
 > Выполненные задачи с описанием как решили.
 
+---
+#### Релиз 1.6
+---
+
+### Batch 105 — Многотомные RAR + установка APK из архива + даунгрейд ✅ проверено
+
+**Многотомные RAR-архивы:**
+- Новый файл `MultiVolumeRarHelper.kt` — детекция, поиск первого тома, `IArchiveOpenVolumeCallback` для 7-Zip-JBinding
+- Поддержка двух стилей: новый (`file.part1.rar`, `file.part2.rar`) и старый (`file.rar`, `file.r00`, `file.r01`)
+- Обновлены `BrowseArchiveUseCase` и `ExtractArchiveUseCase` — multi-volume через `IArchiveOpenVolumeCallback`
+- Обновлён `archiveType()` — распознаёт `.r00`, `.r01`, `.part2.rar` как "rar"
+- Проверка отсутствующих томов с сообщением об ошибке
+
+**Установка APK из архива (одиночного и многотомного):**
+- Тап на `.apk` внутри архива → извлечение в `cacheDir/apk_install/` → запуск установщика
+- Работает через inline-режим архива в `ExplorerViewModel.onFileClick()`
+- Тост "Извлечение APK из архива…" при начале
+
+**Проверка версий при установке APK:**
+- Перед установкой — сравнение версий через `PackageManager.getPackageArchiveInfo()` + `getPackageInfo()`
+- Обновление → тост "Обновление: X → Y"
+- Переустановка → тост "Переустановка версии X"
+- Даунгрейд → диалог с предупреждением
+
+**Даунгрейд APK (удалить + установить):**
+- Диалог: "Установлена более новая версия. Удалить текущую?"
+- `ACTION_DELETE` → BroadcastReceiver в ViewModel (переживает фон) → `ACTION_VIEW` напрямую в `com.google.android.packageinstaller`
+- Receiver регистрируется с задержкой 2с (пропуск ложных broadcasts от предыдущей установки)
+- `ACTION_VIEW` с MIME `application/vnd.android.package-archive` — обходит `INSTALL_FAILED_VERSION_DOWNGRADE`
+- `ACTION_INSTALL_PACKAGE` не работает для даунгрейда (Android кеширует versionCode)
+
+**Тосты установки:**
+- BroadcastReceiver на `PACKAGE_ADDED` в ViewModel — тост "Установлено: AppName vX.X" / "Обновлено: AppName vX.X"
+- Живёт в ViewModel, не в Compose — работает когда Haron в фоне
+
+**Новые строки strings.xml (EN + RU):**
+- `extract_missing_volumes`, `apk_downgrade_title`, `apk_downgrade_message`, `apk_downgrade_uninstall_and_install`, `apk_downgrade_uninstall_failed`, `apk_downgrade_uninstalling`, `apk_extracting_from_archive`, `apk_installer_launched`, `apk_updating`, `apk_reinstalling`, `apk_installed_toast`, `apk_updated_toast`
+
+---
+#### Релиз 1.5
+---
+
+### Batch 104 — Бэкап, восстановление, Tink шифрование, единый щит ✅ проверено
+
+**Новые файлы:**
+- `data/backup/BackupManager.kt` — ядро: сбор данных из SharedPreferences/Room/CredentialStores, создание ZIP, восстановление, проверка расхождений
+- `data/backup/BackupCrypto.kt` — шифрование ZIP паролем (AES-256-CBC + PBKDF2 10K итераций, буфер 64КБ)
+- `domain/model/backup/BackupSection.kt` — enum секций (SETTINGS, CREDENTIALS, BOOKS, SECURE_FOLDER)
+- `domain/model/backup/BackupManifest.kt` — метаданные бэкапа (версия, дата, секции, устройство)
+- `domain/model/backup/BackupInfo.kt` — модель для UI
+- `domain/model/backup/BackupResult.kt` — результат восстановления + warnings
+- `domain/usecase/backup/CreateBackupUseCase.kt`
+- `domain/usecase/backup/RestoreBackupUseCase.kt`
+- `domain/usecase/backup/ListBackupsUseCase.kt`
+- `domain/usecase/backup/DeleteBackupUseCase.kt`
+- `presentation/settings/BackupScreen.kt` — UI: чекбоксы секций, создание, список бэкапов, восстановление, отчёт
+- `presentation/settings/BackupViewModel.kt` — состояние
+
+**Изменения в существующих:**
+- `ReadingPositionDao.kt` — добавлен `getAll()` для экспорта
+- `HaronNavigation.kt` — route BACKUP, composable BackupScreen
+- `SettingsScreen.kt` — кнопка "Резервное копирование" (секция после Power Saving)
+- `SecureFolderRepositoryImpl.kt` — полностью переписан на Tink Streaming AEAD
+- `FilePanel.kt` — единый щит вынесен из when, всегда на одном месте
+- `ExplorerViewModel.kt` — подробное логирование unprotectSelectedFiles
+- `build.gradle.kts` — добавлен `com.google.crypto.tink:tink-android:1.15.0`
+- `strings.xml` EN/RU — 36 строк для бэкапа + secure folder
+
+**Что бэкапится:** все SharedPreferences, FTP/SMB/SSH/WebDAV учётки, облачные токены, библиотека книг, прогресс чтения, позиции видео, файлы защищённой папки (пофайловый выбор).
+**Формат:** ZIP (Download/HaronBackup/), опционально зашифрованный паролем (.hbk).
+**Расхождения:** после восстановления проверяются мёртвые пути (теги, избранное, закладки, книги).
+**Защищённая папка в бэкапе:** разворачиваемый чекбокс-список файлов с размерами. Файлы расшифровываются Tink → temp → ZIP (NO_COMPRESSION). Пароль обязателен для этой секции. При восстановлении → protectFiles() шифрует новым Tink-ключом.
+**Пароль:** обязателен только для секции Secure Folder. Для остальных — опциональная галочка "Защитить паролем".
+
+**Tink Streaming AEAD (замена javax.crypto):**
+- SecureFolderRepositoryImpl переписан с CipherInputStream (OOM на 253МБ, GC-шторм) на Tink Streaming AEAD (AES-256-GCM-HKDF, 1МБ сегменты). RAM = 1МБ для любого размера файла.
+- Два keyset: StreamingAead (файлы) + Aead (индекс). Хранятся в SharedPreferences, зашифрованы Android Keystore master key.
+- Формат файлов несовместим со старым — старые зашифрованные файлы удалены.
+
+**Единый щит в шапке панели:**
+- Вынесен из `when` — всегда на одном месте в конце шапки, не прыгает при смене режимов
+- Тап + файлы выделены (не защищены) → защитить выделенные
+- Тап + в режиме защиты + нет выделения → выход из режима
+- Долгий тап (обычный режим) → вход в режим защиты (аутентификация)
+- Долгий тап + в режиме защиты + файлы выделены → снять защиту с выделенных
+
+**Фиксы в процессе:**
+- ClassCastException при восстановлении настроек: JSON теряет разницу Int/Float/Long → добавлены метки `__float_keys__`/`__long_keys__` при экспорте
+- PBKDF2 100K → 10K итераций (быстрее на мобильных, достаточно для бэкапа)
+- Буфер шифрования 8КБ → 64КБ
+- NO_COMPRESSION для файлов secure folder в ZIP (файлы уже сжаты)
+- Чекбоксы секций блокируются во время создания бэкапа
+- Прогресс % отображается в кнопке "Создать бэкап"
+- OOM при восстановлении: readZipEntries читал бинарные файлы secure folder как String (268МБ allocation) → пропускает secure_folder/files/*
+- BackupManager переписан с нуля: KDoc с Unicode символами (em dashes, стрелки) ломал KSP в AGP 9.x
+- Поддержка старых путей в ZIP (database/ → books/, credentials/cloud.json → cloud_tokens.json)
+- NonCancellable для restoreSecureFolder и restoreBackup в ViewModel — диалог "успешно" не теряется
+- Secure folder restore: очистка существующих файлов перед восстановлением (нет дубликатов)
+- Secure folder export: originalName вместо UUID в именах файлов ZIP
+- Secure folder restore: извлечение по оригинальному пути (из index.json) → правильные имена после restore
+- Прогресс восстановления: гранулярный (Decrypting → Settings → FTP → SMB → SSH → WebDAV → Cloud → Books → Reading positions → Video positions → Secure folder → Done)
+- Свайп-бэк: выход из экрана бэкапа свайпом вправо от левого края (40dp зона)
+- Кнопка "Восстановить" неактивна для последнего восстановленного бэкапа (сохраняется в SharedPreferences)
+- Защищённая папка исключена из истории навигации (кнопка "назад" не возвращает в режим защиты)
+
 ### Batch 103 — Энергосбережение, О приложении, Что нового, Changelog ✅ проверено
 
 - ContentObserver перенесён из Application в MainActivity lifecycle (register onResume, unregister onPause)
@@ -2216,6 +2331,10 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 **Диагностическое логирование:**
 - copy/move: полная трассировка ViewModel → Service → executeOperation → finish
 - onFileClick: лог tapped/startIndex/actualFile для отладки плейлиста
+
+---
+#### Релиз 1.4
+---
 
 ### Batch 100 — Сетевой стриминг + DND фикс + SMB/FTP сохранение серверов ✅ проверено
 
@@ -3030,6 +3149,10 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 - **NavigationEvent.HandleExternalFile**: передаёт список ReceivedFile.
 - **Доп. фикс**: ODT/ODS/ODP/RTF MIME-типы добавлены в intent-filter. ACTION_VIEW → прямое открытие без диалога. DOCX/DOC/ODT/RTF/FB2 → DocumentViewerScreen (извлечение текста через ContentExtractor). APK → ACTION_INSTALL_PACKAGE вместо ACTION_VIEW (убрано зацикливание). **DocumentViewerScreen** (`presentation/document/DocumentViewerScreen.kt`): новый экран для просмотра документов. NavigationEvent.OpenDocumentViewer. HaronRoutes.DOCUMENT_VIEWER.
 
+---
+#### Релиз 1.0
+---
+
 ### Batch 34 — Голосовые команды ✅ проверено
 - **VoiceCommandManager** (`data/voice/VoiceCommandManager.kt`): @Singleton, обёртка над `SpeechRecognizer`. `VoiceState` (IDLE, LISTENING, PROCESSING, ERROR). `startListening()` → создаёт SpeechRecognizer, intent на ru-RU + en-US (additional languages). `stop()` с полным cleanup. `matchPhrase()` — сопоставление распознанного текста с `GestureAction` через PHRASE_MAP (16 пар, `contains` match).
 - **PHRASE_MAP**: русские + английские фразы для каждого действия: "меню"/"menu" → OPEN_DRAWER, "полка"/"shelf" → OPEN_SHELF, "скрытые"/"hidden" → TOGGLE_HIDDEN, "создать"/"create" → CREATE_NEW, "поиск"/"search" → GLOBAL_SEARCH, "терминал"/"terminal" → OPEN_TERMINAL, "выделить все"/"select all" → SELECT_ALL, "обновить"/"refresh" → REFRESH, "домой"/"home" → GO_HOME, "сортировка"/"sort" → SORT_CYCLE, "настройки"/"settings" → OPEN_SETTINGS, "передача"/"transfer" → OPEN_TRANSFER, "корзина"/"trash" → OPEN_TRASH, "анализ"/"storage" → OPEN_STORAGE, "дубликат"/"duplicates" → OPEN_DUPLICATES, "приложения"/"apps" → OPEN_APPS.
@@ -3332,6 +3455,13 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 ---
 
 ## Changelog
+
+### 0.105.0 — Batch 105 (Phase 4, v2.0)
+- Многотомные RAR-архивы: просмотр и извлечение (new-style .part1.rar и old-style .rar/.r00)
+- Установка APK из архива: тап на .apk внутри архива → извлечение → установка
+- Проверка версий: тост при обновлении/переустановке, диалог при даунгрейде
+- Даунгрейд APK: удаление текущей версии → автоматическая установка старой через ACTION_VIEW
+- BroadcastReceiver на PACKAGE_ADDED: тост "Установлено/Обновлено: AppName vX.X"
 
 ### 0.53.0 — Batch 53 (Phase 4, v2.0)
 - HLS прогрессивный каст: FFmpeg выводит HLS-сегменты (.ts) + плейлист (.m3u8), Chromecast начинает воспроизведение через ~30 сек пока транскод продолжается

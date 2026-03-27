@@ -229,6 +229,9 @@ class ContentExtractor @Inject constructor(
             lower.endsWith(".tar.bz2") || lower.endsWith(".tbz2") -> "tar.bz2"
             lower.endsWith(".tar.xz") || lower.endsWith(".txz") -> "tar.xz"
             lower.endsWith(".tar") -> "tar"
+            // Multi-volume RAR: .part2.rar, .r00, .r01, etc.
+            Regex("""\.part\d+\.rar$""").containsMatchIn(lower) -> "rar"
+            Regex("""\.r\d{2,}$""").containsMatchIn(lower) -> "rar"
             else -> file.extension.lowercase()
         }
     }

@@ -157,6 +157,9 @@ dependencies {
     // Tesseract OCR (better Cyrillic support)
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
 
+    // Tink (streaming AES-GCM encryption for secure folder — no OOM on large files)
+    implementation("com.google.crypto.tink:tink-android:1.15.0")
+
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
 

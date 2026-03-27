@@ -1160,6 +1160,9 @@ class ExplorerViewModel @Inject constructor(
         navigateTo(PanelId.TOP, topPath)
         navigateTo(PanelId.BOTTOM, bottomPath)
 
+        // Register PACKAGE_ADDED receiver for install confirmation toast (lives with ViewModel)
+        registerPackageAddedReceiver()
+
         // Загрузить SAF roots
         refreshSafRoots()
 
@@ -1316,6 +1319,10 @@ class ExplorerViewModel @Inject constructor(
         super.onCleared()
         usbStorageManager.unregister()
         networkDeviceScanner.stopDiscovery()
+        unregisterPackageRemovedReceiver()
+        _packageAddedReceiver?.let {
+            try { appContext.unregisterReceiver(it) } catch (_: Exception) {}
+        }
         // Don't call receiveFileManager.stopListening() — the global listener
         // lives in MainActivity and must survive ViewModel lifecycle
     }
@@ -1752,8 +1759,10 @@ class ExplorerViewModel @Inject constructor(
                 updatePanel(panelId) {
                     var history = it.navigationHistory
                     var index = it.historyIndex
-                    if (pushHistory) {
+                    if (pushHistory && path != HaronConstants.VIRTUAL_SECURE_PATH) {
                         // Обрезаем forward-стек и добавляем новый путь
+                        // Виртуальный путь защищённой папки НЕ добавляется в историю —
+                        // чтобы кнопка "назад" не возвращала в режим защиты после выхода
                         history = history.take(index + 1) + path
                         if (history.size > MAX_HISTORY_SIZE) {
                             history = history.takeLast(MAX_HISTORY_SIZE)
@@ -2007,6 +2016,11 @@ class ExplorerViewModel @Inject constructor(
             navigateIntoArchive(panelId, panel.archivePath!!, virtualPath, panel.archivePassword)
             return
         } else if (panel.isArchiveMode && !entry.isDirectory) {
+            // APK inside archive — extract to temp and launch installer
+            if (entry.name.lowercase().endsWith(".apk")) {
+                installApkFromArchive(panel.archivePath!!, entry, panel.archivePassword)
+                return
+            }
             // Inside archive: all file taps open QuickPreview (no external apps/players)
             onIconClick(panelId, entry)
             return
@@ -6081,28 +6095,307 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
-    fun installApk(entry: FileEntry) {
-        dismissDialog()
-        try {
-            val uri = if (entry.isContentUri) {
-                Uri.parse(entry.path)
-            } else {
-                androidx.core.content.FileProvider.getUriForFile(
-                    appContext,
-                    "${appContext.packageName}.fileprovider",
-                    File(entry.path)
-                )
+    /**
+     * Extract APK from archive to cacheDir and launch system installer.
+     * Checks for version downgrade and shows confirmation dialog if needed.
+     */
+    private fun installApkFromArchive(archivePath: String, entry: FileEntry, password: String?) {
+        val apkName = entry.name
+        val entryFullPath = entry.path.substringAfter("!/", "").ifEmpty { entry.name }
+        EcosystemLogger.d(HaronConstants.TAG, "installApkFromArchive: $apkName from archive=${archivePath.substringAfterLast('/')}")
+        _toastMessage.tryEmit(appContext.getString(R.string.apk_extracting_from_archive))
+
+        viewModelScope.launch {
+            try {
+                val tempDir = File(appContext.cacheDir, "apk_install")
+                tempDir.mkdirs()
+                // Clean old temp APKs
+                tempDir.listFiles()?.forEach { it.delete() }
+
+                val selectedEntries = setOf(entryFullPath)
+                extractArchiveUseCase(archivePath, tempDir.absolutePath, selectedEntries, password)
+                    .collect { progress ->
+                        if (progress.isComplete) {
+                            val apkFile = tempDir.walkTopDown().firstOrNull {
+                                it.isFile && it.name.lowercase().endsWith(".apk")
+                            }
+                            if (apkFile != null && apkFile.length() > 0) {
+                                EcosystemLogger.d(HaronConstants.TAG, "installApkFromArchive: extracted ${apkFile.name}, size=${apkFile.length()}")
+                                launchApkInstallOrDowngradeDialog(apkFile)
+                            } else {
+                                EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: APK not found or empty after extraction")
+                                _toastMessage.tryEmit(appContext.getString(R.string.extract_error_generic))
+                            }
+                        }
+                        if (progress.error != null) {
+                            EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: error: ${progress.error}")
+                            _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
+                        }
+                    }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "installApkFromArchive: exception: ${e.message}")
+                _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
             }
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                data = uri
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-                putExtra(Intent.EXTRA_RETURN_RESULT, true)
+        }
+    }
+
+    /**
+     * Check if APK is a downgrade. If yes — show dialog. If not — install directly.
+     * Also used for regular APK install (not from archive).
+     */
+    internal fun launchApkInstallOrDowngradeDialog(apkFile: File) {
+        try {
+            val pm = appContext.packageManager
+            EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: parsing ${apkFile.absolutePath}, size=${apkFile.length()}, exists=${apkFile.exists()}")
+            val apkInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: apkInfo=${if (apkInfo != null) "${apkInfo.packageName} v${apkInfo.versionName}" else "null"}")
+            if (apkInfo != null) {
+                val apkPackage = apkInfo.packageName
+                val apkVersionName = apkInfo.versionName ?: "?"
+                val apkVersionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    apkInfo.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    apkInfo.versionCode.toLong()
+                }
+
+                // Check if already installed
+                try {
+                    EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: checking installed version of $apkPackage")
+                    val installed = pm.getPackageInfo(apkPackage, 0)
+                    val installedVersionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
+                        installed.longVersionCode
+                    } else {
+                        @Suppress("DEPRECATION")
+                        installed.versionCode.toLong()
+                    }
+                    val installedVersionName = installed.versionName ?: "?"
+
+                    EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: installed=$installedVersionName($installedVersionCode), apk=$apkVersionName($apkVersionCode)")
+                    if (apkVersionCode < installedVersionCode) {
+                        // Downgrade detected — show dialog
+                        EcosystemLogger.d(HaronConstants.TAG, "launchApkInstall: downgrade detected: installed=$installedVersionCode, apk=$apkVersionCode")
+                        _uiState.update {
+                            it.copy(dialogState = DialogState.ApkDowngradeConfirm(
+                                apkFile = apkFile,
+                                packageName = apkPackage,
+                                installedVersionName = installedVersionName,
+                                installedVersionCode = installedVersionCode,
+                                apkVersionName = apkVersionName,
+                                apkVersionCode = apkVersionCode
+                            ))
+                        }
+                        return
+                    } else if (apkVersionCode > installedVersionCode) {
+                        _toastMessage.tryEmit(appContext.getString(R.string.apk_updating, installedVersionName, apkVersionName))
+                    } else {
+                        _toastMessage.tryEmit(appContext.getString(R.string.apk_reinstalling, apkVersionName))
+                    }
+                } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                    EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: package not installed (NameNotFound)")
+                } catch (e: Exception) {
+                    EcosystemLogger.e(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: installed check error: ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: version check failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        // No downgrade or check failed — install directly
+        EcosystemLogger.d(HaronConstants.TAG, "launchApkInstallOrDowngradeDialog: proceeding to install")
+        launchApkInstaller(apkFile)
+    }
+
+    /** Launch system installer for an APK file. useView=true for clean install after downgrade uninstall. */
+    internal fun launchApkInstaller(apkFile: File, useView: Boolean = false) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                appContext,
+                "${appContext.packageName}.fileprovider",
+                apkFile
+            )
+            val intent = if (useView) {
+                // ACTION_VIEW via system PackageInstaller — bypasses VERSION_DOWNGRADE check after uninstall
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // Direct to system installer — avoid chooser
+                    setClassName("com.google.android.packageinstaller", "com.android.packageinstaller.InstallStart")
+                }
+            } else {
+                Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = uri
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                }
             }
             appContext.startActivity(intent)
-        } catch (_: Exception) {
+            _toastMessage.tryEmit(appContext.getString(R.string.apk_installer_launched))
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "launchApkInstaller: failed: ${e.message}")
             _toastMessage.tryEmit(appContext.getString(R.string.installer_open_failed))
+        }
+    }
+
+    /** Uninstall package then install APK as clean install (downgrade flow) */
+    fun uninstallAndInstall(dialog: DialogState.ApkDowngradeConfirm) {
+        dismissDialog()
+        val pkg = dialog.packageName
+        val apkFile = dialog.apkFile
+        EcosystemLogger.d(HaronConstants.TAG, "uninstallAndInstall: uninstalling $pkg, pending APK=${apkFile.name}")
+        _toastMessage.tryEmit(appContext.getString(R.string.apk_downgrade_uninstalling))
+
+        _pendingDowngradeApk = apkFile
+        _pendingDowngradePackage = pkg
+
+        try {
+            val intent = Intent(Intent.ACTION_DELETE).apply {
+                data = Uri.parse("package:$pkg")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(intent)
+
+            // Register receiver with delay — skip stale broadcasts from previous install/update
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(2000)
+                registerPackageRemovedReceiver(pkg)
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "uninstallAndInstall: failed: ${e.message}")
+            _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
+        }
+    }
+
+    private var _pendingDowngradeApk: File? = null
+    private var _pendingDowngradePackage: String? = null
+    private var _packageReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerPackageRemovedReceiver(packageName: String) {
+        unregisterPackageRemovedReceiver()
+        _packageReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
+                val removedPkg = intent?.data?.schemeSpecificPart ?: return
+                if (removedPkg != packageName) return
+                val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+                if (replacing) return
+                EcosystemLogger.d(HaronConstants.TAG, "packageReceiver: $removedPkg removed, action=${intent.action}")
+                onDowngradePackageRemoved()
+            }
+        }
+        val filter = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_FULLY_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addDataScheme("package")
+        }
+        appContext.registerReceiver(_packageReceiver, filter)
+        EcosystemLogger.d(HaronConstants.TAG, "registerPackageRemovedReceiver: listening for $packageName")
+    }
+
+    private fun unregisterPackageRemovedReceiver() {
+        _packageReceiver?.let {
+            try { appContext.unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        _packageReceiver = null
+    }
+
+    private fun onDowngradePackageRemoved() {
+        val apkFile = _pendingDowngradeApk ?: return
+        val pkg = _pendingDowngradePackage ?: return
+        _pendingDowngradeApk = null
+        _pendingDowngradePackage = null
+        unregisterPackageRemovedReceiver()
+
+        // Poll PM to confirm package is truly gone, then install
+        viewModelScope.launch {
+            var attempts = 0
+            while (attempts < 30) {
+                val stillInstalled = try {
+                    appContext.packageManager.getPackageInfo(pkg, 0)
+                    true
+                } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                    false
+                }
+                if (!stillInstalled) {
+                    EcosystemLogger.d(HaronConstants.TAG, "onDowngradePackageRemoved: PM confirmed removal after ${attempts * 500}ms, installing ${apkFile.name}")
+                    if (apkFile.exists()) {
+                        launchApkInstaller(apkFile, useView = true)
+                    } else {
+                        EcosystemLogger.e(HaronConstants.TAG, "onDowngradePackageRemoved: APK file gone")
+                        _toastMessage.tryEmit(appContext.getString(R.string.extract_error_generic))
+                    }
+                    return@launch
+                }
+                attempts++
+                kotlinx.coroutines.delay(500)
+            }
+            EcosystemLogger.e(HaronConstants.TAG, "onDowngradePackageRemoved: PM still reports package after 15s")
+            _toastMessage.tryEmit(appContext.getString(R.string.apk_downgrade_uninstall_failed))
+        }
+    }
+
+    private var _packageAddedReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerPackageAddedReceiver() {
+        _packageAddedReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
+                if (intent?.action == Intent.ACTION_PACKAGE_ADDED) {
+                    val pkg = intent.data?.schemeSpecificPart ?: return
+                    val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+                    onPackageInstalled(pkg, replacing)
+                }
+            }
+        }
+        val filter = android.content.IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
+            addDataScheme("package")
+        }
+        appContext.registerReceiver(_packageAddedReceiver, filter)
+    }
+
+    // onCleared is defined near init{} — cleanup for receivers is there
+
+    /** Called from Compose when PACKAGE_REMOVED broadcast is received (non-downgrade) */
+    fun onPackageRemoved(packageName: String) {
+        EcosystemLogger.d(HaronConstants.TAG, "onPackageRemoved: $packageName")
+    }
+
+    /** Called when a package is installed or updated */
+    fun onPackageInstalled(packageName: String, isUpdate: Boolean) {
+        try {
+            val pm = appContext.packageManager
+            val info = pm.getPackageInfo(packageName, 0)
+            val appLabel = pm.getApplicationLabel(info.applicationInfo!!).toString()
+            val versionName = info.versionName ?: "?"
+            val msg = if (isUpdate) {
+                appContext.getString(R.string.apk_updated_toast, appLabel, versionName)
+            } else {
+                appContext.getString(R.string.apk_installed_toast, appLabel, versionName)
+            }
+            _toastMessage.tryEmit(msg)
+            EcosystemLogger.d(HaronConstants.TAG, "onPackageInstalled: $packageName v$versionName (update=$isUpdate)")
+        } catch (_: Exception) {}
+    }
+
+    fun installApk(entry: FileEntry) {
+        dismissDialog()
+        if (entry.isContentUri) {
+            // Content URI — can't check version, install directly
+            try {
+                val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = Uri.parse(entry.path)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                }
+                appContext.startActivity(intent)
+            } catch (_: Exception) {
+                _toastMessage.tryEmit(appContext.getString(R.string.installer_open_failed))
+            }
+        } else {
+            launchApkInstallOrDowngradeDialog(File(entry.path))
         }
     }
 
@@ -7439,14 +7732,20 @@ class ExplorerViewModel @Inject constructor(
     fun unprotectSelectedFiles(explicitPaths: List<String>? = null) {
         val panel = getPanel(_uiState.value.activePanel)
         val paths = explicitPaths ?: panel.selectedPaths.toList()
-        if (paths.isEmpty()) return
+        EcosystemLogger.d(HaronConstants.TAG, "unprotectSelectedFiles: paths=$paths, explicitPaths=${explicitPaths != null}")
+        if (paths.isEmpty()) {
+            EcosystemLogger.d(HaronConstants.TAG, "unprotectSelectedFiles: paths empty, returning")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isProtecting = true) }
             val allEntries = secureFolderRepository.getAllProtectedEntries()
+            EcosystemLogger.d(HaronConstants.TAG, "unprotectSelectedFiles: allEntries=${allEntries.size}, paths to match: $paths")
 
             // Collect IDs: exact match + cascade for directories (all children)
             val directIds = allEntries.filter { it.originalPath in paths }.map { it.id }
+            EcosystemLogger.d(HaronConstants.TAG, "unprotectSelectedFiles: directIds=${directIds.size}")
             val dirPaths = allEntries.filter { it.isDirectory && it.originalPath in paths }.map { it.originalPath }
             val cascadeIds = if (dirPaths.isNotEmpty()) {
                 allEntries.filter { entry ->
@@ -7458,6 +7757,14 @@ class ExplorerViewModel @Inject constructor(
             val dirEntryIds = directIds.filter { id -> allEntries.find { it.id == id }?.isDirectory == true }
             val fileEntryIds = (directIds + cascadeIds).distinct().filter { id -> allEntries.find { it.id == id }?.isDirectory != true }
             val ids = dirEntryIds + fileEntryIds
+            EcosystemLogger.d(HaronConstants.TAG, "unprotectSelectedFiles: total ids=${ids.size} (dirs=${dirEntryIds.size}, files=${fileEntryIds.size})")
+
+            if (ids.isEmpty()) {
+                EcosystemLogger.e(HaronConstants.TAG, "unprotectSelectedFiles: no matching IDs found! allEntries paths: ${allEntries.map { it.originalPath }}")
+                _uiState.update { it.copy(isProtecting = false) }
+                _toastMessage.tryEmit("No matching protected files found")
+                return@launch
+            }
 
             clearSelection(_uiState.value.activePanel)
 
@@ -7466,11 +7773,13 @@ class ExplorerViewModel @Inject constructor(
                     it.copy(protectProgress = appContext.getString(R.string.unprotecting_files, current, ids.size, name))
                 }
             }.onSuccess { count ->
+                EcosystemLogger.i(HaronConstants.TAG, "unprotectSelectedFiles: success, count=$count")
                 _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
                 _toastMessage.tryEmit(appContext.getString(R.string.unprotect_success, count))
                 refreshPanel(PanelId.TOP)
                 refreshPanel(PanelId.BOTTOM)
             }.onFailure { e ->
+                EcosystemLogger.e(HaronConstants.TAG, "unprotectSelectedFiles: failed: ${e.message}")
                 _uiState.update { it.copy(isProtecting = false, protectProgress = null) }
                 _toastMessage.tryEmit(appContext.getString(R.string.protect_error, e.message ?: ""))
             }

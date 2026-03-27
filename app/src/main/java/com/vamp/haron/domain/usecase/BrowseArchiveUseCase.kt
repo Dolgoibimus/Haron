@@ -21,6 +21,7 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
+import com.vamp.haron.common.util.MultiVolumeRarHelper
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -136,6 +137,16 @@ class BrowseArchiveUseCase @Inject constructor(
     private fun browseRar(archivePath: String, virtualPath: String, isContentUri: Boolean, password: String?): List<ArchiveEntry> {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
+            // Multi-volume RAR — always use 7-Zip-JBinding (junrar doesn't support split)
+            if (!isContentUri && MultiVolumeRarHelper.isMultiVolumeRar(file)) {
+                val firstVolume = MultiVolumeRarHelper.findFirstVolume(file)
+                val missing = MultiVolumeRarHelper.findMissingVolumes(firstVolume)
+                if (missing.isNotEmpty()) {
+                    throw IllegalStateException("Missing RAR volumes: ${missing.joinToString()}")
+                }
+                EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: multi-volume RAR, ${MultiVolumeRarHelper.countVolumes(firstVolume)} volumes, first=${firstVolume.name}")
+                return browseMultiVolumeRar(firstVolume, virtualPath, password)
+            }
             // Try junrar first (RAR4)
             return try {
                 val archive = if (password != null) Archive(file, password) else Archive(file)
@@ -163,6 +174,49 @@ class BrowseArchiveUseCase @Inject constructor(
             }
         } finally {
             if (isContentUri) file.delete()
+        }
+    }
+
+    /** Browse multi-volume RAR using 7-Zip-JBinding with IArchiveOpenVolumeCallback */
+    private fun browseMultiVolumeRar(firstVolume: File, virtualPath: String, password: String?): List<ArchiveEntry> {
+        SevenZip.initSevenZipFromPlatformJAR()
+        val volumeCallback = MultiVolumeRarHelper.VolumeCallback(firstVolume)
+        // Open first volume as stream, pass volume callback for subsequent volumes
+        val raf = RandomAccessFile(firstVolume, "r")
+        val firstStream = RandomAccessFileInStream(raf)
+        val archive: IInArchive = SevenZip.openInArchive(null, firstStream, volumeCallback)
+        try {
+            // If password required, re-open with password
+            // Note: 7z handles password via IArchiveOpenCallback or per-item extraction
+            val count = archive.numberOfItems
+            if (password == null && count > 0) {
+                val encrypted = archive.getProperty(0, PropID.ENCRYPTED) as? Boolean ?: false
+                if (encrypted) throw IllegalStateException("encrypted")
+            }
+            val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
+            val all = mutableListOf<ArchiveEntry>()
+            for (i in 0 until count) {
+                val path = (archive.getProperty(i, PropID.PATH) as? String ?: "").replace('\\', '/')
+                val isDir = archive.getProperty(i, PropID.IS_FOLDER) as? Boolean ?: false
+                val size = (archive.getProperty(i, PropID.SIZE) as? Long) ?: 0L
+                val packedSize = (archive.getProperty(i, PropID.PACKED_SIZE) as? Long) ?: 0L
+                val lastMod = (archive.getProperty(i, PropID.LAST_MODIFICATION_TIME) as? java.util.Date)?.time ?: 0L
+                all.add(ArchiveEntry(
+                    name = path.trimEnd('/').substringAfterLast('/'),
+                    fullPath = path.trimEnd('/'),
+                    size = size.coerceAtLeast(0),
+                    isDirectory = isDir,
+                    compressedSize = packedSize.coerceAtLeast(0),
+                    lastModified = lastMod
+                ))
+            }
+            EcosystemLogger.d(HaronConstants.TAG, "BrowseArchiveUseCase: multi-volume RAR browsed OK, ${all.size} entries")
+            return filterDirectChildren(all, prefix)
+        } finally {
+            archive.close()
+            firstStream.close()
+            raf.close()
+            volumeCallback.close()
         }
     }
 
@@ -255,6 +309,9 @@ class BrowseArchiveUseCase @Inject constructor(
                 lower.endsWith(".tar.bz2") || lower.endsWith(".tbz2") -> "tar.bz2"
                 lower.endsWith(".tar.xz") || lower.endsWith(".txz") -> "tar.xz"
                 lower.endsWith(".tar") || lower.endsWith(".gtar") -> "tar"
+                // Multi-volume RAR: .part2.rar, .part3.rar, .r00, .r01, etc.
+                Regex("""\.part\d+\.rar$""").containsMatchIn(lower) -> "rar"
+                Regex("""\.r\d{2,}$""").containsMatchIn(lower) -> "rar"
                 else -> lower.substringAfterLast('.')
             }
         }

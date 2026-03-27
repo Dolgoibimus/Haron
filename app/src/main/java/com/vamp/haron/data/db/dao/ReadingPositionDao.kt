@@ -20,4 +20,7 @@ interface ReadingPositionDao {
 
     @Query("DELETE FROM reading_position WHERE last_opened < :threshold")
     suspend fun deleteOld(threshold: Long)
+
+    @Query("SELECT * FROM reading_position ORDER BY last_opened DESC")
+    suspend fun getAll(): List<ReadingPositionEntity>
 }

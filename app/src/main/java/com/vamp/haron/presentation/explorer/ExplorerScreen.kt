@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -1587,6 +1588,31 @@ private fun ExplorerDialogs(
                 error = dialog.error,
                 onInstall = { viewModel.installApk(dialog.entry) },
                 onDismiss = viewModel::dismissDialog
+            )
+        }
+        is DialogState.ApkDowngradeConfirm -> {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { Text(stringResource(R.string.apk_downgrade_title)) },
+                text = {
+                    Text(stringResource(
+                        R.string.apk_downgrade_message,
+                        dialog.installedVersionName,
+                        dialog.installedVersionCode,
+                        dialog.apkVersionName,
+                        dialog.apkVersionCode
+                    ))
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.uninstallAndInstall(dialog) }) {
+                        Text(stringResource(R.string.apk_downgrade_uninstall_and_install))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissDialog) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
             )
         }
         is DialogState.EmptyFolderCleanup -> {

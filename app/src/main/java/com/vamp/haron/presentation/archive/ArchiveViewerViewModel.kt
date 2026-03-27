@@ -1,6 +1,9 @@
 package com.vamp.haron.presentation.archive
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vamp.haron.R
@@ -18,6 +21,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 data class ArchiveViewerState(
@@ -140,6 +144,66 @@ class ArchiveViewerViewModel @Inject constructor(
                 _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
             }
             _state.update { it.copy(extractProgress = null) }
+        }
+    }
+
+    /**
+     * Extract APK from archive to cacheDir and launch system installer.
+     */
+    fun installApkFromArchive(entry: ArchiveEntry) {
+        val archivePath = _state.value.archivePath
+        val password = _state.value.password
+        val apkName = entry.name
+        EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: installApkFromArchive: $apkName from ${_state.value.archiveName}")
+
+        viewModelScope.launch {
+            try {
+                val tempDir = File(appContext.cacheDir, "apk_install")
+                tempDir.mkdirs()
+                // Clean old temp APKs
+                tempDir.listFiles()?.forEach { it.delete() }
+
+                val selectedEntries = setOf(entry.fullPath)
+                extractArchiveUseCase(archivePath, tempDir.absolutePath, selectedEntries, password)
+                    .collect { progress ->
+                        _state.update { it.copy(extractProgress = progress) }
+                        if (progress.isComplete) {
+                            _state.update { it.copy(extractProgress = null) }
+                            // Find extracted APK
+                            val apkFile = tempDir.walkTopDown().firstOrNull {
+                                it.isFile && it.name.lowercase().endsWith(".apk")
+                            }
+                            if (apkFile != null) {
+                                EcosystemLogger.d(HaronConstants.TAG, "ArchiveVM: APK extracted to ${apkFile.absolutePath}, size=${apkFile.length()}, launching installer")
+                                val uri = FileProvider.getUriForFile(
+                                    appContext,
+                                    "${appContext.packageName}.fileprovider",
+                                    apkFile
+                                )
+                                val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                                    data = uri
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                                }
+                                appContext.startActivity(intent)
+                            } else {
+                                EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: APK not found after extraction in ${tempDir.absolutePath}")
+                                _toastMessage.tryEmit(appContext.getString(R.string.extract_error_generic))
+                            }
+                        }
+                        if (progress.error != null) {
+                            _state.update { it.copy(extractProgress = null) }
+                            EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: APK extract error: ${progress.error}")
+                            _toastMessage.tryEmit(appContext.getString(R.string.error_format, progress.error ?: ""))
+                        }
+                    }
+            } catch (e: Exception) {
+                _state.update { it.copy(extractProgress = null) }
+                EcosystemLogger.e(HaronConstants.TAG, "ArchiveVM: installApkFromArchive exception: ${e.message}")
+                _toastMessage.tryEmit(appContext.getString(R.string.error_format, e.message ?: ""))
+            }
         }
     }
 

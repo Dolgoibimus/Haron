@@ -296,6 +296,16 @@
   > Tap an archive → it opens in the panel like a regular folder
   > Navigate inside, view files, extract selectively
   > Inline viewing — no need to extract first
+- [NEW] Multi-volume RAR archives
+  > Supports both styles: file.part1.rar/part2.rar and file.rar/file.r00/file.r01
+  > Tap any part — first volume is found automatically
+  > Browse and extract just like a regular archive
+  > Missing volumes detected with error message
+- [NEW] Install APK from archive
+  > Tap an .apk file inside any archive (ZIP, RAR, 7z) → extracts and launches installer
+  > Works with multi-volume RAR too
+  > Version check: shows update/reinstall info, warns on downgrade
+  > Downgrade: offers to uninstall current version first, then installs older version automatically
 - Navigate folders inside archive
 - Selective extraction
   > Select specific files inside archive → tap Extract icon
@@ -483,15 +493,17 @@
 - Timeout lock (30 min)
 - Security question for PIN recovery
 - Screenshot protection when locked
-- Protected folder: AES-256-GCM encryption (Android Keystore)
-  > Select files → shield icon in selection toolbar → files encrypted and hidden
-- Files completely invisible without shield
-- Shield button requires PIN
-- Long tap shield → enter protected files, tap shield → exit
-  > Shield icon (🛡) in panel header
-  > Long tap shield → enter PIN → protected files appear as virtual folder
-  > Tap shield while in protected mode → exit, files become invisible again
-- Virtual directory for all protected files
+- Protected folder: Tink Streaming AEAD encryption (AES-256-GCM-HKDF, 1MB segments)
+  > Files encrypted with Android Keystore master key, impossible to read without the device
+  > Encryption works on any file size without memory issues (streams in 1MB chunks)
+- Shield button — always at the same position in panel header (right side)
+  > Tap + files selected (not protected) → encrypt and protect selected files
+  > Tap + in protected mode + no selection → exit protected mode
+  > Long tap (normal mode) → authenticate (PIN/biometric) → enter protected folder
+  > Long tap + in protected mode + files selected → decrypt and unprotect selected files
+- Protected files completely invisible without shield unlock
+- PIN or biometric required to enter protected mode
+- Virtual directory shows all protected files after authentication
 - Copy decrypts, move decrypts + unprotects
 
 # Network & Transfer
@@ -865,22 +877,38 @@
   > Gentle upward drift simulating warm air currents
   > Speed, density, opacity, size sliders
 - All animations: "Only while charging" option, auto-pause on background
-- Power Saving (Settings → Power saving)
+- [NEW] Power Saving (Settings → Power saving)
   > Toggle "Power save mode" — disables all animations and reduces background activity
   > Battery threshold slider (0–50%) — animations auto-disable when battery drops below threshold
   > Default threshold: 15%. Set to 0 to never auto-disable
-- Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
+- [NEW] Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
   > Swipe right from left edge (40dp zone) to go back
-- FPS slider for all animations (10-60fps, default 30)
+- [NEW] FPS slider for all animations (10-60fps, default 30)
   > Lower FPS saves battery, higher FPS is smoother
-- Procedural snowflakes — unique 6-fold crystals
+- [NEW] Procedural snowflakes — unique 6-fold crystals
   > Each snowflake is unique (seed-based procedural generation)
   > 3D spin around vertical axis
   > Separate count sliders for small/medium/large flakes
   > Side edge spawning: 15% of flakes enter from sides
-- About screen with version, changelog, privacy, copyright
-- Wake lock optimization: released after 5 min idle in cast service
-- Audio player improvements
+- [NEW] About screen with version, changelog, privacy, copyright
+- [NEW] Wake lock optimization: released after 5 min idle in cast service
+- [NEW] Audio player improvements
   > No autoplay on file open — press play when ready
   > Audio always starts from beginning (no position restore)
   > Correct track plays when tapping file name
+- [NEW] Backup & Restore (Settings → Backup & Restore)
+  > Create backup of all user data: settings, network credentials, cloud accounts, book library, secure folder
+  > Choose which sections to include: Settings, Credentials, Books, Secure Folder
+  > Optional password: checkbox "Protect with password" for Settings/Credentials/Books
+  > Secure Folder requires password (files decrypted from device Keystore into backup)
+  > Credentials (FTP/SMB/SSH/WebDAV/Cloud) are decrypted from device Keystore and re-encrypted with password
+  > Backup saved to Download/HaronBackup/ as .zip (unencrypted) or .hbk (encrypted)
+  > Backups survive app reinstall — stored in public Download folder
+  > Restore from backup: enter password if encrypted, all data is written back
+  > After restore: report shows what was restored and what has issues (missing files, expired cloud tokens)
+  > Tags/favorites/bookmarks pointing to missing files are flagged as warnings
+  > Secure folder backup: expandable file list with per-file checkboxes and sizes
+  > Per-file selection: choose exactly which protected files to include
+  > Progress % displayed in Create button during backup
+  > All checkboxes disabled during backup to prevent changes
+  > On restore: secure folder files re-encrypted with new device's Tink Streaming AEAD key

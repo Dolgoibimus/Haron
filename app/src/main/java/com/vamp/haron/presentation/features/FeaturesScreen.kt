@@ -128,7 +128,7 @@ fun FeaturesScreen(
                             modifier = Modifier.padding(top = 6.dp, bottom = 2.dp, start = 4.dp)
                         )
                     } else {
-                        val displayText = if (item.isNew) item.text.removeSuffix("[NEW]").trim() else item.text
+                        val displayText = item.text
                         Text(
                             text = "• $displayText",
                             style = MaterialTheme.typography.bodySmall,
@@ -182,7 +182,7 @@ private fun FeatureCategoryDetailScreen(
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                 } else {
-                    val displayText = if (item.isNew) item.text.removeSuffix("[NEW]").trim() else item.text
+                    val displayText = item.text
 
                     // Feature title
                     Text(
@@ -253,9 +253,11 @@ private fun parseFeaturesFile(text: String): List<Pair<String, List<FeatureItem>
             }
             trimmed.startsWith("- ") -> {
                 val itemText = trimmed.removePrefix("- ")
+                val isNew = itemText.contains("[NEW]")
+                val cleanText = itemText.replace("[NEW]", "").trim()
                 currentItems.add(FeatureItem(
-                    text = itemText,
-                    isNew = itemText.endsWith("[NEW]")
+                    text = cleanText,
+                    isNew = isNew
                 ))
             }
             trimmed.startsWith("> ") -> {

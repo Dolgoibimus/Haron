@@ -608,14 +608,7 @@ fun FilePanel(
                         ) {
                             Icon(Icons.Filled.Compare, contentDescription = stringResource(R.string.compare_action), modifier = Modifier.size(18.dp))
                         }
-                        IconButton(onClick = onProtectSelection, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.Filled.Shield,
-                                contentDescription = stringResource(if (selectionHasProtected) R.string.unprotect_action else R.string.protect_action),
-                                modifier = Modifier.size(18.dp),
-                                tint = if (selectionHasProtected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        // Shield button moved outside when — always visible at same position
                         // Steganography hidden until ready for release
                         // IconButton(
                         //     onClick = onHideInFileSelection,
@@ -770,57 +763,7 @@ fun FilePanel(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        // Shield button — long press = enter, tap = exit
-                        val currentOnLongPressShield by rememberUpdatedState(onLongPressShield)
-                        val currentOnExitProtected by rememberUpdatedState(onExitProtected)
-                        val currentOnPanelTap by rememberUpdatedState(onPanelTap)
-                        val currentShowProtected by rememberUpdatedState(state.showProtected)
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .pointerInput(Unit) {
-                                    val longPressMs = viewConfiguration.longPressTimeoutMillis
-                                    awaitEachGesture {
-                                        val down = awaitFirstDown()
-                                        var longFired = false
-                                        val result = withTimeoutOrNull(longPressMs) {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                if (event.changes.all { !it.pressed }) break
-                                            }
-                                        }
-                                        if (result == null && down.pressed) {
-                                            // Timeout expired, finger still down → long press
-                                            longFired = true
-                                            currentOnPanelTap()
-                                            currentOnLongPressShield()
-                                            // Wait for finger up
-                                            try {
-                                                while (true) {
-                                                    val event = awaitPointerEvent()
-                                                    if (event.changes.all { !it.pressed }) break
-                                                }
-                                            } catch (_: Exception) { }
-                                        }
-                                        if (!longFired) {
-                                            // Short tap
-                                            if (currentShowProtected) {
-                                                currentOnPanelTap()
-                                                currentOnExitProtected()
-                                            }
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.Shield,
-                                contentDescription = stringResource(R.string.shield_button),
-                                modifier = Modifier.size(18.dp),
-                                tint = if (state.showProtected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                            )
-                        }
+                        // Shield button moved outside when — always visible at same position
                         IconButton(
                             onClick = {
                                 onPanelTap()
@@ -932,6 +875,77 @@ fun FilePanel(
                             }
                         }
                     }
+                }
+
+                // === UNIFIED SHIELD BUTTON — always at same position ===
+                // Tap + selection + not protected → protect selected files
+                // Tap + no selection + showProtected → exit protected mode
+                // Long press + not showProtected → enter protected mode
+                // Long press + showProtected + selection → unprotect selected files
+                val currentOnLongPressShield by rememberUpdatedState(onLongPressShield)
+                val currentOnExitProtected by rememberUpdatedState(onExitProtected)
+                val currentOnProtectSelection by rememberUpdatedState(onProtectSelection)
+                val currentOnPanelTap by rememberUpdatedState(onPanelTap)
+                val currentShowProtected by rememberUpdatedState(state.showProtected)
+                val currentIsSelectionMode by rememberUpdatedState(state.isSelectionMode)
+                val currentHasProtected by rememberUpdatedState(selectionHasProtected)
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .pointerInput(Unit) {
+                            val longPressMs = viewConfiguration.longPressTimeoutMillis
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                var longFired = false
+                                val result = withTimeoutOrNull(longPressMs) {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.all { !it.pressed }) break
+                                    }
+                                }
+                                if (result == null && down.pressed) {
+                                    // Long press
+                                    longFired = true
+                                    currentOnPanelTap()
+                                    if (currentShowProtected && currentIsSelectionMode) {
+                                        // In protected mode with selection → unprotect
+                                        currentOnProtectSelection()
+                                    } else {
+                                        // Enter protected mode
+                                        currentOnLongPressShield()
+                                    }
+                                    try {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.changes.all { !it.pressed }) break
+                                        }
+                                    } catch (_: Exception) { }
+                                }
+                                if (!longFired) {
+                                    // Short tap
+                                    currentOnPanelTap()
+                                    if (currentIsSelectionMode && !currentHasProtected) {
+                                        // Selection + files not protected → protect
+                                        currentOnProtectSelection()
+                                    } else if (currentShowProtected && !currentIsSelectionMode) {
+                                        // In protected mode, no selection → exit
+                                        currentOnExitProtected()
+                                    }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Shield,
+                        contentDescription = stringResource(R.string.shield_button),
+                        modifier = Modifier.size(18.dp),
+                        tint = when {
+                            state.showProtected -> MaterialTheme.colorScheme.primary
+                            state.isSelectionMode -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                        }
+                    )
                 }
             }
         }

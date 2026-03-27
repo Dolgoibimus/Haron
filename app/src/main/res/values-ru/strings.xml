@@ -480,9 +480,21 @@
     <string name="extract_unsupported_format">Неподдерживаемый формат</string>
     <string name="extract_error_generic">Ошибка извлечения</string>
     <string name="extract_no_space">Недостаточно места (доступно: %s)</string>
+    <string name="extract_missing_volumes">Отсутствуют тома архива: %s</string>
 
     <!-- APK parse -->
     <string name="apk_parse_error">Не удалось прочитать APK</string>
+    <string name="apk_downgrade_title">Понижение версии</string>
+    <string name="apk_downgrade_message">Установлена: %1$s (%2$d)\nВ APK: %3$s (%4$d)\n\nДля установки старой версии текущая будет удалена. Данные приложения будут потеряны.</string>
+    <string name="apk_downgrade_uninstall_and_install">Удалить и установить</string>
+    <string name="apk_downgrade_uninstall_failed">Не удалось завершить удаление. Попробуйте удалить приложение вручную.</string>
+    <string name="apk_downgrade_uninstalling">Удаление текущей версии…</string>
+    <string name="apk_extracting_from_archive">Извлечение APK из архива…</string>
+    <string name="apk_installer_launched">Открываю установщик…</string>
+    <string name="apk_updating">Обновление: %1$s → %2$s</string>
+    <string name="apk_reinstalling">Переустановка версии %1$s</string>
+    <string name="apk_installed_toast">Установлено: %1$s %2$s</string>
+    <string name="apk_updated_toast">Обновлено: %1$s %2$s</string>
 
     <!-- Trash repository -->
     <string name="storage_root_internal">Внутренняя память</string>
@@ -1592,4 +1604,43 @@
     <string name="snowfall_size">Размер</string>
     <string name="starfield_title">Звёздное небо</string>
     <string name="dust_title">Пылинки</string>
+
+    <!-- Backup -->
+    <string name="backup_section_title">Резервное копирование</string>
+    <string name="backup_button">Резервное копирование</string>
+    <string name="backup_screen_title">Резервное копирование</string>
+    <string name="backup_create_section">Создать бэкап</string>
+    <string name="backup_create_button">Создать бэкап</string>
+    <string name="backup_section_settings">Настройки</string>
+    <string name="backup_section_settings_desc">Сортировка, вид, жесты, теги, избранное, закладки, анимации, безопасность</string>
+    <string name="backup_section_credentials">Сетевые учётки</string>
+    <string name="backup_section_credentials_desc">Логины FTP, SMB, SSH, WebDAV и облачные аккаунты (Яндекс, GDrive, Dropbox)</string>
+    <string name="backup_section_books">Библиотека и прогресс чтения</string>
+    <string name="backup_section_books_desc">Библиотека книг, позиции чтения, позиции видео</string>
+    <string name="backup_password_title">Пароль бэкапа</string>
+    <string name="backup_password_description">Учётные данные будут расшифрованы из хранилища устройства и зашифрованы этим паролем в файле бэкапа. Без пароля любой, кто получит доступ к файлу, сможет прочитать ваши логины и пароли.</string>
+    <string name="backup_password_label">Пароль</string>
+    <string name="backup_list_section">Сохранённые бэкапы</string>
+    <string name="backup_list_empty">Бэкапов пока нет</string>
+    <string name="backup_restore_button">Восстановить</string>
+    <string name="backup_already_restored">Восстановлен</string>
+    <string name="backup_restore_title">Восстановление бэкапа</string>
+    <string name="backup_restore_confirm">Все текущие настройки будут перезаписаны данными из бэкапа. Продолжить?</string>
+    <string name="backup_restore_password_title">Введите пароль</string>
+    <string name="backup_restore_password_description">Этот бэкап зашифрован. Введите пароль, который вы указали при создании.</string>
+    <string name="backup_restoring">Восстановление…</string>
+    <string name="backup_restore_success_title">Успешно восстановлено</string>
+    <string name="backup_restore_partial_title">Восстановлено с предупреждениями</string>
+    <string name="backup_restore_error_title">Ошибка восстановления</string>
+    <string name="backup_delete_title">Удалить бэкап</string>
+    <string name="backup_delete_confirm">Удалить %s?</string>
+    <string name="backup_section_secure">Защищённая папка</string>
+    <string name="backup_section_secure_empty">Нет файлов в защищённой папке</string>
+    <string name="backup_section_secure_desc">Выбрано %1$d из %2$d файлов (%3$s)</string>
+    <string name="backup_secure_warning">Файлы будут расшифрованы из хранилища устройства. Пароль обязателен.</string>
+    <string name="backup_secure_progress">Шифрование файлов: %1$d / %2$d</string>
+    <string name="backup_expand">Развернуть</string>
+    <string name="backup_select_all">Выбрать все</string>
+    <string name="backup_deselect_all">Снять все</string>
+    <string name="backup_optional_password">Защитить паролем</string>
 </resources>

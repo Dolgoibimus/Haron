@@ -38,7 +38,8 @@ import com.vamp.haron.common.util.swipeBackFromLeft
 
 private data class ChangelogEntry(
     val title: String,
-    val items: List<ChangelogItem>
+    val items: List<ChangelogItem>,
+    val isReleaseHeader: Boolean = false
 )
 
 private data class ChangelogItem(
@@ -53,6 +54,15 @@ private fun parseChangelog(raw: String): List<ChangelogEntry> {
 
     for (line in raw.lines()) {
         when {
+            line.startsWith("## ") -> {
+                // Release header marker — flush current batch, then add release header
+                if (currentTitle.isNotEmpty()) {
+                    entries.add(ChangelogEntry(currentTitle, currentItems.toList()))
+                    currentTitle = ""
+                    currentItems = mutableListOf()
+                }
+                entries.add(ChangelogEntry(line.removePrefix("## ").trim(), emptyList(), isReleaseHeader = true))
+            }
             line.startsWith("# ") -> {
                 if (currentTitle.isNotEmpty()) {
                     entries.add(ChangelogEntry(currentTitle, currentItems.toList()))
@@ -109,6 +119,23 @@ fun ChangelogScreen(onBack: () -> Unit) {
         ) {
             items(entries.size) { index ->
                 val entry = entries[index]
+
+                if (entry.isReleaseHeader) {
+                    // Release header — non-expandable, larger text, primary color
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    Text(
+                        text = entry.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    return@items
+                }
+
                 val isExpanded = expanded[index] == true
                 val features = entry.items.filter { !it.isFix }
                 val fixes = entry.items.filter { it.isFix }

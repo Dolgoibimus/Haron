@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Cast
@@ -68,6 +69,7 @@ fun SettingsScreen(
     onOpenGesturesVoice: () -> Unit = {},
     onOpenNavbarSettings: () -> Unit = {},
     onOpenThemes: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -643,6 +645,21 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
+
+            // --- Backup & Restore ---
+            SectionHeader(
+                icon = Icons.Filled.Backup,
+                title = stringResource(R.string.backup_section_title)
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenBackup,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Backup, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.backup_button))
+            }
 
             Spacer(Modifier.height(32.dp))
         }

@@ -1,4 +1,22 @@
-# Batch 103 — Power saving, About screen (v1.5)
+## Release 1.6
+
+# Batch 105 — Multi-volume RAR + APK install from archive
+- Multi-volume RAR archives: browse and extract (part1.rar/part2.rar and .rar/.r00/.r01)
+- Install APK from any archive (ZIP, RAR, 7z) — tap .apk inside archive
+- Version check: update/reinstall toast, downgrade warning dialog
+- Downgrade: auto-uninstall current version, then install older via ACTION_VIEW
+- Toast notifications for install/update/downgrade results
+
+# Batch 104 — Backup, restore, Tink encryption
+- Full backup: settings, credentials, cloud accounts, book library, secure folder
+- AES-256 encryption via Google Tink (Streaming AEAD)
+- Restore with selective import (checkboxes per category)
+- Single shield icon in settings for all security features
+- Reading position DAO: composite primary key migration
+
+## Release 1.5
+
+# Batch 103 — Power saving, About screen
 - "About" screen: app icon, version, features, changelog, logs, GitHub, privacy, copyright
 - "What's new" screen with expandable version history
 - Power save mode: disables animations, reduces background activity
@@ -19,7 +37,9 @@
 - Fix: audio buttons unresponsive in full screen
 - Fix: audio no autoplay, always starts from beginning
 
-# Batch 100 — Network streaming, DND, server nicknames (v1.4)
+## Release 1.4
+
+# Batch 100 — Network streaming, DND, server nicknames
 - FTP/SFTP/SMB/WebDAV media streaming without download
 - HTTP proxy for FTP streams (VLC cyrillic workaround)
 - DND mode in video player
@@ -389,7 +409,9 @@
 - Text position extraction + yellow/orange highlights
 - Match counter and navigation arrows
 
-# Batch 22 — Full-text search (v1.0)
+## Release 1.0
+
+# Batch 22 — Full-text search
 - FTS4/FTS5 index + content search
 - ML Kit Image Labeling (400 categories EN→RU)
 - Three indexing modes: Basic, Media, Visual

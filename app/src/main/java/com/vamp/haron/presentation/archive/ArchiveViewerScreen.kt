@@ -290,6 +290,8 @@ fun ArchiveViewerScreen(
                                         viewModel.toggleSelection(entry.fullPath)
                                     } else if (entry.isDirectory) {
                                         viewModel.navigateInto(entry.fullPath)
+                                    } else if (entry.name.lowercase().endsWith(".apk")) {
+                                        viewModel.installApkFromArchive(entry)
                                     }
                                 },
                                 onLongClick = {

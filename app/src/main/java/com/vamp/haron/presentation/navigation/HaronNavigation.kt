@@ -44,6 +44,7 @@ import com.vamp.haron.presentation.player.MediaPlayerScreen
 import com.vamp.haron.presentation.appmanager.AppManagerScreen
 import com.vamp.haron.presentation.duplicates.DuplicateDetectorScreen
 import com.vamp.haron.presentation.settings.GesturesVoiceScreen
+import com.vamp.haron.presentation.settings.BackupScreen
 import com.vamp.haron.presentation.settings.LogsScreen
 import com.vamp.haron.presentation.settings.SettingsScreen
 import com.vamp.haron.domain.model.SearchNavigationHolder
@@ -111,6 +112,7 @@ object HaronRoutes {
     const val ABOUT = "about"
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
+    const val BACKUP = "backup"
     const val DOCUMENT_VIEWER = "document_viewer"
     const val DOCUMENT_VIEWER_ROUTE = "document_viewer?filePath={filePath}&fileName={fileName}"
 
@@ -563,6 +565,12 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenGesturesVoice = { navController.navigate(HaronRoutes.gesturesVoice()) },
                 onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
                 onOpenThemes = { navController.navigate(HaronRoutes.THEMES) },
+                onOpenBackup = { navController.navigate(HaronRoutes.BACKUP) },
+            )
+        }
+        composable(HaronRoutes.BACKUP) {
+            BackupScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(HaronRoutes.LOGS) {

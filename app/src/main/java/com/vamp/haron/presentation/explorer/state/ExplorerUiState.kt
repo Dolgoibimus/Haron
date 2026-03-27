@@ -164,6 +164,14 @@ sealed interface DialogState {
         val isFromNormalFolder: Boolean = false,
         val archivePaths: List<String> = emptyList()
     ) : DialogState
+    data class ApkDowngradeConfirm(
+        val apkFile: java.io.File,
+        val packageName: String,
+        val installedVersionName: String,
+        val installedVersionCode: Long,
+        val apkVersionName: String,
+        val apkVersionCode: Long
+    ) : DialogState
     data class ShizukuNotInstalled(
         val panelId: PanelId,
         val path: String
