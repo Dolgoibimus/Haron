@@ -731,8 +731,10 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeRemove(
 
     /* Try file first, then directory */
     int rc = ext4_fremove(path);
+    LOGD("nativeRemove: fremove(%s) rc=%d", path, rc);
     if (rc != EOK) {
         rc = ext4_dir_rm(path);
+        LOGD("nativeRemove: dir_rm(%s) rc=%d (ENOTEMPTY=39, ENOENT=2)", path, rc);
     }
 
     (*env)->ReleaseStringUTFChars(env, jpath, path);

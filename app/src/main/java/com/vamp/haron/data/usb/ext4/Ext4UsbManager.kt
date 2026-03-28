@@ -245,7 +245,9 @@ class Ext4UsbManager(private val context: Context) {
      */
     fun remove(ext4Path: String): Boolean {
         if (!mounted) return false
-        return Ext4Native.nativeRemove(toExt4Path(ext4Path))
+        val internal = toExt4Path(ext4Path)
+        EcosystemLogger.d("Ext4UsbManager", "remove: input=$ext4Path → internal=$internal")
+        return Ext4Native.nativeRemove(internal)
     }
 
     /**
