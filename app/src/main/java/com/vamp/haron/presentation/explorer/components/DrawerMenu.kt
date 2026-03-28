@@ -203,9 +203,14 @@ fun DrawerMenu(
             }
 
             // --- USB OTG ---
-            if (usbVolumes.isNotEmpty()) {
+            // Filter out unsupported-FS volumes when ext4 is mounted via lwext4
+            val hasExt4Mounted = usbVolumes.any { it.path.startsWith("ext4://") }
+            val filteredUsbVolumes = if (hasExt4Mounted) {
+                usbVolumes.filter { !it.unsupportedFs && !it.needsSaf }
+            } else usbVolumes
+            if (filteredUsbVolumes.isNotEmpty()) {
                 items(
-                    usbVolumes.distinctBy {
+                    filteredUsbVolumes.distinctBy {
                         when {
                             it.unsupportedFs -> "unsupported_${it.label}_${it.fileSystemType}"
                             it.needsSaf -> "saf_${it.uuid}"
