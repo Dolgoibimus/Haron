@@ -333,8 +333,7 @@ class UsbStorageManager @Inject constructor(
             EcosystemLogger.i(TAG, "ext4: trying lwext4 mount for ${probe.label} (${probe.deviceName})...")
 
             try {
-                // Read-only for now — write through libaums has SCSI buffer issues
-                val mounted = ext4Manager.tryMount(device.usbDevice, readOnly = true)
+                val mounted = ext4Manager.tryMount(device.usbDevice, readOnly = false)
                 if (mounted) {
                     EcosystemLogger.i(TAG, "ext4: SUCCESS — ${probe.label} mounted via lwext4!")
                     _ext4MountingToast.tryEmit(context.getString(com.vamp.haron.R.string.ext4_mounted, probe.label))

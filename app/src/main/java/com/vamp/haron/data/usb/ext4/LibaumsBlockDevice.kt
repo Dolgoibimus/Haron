@@ -37,14 +37,23 @@ class LibaumsBlockDevice(
     override fun readBlocks(blockId: Long, blockCount: Int, buffer: ByteArray): Boolean {
         return try {
             synchronized(usbLock) {
-                val byteCount = blockCount * bSize
-                // libaums may need larger buffer for SCSI transfer alignment
-                val capacity = maxOf(byteCount, byteCount * 2, 16384)
-                val bb = ByteBuffer.allocate(capacity)
-                bb.limit(byteCount)
-                driver.read(blockId, bb)
-                bb.flip()
-                bb.get(buffer, 0, minOf(byteCount, bb.remaining()))
+                // Read in small chunks — SCSI READ(10) has transfer size limits
+                val maxSectors = 64
+                var offset = 0
+                var blk = blockId
+                var remaining = blockCount
+
+                while (remaining > 0) {
+                    val chunk = minOf(remaining, maxSectors)
+                    val chunkBytes = chunk * bSize
+                    val bb = ByteBuffer.allocate(chunkBytes)
+                    driver.read(blk, bb)
+                    bb.flip()
+                    bb.get(buffer, offset, chunkBytes)
+                    blk += chunk
+                    offset += chunkBytes
+                    remaining -= chunk
+                }
             }
             true
         } catch (e: Exception) {
@@ -57,13 +66,24 @@ class LibaumsBlockDevice(
         return try {
             synchronized(usbLock) {
                 val byteCount = blockCount * bSize
-                // libaums ScsiBlockDevice may need buffer capacity > byteCount for SCSI padding
-                // Allocate 2x to avoid "newLimit > capacity" inside libaums transfer
-                val capacity = maxOf(byteCount, byteCount * 2, 16384)
-                val bb = ByteBuffer.allocate(capacity)
-                bb.put(buffer, 0, byteCount)
-                bb.flip()
-                driver.write(blockId, bb)
+                // Write in small chunks — SCSI WRITE(10) has transfer size limits
+                // Max safe chunk: 64 sectors (32 KB) — avoids USB timeout and buffer overflow
+                val maxSectors = 64
+                var offset = 0
+                var blk = blockId
+                var remaining = blockCount
+
+                while (remaining > 0) {
+                    val chunk = minOf(remaining, maxSectors)
+                    val chunkBytes = chunk * bSize
+                    val bb = ByteBuffer.allocate(chunkBytes)
+                    bb.put(buffer, offset, chunkBytes)
+                    bb.flip()
+                    driver.write(blk, bb)
+                    blk += chunk
+                    offset += chunkBytes
+                    remaining -= chunk
+                }
             }
             true
         } catch (e: Exception) {
