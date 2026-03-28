@@ -2949,14 +2949,6 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
-        // ext4 — skip conflict check, just execute
-        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(targetPanel.currentPath) ||
-            paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
-            EcosystemLogger.d(HaronConstants.TAG, "copySelectedToOtherPanel: ext4, skipping conflicts")
-            executeCopy(paths, targetPanel.currentPath, ConflictResolution.RENAME)
-            return
-        }
-
         val conflictPairs = buildConflictPairs(paths, targetPanel)
         if (conflictPairs.isNotEmpty()) {
             _uiState.update {
@@ -3125,14 +3117,6 @@ class ExplorerViewModel @Inject constructor(
         val hasProtected = selectedEntries.any { it.isProtected }
         if (hasProtected) {
             moveProtectedFiles(paths, targetPanel.currentPath)
-            return
-        }
-
-        // ext4 — skip conflict check (can't check via File API), just execute
-        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(targetPanel.currentPath) ||
-            paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
-            EcosystemLogger.d(HaronConstants.TAG, "moveSelectedToOtherPanel: ext4, skipping conflicts, executing move")
-            executeMove(paths, targetPanel.currentPath, ConflictResolution.RENAME)
             return
         }
 
