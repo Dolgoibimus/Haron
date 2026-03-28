@@ -117,7 +117,9 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         val parent = ext4Path.substringBeforeLast("/")
         val newPath = "$parent/$newName"
         EcosystemLogger.d(TAG, "rename: $ext4Path → $newPath")
-        return ext4Manager.rename(ext4Path, newPath)
+        val ok = ext4Manager.rename(ext4Path, newPath)
+        EcosystemLogger.d(TAG, "rename result: $ok")
+        return ok
     }
 
     /** Create directory on ext4 */

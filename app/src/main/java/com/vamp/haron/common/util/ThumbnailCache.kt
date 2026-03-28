@@ -139,11 +139,11 @@ object ThumbnailCache {
     ): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(path)?.let { return@withContext it }
 
-        // ext4:// paths — copy small portion to cache for thumbnail generation
+        // ext4:// paths — skip thumbnail loading to avoid USB timeout
+        // USB block device is single-threaded; thumbnail reads block copy/write operations
+        // and cause MAX_RECOVERY_ATTEMPTS errors. Show file type icon instead.
         if (path.startsWith("ext4://")) {
-            val cached = loadExt4Thumbnail(context, path, type)
-            cached?.let { cache.put(path, it) }
-            return@withContext cached
+            return@withContext null
         }
 
         val isFb2Zip = path.lowercase().endsWith(".fb2.zip")
