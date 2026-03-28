@@ -34,6 +34,8 @@ data class SettingsUiState(
     // Cache
     val archiveThumbCacheSizeMb: Int = 100,
     val archiveThumbCacheCurrentSizeMb: Float = 0f,
+    val ext4ThumbCacheSizeMb: Int = 100,
+    val ext4ThumbCacheCurrentSizeMb: Float = 0f,
     // Cast
     val transcodeCacheTtlHours: Int = 24,
     // Security
@@ -76,6 +78,8 @@ class SettingsViewModel @Inject constructor(
             trashMaxSizeMb = preferences.trashMaxSizeMb,
             archiveThumbCacheSizeMb = preferences.archiveThumbCacheSizeMb,
             archiveThumbCacheCurrentSizeMb = archiveThumbnailCache.getCacheSizeBytes() / (1024f * 1024f),
+            ext4ThumbCacheSizeMb = preferences.ext4ThumbCacheSizeMb,
+            ext4ThumbCacheCurrentSizeMb = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getThumbCacheSize(appContext) / (1024f * 1024f),
             transcodeCacheTtlHours = preferences.transcodeCacheTtlHours,
             appLockMethod = authManager.getAppLockMethod(),
             isPinSet = authManager.isPinSet(),
@@ -153,6 +157,18 @@ class SettingsViewModel @Inject constructor(
     fun clearArchiveThumbCache() {
         archiveThumbnailCache.clearCache()
         _state.update { it.copy(archiveThumbCacheCurrentSizeMb = 0f) }
+    }
+
+    // --- ext4 USB cache ---
+
+    fun setExt4ThumbCacheSizeMb(sizeMb: Int) {
+        preferences.ext4ThumbCacheSizeMb = sizeMb
+        _state.update { it.copy(ext4ThumbCacheSizeMb = sizeMb) }
+    }
+
+    fun clearExt4ThumbCache() {
+        com.vamp.haron.data.usb.ext4.Ext4CacheManager.clearThumbCache(appContext)
+        _state.update { it.copy(ext4ThumbCacheCurrentSizeMb = 0f) }
     }
 
     // --- Security ---

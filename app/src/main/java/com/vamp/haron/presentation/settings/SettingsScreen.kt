@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.Tune
@@ -452,6 +453,54 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.archive_thumbs_cache_clear))
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // --- ext4 USB thumbnail cache ---
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionHeader(
+                    icon = Icons.Filled.Storage,
+                    title = stringResource(R.string.ext4_cache_section)
+                )
+                Spacer(Modifier.weight(1f))
+                val ext4CacheSizeMb = state.ext4ThumbCacheCurrentSizeMb
+                Text(
+                    text = stringResource(R.string.ext4_cache_current,
+                        if (ext4CacheSizeMb < 1f) "%.1f %s".format(ext4CacheSizeMb, stringResource(R.string.size_mb))
+                        else "%.0f %s".format(ext4CacheSizeMb, stringResource(R.string.size_mb))),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.ext4_cache_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+
+            val ext4Label = if (state.ext4ThumbCacheSizeMb == 0) stringResource(R.string.ext4_cache_no_limit)
+                else "${state.ext4ThumbCacheSizeMb} ${stringResource(R.string.size_mb)}"
+            Text(stringResource(R.string.ext4_cache_limit, ext4Label))
+            Slider(
+                value = state.ext4ThumbCacheSizeMb.toFloat(),
+                onValueChange = { viewModel.setExt4ThumbCacheSizeMb(it.toInt()) },
+                valueRange = 0f..500f,
+                steps = 9,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedButton(
+                onClick = { viewModel.clearExt4ThumbCache() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.ext4_cache_clear))
             }
 
             Spacer(Modifier.height(16.dp))
