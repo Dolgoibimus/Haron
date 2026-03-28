@@ -2991,19 +2991,24 @@ class ExplorerViewModel @Inject constructor(
                     return@launch
                 }
                 val targetId = if (state.activePanel == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                val total = paths.size
+                _uiState.update { it.copy(operationProgress = OperationProgress(0, total, "", OperationType.COPY)) }
                 val result = if (isExt4Dest) {
-                    ops.copyToExt4(paths, destinationDir) { name, idx, total ->
-                        // Live refresh after each file
+                    ops.copyToExt4(paths, destinationDir) { name, idx, t ->
+                        _uiState.update { it.copy(operationProgress = OperationProgress(idx, t, name, OperationType.COPY, filePercent = (idx * 100) / t)) }
                         refreshPanel(targetId)
                     }
                 } else {
                     ops.copyFromExt4(paths, destinationDir)
                 }
                 result.onSuccess { cnt ->
+                    _uiState.update { it.copy(operationProgress = OperationProgress(cnt, total, "", OperationType.COPY, isComplete = true, filePercent = 100)) }
                     _toastMessage.tryEmit("ext4: copied $cnt")
                 }.onFailure {
                     _toastMessage.tryEmit("ext4 copy failed: ${it.message}")
                 }
+                kotlinx.coroutines.delay(1500)
+                _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
                 refreshPanel(PanelId.TOP)
                 refreshPanel(PanelId.BOTTOM)
             }
@@ -3160,21 +3165,28 @@ class ExplorerViewModel @Inject constructor(
         val isExt4Src = paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }
 
         if (isExt4Dest || isExt4Src) {
+            val total = paths.size
             viewModelScope.launch(Dispatchers.IO) {
                 val ops = usbStorageManager.ext4FileOps
-                // Move = copy + delete source
+                _uiState.update { it.copy(operationProgress = OperationProgress(0, total, "", OperationType.MOVE)) }
                 if (isExt4Dest) {
-                    ops.copyToExt4(paths, destinationDir).onSuccess { cnt ->
-                        // Delete originals
+                    ops.copyToExt4(paths, destinationDir) { name, idx, t ->
+                        _uiState.update { it.copy(operationProgress = OperationProgress(idx, t, name, OperationType.MOVE, filePercent = (idx * 100) / t)) }
+                        refreshPanel(targetId)
+                    }.onSuccess { cnt ->
                         for (p in paths) java.io.File(p).deleteRecursively()
+                        _uiState.update { it.copy(operationProgress = OperationProgress(cnt, total, "", OperationType.MOVE, isComplete = true, filePercent = 100)) }
                         _toastMessage.tryEmit("Moved $cnt to ext4")
                     }.onFailure { _toastMessage.tryEmit("Move to ext4 failed: ${it.message}") }
                 } else {
                     ops.copyFromExt4(paths, destinationDir).onSuccess { cnt ->
                         ops.delete(paths)
+                        _uiState.update { it.copy(operationProgress = OperationProgress(cnt, total, "", OperationType.MOVE, isComplete = true, filePercent = 100)) }
                         _toastMessage.tryEmit("Moved $cnt from ext4")
                     }.onFailure { _toastMessage.tryEmit("Move from ext4 failed: ${it.message}") }
                 }
+                kotlinx.coroutines.delay(1500)
+                _uiState.update { if (it.operationProgress?.isComplete == true) it.copy(operationProgress = null) else it }
                 refreshPanel(PanelId.TOP)
                 refreshPanel(PanelId.BOTTOM)
             }
