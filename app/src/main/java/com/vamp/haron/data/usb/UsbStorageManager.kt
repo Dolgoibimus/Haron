@@ -258,13 +258,19 @@ class UsbStorageManager @Inject constructor(
      */
     private suspend fun probeUnmountedDevices() {
         val currentVolumes = _usbVolumes.value
-        // If there's a SAF-only unmountable volume → always try ext4 (even if SD card is mounted)
+        // If there's a SAF-only unmountable volume AND no real mounted USB → try ext4
         val hasSafOnlyUnmountable = currentVolumes.any { it.needsSaf }
-        if (hasSafOnlyUnmountable) {
+        val hasRealMountedUsb = currentVolumes.any {
+            !it.unsupportedFs && !it.needsSaf && it.path.isNotEmpty() &&
+            !com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it.path)
+        }
+        if (hasSafOnlyUnmountable && !hasRealMountedUsb) {
+            // Android can't mount ext4 USB (like Redmi) → use lwext4
             EcosystemLogger.i(TAG, "SAF-only unmountable volume detected — trying ext4 via lwext4...")
             _ext4MountingToast.tryEmit(context.getString(com.vamp.haron.R.string.ext4_mounting))
         } else if (currentVolumes.any { !it.unsupportedFs }) {
-            EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already mounted")
+            // Android mounted ext4 natively (like ASUS) → use File API, skip lwext4
+            EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already mounted (native ext4?)")
             return
         }
 
