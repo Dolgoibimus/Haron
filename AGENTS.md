@@ -20,6 +20,24 @@
 
 **Batch 105 завершён** — многотомные RAR, установка APK из архива, даунгрейд.
 
+**Сессия 28.03.2026:**
+- ✅ Оптимизация глобального CLAUDE.md (43.8k → 12.7k символов) — вынесены 3 секции в memory
+- ✅ Фикс системного навбара: gallery/player onDispose показывали systemBars → теперь только statusBars
+- ✅ USB подробное логирование: StorageVolumeHelper (6 стратегий), LibaumsManager (FS тип, стектрейс), UsbStorageManager (кеш инвалидация)
+- ✅ Конкурентный анализ 4PDA: 24 файловых менеджера, 5000+ постов, 7 файлов в папке проекта
+- ⚠️ не проверено: фикс навбара
+- 🔜 **ext4 через USB без root** — lwext4 (C/NDK) + libaums (raw block I/O). См. план ниже.
+
+**План: ext4 USB без root (lwext4 + libaums)**
+Этапы:
+1. **Подготовка lwext4** — собрать C-библиотеку через NDK, JNI обёртка для block read (~2 дня)
+2. **Интеграция с libaums** — libaums даёт raw USB block device, lwext4 читает ext4 поверх (~1 день)
+3. **Адаптер для Haron** — FileEntry из ext4, навигация, чтение файлов, копирование на устройство (~2 дня)
+4. **UI** — показ ext4-флешки в панели, иконка FS типа, предупреждение read-only (~0.5 дня)
+5. **Тестирование** — ext4, ext3, ext2, разные размеры блоков, журнал, extents (~1 день)
+Прогноз: **~6-7 дней** (только чтение, без записи). Запись — отдельная задача (+3-4 дня).
+Уникальная фича — ни один Android ФМ не поддерживает ext4 USB без root.
+
 **Кастомный навбар — развитие (в процессе):**
 - ✅ Системный навбар скрыт (immersive mode, статус-бар остаётся)
 - ✅ Кастомный навбар: HorizontalPager, N страниц, 5-7 кнопок
@@ -2173,6 +2191,37 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 ## Журнал решений
 
 > Выполненные задачи с описанием как решили.
+
+---
+#### Релиз 1.7
+---
+
+### Сессия 28.03.2026 — фикс навбара + USB логирование + конкурентный анализ ⚠️ не проверено
+
+**Фикс системного навбара:**
+- GalleryScreen.onDispose: `show(systemBars())` → `show(statusBars())` + `hide(navigationBars())`
+- MediaPlayerScreen.onDispose: аналогично
+- GalleryScreen controlsVisible: `show(systemBars())` → `show(statusBars())`
+- Причина бага: при выходе из плеера/галереи системный навбар оставался видимым навсегда
+
+**USB подробное логирование:**
+- StorageVolumeHelper: каждый volume (label, uuid, removable, state, path, needsSaf), каждая стратегия S1-S6 (exists, canRead, files)
+- LibaumsManager: vendor/product, permission, init result, FS type через javaClass.simpleName, stack trace при ошибке
+- UsbStorageManager: broadcastPaths, suppressedPaths, invalidateCache() при каждом USB событии и ретрае
+- StorageVolumeInfo: добавлено поле `state`
+
+**Конкурентный анализ 4PDA:**
+- 24 файловых менеджера обработано, 7 агентов параллельно
+- Файлы: `4pda_features_all.md`, `4pda_tc_deep.md`, `4pda_mixplorer_deep.md`, `4pda_solid_deep.md`, `4pda_xplore_es_deep.md`, `4pda_research_batch1.md`, `4pda_research_batch2.md`
+- Memory: `4pda-competitor-research.md`
+- Haron уже упоминают на 4PDA, 15 уникальных фич которых нет у конкурентов
+
+**Диагностика USB OnlyDisk (ext4+LVM):**
+- Флешка Netac OnlyDisk 125ГБ: MBR, partition 1 = ext4 (0x83), partition 2 = Linux LVM (0x8E)
+- Android не монтирует ext4 USB без root. libaums видит устройство но `partitions=0` (поддерживает только FAT)
+- Решение: интеграция lwext4 (C/NDK) + libaums для userspace чтения ext4
+
+---
 
 ---
 #### Релиз 1.6

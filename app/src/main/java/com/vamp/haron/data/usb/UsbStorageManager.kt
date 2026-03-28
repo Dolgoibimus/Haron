@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.storage.StorageManager
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.data.saf.StorageVolumeHelper
+import com.vamp.haron.data.usb.ext4.Ext4UsbManager
+import me.jahnen.libaums.core.UsbMassStorageDevice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +56,9 @@ class UsbStorageManager @Inject constructor(
 ) {
     private val _usbVolumes = MutableStateFlow<List<UsbVolume>>(emptyList())
     val usbVolumes: StateFlow<List<UsbVolume>> = _usbVolumes.asStateFlow()
+
+    /** ext4 USB manager — mounts ext4/ext3/ext2 partitions via lwext4 (no root) */
+    val ext4Manager = Ext4UsbManager(context)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshMutex = Mutex()
@@ -170,6 +175,10 @@ class UsbStorageManager @Inject constructor(
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                     storageVolumeHelper.invalidateCache()
+                    // Unmount ext4 if mounted
+                    if (ext4Manager.isMounted) {
+                        try { ext4Manager.unmount() } catch (_: Exception) {}
+                    }
                     // Suppress all current USB volume paths/UUIDs and clear list
                     val current = _usbVolumes.value
                     if (current.isNotEmpty()) {
@@ -269,8 +278,64 @@ class UsbStorageManager @Inject constructor(
                 _usbVolumes.value = newVolumes
                 EcosystemLogger.d(TAG, "Added ${newVolumes.size} unsupported-FS volume(s)")
             }
+
+            // Try mounting unsupported-FS devices as ext4 via lwext4
+            tryExt4Mount(probeResults)
         } catch (e: Exception) {
             EcosystemLogger.w(TAG, "libaums probe failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Try mounting unsupported-FS USB devices as ext4 via lwext4.
+     * If successful, replaces the unsupported-FS UsbVolume with a mounted ext4 volume.
+     */
+    private fun tryExt4Mount(probeResults: List<LibaumsProbeResult>) {
+        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        val massStorageDevices = try {
+            me.jahnen.libaums.core.UsbMassStorageDevice.getMassStorageDevices(context)
+        } catch (e: Exception) {
+            EcosystemLogger.e(TAG, "ext4: getMassStorageDevices failed: ${e.message}")
+            return
+        }
+
+        for (probe in probeResults) {
+            if (probe.supported) continue // already FAT32, skip
+
+            val device = massStorageDevices.firstOrNull {
+                it.usbDevice.vendorId == probe.vendorId && it.usbDevice.productId == probe.productId
+            } ?: continue
+
+            if (!usbManager.hasPermission(device.usbDevice)) {
+                EcosystemLogger.d(TAG, "ext4: no permission for ${probe.deviceName}")
+                continue
+            }
+
+            EcosystemLogger.i(TAG, "ext4: trying lwext4 mount for ${probe.label} (${probe.deviceName})...")
+
+            try {
+                val mounted = ext4Manager.tryMount(device.usbDevice, readOnly = false)
+                if (mounted) {
+                    EcosystemLogger.i(TAG, "ext4: SUCCESS — ${probe.label} mounted via lwext4!")
+
+                    // Replace unsupported-FS volume with ext4 volume
+                    val ext4Volume = UsbVolume(
+                        path = "ext4:/usb/",
+                        label = "${probe.label} (ext4)",
+                        totalSpace = probe.totalSpace,
+                        freeSpace = probe.freeSpace,
+                        fileSystemType = "ext4",
+                        unsupportedFs = false,
+                        uuid = null
+                    )
+                    _usbVolumes.value = listOf(ext4Volume)
+                    return
+                } else {
+                    EcosystemLogger.d(TAG, "ext4: mount failed for ${probe.label} — not ext4?")
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(TAG, "ext4: mount exception: ${e.message}")
+            }
         }
     }
 
