@@ -3824,10 +3824,38 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
-        val outputPath = if (panel.currentPath.startsWith("content://")) {
-            File(appContext.cacheDir, name).absolutePath
-        } else {
-            "${panel.currentPath}/$name"
+        val outputPath = when {
+            panel.currentPath.startsWith("content://") -> File(appContext.cacheDir, name).absolutePath
+            com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(panel.currentPath) -> {
+                // Archives created from ext4 panel → save to cache, then offer to copy
+                File(appContext.cacheDir, name).absolutePath
+            }
+            else -> "${panel.currentPath}/$name"
+        }
+
+        // ext4 source files → copy to cache first, then create archive from cached copies
+        if (selectedPaths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val cachedPaths = mutableListOf<String>()
+                for (src in selectedPaths) {
+                    if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(src)) {
+                        val cached = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedFile(
+                            appContext, src, usbStorageManager.ext4Manager
+                        )
+                        if (cached != null) cachedPaths.add(cached.absolutePath)
+                        else {
+                            _toastMessage.tryEmit("Failed to cache ${src.substringAfterLast("/")}")
+                            return@launch
+                        }
+                    } else {
+                        cachedPaths.add(src)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    FileOperationService.startArchive(appContext, cachedPaths, outputPath, password, splitSizeMb)
+                }
+            }
+            return
         }
 
         // Validate output parent dir
@@ -5873,13 +5901,21 @@ class ExplorerViewModel @Inject constructor(
 
     fun confirmExtractToFolder(dialog: DialogState.ArchiveExtractOptions) {
         dismissDialog()
-        val subFolder = File(dialog.destinationDir, dialog.archiveName)
-        if (!subFolder.exists()) subFolder.mkdirs()
-        EcosystemLogger.d(HaronConstants.TAG, "confirmExtractToFolder: extracting to subfolder ${subFolder.absolutePath}")
-        if (dialog.isFromNormalFolder) {
-            doExtractSelectedArchiveFiles(dialog.archivePanelId, dialog.archivePaths, subFolder.absolutePath)
+        val destDir = dialog.destinationDir
+        val subFolderPath = if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destDir)) {
+            val ext4Sub = if (destDir.endsWith("/")) "$destDir${dialog.archiveName}" else "$destDir/${dialog.archiveName}"
+            usbStorageManager.ext4FileOps.mkdir(ext4Sub)
+            ext4Sub
         } else {
-            checkExtractConflictsAndProceed(dialog.archivePanelId, subFolder.absolutePath, dialog.selectedOnly)
+            val subFolder = File(destDir, dialog.archiveName)
+            if (!subFolder.exists()) subFolder.mkdirs()
+            subFolder.absolutePath
+        }
+        EcosystemLogger.d(HaronConstants.TAG, "confirmExtractToFolder: extracting to subfolder $subFolderPath")
+        if (dialog.isFromNormalFolder) {
+            doExtractSelectedArchiveFiles(dialog.archivePanelId, dialog.archivePaths, subFolderPath)
+        } else {
+            checkExtractConflictsAndProceed(dialog.archivePanelId, subFolderPath, dialog.selectedOnly)
         }
     }
 
@@ -5932,6 +5968,45 @@ class ExplorerViewModel @Inject constructor(
         updatePanel(archivePanelId) {
             it.copy(selectedPaths = emptySet(), isSelectionMode = false)
         }
+
+        // ext4 destination — extract to cache, then copy to ext4
+        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)) {
+            val tempDir = File(appContext.cacheDir, "ext4_extract_${System.currentTimeMillis()}")
+            tempDir.mkdirs()
+            FileOperationService.startExtract(
+                appContext,
+                archivePath = archivePanel.archivePath!!,
+                destDir = tempDir.absolutePath,
+                selectedEntries = selectedEntries,
+                password = archivePanel.archivePassword,
+                basePrefix = virtualPath
+            )
+            // After extract completes, copy from temp to ext4
+            viewModelScope.launch(Dispatchers.IO) {
+                // Wait for extraction (poll progress)
+                var waited = 0
+                while (waited < 120_000) {
+                    kotlinx.coroutines.delay(500)
+                    waited += 500
+                    val progress = _uiState.value.operationProgress
+                    if (progress == null || progress.isComplete) break
+                }
+                // Copy extracted files to ext4
+                val extracted = tempDir.listFiles()?.map { it.absolutePath } ?: emptyList()
+                if (extracted.isNotEmpty()) {
+                    val result = usbStorageManager.ext4FileOps.copyToExt4(extracted, destinationDir)
+                    result.onSuccess { cnt -> _toastMessage.tryEmit("Extracted $cnt to ext4") }
+                        .onFailure { _toastMessage.tryEmit("ext4 copy failed: ${it.message}") }
+                }
+                tempDir.deleteRecursively()
+                val targetId = if (archivePanelId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+                if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(getPanel(targetId).currentPath)) {
+                    navigateTo(targetId, getPanel(targetId).currentPath, pushHistory = false)
+                }
+            }
+            return
+        }
+
         FileOperationService.startExtract(
             appContext,
             archivePath = archivePanel.archivePath!!,
