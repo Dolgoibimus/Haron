@@ -2949,6 +2949,14 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
+        // ext4 — skip conflict check, just execute
+        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(targetPanel.currentPath) ||
+            paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
+            EcosystemLogger.d(HaronConstants.TAG, "copySelectedToOtherPanel: ext4, skipping conflicts")
+            executeCopy(paths, targetPanel.currentPath, ConflictResolution.RENAME)
+            return
+        }
+
         val conflictPairs = buildConflictPairs(paths, targetPanel)
         if (conflictPairs.isNotEmpty()) {
             _uiState.update {
@@ -3023,6 +3031,21 @@ class ExplorerViewModel @Inject constructor(
         val dirs = selected.count { it.isDirectory }
         val files = selected.size - dirs
         clearSelection(activeId)
+
+        // ext4 — skip File-based conflict resolution, just copy all
+        val isExt4Dest = com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)
+        val isExt4Src = paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }
+        if (isExt4Dest || isExt4Src) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val ops = usbStorageManager.ext4FileOps
+                val result = if (isExt4Dest) ops.copyToExt4(paths, destinationDir) else ops.copyFromExt4(paths, destinationDir)
+                result.onSuccess { _toastMessage.tryEmit("ext4: copied $it") }
+                    .onFailure { _toastMessage.tryEmit("ext4 copy failed: ${it.message}") }
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
+            }
+            return
+        }
 
         viewModelScope.launch {
             val total = paths.size
@@ -3105,6 +3128,14 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
+        // ext4 — skip conflict check (can't check via File API), just execute
+        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(targetPanel.currentPath) ||
+            paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
+            EcosystemLogger.d(HaronConstants.TAG, "moveSelectedToOtherPanel: ext4, skipping conflicts, executing move")
+            executeMove(paths, targetPanel.currentPath, ConflictResolution.RENAME)
+            return
+        }
+
         val conflictPairs = buildConflictPairs(paths, targetPanel)
         if (conflictPairs.isNotEmpty()) {
             _uiState.update {
@@ -3179,6 +3210,29 @@ class ExplorerViewModel @Inject constructor(
         val files = selected.size - dirs
         val sourceDir = sourcePanel.currentPath
         clearSelection(activeId)
+
+        // ext4 — move via copy + delete
+        val isExt4Dest = com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)
+        val isExt4Src = paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }
+        if (isExt4Dest || isExt4Src) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val ops = usbStorageManager.ext4FileOps
+                if (isExt4Dest) {
+                    ops.copyToExt4(paths, destinationDir).onSuccess { cnt ->
+                        for (p in paths) java.io.File(p).deleteRecursively()
+                        _toastMessage.tryEmit("Moved $cnt to ext4")
+                    }.onFailure { _toastMessage.tryEmit("Move to ext4 failed: ${it.message}") }
+                } else {
+                    ops.copyFromExt4(paths, destinationDir).onSuccess { cnt ->
+                        ops.delete(paths)
+                        _toastMessage.tryEmit("Moved $cnt from ext4")
+                    }.onFailure { _toastMessage.tryEmit("Move from ext4 failed: ${it.message}") }
+                }
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
+            }
+            return
+        }
 
         viewModelScope.launch {
             val total = paths.size
