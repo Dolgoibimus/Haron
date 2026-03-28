@@ -20,14 +20,19 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         return entries.map { it.toFileEntry(ext4Path) }
     }
 
-    /** Copy local files TO ext4 */
-    fun copyToExt4(sourcePaths: List<String>, destDir: String): Result<Int> {
+    /** Copy local files TO ext4. [onFileCompleted] called after each file for live UI update. */
+    fun copyToExt4(
+        sourcePaths: List<String>,
+        destDir: String,
+        onFileCompleted: ((name: String, index: Int, total: Int) -> Unit)? = null
+    ): Result<Int> {
         if (!isMounted) return Result.failure(IllegalStateException("ext4 not mounted"))
 
         var success = 0
         var lastError: String? = null
+        val total = sourcePaths.size
 
-        for (srcPath in sourcePaths) {
+        for ((index, srcPath) in sourcePaths.withIndex()) {
             val srcFile = File(srcPath)
             if (!srcFile.exists()) {
                 lastError = "Source not found: $srcPath"
@@ -39,12 +44,16 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
             if (srcFile.isDirectory) {
                 if (!copyDirToExt4(srcFile, destPath)) {
                     lastError = "Failed to copy dir: ${srcFile.name}"
-                } else success++
+                } else {
+                    success++
+                    onFileCompleted?.invoke(srcFile.name, index + 1, total)
+                }
             } else {
                 val ext4Internal = Ext4PathUtils.toInternalPath(destPath)
                 EcosystemLogger.d(TAG, "copyToExt4: ${srcFile.absolutePath} → $ext4Internal (${srcFile.length()} bytes)")
                 if (ext4Manager.copyFromLocal(srcFile, destPath)) {
                     success++
+                    onFileCompleted?.invoke(srcFile.name, index + 1, total)
                 } else {
                     lastError = "Failed to write: ${srcFile.name}"
                 }

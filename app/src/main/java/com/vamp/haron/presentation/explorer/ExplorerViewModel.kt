@@ -2990,8 +2990,12 @@ class ExplorerViewModel @Inject constructor(
                     _toastMessage.tryEmit("ext4 USB not mounted")
                     return@launch
                 }
+                val targetId = if (state.activePanel == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
                 val result = if (isExt4Dest) {
-                    ops.copyToExt4(paths, destinationDir)
+                    ops.copyToExt4(paths, destinationDir) { name, idx, total ->
+                        // Live refresh after each file
+                        refreshPanel(targetId)
+                    }
                 } else {
                     ops.copyFromExt4(paths, destinationDir)
                 }
@@ -3030,7 +3034,8 @@ class ExplorerViewModel @Inject constructor(
         if (isExt4Dest || isExt4Src) {
             viewModelScope.launch(Dispatchers.IO) {
                 val ops = usbStorageManager.ext4FileOps
-                val result = if (isExt4Dest) ops.copyToExt4(paths, destinationDir) else ops.copyFromExt4(paths, destinationDir)
+                val result = if (isExt4Dest) ops.copyToExt4(paths, destinationDir) { _, _, _ -> refreshPanel(targetId) }
+                    else ops.copyFromExt4(paths, destinationDir)
                 result.onSuccess { _toastMessage.tryEmit("ext4: copied $it") }
                     .onFailure { _toastMessage.tryEmit("ext4 copy failed: ${it.message}") }
                 refreshPanel(PanelId.TOP)
@@ -4833,7 +4838,7 @@ class ExplorerViewModel @Inject constructor(
             viewModelScope.launch(Dispatchers.IO) {
                 val ops = usbStorageManager.ext4FileOps
                 val result = if (isExt4Dest) {
-                    ops.copyToExt4(paths, destinationDir)
+                    ops.copyToExt4(paths, destinationDir) { _, _, _ -> refreshPanel(targetPanelId) }
                 } else {
                     ops.copyFromExt4(paths, destinationDir)
                 }
@@ -7092,7 +7097,8 @@ class ExplorerViewModel @Inject constructor(
             GestureAction.OPEN_TERMINAL -> openTerminal()
             GestureAction.SELECT_ALL -> selectAll(panelId)
             GestureAction.REFRESH -> {
-                refreshPanel(panelId)
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
                 _toastMessage.tryEmit(appContext.getString(R.string.panel_refreshed))
             }
             GestureAction.GO_HOME -> navigateTo(panelId, HaronConstants.ROOT_PATH)
