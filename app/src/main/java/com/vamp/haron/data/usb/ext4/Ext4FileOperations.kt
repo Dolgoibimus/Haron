@@ -53,6 +53,7 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
                 val ext4Internal = Ext4PathUtils.toInternalPath(destPath)
                 EcosystemLogger.d(TAG, "copyToExt4: ${srcFile.absolutePath} → $ext4Internal (${srcFile.length()} bytes)")
                 if (ext4Manager.copyFromLocal(srcFile, destPath)) {
+                    Ext4Native.nativeCacheFlush()
                     success++
                     onFileCompleted?.invoke(srcFile.name, index + 1, total)
                 } else {
@@ -116,11 +117,11 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
             if (isDir) {
                 val ok = deleteDirRecursive(path)
                 EcosystemLogger.d(TAG, "delete dir result: $ok")
-                if (ok) success++
+                if (ok) { success++; Ext4Native.nativeCacheFlush() }
             } else {
                 val ok = ext4Manager.remove(path)
                 EcosystemLogger.d(TAG, "delete file result: $ok")
-                if (ok) success++
+                if (ok) { success++; Ext4Native.nativeCacheFlush() }
             }
         }
         EcosystemLogger.d(TAG, "delete total: $success/${ext4Paths.size}")
@@ -134,6 +135,7 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         val newPath = "$parent/$newName"
         EcosystemLogger.d(TAG, "rename: $ext4Path → $newPath")
         val ok = ext4Manager.rename(ext4Path, newPath)
+        if (ok) Ext4Native.nativeCacheFlush()
         EcosystemLogger.d(TAG, "rename result: $ok")
         return ok
     }
@@ -142,7 +144,9 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
     fun mkdir(ext4Path: String): Boolean {
         if (!isMounted) return false
         EcosystemLogger.d(TAG, "mkdir: $ext4Path")
-        return ext4Manager.mkdir(ext4Path)
+        val ok = ext4Manager.mkdir(ext4Path)
+        if (ok) Ext4Native.nativeCacheFlush()
+        return ok
     }
 
     /** Get file size */

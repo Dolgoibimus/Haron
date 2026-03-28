@@ -88,6 +88,11 @@ object Ext4Native {
     external fun nativeFileSize(path: String): Long
 
     /**
+     * Flush cache to disk — call after write operations.
+     */
+    external fun nativeCacheFlush()
+
+    /**
      * Check if path is a directory.
      */
     external fun nativeIsDirectory(path: String): Boolean

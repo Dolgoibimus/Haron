@@ -768,6 +768,20 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeFileSize(
 }
 
 /**
+ * Flush cache to disk — call after write operations.
+ */
+JNIEXPORT void JNICALL
+Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeCacheFlush(
+    JNIEnv *env, jclass clazz
+) {
+    if (!g_mounted) return;
+    int rc = ext4_cache_flush("/usb/");
+    if (rc != EOK) {
+        LOGE("cacheFlush: rc=%d", rc);
+    }
+}
+
+/**
  * Check if path is a directory.
  */
 JNIEXPORT jboolean JNICALL
