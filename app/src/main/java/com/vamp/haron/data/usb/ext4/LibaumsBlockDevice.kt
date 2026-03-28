@@ -35,10 +35,10 @@ class LibaumsBlockDevice(
 
     override fun readBlocks(blockId: Long, blockCount: Int, buffer: ByteArray): Boolean {
         return try {
-            val byteOffset = blockId * bSize
+            // libaums read() takes LBA (block number), NOT byte offset
             val byteCount = blockCount * bSize
             val bb = ByteBuffer.allocate(byteCount)
-            driver.read(byteOffset, bb)
+            driver.read(blockId, bb)
             bb.flip()
             bb.get(buffer, 0, byteCount)
             true
@@ -50,10 +50,10 @@ class LibaumsBlockDevice(
 
     override fun writeBlocks(blockId: Long, blockCount: Int, buffer: ByteArray): Boolean {
         return try {
-            val byteOffset = blockId * bSize
+            // libaums write() takes LBA (block number), NOT byte offset
             val byteCount = blockCount * bSize
             val bb = ByteBuffer.wrap(buffer, 0, byteCount)
-            driver.write(byteOffset, bb)
+            driver.write(blockId, bb)
             true
         } catch (e: Exception) {
             EcosystemLogger.e(TAG, "writeBlocks failed: blk=$blockId, cnt=$blockCount, err=${e.message}")

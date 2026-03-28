@@ -2221,6 +2221,29 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 - Android не монтирует ext4 USB без root. libaums видит устройство но `partitions=0` (поддерживает только FAT)
 - Решение: интеграция lwext4 (C/NDK) + libaums для userspace чтения ext4
 
+**ext4 USB реализация (lwext4 + libaums) — ⚠️ не проверено:**
+Архитектура: libaums (raw USB block I/O) → JNI bridge → lwext4 (C) → Kotlin API
+- `ext4_jni_bridge.c` — JNI мост: mount, listDir, readFile, writeFile, mkdir, remove, rename
+- `CMakeLists.txt` — lwext4 static lib + haron_ext4 shared lib через NDK
+- `IBlockDevice.kt` — интерфейс raw block I/O
+- `LibaumsBlockDevice.kt` — адаптер libaums → IBlockDevice (рефлексия для BlockDeviceDriver)
+- `Ext4Native.kt` — JNI объявления
+- `Ext4UsbManager.kt` — высокоуровневый API
+- `UsbStorageManager` — при unsupported-FS автопроба ext4 mount, unmount при detach
+- Требует клон: `git clone https://github.com/gkostka/lwext4.git app/src/main/cpp/lwext4/`
+
+**Результаты тестирования ext4 USB:**
+- ✅ lwext4 компилируется через NDK (arm64-v8a, armeabi-v7a)
+- ✅ JNI загружается на устройстве (libharon_ext4.so)
+- ✅ libaums raw block I/O работает (512 байт блоки, до 120 ГБ)
+- ✅ MBR scan находит Linux-партиции
+- ✅ Superblock читается (magic 0xEF53 на тестовой флешке)
+- ❌ OnlyDisk (LVM) — partition 0 содержит LVM metadata, не чистую ext4. LVM не поддерживается
+- ⚠️ ASUS и Redmi монтируют ext4 USB нативно (ядро поддерживает) — lwext4 не вызывается
+- 🔜 Тест на устройстве без kernel ext4 support (RedOS VM / Samsung / Pixel)
+
+**Открытие: контроллер дешёвых флешек кеширует FAT UUID в firmware FTL** — dd перезаписывает логические блоки, но hardware отдаёт старую partition info. UUID 8170-13F5 (FAT) сохраняется даже после полной перезаписи ext4.
+
 ---
 
 ---

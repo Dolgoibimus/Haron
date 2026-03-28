@@ -249,9 +249,12 @@ class UsbStorageManager @Inject constructor(
      */
     private suspend fun probeUnmountedDevices() {
         val currentVolumes = _usbVolumes.value
-        if (currentVolumes.any { !it.unsupportedFs }) {
-            // Android found at least one volume (normal or SAF) — no need to probe
-            EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already found")
+        // If there's a SAF-only unmountable volume → always try ext4 (even if SD card is mounted)
+        val hasSafOnlyUnmountable = currentVolumes.any { it.needsSaf }
+        if (hasSafOnlyUnmountable) {
+            EcosystemLogger.i(TAG, "SAF-only unmountable volume detected — trying ext4 via lwext4...")
+        } else if (currentVolumes.any { !it.unsupportedFs }) {
+            EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already mounted")
             return
         }
 
