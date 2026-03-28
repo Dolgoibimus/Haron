@@ -8337,7 +8337,10 @@ class ExplorerViewModel @Inject constructor(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            appContext.startActivity(Intent.createChooser(intent, name))
+            val chooser = Intent.createChooser(intent, name).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            appContext.startActivity(chooser)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "openFileWithIntent error: ${e.message}")
         }

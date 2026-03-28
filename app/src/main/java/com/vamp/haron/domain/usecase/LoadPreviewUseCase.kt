@@ -44,21 +44,34 @@ class LoadPreviewUseCase @Inject constructor(
     suspend operator fun invoke(entry: FileEntry): Result<PreviewData> = withContext(Dispatchers.IO) {
         try {
             val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
+            // ext4 — copy to cache for preview
+            val effectiveEntry = if (entry.path.startsWith("ext4://")) {
+                val internal = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(entry.path)
+                val name = entry.path.substringAfterLast("/")
+                val cacheFile = java.io.File(context.cacheDir, "ext4_preview_$name")
+                val data = com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internal, 50L * 1024 * 1024)
+                if (data != null) {
+                    cacheFile.writeBytes(data)
+                    entry.copy(path = cacheFile.absolutePath)
+                } else entry
+            } else entry
+
+            val e = effectiveEntry
             val result = when {
-                isFb2Zip -> loadFb2Zip(entry)
-                entry.iconRes() == "image" -> loadImage(entry)
-                entry.iconRes() == "video" -> loadVideo(entry)
-                entry.iconRes() == "audio" -> loadAudio(entry)
-                entry.iconRes() in listOf("text", "code") -> loadText(entry)
-                entry.iconRes() == "pdf" -> loadPdf(entry)
-                entry.iconRes() == "archive" -> loadArchive(entry)
-                entry.iconRes() == "apk" -> loadApk(entry)
-                entry.iconRes() == "document" -> loadDocument(entry)
+                isFb2Zip -> loadFb2Zip(e)
+                e.iconRes() == "image" -> loadImage(e)
+                e.iconRes() == "video" -> loadVideo(e)
+                e.iconRes() == "audio" -> loadAudio(e)
+                e.iconRes() in listOf("text", "code") -> loadText(e)
+                e.iconRes() == "pdf" -> loadPdf(e)
+                e.iconRes() == "archive" -> loadArchive(e)
+                e.iconRes() == "apk" -> loadApk(e)
+                e.iconRes() == "document" -> loadDocument(e)
                 else -> PreviewData.UnsupportedPreview(
-                    fileName = entry.name,
-                    fileSize = entry.size,
-                    lastModified = entry.lastModified,
-                    mimeType = entry.extension
+                    fileName = e.name,
+                    fileSize = e.size,
+                    lastModified = e.lastModified,
+                    mimeType = e.extension
                 )
             }
             Result.success(result)
