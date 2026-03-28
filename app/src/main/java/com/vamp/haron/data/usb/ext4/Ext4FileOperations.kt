@@ -20,7 +20,8 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         return entries.map { it.toFileEntry(ext4Path) }
     }
 
-    /** Copy local files TO ext4. [onFileCompleted] called after each file for live UI update. */
+    /** Copy local files TO ext4. [onFileCompleted] called after each file for live UI update.
+     *  Returns failure if mounted read-only. */
     fun copyToExt4(
         sourcePaths: List<String>,
         destDir: String,
