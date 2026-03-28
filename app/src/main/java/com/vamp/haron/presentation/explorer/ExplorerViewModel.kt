@@ -2105,17 +2105,49 @@ class ExplorerViewModel @Inject constructor(
         } else if (entry.isDirectory) {
             navigateTo(panelId, entry.path)
         } else if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(entry.path)) {
-            // ext4 file — copy to cache, then open with intent
+            // ext4 file — strategy depends on type and size
+            val isStreamable = com.vamp.haron.data.usb.ext4.Ext4CacheManager.isStreamable(entry.name)
+            val tooLarge = com.vamp.haron.data.usb.ext4.Ext4CacheManager.isTooLargeForCache(entry.path)
+
+            if (tooLarge && !isStreamable) {
+                // Large non-media file — can't open directly
+                _toastMessage.tryEmit(appContext.getString(R.string.ext4_file_too_large))
+                return
+            }
+
             viewModelScope.launch(Dispatchers.IO) {
-                val cacheFile = usbStorageManager.ext4FileOps.copyToCache(
-                    entry.path, appContext.cacheDir
-                )
-                if (cacheFile != null) {
-                    withContext(Dispatchers.Main) {
-                        openFileWithIntent(cacheFile.absolutePath, entry.name)
+                if (isStreamable && tooLarge) {
+                    // Large media — copy to cache with progress, then play
+                    _toastMessage.tryEmit(appContext.getString(R.string.ext4_copying_media))
+                    val name = entry.path.substringAfterLast("/")
+                    val cacheFile = java.io.File(appContext.cacheDir, "ext4_$name")
+                    com.vamp.haron.data.usb.ext4.Ext4CacheManager.clearCache(appContext) // make room
+                    val ok = usbStorageManager.ext4Manager.copyToLocal(entry.path, cacheFile) { copied, total ->
+                        val pct = if (total > 0) (copied * 100 / total).toInt() else 0
+                        _uiState.update { it.copy(operationProgress = OperationProgress(
+                            1, 1, name, OperationType.COPY, filePercent = pct
+                        )) }
+                    }
+                    _uiState.update { it.copy(operationProgress = null) }
+                    if (ok) {
+                        withContext(Dispatchers.Main) {
+                            openFileWithIntent(cacheFile.absolutePath, entry.name)
+                        }
+                    } else {
+                        _toastMessage.tryEmit("Failed to copy media from ext4")
                     }
                 } else {
-                    _toastMessage.tryEmit("Failed to read file from ext4")
+                    // Small file — use cache manager
+                    val cacheFile = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedFile(
+                        appContext, entry.path, usbStorageManager.ext4Manager
+                    )
+                    if (cacheFile != null) {
+                        withContext(Dispatchers.Main) {
+                            openFileWithIntent(cacheFile.absolutePath, entry.name)
+                        }
+                    } else {
+                        _toastMessage.tryEmit("Failed to read file from ext4")
+                    }
                 }
             }
             return

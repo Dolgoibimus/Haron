@@ -1656,4 +1656,10 @@
     <string name="backup_select_all">Выбрать все</string>
     <string name="backup_deselect_all">Снять все</string>
     <string name="backup_optional_password">Защитить паролем</string>
+
+    <!-- ext4 USB -->
+    <string name="ext4_file_too_large">Файл слишком большой — сначала скопируйте на устройство</string>
+    <string name="ext4_copying_media">Копирование медиа с ext4…</string>
+    <string name="ext4_mounted">%s (ext4) подключён</string>
+    <string name="ext4_mounting">Обнаружен ext4 USB — подключение…</string>
 </resources>

@@ -623,18 +623,14 @@ object ThumbnailCache {
         val name = ext4Path.substringAfterLast("/")
         val tempFile = File(context.cacheDir, "ext4_thumb_$name")
         try {
-            val internalPath = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(ext4Path)
-
-            // For images — read first 512KB (enough for thumbnail)
-            // For other types — read full file (usually small)
             val maxBytes = when (type) {
                 "image" -> 512 * 1024L
-                "video" -> return null // Video thumbnails need MediaMetadataRetriever with File, too heavy
-                "audio" -> return null // Audio thumbnails need full file
+                "video" -> return null // Video thumbnails need MediaMetadataRetriever — too heavy for ext4
+                "audio" -> return null // Audio cover art needs full file parse
                 else -> 256 * 1024L
             }
 
-            val data = com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internalPath, maxBytes)
+            val data = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailData(ext4Path, maxBytes)
                 ?: return null
 
             tempFile.writeBytes(data)

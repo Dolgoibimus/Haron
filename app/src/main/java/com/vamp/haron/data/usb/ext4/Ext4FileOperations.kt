@@ -133,12 +133,10 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         return Ext4Native.nativeFileSize(internal)
     }
 
-    /** Copy file from ext4 to local cache for opening */
-    fun copyToCache(ext4Path: String, cacheDir: File): File? {
+    /** Copy file from ext4 to local cache for opening. Uses Ext4CacheManager with size limits. */
+    fun copyToCache(ext4Path: String, context: android.content.Context): File? {
         if (!isMounted) return null
-        val name = ext4Path.substringAfterLast("/")
-        val cacheFile = File(cacheDir, "ext4_$name")
-        return if (ext4Manager.copyToLocal(ext4Path, cacheFile)) cacheFile else null
+        return Ext4CacheManager.getCachedFile(context, ext4Path, ext4Manager)
     }
 
     // --- Private helpers ---

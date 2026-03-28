@@ -262,7 +262,7 @@ class UsbStorageManager @Inject constructor(
         val hasSafOnlyUnmountable = currentVolumes.any { it.needsSaf }
         if (hasSafOnlyUnmountable) {
             EcosystemLogger.i(TAG, "SAF-only unmountable volume detected — trying ext4 via lwext4...")
-            _ext4MountingToast.tryEmit("ext4 USB detected — mounting...")
+            _ext4MountingToast.tryEmit(context.getString(com.vamp.haron.R.string.ext4_mounting))
         } else if (currentVolumes.any { !it.unsupportedFs }) {
             EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already mounted")
             return
@@ -330,7 +330,7 @@ class UsbStorageManager @Inject constructor(
                 val mounted = ext4Manager.tryMount(device.usbDevice, readOnly = false)
                 if (mounted) {
                     EcosystemLogger.i(TAG, "ext4: SUCCESS — ${probe.label} mounted via lwext4!")
-                    _ext4MountingToast.tryEmit("${probe.label} (ext4) mounted ✓")
+                    _ext4MountingToast.tryEmit(context.getString(com.vamp.haron.R.string.ext4_mounted, probe.label))
 
                     // Replace unsupported-FS volume with ext4 volume
                     val ext4Volume = UsbVolume(

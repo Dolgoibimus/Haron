@@ -1658,4 +1658,10 @@
     <string name="backup_select_all">Select all</string>
     <string name="backup_deselect_all">Deselect all</string>
     <string name="backup_optional_password">Protect with password</string>
+
+    <!-- ext4 USB -->
+    <string name="ext4_file_too_large">File too large — copy to device first</string>
+    <string name="ext4_copying_media">Copying media from ext4…</string>
+    <string name="ext4_mounted">%s (ext4) mounted</string>
+    <string name="ext4_mounting">ext4 USB detected — mounting…</string>
 </resources>
