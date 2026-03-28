@@ -410,17 +410,25 @@ JNIEXPORT jobjectArray JNICALL
 Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeListDir(
     JNIEnv *env, jclass clazz, jstring jpath
 ) {
-    if (!g_mounted) return NULL;
+    if (!g_mounted) {
+        LOGE("listDir: not mounted!");
+        return NULL;
+    }
 
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+    LOGD("listDir: path=%s, g_mounted=%d, part_offset=%llu, part_size=%llu",
+         path, g_mounted,
+         (unsigned long long)g_bdev.part_offset,
+         (unsigned long long)g_bdev.part_size);
 
     ext4_dir dir;
     int rc = ext4_dir_open(&dir, path);
     if (rc != EOK) {
-        LOGE("listDir: ext4_dir_open(%s) failed, rc=%d", path, rc);
+        LOGE("listDir: ext4_dir_open(%s) failed, rc=%d (ENOENT=2, ENOTDIR=20, EIO=5, EACCES=13)", path, rc);
         (*env)->ReleaseStringUTFChars(env, jpath, path);
         return NULL;
     }
+    LOGD("listDir: dir opened OK");
 
     /* First pass: count entries */
     int count = 0;

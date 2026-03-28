@@ -57,8 +57,15 @@ class UsbStorageManager @Inject constructor(
     private val _usbVolumes = MutableStateFlow<List<UsbVolume>>(emptyList())
     val usbVolumes: StateFlow<List<UsbVolume>> = _usbVolumes.asStateFlow()
 
+    /** Toast messages for ext4 mounting progress */
+    private val _ext4MountingToast = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val ext4MountingToast: kotlinx.coroutines.flow.SharedFlow<String> = _ext4MountingToast
+
     /** ext4 USB manager — mounts ext4/ext3/ext2 partitions via lwext4 (no root) */
     val ext4Manager = Ext4UsbManager(context)
+
+    /** ext4 file operations adapter — bridges all panel operations to lwext4 */
+    val ext4FileOps = com.vamp.haron.data.usb.ext4.Ext4FileOperations(ext4Manager)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshMutex = Mutex()
@@ -253,6 +260,7 @@ class UsbStorageManager @Inject constructor(
         val hasSafOnlyUnmountable = currentVolumes.any { it.needsSaf }
         if (hasSafOnlyUnmountable) {
             EcosystemLogger.i(TAG, "SAF-only unmountable volume detected — trying ext4 via lwext4...")
+            _ext4MountingToast.tryEmit("ext4 USB detected — mounting...")
         } else if (currentVolumes.any { !it.unsupportedFs }) {
             EcosystemLogger.d(TAG, "Skip libaums probe: ${currentVolumes.size} volume(s) already mounted")
             return
@@ -320,10 +328,11 @@ class UsbStorageManager @Inject constructor(
                 val mounted = ext4Manager.tryMount(device.usbDevice, readOnly = false)
                 if (mounted) {
                     EcosystemLogger.i(TAG, "ext4: SUCCESS — ${probe.label} mounted via lwext4!")
+                    _ext4MountingToast.tryEmit("${probe.label} (ext4) mounted ✓")
 
                     // Replace unsupported-FS volume with ext4 volume
                     val ext4Volume = UsbVolume(
-                        path = "ext4:/usb/",
+                        path = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toExt4Path("/usb/"),
                         label = "${probe.label} (ext4)",
                         totalSpace = probe.totalSpace,
                         freeSpace = probe.freeSpace,
@@ -429,9 +438,17 @@ class UsbStorageManager @Inject constructor(
                 volumes.add(UsbVolume(path = path, label = vol.label, totalSpace = dir.totalSpace, freeSpace = dir.freeSpace, uuid = vol.uuid))
             }
 
+            // Preserve ext4 volumes mounted via lwext4 — they don't come from StorageManager
+            if (ext4Manager.isMounted) {
+                val ext4Existing = _usbVolumes.value.filter {
+                    com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it.path)
+                }
+                volumes.addAll(ext4Existing)
+            }
+
             _usbVolumes.value = volumes
             if (volumes.isNotEmpty() || removable.isNotEmpty() || scanned.isNotEmpty()) {
-                EcosystemLogger.d(TAG, "Result: ${volumes.size} volume(s) (saf-only: ${volumes.count { it.needsSaf }}, unsupported-fs: ${volumes.count { it.unsupportedFs }})")
+                EcosystemLogger.d(TAG, "Result: ${volumes.size} volume(s) (saf-only: ${volumes.count { it.needsSaf }}, unsupported-fs: ${volumes.count { it.unsupportedFs }}, ext4: ${volumes.count { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it.path) }})")
             }
         } finally {
             refreshMutex.unlock()

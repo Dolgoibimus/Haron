@@ -120,10 +120,16 @@ class Ext4UsbManager(private val context: Context) {
      * @return list of Ext4Entry or null on error
      */
     fun listDir(path: String): List<Ext4Entry>? {
-        if (!mounted) return null
+        if (!mounted) {
+            EcosystemLogger.e(TAG, "listDir: not mounted!")
+            return null
+        }
 
         val ext4Path = toExt4Path(path)
-        val entries = Ext4Native.nativeListDir(ext4Path) ?: return null
+        EcosystemLogger.d(TAG, "listDir: input=$path → ext4Path=$ext4Path, mounted=$mounted")
+        val entries = Ext4Native.nativeListDir(ext4Path)
+        EcosystemLogger.d(TAG, "listDir: result=${entries?.size ?: "null"} entries")
+        if (entries == null) return null
 
         return entries.mapNotNull { raw ->
             val parts = raw.split("|", limit = 4)
@@ -246,9 +252,15 @@ class Ext4UsbManager(private val context: Context) {
     }
 
     private fun toExt4Path(path: String): String {
-        // lwext4 mount point is "/usb/"
-        val clean = path.removePrefix("/usb").removePrefix("/")
-        return "/usb/$clean"
+        // Convert any path format to lwext4 internal path "/usb/..."
+        val internal = if (Ext4PathUtils.isExt4Path(path)) {
+            Ext4PathUtils.toInternalPath(path)
+        } else {
+            val clean = path.removePrefix("/usb").removePrefix("/")
+            "/usb/$clean"
+        }
+        // Ensure ends with / for root dir
+        return if (internal == "/usb" || internal == "/usb/") "/usb/" else internal
     }
 }
 
@@ -258,8 +270,49 @@ data class Ext4Entry(
     val size: Long,
     /** Unix timestamp (seconds since epoch) */
     val mtime: Long
-)
+) {
+    fun toFileEntry(parentPath: String): com.vamp.haron.domain.model.FileEntry {
+        val fullPath = if (parentPath.endsWith("/")) "$parentPath$name" else "$parentPath/$name"
+        return com.vamp.haron.domain.model.FileEntry(
+            name = name,
+            path = fullPath,
+            isDirectory = type == Ext4EntryType.DIRECTORY,
+            size = size,
+            lastModified = mtime * 1000, // seconds → millis
+            extension = if (type == Ext4EntryType.FILE) name.substringAfterLast('.', "") else "",
+            isHidden = name.startsWith("."),
+            childCount = if (type == Ext4EntryType.DIRECTORY) -1 else 0
+        )
+    }
+}
 
 enum class Ext4EntryType {
     FILE, DIRECTORY, SYMLINK
+}
+
+object Ext4PathUtils {
+    const val PREFIX = "ext4://"
+
+    fun isExt4Path(path: String): Boolean = path.startsWith(PREFIX)
+
+    /** "ext4:///usb/somedir" → "/usb/somedir" */
+    fun toInternalPath(path: String): String = path.removePrefix(PREFIX).ifEmpty { "/usb/" }
+
+    /** "/usb/somedir" → "ext4:///usb/somedir" */
+    fun toExt4Path(internalPath: String): String = "$PREFIX$internalPath"
+
+    /** Display path: "ext4:///usb/dir/sub" → "USB (ext4): /dir/sub" */
+    fun toDisplayPath(path: String, label: String): String {
+        val internal = toInternalPath(path)
+        val relative = internal.removePrefix("/usb/").removePrefix("/usb")
+        return "$label: /$relative"
+    }
+
+    /** Parent: "ext4:///usb/a/b" → "ext4:///usb/a" */
+    fun parentPath(path: String): String? {
+        val internal = toInternalPath(path)
+        if (internal == "/usb/" || internal == "/usb") return null
+        val parent = internal.substringBeforeLast('/')
+        return if (parent.isEmpty() || parent == "/usb") toExt4Path("/usb/") else toExt4Path(parent)
+    }
 }
