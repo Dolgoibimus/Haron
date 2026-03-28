@@ -21,6 +21,7 @@ class LibaumsBlockDevice(
     private val driver: BlockDeviceDriver
     private val bSize: Int
     private val bCount: Long
+    private val usbLock = Any() // Synchronize all USB I/O — BlockDeviceDriver is NOT thread-safe
 
     init {
         // Extract BlockDeviceDriver via reflection
@@ -35,12 +36,13 @@ class LibaumsBlockDevice(
 
     override fun readBlocks(blockId: Long, blockCount: Int, buffer: ByteArray): Boolean {
         return try {
-            // libaums read() takes LBA (block number), NOT byte offset
-            val byteCount = blockCount * bSize
-            val bb = ByteBuffer.allocate(byteCount)
-            driver.read(blockId, bb)
-            bb.flip()
-            bb.get(buffer, 0, byteCount)
+            synchronized(usbLock) {
+                val byteCount = blockCount * bSize
+                val bb = ByteBuffer.allocate(byteCount)
+                driver.read(blockId, bb)
+                bb.flip()
+                bb.get(buffer, 0, byteCount)
+            }
             true
         } catch (e: Exception) {
             EcosystemLogger.e(TAG, "readBlocks failed: blk=$blockId, cnt=$blockCount, err=${e.message}")
@@ -50,10 +52,11 @@ class LibaumsBlockDevice(
 
     override fun writeBlocks(blockId: Long, blockCount: Int, buffer: ByteArray): Boolean {
         return try {
-            // libaums write() takes LBA (block number), NOT byte offset
-            val byteCount = blockCount * bSize
-            val bb = ByteBuffer.wrap(buffer, 0, byteCount)
-            driver.write(blockId, bb)
+            synchronized(usbLock) {
+                val byteCount = blockCount * bSize
+                val bb = ByteBuffer.wrap(buffer, 0, byteCount)
+                driver.write(blockId, bb)
+            }
             true
         } catch (e: Exception) {
             EcosystemLogger.e(TAG, "writeBlocks failed: blk=$blockId, cnt=$blockCount, err=${e.message}")
