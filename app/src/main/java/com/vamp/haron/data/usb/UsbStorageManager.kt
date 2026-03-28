@@ -99,12 +99,12 @@ class UsbStorageManager @Inject constructor(
                 Intent.ACTION_MEDIA_BAD_REMOVAL,
                 Intent.ACTION_MEDIA_REMOVED -> {
                     storageVolumeHelper.invalidateCache()
-                    if (path != null) {
+                    if (path != null && path != "/dev/null") {
                         broadcastMountedPaths.remove(path)
                         suppressedPaths.add(path)
                         // Extract UUID from broadcast path (e.g., /storage/0633-7530 → 0633-7530)
                         val broadcastUuid = path.substringAfterLast("/")
-                        if (broadcastUuid.isNotEmpty()) suppressedPaths.add(broadcastUuid)
+                        if (broadcastUuid.isNotEmpty() && broadcastUuid != "null") suppressedPaths.add(broadcastUuid)
                         // Instantly remove volume from list (by path or by UUID for SAF-only volumes)
                         val current = _usbVolumes.value
                         val filtered = current.filter { vol ->
@@ -190,8 +190,10 @@ class UsbStorageManager @Inject constructor(
                     val current = _usbVolumes.value
                     if (current.isNotEmpty()) {
                         current.forEach {
-                            if (it.path.isNotEmpty()) suppressedPaths.add(it.path)
-                            if (it.uuid != null) suppressedPaths.add(it.uuid)
+                            if (it.path.isNotEmpty() && !com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it.path)) {
+                                suppressedPaths.add(it.path)
+                            }
+                            if (!it.uuid.isNullOrEmpty()) suppressedPaths.add(it.uuid)
                         }
                         _usbVolumes.value = emptyList()
                         EcosystemLogger.d(TAG, "USB HW detached → cleared all volumes")

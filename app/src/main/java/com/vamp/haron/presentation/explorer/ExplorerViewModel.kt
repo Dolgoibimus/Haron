@@ -3459,6 +3459,22 @@ class ExplorerViewModel @Inject constructor(
     fun confirmBatchRename(renames: List<Pair<String, String>>) {
         dismissDialog()
         val activeId = _uiState.value.activePanel
+
+        // ext4 batch rename
+        if (renames.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it.first) }) {
+            viewModelScope.launch(Dispatchers.IO) {
+                clearSelection(activeId)
+                var count = 0
+                for ((oldPath, newName) in renames) {
+                    if (usbStorageManager.ext4FileOps.rename(oldPath, newName)) count++
+                }
+                if (count > 0) hapticManager.success() else hapticManager.error()
+                _toastMessage.tryEmit("ext4: renamed $count/${renames.size}")
+                refreshPanel(activeId)
+            }
+            return
+        }
+
         viewModelScope.launch {
             clearSelection(activeId)
             batchRenameUseCase(renames)
@@ -6179,6 +6195,29 @@ class ExplorerViewModel @Inject constructor(
 
     fun showFileProperties(entry: FileEntry) {
         _uiState.update { it.copy(dialogState = DialogState.FilePropertiesState(entry = entry)) }
+
+        // ext4 — basic properties from FileEntry (no File API)
+        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(entry.path)) {
+            val props = com.vamp.haron.domain.usecase.FileProperties(
+                name = entry.name,
+                path = entry.path,
+                size = entry.size,
+                lastModified = entry.lastModified,
+                isDirectory = entry.isDirectory,
+                childCount = if (entry.childCount >= 0) entry.childCount else 0,
+                mimeType = if (entry.isDirectory) "inode/directory" else android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(entry.extension) ?: "application/octet-stream",
+                permissions = "ext4 (userspace mount)"
+            )
+            _uiState.update { state ->
+                val dialog = state.dialogState
+                if (dialog is DialogState.FilePropertiesState && dialog.entry.path == entry.path) {
+                    state.copy(dialogState = dialog.copy(properties = props))
+                } else state
+            }
+            return
+        }
+
         viewModelScope.launch {
             getFilePropertiesUseCase(entry).collect { props ->
                 _uiState.update { state ->

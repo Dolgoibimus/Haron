@@ -139,6 +139,13 @@ object ThumbnailCache {
     ): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(path)?.let { return@withContext it }
 
+        // ext4:// paths — copy small portion to cache for thumbnail generation
+        if (path.startsWith("ext4://")) {
+            val cached = loadExt4Thumbnail(context, path, type)
+            cached?.let { cache.put(path, it) }
+            return@withContext cached
+        }
+
         val isFb2Zip = path.lowercase().endsWith(".fb2.zip")
 
         val bitmap = try {
@@ -607,5 +614,37 @@ object ThumbnailCache {
             }
         }
         return inSampleSize
+    }
+
+    /**
+     * Load thumbnail for ext4:// file — copy to temp cache, generate thumbnail, delete temp.
+     */
+    private fun loadExt4Thumbnail(context: Context, ext4Path: String, type: String): Bitmap? {
+        val name = ext4Path.substringAfterLast("/")
+        val tempFile = File(context.cacheDir, "ext4_thumb_$name")
+        try {
+            val internalPath = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(ext4Path)
+
+            // For images — read first 512KB (enough for thumbnail)
+            // For other types — read full file (usually small)
+            val maxBytes = when (type) {
+                "image" -> 512 * 1024L
+                "video" -> return null // Video thumbnails need MediaMetadataRetriever with File, too heavy
+                "audio" -> return null // Audio thumbnails need full file
+                else -> 256 * 1024L
+            }
+
+            val data = com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internalPath, maxBytes)
+                ?: return null
+
+            tempFile.writeBytes(data)
+            val bitmap = loadImageThumbnail(context, tempFile.absolutePath, false)
+            return bitmap
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "ext4 thumbnail error: ${e.message}")
+            return null
+        } finally {
+            tempFile.delete()
+        }
     }
 }

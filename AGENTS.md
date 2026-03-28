@@ -2242,6 +2242,20 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 - ⚠️ ASUS и Redmi монтируют ext4 USB нативно (ядро поддерживает) — lwext4 не вызывается
 - 🔜 Тест на устройстве без kernel ext4 support (RedOS VM / Samsung / Pixel)
 
+**ext4 USB — хотелки (что ещё не работает):**
+- [ ] Thumbnails/превью для ext4 файлов (сейчас BitmapFactory падает на ext4:// пути)
+- [ ] Drag-and-drop между панелями с ext4
+- [ ] Поиск FTS5 по ext4 (FTS индексирует только File paths)
+- [ ] Архивы — создание/распаковка на ext4 (FFmpeg/ZArchiver = File API)
+- [ ] Стриминг/каст файлов с ext4 (HTTP сервер = File API)
+- [ ] Теги для ext4 файлов (привязаны к File path)
+- [ ] Корзина для ext4 (meta.json + File API)
+- [ ] Batch rename на ext4 (File.renameTo)
+- [ ] Свойства файла — permissions (chmod/chown)
+- [ ] Подавление системного "нет доступа" уведомления при ext4 mount
+- [ ] MIUI: экран сдвигается при USB attach (activity relaunch)
+- [ ] SD-карта иногда пропадает из drawer (suppressedPaths баг)
+
 **Открытие: контроллер дешёвых флешек кеширует FAT UUID в firmware FTL** — dd перезаписывает логические блоки, но hardware отдаёт старую partition info. UUID 8170-13F5 (FAT) сохраняется даже после полной перезаписи ext4.
 
 ---
