@@ -2980,58 +2980,28 @@ class ExplorerViewModel @Inject constructor(
         for (p in paths) EcosystemLogger.d(HaronConstants.TAG, "executeCopy: src=$p")
         clearSelection(activeId)
 
-        // ext4 destination — copy via Ext4UsbManager
-        if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)) {
+        // ext4 destination or source — use Ext4FileOperations
+        val isExt4Dest = com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)
+        val isExt4Src = paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }
+        if (isExt4Dest || isExt4Src) {
             viewModelScope.launch(Dispatchers.IO) {
-                val ext4Mgr = usbStorageManager.ext4Manager
-                if (!ext4Mgr.isMounted) {
+                val ops = usbStorageManager.ext4FileOps
+                if (!ops.isMounted) {
                     _toastMessage.tryEmit("ext4 USB not mounted")
                     return@launch
                 }
-                var success = 0
-                var failed = 0
-                for (srcPath in paths) {
-                    val srcFile = java.io.File(srcPath)
-                    if (!srcFile.exists()) { failed++; continue }
-                    val destName = srcFile.name
-                    val destPath = if (destinationDir.endsWith("/")) "$destinationDir$destName" else "$destinationDir/$destName"
-                    val ext4Path = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(destPath)
-                    EcosystemLogger.d(HaronConstants.TAG, "ext4 copy: $srcPath → $ext4Path")
-                    if (srcFile.isDirectory) {
-                        if (ext4Mgr.mkdir(destPath)) success++ else failed++
-                    } else {
-                        if (ext4Mgr.copyFromLocal(srcFile, destPath)) success++ else failed++
-                    }
+                val result = if (isExt4Dest) {
+                    ops.copyToExt4(paths, destinationDir)
+                } else {
+                    ops.copyFromExt4(paths, destinationDir)
                 }
-                _toastMessage.tryEmit("ext4: copied $success, failed $failed")
-                // Refresh ext4 panel
-                val targetId = if (state.activePanel == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
-                if (com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(getPanel(targetId).currentPath)) {
-                    navigateTo(targetId, getPanel(targetId).currentPath, pushHistory = false)
+                result.onSuccess { cnt ->
+                    _toastMessage.tryEmit("ext4: copied $cnt")
+                }.onFailure {
+                    _toastMessage.tryEmit("ext4 copy failed: ${it.message}")
                 }
-            }
-            return
-        }
-
-        // ext4 source — copy from ext4 to local
-        if (paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }) {
-            viewModelScope.launch(Dispatchers.IO) {
-                val ext4Mgr = usbStorageManager.ext4Manager
-                if (!ext4Mgr.isMounted) {
-                    _toastMessage.tryEmit("ext4 USB not mounted")
-                    return@launch
-                }
-                var success = 0
-                var failed = 0
-                for (srcPath in paths) {
-                    if (!com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(srcPath)) { failed++; continue }
-                    val name = srcPath.substringAfterLast("/")
-                    val destFile = java.io.File(destinationDir, name)
-                    EcosystemLogger.d(HaronConstants.TAG, "ext4 copy to local: $srcPath → ${destFile.absolutePath}")
-                    if (ext4Mgr.copyToLocal(srcPath, destFile)) success++ else failed++
-                }
-                _toastMessage.tryEmit("Copied $success files from ext4, failed $failed")
-                refreshPanel(if (state.activePanel == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP)
+                refreshPanel(PanelId.TOP)
+                refreshPanel(PanelId.BOTTOM)
             }
             return
         }
@@ -4815,6 +4785,28 @@ class ExplorerViewModel @Inject constructor(
         // Local → cloud: upload (inherently copy)
         if (!paths.any { isCloudPath(it) } && isCloudPath(destinationDir)) {
             executeDragCloudUpload(paths, destinationDir, sourcePanelId, targetPanelId)
+            return
+        }
+
+        // ext4 DnD — use ext4 file operations
+        val isExt4Dest = com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(destinationDir)
+        val isExt4Src = paths.any { com.vamp.haron.data.usb.ext4.Ext4PathUtils.isExt4Path(it) }
+        if (isExt4Dest || isExt4Src) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val ops = usbStorageManager.ext4FileOps
+                val result = if (isExt4Dest) {
+                    ops.copyToExt4(paths, destinationDir)
+                } else {
+                    ops.copyFromExt4(paths, destinationDir)
+                }
+                result.onSuccess { cnt ->
+                    _toastMessage.tryEmit("Copied $cnt files")
+                }.onFailure {
+                    _toastMessage.tryEmit("Copy failed: ${it.message}")
+                }
+                refreshPanel(sourcePanelId)
+                refreshPanel(targetPanelId)
+            }
             return
         }
 
