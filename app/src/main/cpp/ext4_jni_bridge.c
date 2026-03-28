@@ -729,12 +729,18 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeRemove(
     if (!g_mounted) return JNI_FALSE;
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
 
-    /* Try file first, then directory */
-    int rc = ext4_fremove(path);
-    LOGD("nativeRemove: fremove(%s) rc=%d", path, rc);
-    if (rc != EOK) {
+    /* Check if it's a directory first */
+    ext4_dir test_dir;
+    int is_dir = (ext4_dir_open(&test_dir, path) == EOK);
+    if (is_dir) ext4_dir_close(&test_dir);
+
+    int rc;
+    if (is_dir) {
         rc = ext4_dir_rm(path);
         LOGD("nativeRemove: dir_rm(%s) rc=%d (ENOTEMPTY=39, ENOENT=2)", path, rc);
+    } else {
+        rc = ext4_fremove(path);
+        LOGD("nativeRemove: fremove(%s) rc=%d", path, rc);
     }
 
     (*env)->ReleaseStringUTFChars(env, jpath, path);
