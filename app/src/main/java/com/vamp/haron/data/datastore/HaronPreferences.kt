@@ -702,6 +702,11 @@ class HaronPreferences @Inject constructor(
         get() = prefs.getInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, 100)
         set(value) = prefs.edit().putInt(KEY_ARCHIVE_THUMB_CACHE_SIZE_MB, value.coerceAtLeast(0)).apply()
 
+    // --- ext4 USB cache ---
+    var ext4ThumbCacheSizeMb: Int
+        get() = prefs.getInt(KEY_EXT4_THUMB_CACHE_SIZE_MB, 100)
+        set(value) = prefs.edit().putInt(KEY_EXT4_THUMB_CACHE_SIZE_MB, value.coerceAtLeast(0)).apply()
+
     // --- Power saving ---
 
     /** Global power save mode: disables animations, reduces polling frequency */
@@ -763,6 +768,7 @@ class HaronPreferences @Inject constructor(
         const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
         const val KEY_TRANSCODE_CACHE_TTL_HOURS = "transcode_cache_ttl_hours"
         const val KEY_ARCHIVE_THUMB_CACHE_SIZE_MB = "archive_thumb_cache_size_mb"
+        const val KEY_EXT4_THUMB_CACHE_SIZE_MB = "ext4_thumb_cache_size_mb"
         const val KEY_LIBRARY_GRID_COLUMNS = "library_grid_columns"
         const val KEY_MATRIX_ENABLED = "matrix_enabled"
         const val KEY_MATRIX_MODE = "matrix_mode"

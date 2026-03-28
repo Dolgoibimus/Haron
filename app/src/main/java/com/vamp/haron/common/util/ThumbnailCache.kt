@@ -139,11 +139,11 @@ object ThumbnailCache {
     ): Bitmap? = withContext(Dispatchers.IO) {
         cache.get(path)?.let { return@withContext it }
 
-        // ext4:// paths — skip thumbnail loading to avoid USB timeout
-        // USB block device is single-threaded; thumbnail reads block copy/write operations
-        // and cause MAX_RECOVERY_ATTEMPTS errors. Show file type icon instead.
+        // ext4:// paths — lazy load via IoScheduler (won't block file operations)
         if (path.startsWith("ext4://")) {
-            return@withContext null
+            val cached = loadExt4Thumbnail(context, path, type)
+            cached?.let { cache.put(path, it) }
+            return@withContext cached
         }
 
         val isFb2Zip = path.lowercase().endsWith(".fb2.zip")
@@ -619,28 +619,34 @@ object ThumbnailCache {
     /**
      * Load thumbnail for ext4:// file — copy to temp cache, generate thumbnail, delete temp.
      */
-    private fun loadExt4Thumbnail(context: Context, ext4Path: String, type: String): Bitmap? {
-        val name = ext4Path.substringAfterLast("/")
-        val tempFile = File(context.cacheDir, "ext4_thumb_$name")
-        try {
-            val maxBytes = when (type) {
-                "image" -> 512 * 1024L
-                "video" -> return null // Video thumbnails need MediaMetadataRetriever — too heavy for ext4
-                "audio" -> return null // Audio cover art needs full file parse
-                else -> 256 * 1024L
-            }
+    private suspend fun loadExt4Thumbnail(context: Context, ext4Path: String, type: String): Bitmap? {
+        if (type != "image") return null
 
-            val data = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailData(ext4Path, maxBytes)
-                ?: return null
-
-            tempFile.writeBytes(data)
-            val bitmap = loadImageThumbnail(context, tempFile.absolutePath, false)
-            return bitmap
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "ext4 thumbnail error: ${e.message}")
-            return null
-        } finally {
-            tempFile.delete()
+        // 1. Disk cache (no USB access)
+        val diskCached = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailFromDisk(context, ext4Path)
+        if (diskCached != null) {
+            return try { loadImageThumbnail(context, diskCached.absolutePath, false) } catch (_: Exception) { null }
         }
+
+        // 2. USB read via IoScheduler — null if busy
+        val bitmap = com.vamp.haron.data.usb.ext4.Ext4IoScheduler.withThumbnailRead {
+            val name = ext4Path.substringAfterLast("/")
+            val tempFile = File(context.cacheDir, "ext4_tmp_$name")
+            try {
+                val data = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailData(ext4Path, 512 * 1024)
+                    ?: return@withThumbnailRead null
+                tempFile.writeBytes(data)
+                loadImageThumbnail(context, tempFile.absolutePath, false)
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "ext4 thumb: ${e.message}")
+                null
+            } finally {
+                tempFile.delete()
+            }
+        } ?: return null
+
+        // 3. Save to disk cache
+        com.vamp.haron.data.usb.ext4.Ext4CacheManager.saveThumbnailToDisk(context, ext4Path, bitmap)
+        return bitmap
     }
 }

@@ -1,11 +1,15 @@
 package com.vamp.haron.data.usb.ext4
 
 import android.content.Context
+import android.graphics.Bitmap
 import com.vamp.core.logger.EcosystemLogger
 import java.io.File
+import java.io.FileOutputStream
 
 private const val TAG = "Ext4Cache"
 private const val EXT4_CACHE_PREFIX = "ext4_"
+private const val EXT4_THUMB_PREFIX = "ext4_thumb_"
+private const val DEFAULT_THUMB_CACHE_SIZE_MB = 100L
 private const val MAX_CACHE_SIZE_BYTES = 200L * 1024 * 1024 // 200 MB
 private const val MAX_SINGLE_FILE_BYTES = 50L * 1024 * 1024 // 50 MB for non-streaming
 private const val CLEANUP_TARGET_BYTES = 150L * 1024 * 1024 // cleanup to 150 MB
@@ -115,4 +119,80 @@ object Ext4CacheManager {
         // Audio
         "mp3", "flac", "aac", "ogg", "opus", "wav", "wma", "m4a", "aif", "aiff", "ape", "alac"
     )
+
+    // ── Thumbnail Disk Cache ──
+
+    private fun thumbCacheKey(ext4Path: String): String {
+        return ext4Path.hashCode().toUInt().toString(16)
+    }
+
+    /** Get cached thumbnail from disk. Returns null if not cached. */
+    fun getCachedThumbnailFromDisk(context: Context, ext4Path: String): File? {
+        val key = thumbCacheKey(ext4Path)
+        val file = File(context.cacheDir, "$EXT4_THUMB_PREFIX$key.jpg")
+        return if (file.exists()) file else null
+    }
+
+    /** Save bitmap thumbnail to disk cache. */
+    fun saveThumbnailToDisk(context: Context, ext4Path: String, bitmap: Bitmap, maxSizeMb: Long = DEFAULT_THUMB_CACHE_SIZE_MB) {
+        val key = thumbCacheKey(ext4Path)
+        val file = File(context.cacheDir, "$EXT4_THUMB_PREFIX$key.jpg")
+        ensureThumbCacheSpace(context, 50 * 1024, maxSizeMb) // estimate 50KB per thumb
+        try {
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.e(TAG, "saveThumbnailToDisk failed: ${e.message}")
+        }
+    }
+
+    /** Total size of ext4 thumbnail cache. */
+    fun getThumbCacheSize(context: Context): Long {
+        return getExt4ThumbCacheFiles(context).sumOf { it.length() }
+    }
+
+    /** Delete all ext4 thumbnail cache files. */
+    fun clearThumbCache(context: Context) {
+        val files = getExt4ThumbCacheFiles(context)
+        var freed = 0L
+        for (f in files) {
+            freed += f.length()
+            f.delete()
+        }
+        EcosystemLogger.d(TAG, "Thumb cache cleared: ${files.size} files, ${freed / 1024} KB freed")
+    }
+
+    /** Total cache size (files + thumbnails). */
+    fun getTotalCacheSize(context: Context): Long {
+        return getCacheSize(context) + getThumbCacheSize(context)
+    }
+
+    /** Clear all ext4 caches (files + thumbnails). */
+    fun clearAllCaches(context: Context) {
+        clearCache(context)
+        clearThumbCache(context)
+    }
+
+    private fun ensureThumbCacheSpace(context: Context, needed: Long, maxSizeMb: Long) {
+        val maxBytes = maxSizeMb * 1024 * 1024
+        val current = getThumbCacheSize(context)
+        if (current + needed <= maxBytes) return
+
+        val files = getExt4ThumbCacheFiles(context).sortedBy { it.lastModified() }
+        var freed = 0L
+        val target = current + needed - (maxBytes * 3 / 4)
+
+        for (f in files) {
+            if (freed >= target) break
+            freed += f.length()
+            f.delete()
+        }
+    }
+
+    private fun getExt4ThumbCacheFiles(context: Context): List<File> {
+        return context.cacheDir.listFiles()
+            ?.filter { it.name.startsWith(EXT4_THUMB_PREFIX) }
+            ?: emptyList()
+    }
 }

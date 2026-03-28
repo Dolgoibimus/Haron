@@ -1662,4 +1662,10 @@
     <string name="ext4_copying_media">Копирование медиа с ext4…</string>
     <string name="ext4_mounted">%s (ext4) подключён</string>
     <string name="ext4_mounting">Обнаружен ext4 USB — подключение…</string>
+    <string name="ext4_cache_section">Кеш превью USB ext4</string>
+    <string name="ext4_cache_limit">Лимит кеша: %s</string>
+    <string name="ext4_cache_no_limit">Без лимита</string>
+    <string name="ext4_cache_clear">Очистить кеш превью ext4</string>
+    <string name="ext4_cache_current">Текущий размер: %s</string>
+    <string name="ext4_cache_description">Кеширует сгенерированные миниатюры изображений с ext4 USB-накопителей на устройстве. Не нужно повторно читать файлы с USB при каждом открытии папки. Кешируются только превью изображений (JPEG). Очистка кеша освободит место, но миниатюры будут создаваться заново при следующем просмотре.</string>
 </resources>

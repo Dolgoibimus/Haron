@@ -1664,4 +1664,10 @@
     <string name="ext4_copying_media">Copying media from ext4…</string>
     <string name="ext4_mounted">%s (ext4) mounted</string>
     <string name="ext4_mounting">ext4 USB detected — mounting…</string>
+    <string name="ext4_cache_section">USB ext4 thumbnail cache</string>
+    <string name="ext4_cache_limit">Cache limit: %s</string>
+    <string name="ext4_cache_no_limit">No limit</string>
+    <string name="ext4_cache_clear">Clear ext4 thumbnail cache</string>
+    <string name="ext4_cache_current">Current size: %s</string>
+    <string name="ext4_cache_description">Caches generated image thumbnails from ext4 USB drives on device storage. Avoids re-reading images from USB each time you open a folder. Only image previews (JPEG) are cached. Clearing the cache frees disk space but thumbnails will be regenerated on next view.</string>
 </resources>

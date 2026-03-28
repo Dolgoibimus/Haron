@@ -14,21 +14,32 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
 
     val isMounted: Boolean get() = ext4Manager.isMounted
 
+    /** Wrap any write operation — blocks thumbnail loading during the op */
+    private inline fun <T> withFileOp(block: () -> T): T {
+        Ext4IoScheduler.fileOpActive = true
+        return try { block() } finally { Ext4IoScheduler.fileOpActive = false }
+    }
+
     /** List directory → FileEntry list */
     fun listDir(ext4Path: String): List<FileEntry>? {
         val entries = ext4Manager.listDir(ext4Path) ?: return null
         return entries.map { it.toFileEntry(ext4Path) }
     }
 
-    /** Copy local files TO ext4. [onFileCompleted] called after each file for live UI update.
-     *  Returns failure if mounted read-only. */
+    /** Copy local files TO ext4. [onFileCompleted] called after each file for live UI update. */
     fun copyToExt4(
         sourcePaths: List<String>,
         destDir: String,
         onFileCompleted: ((name: String, index: Int, total: Int) -> Unit)? = null
     ): Result<Int> {
         if (!isMounted) return Result.failure(IllegalStateException("ext4 not mounted"))
+        return withFileOp { doCopyToExt4(sourcePaths, destDir, onFileCompleted) }
+    }
 
+    private fun doCopyToExt4(
+        sourcePaths: List<String>, destDir: String,
+        onFileCompleted: ((name: String, index: Int, total: Int) -> Unit)?
+    ): Result<Int> {
         var success = 0
         var lastError: String? = null
         val total = sourcePaths.size
@@ -72,6 +83,10 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
     /** Copy files FROM ext4 to local storage */
     fun copyFromExt4(ext4Paths: List<String>, localDestDir: String): Result<Int> {
         if (!isMounted) return Result.failure(IllegalStateException("ext4 not mounted"))
+        return withFileOp { doCopyFromExt4(ext4Paths, localDestDir) }
+    }
+
+    private fun doCopyFromExt4(ext4Paths: List<String>, localDestDir: String): Result<Int> {
 
         val destDir = File(localDestDir)
         if (!destDir.exists()) destDir.mkdirs()
@@ -108,6 +123,10 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
     /** Delete files/dirs on ext4 */
     fun delete(ext4Paths: List<String>): Result<Int> {
         if (!isMounted) return Result.failure(IllegalStateException("ext4 not mounted"))
+        return withFileOp { doDelete(ext4Paths) }
+    }
+
+    private fun doDelete(ext4Paths: List<String>): Result<Int> {
 
         var success = 0
         for (path in ext4Paths) {
@@ -131,6 +150,10 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
     /** Rename file/dir on ext4 */
     fun rename(ext4Path: String, newName: String): Boolean {
         if (!isMounted) return false
+        return withFileOp { doRename(ext4Path, newName) }
+    }
+
+    private fun doRename(ext4Path: String, newName: String): Boolean {
         val parent = ext4Path.substringBeforeLast("/")
         val newPath = "$parent/$newName"
         EcosystemLogger.d(TAG, "rename: $ext4Path → $newPath")
@@ -143,10 +166,12 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
     /** Create directory on ext4 */
     fun mkdir(ext4Path: String): Boolean {
         if (!isMounted) return false
-        EcosystemLogger.d(TAG, "mkdir: $ext4Path")
-        val ok = ext4Manager.mkdir(ext4Path)
-        if (ok) Ext4Native.nativeCacheFlush()
-        return ok
+        return withFileOp {
+            EcosystemLogger.d(TAG, "mkdir: $ext4Path")
+            val ok = ext4Manager.mkdir(ext4Path)
+            if (ok) Ext4Native.nativeCacheFlush()
+            ok
+        }
     }
 
     /** Get file size */
