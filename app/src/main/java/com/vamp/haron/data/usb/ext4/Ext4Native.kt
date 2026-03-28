@@ -63,6 +63,11 @@ object Ext4Native {
     external fun nativeWriteFile(path: String, data: ByteArray): Boolean
 
     /**
+     * Write data to file with specific mode ("wb" = create/truncate, "ab" = append).
+     */
+    external fun nativeWriteFileMode(path: String, data: ByteArray, mode: String): Boolean
+
+    /**
      * Create directory (including parents).
      */
     external fun nativeMkdir(path: String): Boolean

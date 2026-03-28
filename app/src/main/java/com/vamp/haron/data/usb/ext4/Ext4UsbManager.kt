@@ -196,12 +196,40 @@ class Ext4UsbManager(private val context: Context) {
     }
 
     /**
-     * Copy local file to ext4 filesystem.
+     * Copy local file to ext4 filesystem. Chunked to avoid OOM on large files.
      */
     fun copyFromLocal(localFile: File, ext4Path: String): Boolean {
         if (!mounted) return false
-        val data = localFile.readBytes()
-        return Ext4Native.nativeWriteFile(toExt4Path(ext4Path), data)
+        val internal = toExt4Path(ext4Path)
+        val size = localFile.length()
+
+        // Small files (<4MB): read at once
+        if (size <= 4 * 1024 * 1024) {
+            val data = localFile.readBytes()
+            return Ext4Native.nativeWriteFile(internal, data)
+        }
+
+        // Large files: chunked write via nativeWriteFileChunked
+        try {
+            val chunkSize = 1 * 1024 * 1024 // 1MB chunks
+            val buffer = ByteArray(chunkSize)
+            var isFirst = true
+            localFile.inputStream().buffered().use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    val data = if (read == chunkSize) buffer else buffer.copyOf(read)
+                    val mode = if (isFirst) "wb" else "ab" // wb = create/truncate, ab = append
+                    if (!Ext4Native.nativeWriteFileMode(internal, data, mode)) return false
+                    isFirst = false
+                }
+            }
+            EcosystemLogger.d("Ext4UsbManager", "copyFromLocal chunked: ${localFile.name}, $size bytes")
+            return true
+        } catch (e: Exception) {
+            EcosystemLogger.e("Ext4UsbManager", "copyFromLocal failed: ${e.message}")
+            return false
+        }
     }
 
     /**

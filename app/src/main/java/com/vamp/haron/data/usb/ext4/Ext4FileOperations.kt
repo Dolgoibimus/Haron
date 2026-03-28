@@ -112,12 +112,18 @@ class Ext4FileOperations(private val ext4Manager: Ext4UsbManager) {
         for (path in ext4Paths) {
             val internal = Ext4PathUtils.toInternalPath(path)
             val isDir = Ext4Native.nativeIsDirectory(internal)
+            EcosystemLogger.d(TAG, "delete: $path (isDir=$isDir)")
             if (isDir) {
-                if (deleteDirRecursive(path)) success++
+                val ok = deleteDirRecursive(path)
+                EcosystemLogger.d(TAG, "delete dir result: $ok")
+                if (ok) success++
             } else {
-                if (ext4Manager.remove(path)) success++
+                val ok = ext4Manager.remove(path)
+                EcosystemLogger.d(TAG, "delete file result: $ok")
+                if (ok) success++
             }
         }
+        EcosystemLogger.d(TAG, "delete total: $success/${ext4Paths.size}")
         return Result.success(success)
     }
 

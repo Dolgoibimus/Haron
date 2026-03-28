@@ -654,6 +654,45 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeWriteFile(
 }
 
 /**
+ * Write file with specific mode ("wb" = create/truncate, "ab" = append).
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeWriteFileMode(
+    JNIEnv *env, jclass clazz, jstring jpath, jbyteArray jdata, jstring jmode
+) {
+    if (!g_mounted) return JNI_FALSE;
+    const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+    const char *mode = (*env)->GetStringUTFChars(env, jmode, NULL);
+
+    ext4_file f;
+    int rc = ext4_fopen(&f, path, mode);
+    if (rc != EOK) {
+        LOGE("writeFileMode: open(%s, %s) failed, rc=%d", path, mode, rc);
+        (*env)->ReleaseStringUTFChars(env, jpath, path);
+        (*env)->ReleaseStringUTFChars(env, jmode, mode);
+        return JNI_FALSE;
+    }
+
+    /* For append mode, seek to end */
+    if (mode[0] == 'a') {
+        ext4_fseek(&f, 0, SEEK_END);
+    }
+
+    jsize len = (*env)->GetArrayLength(env, jdata);
+    jbyte *data = (*env)->GetByteArrayElements(env, jdata, NULL);
+
+    size_t written = 0;
+    rc = ext4_fwrite(&f, data, (size_t)len, &written);
+    ext4_fclose(&f);
+
+    (*env)->ReleaseByteArrayElements(env, jdata, data, JNI_ABORT);
+    (*env)->ReleaseStringUTFChars(env, jpath, path);
+    (*env)->ReleaseStringUTFChars(env, jmode, mode);
+
+    return (rc == EOK) ? JNI_TRUE : JNI_FALSE;
+}
+
+/**
  * Create directory.
  */
 JNIEXPORT jboolean JNICALL
