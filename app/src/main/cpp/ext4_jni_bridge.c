@@ -11,6 +11,7 @@
 #include <jni.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include <android/log.h>
 
 #include "ext4.h"
@@ -646,6 +647,12 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeWriteFile(
     rc = ext4_fwrite(&f, data, (size_t)len, &written);
     ext4_fclose(&f);
 
+    /* Set mtime to current time */
+    if (rc == EOK) {
+        uint32_t now = (uint32_t)time(NULL);
+        ext4_mtime_set(path, now);
+    }
+
     (*env)->ReleaseByteArrayElements(env, jdata, data, JNI_ABORT);
     (*env)->ReleaseStringUTFChars(env, jpath, path);
 
@@ -684,6 +691,12 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeWriteFileMode(
     size_t written = 0;
     rc = ext4_fwrite(&f, data, (size_t)len, &written);
     ext4_fclose(&f);
+
+    /* Set mtime to current time */
+    if (rc == EOK) {
+        uint32_t now = (uint32_t)time(NULL);
+        ext4_mtime_set(path, now);
+    }
 
     (*env)->ReleaseByteArrayElements(env, jdata, data, JNI_ABORT);
     (*env)->ReleaseStringUTFChars(env, jpath, path);
