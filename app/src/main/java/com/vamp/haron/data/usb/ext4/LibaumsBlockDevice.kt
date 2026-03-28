@@ -38,10 +38,13 @@ class LibaumsBlockDevice(
         return try {
             synchronized(usbLock) {
                 val byteCount = blockCount * bSize
-                val bb = ByteBuffer.allocate(byteCount)
+                // libaums may need larger buffer for SCSI transfer alignment
+                val capacity = maxOf(byteCount, byteCount * 2, 16384)
+                val bb = ByteBuffer.allocate(capacity)
+                bb.limit(byteCount)
                 driver.read(blockId, bb)
                 bb.flip()
-                bb.get(buffer, 0, byteCount)
+                bb.get(buffer, 0, minOf(byteCount, bb.remaining()))
             }
             true
         } catch (e: Exception) {
@@ -54,8 +57,10 @@ class LibaumsBlockDevice(
         return try {
             synchronized(usbLock) {
                 val byteCount = blockCount * bSize
-                // buffer from JNI may be larger than byteCount — use allocate+put instead of wrap
-                val bb = ByteBuffer.allocate(byteCount)
+                // libaums ScsiBlockDevice may need buffer capacity > byteCount for SCSI padding
+                // Allocate 2x to avoid "newLimit > capacity" inside libaums transfer
+                val capacity = maxOf(byteCount, byteCount * 2, 16384)
+                val bb = ByteBuffer.allocate(capacity)
                 bb.put(buffer, 0, byteCount)
                 bb.flip()
                 driver.write(blockId, bb)
