@@ -18,7 +18,8 @@ data class StorageVolumeInfo(
     val path: String?,
     val uuid: String?,
     val isRemovable: Boolean,
-    val needsSaf: Boolean
+    val needsSaf: Boolean,
+    val state: String? = null
 )
 
 @Singleton
@@ -28,6 +29,12 @@ class StorageVolumeHelper @Inject constructor(
     /** Cache to avoid spamming logs on repeated calls */
     private var cachedVolumes: List<StorageVolumeInfo>? = null
     private var cacheTimestamp = 0L
+
+    /** Invalidate cache — call on USB attach/detach */
+    fun invalidateCache() {
+        cachedVolumes = null
+        cacheTimestamp = 0L
+    }
 
     fun getStorageVolumes(): List<StorageVolumeInfo> {
         val now = System.currentTimeMillis()
@@ -51,13 +58,16 @@ class StorageVolumeHelper @Inject constructor(
                 EcosystemLogger.d(TAG, "Volume path=null: label=$label, uuid=$uuid, removable=$isRemovable, state=${volume.state}")
             }
 
+            val state = volume.state
+            EcosystemLogger.d(TAG, "StorageVolume: label=$label, uuid=$uuid, removable=$isRemovable, state=$state, path=$path, needsSaf=$needsSaf")
             volumes.add(
                 StorageVolumeInfo(
                     label = label,
                     path = path,
                     uuid = uuid,
                     isRemovable = isRemovable,
-                    needsSaf = needsSaf
+                    needsSaf = needsSaf,
+                    state = state
                 )
             )
         }
@@ -80,38 +90,56 @@ class StorageVolumeHelper @Inject constructor(
      * 6. Scan known alternative mount points
      */
     private fun getVolumePath(volume: StorageVolume, uuid: String?, isRemovable: Boolean): String? {
+        val volLabel = volume.getDescription(context) ?: "?"
+        val volState = volume.state
+
         // Strategy 1: /storage/{uuid}
         if (uuid != null) {
             val direct = File("/storage/$uuid")
-            if (direct.exists() && direct.canRead()) return direct.absolutePath
+            val exists = direct.exists()
+            val canRead = exists && direct.canRead()
+            val files = if (canRead) direct.listFiles()?.size ?: -1 else -1
+            EcosystemLogger.d(TAG, "  [$volLabel] S1 /storage/$uuid: exists=$exists, canRead=$canRead, files=$files")
+            if (exists && canRead) return direct.absolutePath
         }
 
         // Strategy 2: getDirectory() — API 30+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 val dir = volume.directory
-                if (dir != null && dir.exists()) return dir.absolutePath
-            } catch (_: Exception) { }
+                val exists = dir?.exists() == true
+                val canRead = exists && dir!!.canRead()
+                EcosystemLogger.d(TAG, "  [$volLabel] S2 getDirectory(): dir=${dir?.absolutePath}, exists=$exists, canRead=$canRead")
+                if (dir != null && exists) return dir.absolutePath
+            } catch (e: Exception) {
+                EcosystemLogger.d(TAG, "  [$volLabel] S2 getDirectory() exception: ${e.message}")
+            }
         }
 
         // Strategy 3: /mnt/media_rw/{uuid}
         if (uuid != null) {
             val mntPath = File("/mnt/media_rw/$uuid")
-            if (mntPath.exists() && mntPath.canRead()) return mntPath.absolutePath
+            val exists = mntPath.exists()
+            val canRead = exists && mntPath.canRead()
+            EcosystemLogger.d(TAG, "  [$volLabel] S3 /mnt/media_rw/$uuid: exists=$exists, canRead=$canRead")
+            if (exists && canRead) return mntPath.absolutePath
         }
 
         // Strategy 4: reflection getPath()
         try {
             val getPathMethod = volume.javaClass.getMethod("getPath")
             val path = getPathMethod.invoke(volume) as? String
-            if (path != null && File(path).exists()) {
-                val pathMatchesUuid = uuid == null || path.contains(uuid, ignoreCase = true)
-                if (pathMatchesUuid) return path
-            }
-        } catch (_: Exception) { }
+            val exists = path != null && File(path).exists()
+            val pathMatchesUuid = uuid == null || (path != null && path.contains(uuid, ignoreCase = true))
+            EcosystemLogger.d(TAG, "  [$volLabel] S4 reflection getPath(): path=$path, exists=$exists, matchesUuid=$pathMatchesUuid")
+            if (path != null && exists && pathMatchesUuid) return path
+        } catch (e: Exception) {
+            EcosystemLogger.d(TAG, "  [$volLabel] S4 reflection failed: ${e.message}")
+        }
 
         // Strategy 5: getExternalFilesDirs fallback
         val dirs = ContextCompat.getExternalFilesDirs(context, null)
+        EcosystemLogger.d(TAG, "  [$volLabel] S5 externalFilesDirs: ${dirs.map { it?.absolutePath }}")
         if (!isRemovable) {
             return dirs.firstOrNull()?.let { extractRootPath(it) }
         }
@@ -120,6 +148,7 @@ class StorageVolumeHelper @Inject constructor(
             val root = extractRootPath(dir)
             if (root != null) {
                 if (uuid != null && !root.contains(uuid, ignoreCase = true)) continue
+                EcosystemLogger.d(TAG, "  [$volLabel] S5 matched: $root")
                 return root
             }
         }
@@ -128,11 +157,16 @@ class StorageVolumeHelper @Inject constructor(
         if (uuid != null) {
             for (prefix in ALTERNATIVE_MOUNT_PREFIXES) {
                 val alt = File("$prefix/$uuid")
-                if (alt.exists() && alt.canRead()) return alt.absolutePath
+                if (alt.exists() && alt.canRead()) {
+                    EcosystemLogger.d(TAG, "  [$volLabel] S6 alt mount: ${alt.absolutePath}")
+                    return alt.absolutePath
+                }
             }
+            EcosystemLogger.d(TAG, "  [$volLabel] S6 no alt mounts found for uuid=$uuid")
         }
 
         // All strategies failed — log diagnostic info
+        EcosystemLogger.d(TAG, "  [$volLabel] ALL STRATEGIES FAILED: uuid=$uuid, state=$volState, removable=$isRemovable")
         logStorageDirectoryContents(uuid)
         return null
     }

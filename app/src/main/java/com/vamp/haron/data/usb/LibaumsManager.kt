@@ -100,11 +100,15 @@ class LibaumsManager @Inject constructor(
             }
         }
 
+        EcosystemLogger.d(TAG, "probeDevice: ${usbDevice.deviceName} vendor=${usbDevice.vendorId} product=${usbDevice.productId} hwLabel=$hwLabel hasPermission=${usbManager.hasPermission(usbDevice)}")
+
         return try {
+            EcosystemLogger.d(TAG, "${usbDevice.deviceName}: calling init()...")
             massStorageDevice.init()
 
             // If init() succeeds, libaums can read the device → FAT32/FAT16/FAT12
             val partitions = massStorageDevice.partitions
+            EcosystemLogger.d(TAG, "${usbDevice.deviceName}: init OK, partitions=${partitions.size}")
             if (partitions.isEmpty()) {
                 massStorageDevice.close()
                 EcosystemLogger.d(TAG, "${usbDevice.deviceName}: no partitions")
@@ -123,15 +127,18 @@ class LibaumsManager @Inject constructor(
             val volumeLabel = fs.volumeLabel.ifEmpty { hwLabel }
             val totalSpace = fs.capacity
             val freeSpace = fs.freeSpace
+            val fsType = fs.javaClass.simpleName
 
             massStorageDevice.close()
+
+            EcosystemLogger.d(TAG, "${usbDevice.deviceName}: FS=$fsType, label=$volumeLabel, total=${totalSpace / 1_000_000}MB, free=${freeSpace / 1_000_000}MB")
 
             LibaumsProbeResult(
                 vendorId = usbDevice.vendorId,
                 productId = usbDevice.productId,
                 deviceName = usbDevice.deviceName,
                 label = volumeLabel,
-                fileSystemType = "FAT32",
+                fileSystemType = fsType,
                 supported = true,
                 totalSpace = totalSpace,
                 freeSpace = freeSpace
@@ -139,7 +146,9 @@ class LibaumsManager @Inject constructor(
         } catch (e: Exception) {
             // init() failed → unsupported FS (NTFS, exFAT without kernel support, etc.)
             try { massStorageDevice.close() } catch (_: Exception) {}
-            EcosystemLogger.d(TAG, "${usbDevice.deviceName}: init failed (${e.javaClass.simpleName}: ${e.message}) → unsupported FS")
+            EcosystemLogger.d(TAG, "${usbDevice.deviceName}: init FAILED (${e.javaClass.simpleName}: ${e.message}) → unsupported FS")
+            // Log full stack trace for debugging
+            EcosystemLogger.e(TAG, "${usbDevice.deviceName}: stack: ${e.stackTraceToString().take(500)}")
 
             LibaumsProbeResult(
                 vendorId = usbDevice.vendorId,

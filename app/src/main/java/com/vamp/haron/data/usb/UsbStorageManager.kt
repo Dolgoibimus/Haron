@@ -72,6 +72,7 @@ class UsbStorageManager @Inject constructor(
             EcosystemLogger.d(TAG, "Media broadcast: action=${intent.action}, path=$path")
             when (intent.action) {
                 Intent.ACTION_MEDIA_MOUNTED -> {
+                    storageVolumeHelper.invalidateCache()
                     if (path != null && path != "/dev/null") {
                         broadcastMountedPaths.add(path)
                         suppressedPaths.remove(path)
@@ -85,6 +86,7 @@ class UsbStorageManager @Inject constructor(
                 Intent.ACTION_MEDIA_EJECT,
                 Intent.ACTION_MEDIA_BAD_REMOVAL,
                 Intent.ACTION_MEDIA_REMOVED -> {
+                    storageVolumeHelper.invalidateCache()
                     if (path != null) {
                         broadcastMountedPaths.remove(path)
                         suppressedPaths.add(path)
@@ -162,8 +164,12 @@ class UsbStorageManager @Inject constructor(
             val device = intent.getParcelableExtra<android.hardware.usb.UsbDevice>(UsbManager.EXTRA_DEVICE)
             EcosystemLogger.d(TAG, "USB HW: action=${intent.action}, device=${device?.deviceName}, vendor=${device?.vendorId}, product=${device?.productId}")
             when (intent.action) {
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> scheduleRetry()
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    storageVolumeHelper.invalidateCache()
+                    scheduleRetry()
+                }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    storageVolumeHelper.invalidateCache()
                     // Suppress all current USB volume paths/UUIDs and clear list
                     val current = _usbVolumes.value
                     if (current.isNotEmpty()) {
@@ -208,6 +214,7 @@ class UsbStorageManager @Inject constructor(
             val delays = longArrayOf(1000, 2000, 4000, 8000, 12000)
             for ((i, d) in delays.withIndex()) {
                 delay(d)
+                storageVolumeHelper.invalidateCache()
                 val before = _usbVolumes.value.size
                 val beforeSafCount = _usbVolumes.value.count { it.needsSaf }
                 doRefresh()
@@ -269,14 +276,19 @@ class UsbStorageManager @Inject constructor(
 
     /** Thread-safe refresh — only one call at a time */
     private suspend fun doRefresh() {
-        if (!refreshMutex.tryLock()) return // skip if already refreshing
+        if (!refreshMutex.tryLock()) {
+            EcosystemLogger.d(TAG, "doRefresh: skipped (mutex locked)")
+            return
+        }
         try {
             val removable = storageVolumeHelper.getRemovableVolumes()
+            EcosystemLogger.d(TAG, "doRefresh: removable=${removable.size}, broadcastPaths=$broadcastMountedPaths, suppressedPaths=$suppressedPaths")
             val seen = mutableSetOf<String>()
             val seenLabels = mutableSetOf<String>()
             val volumes = mutableListOf<UsbVolume>()
 
             for (vol in removable) {
+                EcosystemLogger.d(TAG, "  volume: label=${vol.label}, path=${vol.path}, uuid=${vol.uuid}, needsSaf=${vol.needsSaf}, state=${vol.state}")
                 // Skip SD cards — they are shown in SAF roots section, not USB
                 if (isLikelySdCard(vol.label)) {
                     EcosystemLogger.d(TAG, "  SKIP ${vol.label}: SD card (shown in SAF roots)")

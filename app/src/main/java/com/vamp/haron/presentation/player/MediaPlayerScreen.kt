@@ -275,7 +275,11 @@ fun MediaPlayerScreen(
             onDispose {
                 val window = (view.context as? Activity)?.window ?: return@onDispose
                 val ctrl = WindowInsetsControllerCompat(window, view)
-                ctrl.show(WindowInsetsCompat.Type.systemBars())
+                // Restore status bar but keep navbar hidden (MainActivity hides it)
+                ctrl.show(WindowInsetsCompat.Type.statusBars())
+                ctrl.hide(WindowInsetsCompat.Type.navigationBars())
+                ctrl.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         }
     }

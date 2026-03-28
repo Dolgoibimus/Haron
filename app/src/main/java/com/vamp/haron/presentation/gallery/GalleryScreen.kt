@@ -103,7 +103,11 @@ fun GalleryScreen(
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
-            controller.show(WindowInsetsCompat.Type.systemBars())
+            // Restore status bar but keep navbar hidden (MainActivity hides it)
+            controller.show(WindowInsetsCompat.Type.statusBars())
+            controller.hide(WindowInsetsCompat.Type.navigationBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 
@@ -141,7 +145,7 @@ fun GalleryScreen(
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (controlsVisible) {
-            controller.show(WindowInsetsCompat.Type.systemBars())
+            controller.show(WindowInsetsCompat.Type.statusBars())
             delay(3000)
             if (!TransferHolder.voiceFabPinned.value) controlsVisible = false
         } else {
