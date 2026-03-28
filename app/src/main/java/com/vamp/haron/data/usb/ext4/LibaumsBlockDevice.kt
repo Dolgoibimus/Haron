@@ -54,12 +54,15 @@ class LibaumsBlockDevice(
         return try {
             synchronized(usbLock) {
                 val byteCount = blockCount * bSize
-                val bb = ByteBuffer.wrap(buffer, 0, byteCount)
+                // buffer from JNI may be larger than byteCount — use allocate+put instead of wrap
+                val bb = ByteBuffer.allocate(byteCount)
+                bb.put(buffer, 0, byteCount)
+                bb.flip()
                 driver.write(blockId, bb)
             }
             true
         } catch (e: Exception) {
-            EcosystemLogger.e(TAG, "writeBlocks failed: blk=$blockId, cnt=$blockCount, err=${e.message}")
+            EcosystemLogger.e(TAG, "writeBlocks failed: blk=$blockId, cnt=$blockCount, bufLen=${buffer.size}, byteCount=${blockCount * bSize}, err=${e.message}")
             false
         }
     }
