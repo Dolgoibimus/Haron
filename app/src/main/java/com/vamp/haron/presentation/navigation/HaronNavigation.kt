@@ -891,26 +891,33 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
             )
         }
     }
-    // Animation overlays on top of content
-    if (matrixShow) {
+    // Animation overlays — hide on fullscreen content screens (gallery, player, reader)
+    val animRoute = navController.currentBackStackEntry?.destination?.route
+    val hideAnimation = animRoute != null && (
+        animRoute.startsWith(HaronRoutes.GALLERY) ||
+        animRoute.startsWith(HaronRoutes.MEDIA_PLAYER) ||
+        animRoute.startsWith(HaronRoutes.PDF_READER) ||
+        animRoute.startsWith(HaronRoutes.DOCUMENT_VIEWER)
+    )
+    if (matrixShow && !hideAnimation) {
         com.vamp.haron.presentation.matrix.MatrixRainCanvas(
             config = matrixConfig.copy(enabled = true),
             modifier = Modifier.fillMaxSize()
         )
     }
-    if (snowfallShow) {
+    if (snowfallShow && !hideAnimation) {
         com.vamp.haron.presentation.matrix.SnowfallCanvas(
             config = snowfallConfig.copy(enabled = true),
             modifier = Modifier.fillMaxSize()
         )
     }
-    if (starfieldShow) {
+    if (starfieldShow && !hideAnimation) {
         com.vamp.haron.presentation.matrix.StarfieldCanvas(
             config = starfieldConfig.copy(enabled = true),
             modifier = Modifier.fillMaxSize()
         )
     }
-    if (dustShow) {
+    if (dustShow && !hideAnimation) {
         com.vamp.haron.presentation.matrix.DustCanvas(
             config = dustConfig.copy(enabled = true),
             modifier = Modifier.fillMaxSize()
