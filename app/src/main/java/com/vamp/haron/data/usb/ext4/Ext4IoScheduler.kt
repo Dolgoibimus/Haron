@@ -24,17 +24,24 @@ object Ext4IoScheduler {
     fun endFileOp() { fileOpActive = false }
 
     /**
-     * Try to read thumbnail data. Returns null immediately if file operation is active.
-     * Uses Mutex to serialize thumbnail reads (one at a time).
+     * Read thumbnail data. Waits up to 3 sec if another thumbnail is loading.
+     * Returns null immediately if file operation is active.
      */
     suspend fun <T> withThumbnailRead(block: suspend () -> T): T? {
         if (fileOpActive) return null
-        if (!thumbMutex.tryLock()) return null // another thumbnail is loading
+        // Wait for other thumbnails (sequential loading), but skip if file op starts
         return try {
-            if (fileOpActive) null // double check after lock
-            else block()
-        } finally {
-            thumbMutex.unlock()
+            kotlinx.coroutines.withTimeoutOrNull(3000) {
+                thumbMutex.lock()
+                try {
+                    if (fileOpActive) null
+                    else block()
+                } finally {
+                    thumbMutex.unlock()
+                }
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 }

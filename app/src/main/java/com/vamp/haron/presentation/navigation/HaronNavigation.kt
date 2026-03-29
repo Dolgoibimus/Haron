@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -892,7 +893,8 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         }
     }
     // Animation overlays — hide on fullscreen content screens (gallery, player, reader)
-    val animRoute = navController.currentBackStackEntry?.destination?.route
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val animRoute = navBackStackEntry?.destination?.route
     val hideAnimation = animRoute != null && (
         animRoute.startsWith(HaronRoutes.GALLERY) ||
         animRoute.startsWith(HaronRoutes.MEDIA_PLAYER) ||
