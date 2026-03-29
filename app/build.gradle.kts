@@ -58,6 +58,26 @@ android {
         }
     }
 
+    flavorDimensions += "store"
+    productFlavors {
+        create("full") {
+            dimension = "store"
+            // All features: torrent, hidden camera, root, floating window
+            buildConfigField("Boolean", "HAS_TORRENT", "true")
+            buildConfigField("Boolean", "HAS_ROOT_ACCESS", "true")
+            buildConfigField("Boolean", "HAS_HIDDEN_CAMERA", "true")
+            buildConfigField("Boolean", "HAS_FLOATING_WINDOW", "true")
+        }
+        create("play") {
+            dimension = "store"
+            // Google Play safe — no restricted features
+            buildConfigField("Boolean", "HAS_TORRENT", "false")
+            buildConfigField("Boolean", "HAS_ROOT_ACCESS", "false")
+            buildConfigField("Boolean", "HAS_HIDDEN_CAMERA", "false")
+            buildConfigField("Boolean", "HAS_FLOATING_WINDOW", "false")
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
