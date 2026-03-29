@@ -1496,7 +1496,7 @@ private fun ExplorerDialogs(
                         onOpenTextEditor(dialog.entry.path, dialog.entry.name)
                     }
                 },
-                onOpenGallery = {
+                onOpenGallery = if (dialog.entry.path.startsWith("ext4://")) null else ({
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
@@ -1506,7 +1506,7 @@ private fun ExplorerDialogs(
                         val idx = viewModel.buildGalleryFromPreview(dialog.entry, dialog.adjacentFiles, dialog.currentFileIndex)
                         onOpenGallery(idx)
                     }
-                },
+                }),
                 onOpenPdf = {
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {

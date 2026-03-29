@@ -633,7 +633,8 @@ object ThumbnailCache {
             val name = ext4Path.substringAfterLast("/")
             val tempFile = File(context.cacheDir, "ext4_tmp_$name")
             try {
-                val data = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailData(ext4Path, 512 * 1024)
+                // Read full file (0 = no limit) — truncated JPEG decodes partially
+                val data = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailData(ext4Path, 0)
                     ?: return@withThumbnailRead null
                 tempFile.writeBytes(data)
                 loadImageThumbnail(context, tempFile.absolutePath, false)
