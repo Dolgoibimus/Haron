@@ -196,6 +196,17 @@
   > Safe eject: tap "Eject" icon next to USB drive in Side Menu
 - Free/total space indicator
   > Each storage shows how much space is used and total capacity
+- [NEW] ext4 USB support (no root)
+  > First Android file manager to read/write ext4 USB drives without root
+  > Plug in a Linux-formatted (ext4) USB drive → Haron mounts it automatically via lwext4
+  > Full file operations: copy, move, delete, rename, create folders
+  > Image thumbnails load lazily with disk cache
+  > Quick Preview for photos (full resolution)
+  > Copy files from phone to ext4 and from ext4 to phone
+  > Chunked I/O for large files — no memory issues
+  > Settings → ext4 thumbnail cache size (0–500 MB)
+  > ext4, ext3, ext2 filesystems supported
+  > Works on devices where Android doesn't mount ext4 natively
 
 # Quick Preview
 - Tap file icon → preview dialog

@@ -2272,13 +2272,31 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 - [x] singleTask launchMode — нет перезапуска при USB attach (MIUI)
 - [x] suppressedPaths: фильтрация /dev/null и "null"
 
-**ext4 USB — осталось:**
-- [ ] VLC видео с ext4: playlist получает ext4:// пути → нет звука/видео. Нужно: перехватить формирование PlaylistHolder для ext4, скопировать файлы в кеш
-- [ ] Галерея ext4: GalleryHolder получает ext4:// пути → "не удалось загрузить". Аналогично — кешировать
-- [ ] Анимация не скрывается: currentBackStackEntry не обновляется вовремя для hideAnimation проверки. Попробовать derivedStateOf или collectAsState
+**ext4 USB — дополнительно реализовано (сессия 29.03.2026, ночь):**
+- [x] Chunked SCSI I/O (64 сектора) — убраны buffer overflow и USB timeout
+- [x] Chunked file copy (1 МБ) — убран OOM crash на больших файлах (270 МБ)
+- [x] nativeWriteFileMode ("wb"/"ab") — append mode
+- [x] ext4_cache_flush после каждой write-операции
+- [x] mtime устанавливается при записи
+- [x] ext4_dir_rm для директорий (ext4_fremove не удаляла)
+- [x] Drawer: скрывает "unsupported FS" когда ext4 смонтирован
+- [x] Progress bar для copy/move
+- [x] Live refresh — файлы по одному
+- [x] Голос "обновить" — обе панели
+- [x] singleTask launchMode
+- [x] Lazy thumbnails с IoScheduler + disk cache
+- [x] Настройки кеша в Settings (слайдер 0-500 МБ)
+- [x] Превью фото — полноразмерное через IoScheduler
+- [x] Анимация скрыта в gallery/player/reader (currentBackStackEntryAsState)
+- [x] ext4 фото → QuickPreview (галерея убрана)
+- [x] Кнопка "Открыть в галерее" скрыта для ext4
+- [x] DnD, conflict dialog, executeCopyWithDecisions, executeMoveWithDecisions — всё перехвачено
+- [x] suppressedPaths: фильтрация /dev/null
+
+**ext4 USB — осталось (не критично):**
+- [ ] Видео/аудио с ext4 (playlist нужен кеш)
 - [ ] Поиск FTS5 по ext4
 - [ ] Стриминг/каст
-- [ ] Подавление системного "нет доступа" уведомления
 - [ ] Проценты по чанкам + общий размер файлов
 
 **Открытие: контроллер дешёвых флешек кеширует FAT UUID в firmware FTL** — dd перезаписывает логические блоки, но hardware отдаёт старую partition info. UUID 8170-13F5 (FAT) сохраняется даже после полной перезаписи ext4.
