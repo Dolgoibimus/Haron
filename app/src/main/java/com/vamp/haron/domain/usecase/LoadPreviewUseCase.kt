@@ -44,16 +44,16 @@ class LoadPreviewUseCase @Inject constructor(
     suspend operator fun invoke(entry: FileEntry): Result<PreviewData> = withContext(Dispatchers.IO) {
         try {
             val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
-            // ext4 — use disk cache or read via IoScheduler
+            // ext4 — always read full file for preview (not thumbnail cache — it's 256px)
             val effectiveEntry = if (entry.path.startsWith("ext4://")) {
                 val name = entry.path.substringAfterLast("/")
-                // 1. Check thumbnail disk cache first
-                val thumbCached = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailFromDisk(context, entry.path)
-                if (thumbCached != null) {
-                    entry.copy(path = thumbCached.absolutePath)
+                val cacheFile = java.io.File(context.cacheDir, "ext4_preview_$name")
+                // Check if full-size preview already cached
+                if (cacheFile.exists() && cacheFile.length() > 0 &&
+                    System.currentTimeMillis() - cacheFile.lastModified() < 5 * 60 * 1000) {
+                    entry.copy(path = cacheFile.absolutePath)
                 } else {
-                    // 2. Read full file via IoScheduler (waits for USB)
-                    val cacheFile = java.io.File(context.cacheDir, "ext4_preview_$name")
+                    // Read full file via IoScheduler
                     val data = com.vamp.haron.data.usb.ext4.Ext4IoScheduler.withThumbnailRead {
                         val internal = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(entry.path)
                         com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internal, 0)
