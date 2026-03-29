@@ -29,6 +29,40 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
+**Сессия 29.03.2026 (ночь):**
+
+**Релиз 1.6 завершён:**
+- ✅ changelog.txt EN+RU: добавлены Batch 107, 108, секция "Fixes from 1.5"
+- ✅ features.txt: убраны все [NEW] (релиз закрыт)
+- ✅ ext4 USB: nativeGetStats() — реальный total/free space из lwext4 (было 0Б)
+- ✅ Сборка APK (arm64+armv7) + AAB, GitHub release v1.6, RuStore опубликован
+- ✅ AGENTS.md: Batch 108 (ext4), секция "Сайты и площадки", хотелки из 4PDA анализа
+
+**Новые фичи (в разработке):**
+- ✅ Build Flavors: full (RuStore/4PDA/GitHub) vs play (Google Play) — FeatureFlags.kt, раздельные манифесты
+- ✅ DownloadManagerCleaner — фикс AOSP бага #148573846 (файлы исчезают из Download после перемещения)
+- ⚠️ Торрент-стрим (libtorrent4j 2.1.0-35) — НЕ ПРОВЕРЕНО:
+  - TorrentStreamRepository + TorrentStreamRepositoryImpl (full) / заглушка (play)
+  - TorrentStreamService — foreground service, WakeLock, notification
+  - UI: TorrentBuffering / TorrentFileSelect / TorrentMagnetInput диалоги
+  - .torrent → авто-выбор видео → буферизация 15МБ → VLC
+  - setPieceDeadline() вместо sequential_download (быстрее)
+  - SIGSEGV fix: убраны все handle.status() из alert callbacks
+  - Таймаут 60с no-peers (по piecesDownloaded, не по percent)
+  - DHT bootstrap: 4 публичных ноды
+  - **Статус**: качает куски, не крашит, но скорость низкая на тестовых торрентах (1 seed). Нужен тест на популярном торренте с хорошей раздачей.
+
+**Исследования:**
+- ✅ Android/data доступ: 16 методов, все SAF-лазейки закрыты (4 CVE за 2024-2025). Shizuku = потолок. Сохранено в memory/android-data-access-research.md
+- ✅ Встроенный ADB shell (LADB-подход): технически возможен, добавлен в хотелки
+- ✅ Конкурентный анализ 4PDA: сводка по всем 24 менеджерам, боли рынка, уникальные фичи
+
+**TODO (следующая сессия):**
+- ▶ Тест торрент-стрима на популярном торренте
+- ▶ Кнопка "Magnet" в инструментах (pie menu)
+- ▶ Каст торрента на ТВ через HTTP-сервер
+- ▶ Очистка кеша торрентов в настройках
+
 **Batch 105 завершён** — многотомные RAR, установка APK из архива, даунгрейд.
 
 **Сессия 28.03.2026:**
