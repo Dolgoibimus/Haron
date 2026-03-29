@@ -106,6 +106,7 @@ class TorrentStreamService : Service() {
                 val state = torrentRepo.state.value
                 when (state) {
                     is TorrentStreamState.Buffering -> {
+                        if (state.piecesDownloaded > 0) hadPeers = true
                         updateNotification("Buffering: ${state.percent}%", state.percent)
                     }
                     is TorrentStreamState.Streaming -> {

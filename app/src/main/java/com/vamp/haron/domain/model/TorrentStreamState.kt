@@ -6,7 +6,7 @@ package com.vamp.haron.domain.model
 sealed class TorrentStreamState {
     data object Idle : TorrentStreamState()
     data object FetchingMetadata : TorrentStreamState()
-    data class Buffering(val percent: Int, val downloadSpeed: Long) : TorrentStreamState()
+    data class Buffering(val percent: Int, val downloadSpeed: Long, val piecesDownloaded: Int = 0) : TorrentStreamState()
     data class Ready(val filePath: String, val fileName: String) : TorrentStreamState()
     data class Streaming(
         val filePath: String,
