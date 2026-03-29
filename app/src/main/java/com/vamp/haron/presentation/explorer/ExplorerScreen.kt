@@ -1823,6 +1823,118 @@ private fun ExplorerDialogs(
                 }
             )
         }
+        is DialogState.TorrentBuffering -> {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { viewModel.stopTorrentStream() },
+                title = { androidx.compose.material3.Text(stringResource(R.string.torrent_magnet_title)) },
+                text = {
+                    androidx.compose.foundation.layout.Column {
+                        androidx.compose.material3.Text(
+                            stringResource(R.string.torrent_buffering, dialog.percent)
+                        )
+                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { dialog.percent / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (dialog.speed > 0) {
+                            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+                            androidx.compose.material3.Text(
+                                stringResource(R.string.torrent_speed, dialog.speed.toFileSize(context)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { viewModel.stopTorrentStream() }) {
+                        androidx.compose.material3.Text(stringResource(R.string.torrent_cancel))
+                    }
+                }
+            )
+        }
+        is DialogState.TorrentFileSelect -> {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { androidx.compose.material3.Text(stringResource(R.string.torrent_select_file)) },
+                text = {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(dialog.files.size) { index ->
+                            val file = dialog.files[index]
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectTorrentFile(dialog.uri, file.index) }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Text(
+                                    if (file.isVideo) "▶" else "📄",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    androidx.compose.material3.Text(
+                                        file.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    androidx.compose.material3.Text(
+                                        file.size.toFileSize(context),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = viewModel::dismissDialog) {
+                        androidx.compose.material3.Text(stringResource(R.string.torrent_cancel))
+                    }
+                }
+            )
+        }
+        is DialogState.TorrentMagnetInput -> {
+            var magnetText by remember { mutableStateOf("") }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = viewModel::dismissDialog,
+                title = { androidx.compose.material3.Text(stringResource(R.string.torrent_magnet_title)) },
+                text = {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = magnetText,
+                        onValueChange = { magnetText = it },
+                        label = { androidx.compose.material3.Text(stringResource(R.string.torrent_magnet_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        maxLines = 3
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            if (magnetText.startsWith("magnet:")) {
+                                viewModel.openMagnetLink(magnetText.trim())
+                            }
+                        },
+                        enabled = magnetText.startsWith("magnet:")
+                    ) {
+                        androidx.compose.material3.Text(stringResource(R.string.torrent_stream))
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = viewModel::dismissDialog) {
+                        androidx.compose.material3.Text(stringResource(R.string.torrent_cancel))
+                    }
+                }
+            )
+        }
         DialogState.None -> { /* no dialog */ }
     }
 }

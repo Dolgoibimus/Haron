@@ -177,7 +177,8 @@ class ExplorerViewModel @Inject constructor(
     private val httpFileServer: com.vamp.haron.data.transfer.HttpFileServer,
     private val ftpClientManager: FtpClientManager,
     val archiveThumbnailCache: com.vamp.haron.common.util.ArchiveThumbnailCache,
-    private val readArchiveEntryUseCase: ReadArchiveEntryUseCase
+    private val readArchiveEntryUseCase: ReadArchiveEntryUseCase,
+    private val torrentStreamRepository: com.vamp.haron.domain.repository.TorrentStreamRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExplorerUiState())
@@ -1289,6 +1290,36 @@ class ExplorerViewModel @Inject constructor(
             }
         }
 
+        // Torrent streaming state
+        viewModelScope.launch {
+            torrentStreamRepository.state.collect { torrentState ->
+                _uiState.update { it.copy(torrentState = torrentState) }
+                when (torrentState) {
+                    is com.vamp.haron.domain.model.TorrentStreamState.Ready -> {
+                        // Enough buffered — launch VLC player
+                        PlaylistHolder.items = listOf(
+                            PlaylistHolder.PlaylistItem(
+                                filePath = torrentState.filePath,
+                                fileName = torrentState.fileName,
+                                fileType = "video"
+                            )
+                        )
+                        PlaylistHolder.startIndex = 0
+                        _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(0))
+                        _toastMessage.tryEmit(appContext.getString(R.string.torrent_playback_started))
+                    }
+                    is com.vamp.haron.domain.model.TorrentStreamState.Error -> {
+                        _uiState.update { it.copy(dialogState = DialogState.None) }
+                        _toastMessage.tryEmit(torrentState.message)
+                    }
+                    is com.vamp.haron.domain.model.TorrentStreamState.Buffering -> {
+                        _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(torrentState.percent, torrentState.downloadSpeed)) }
+                    }
+                    else -> {}
+                }
+            }
+        }
+
         // ext4 mounting toasts
         viewModelScope.launch {
             usbStorageManager.ext4MountingToast.collect { msg ->
@@ -2176,6 +2207,9 @@ class ExplorerViewModel @Inject constructor(
             }
             // Other cloud files — download to cache first, then open
             cloudDownloadAndOpen(entry)
+            return
+        } else if (entry.name.lowercase().endsWith(".torrent") && torrentStreamRepository.isAvailable) {
+            openTorrentFile(entry.path)
             return
         } else if (entry.name.lowercase().let { it.endsWith(".fb2.zip") || (it.endsWith(".zip") && it.contains(".fb2")) }) {
             preferences.lastDocumentFile = entry.path
@@ -7599,6 +7633,62 @@ class ExplorerViewModel @Inject constructor(
         }
         folderSizeJobs[folderPath] = job
         job.invokeOnCompletion { folderSizeJobs.remove(folderPath) }
+    }
+
+    // ==================== Torrent Streaming ====================
+
+    fun openTorrentFile(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+            val files = torrentStreamRepository.getFiles(path)
+            if (files.isEmpty()) {
+                _toastMessage.tryEmit(appContext.getString(R.string.torrent_no_files))
+                _uiState.update { it.copy(dialogState = DialogState.None) }
+                return@launch
+            }
+            val videoFiles = files.filter { it.isVideo }
+            if (videoFiles.size == 1 || (videoFiles.isEmpty() && files.size == 1)) {
+                // Single video or single file — start immediately
+                val target = videoFiles.firstOrNull() ?: files.first()
+                torrentStreamRepository.startStream(path, target.index)
+            } else {
+                // Multiple files — show selection dialog
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(dialogState = DialogState.TorrentFileSelect(path, files)) }
+                }
+            }
+        }
+    }
+
+    fun openMagnetLink(magnet: String) {
+        if (!torrentStreamRepository.isAvailable) {
+            _toastMessage.tryEmit("Torrent not available in this build")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+            torrentStreamRepository.startStream(magnet)
+        }
+    }
+
+    fun showMagnetInputDialog() {
+        if (!torrentStreamRepository.isAvailable) {
+            _toastMessage.tryEmit("Torrent not available in this build")
+            return
+        }
+        _uiState.update { it.copy(dialogState = DialogState.TorrentMagnetInput()) }
+    }
+
+    fun selectTorrentFile(uri: String, fileIndex: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+            torrentStreamRepository.startStream(uri, fileIndex)
+        }
+    }
+
+    fun stopTorrentStream() {
+        torrentStreamRepository.stopStream()
+        _uiState.update { it.copy(dialogState = DialogState.None, torrentState = com.vamp.haron.domain.model.TorrentStreamState.Idle) }
     }
 
     fun showStorageSizeInfo(panelId: PanelId) {

@@ -59,7 +59,8 @@ data class ExplorerUiState(
     val isListeningForTransfer: Boolean = false,
     val marqueeEnabled: Boolean = true,
     val quickReceiveProgress: com.vamp.haron.domain.model.TransferProgressInfo? = null,
-    val quickReceiveDeviceName: String? = null
+    val quickReceiveDeviceName: String? = null,
+    val torrentState: com.vamp.haron.domain.model.TorrentStreamState = com.vamp.haron.domain.model.TorrentStreamState.Idle
 )
 
 sealed interface DialogState {
@@ -204,6 +205,15 @@ sealed interface DialogState {
         val paths: List<String>,
         val sourcePanelId: PanelId
     ) : DialogState
+    data class TorrentFileSelect(
+        val uri: String,
+        val files: List<com.vamp.haron.domain.model.TorrentFileInfo>
+    ) : DialogState
+    data class TorrentBuffering(
+        val percent: Int,
+        val speed: Long
+    ) : DialogState
+    data class TorrentMagnetInput(val dummy: Unit = Unit) : DialogState
     data class ExtractArchivesDialog(
         val archivePaths: List<String>,
         val sourcePanelId: PanelId

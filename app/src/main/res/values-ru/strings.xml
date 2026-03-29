@@ -1549,6 +1549,17 @@
     <string name="search_category_archive">Архив</string>
     <string name="search_category_libgen">Library Genesis</string>
     <string name="search_category_torrents">Торренты</string>
+    <!-- Torrent streaming -->
+    <string name="torrent_no_files">Нет файлов в торренте</string>
+    <string name="torrent_playback_started">Воспроизведение начато</string>
+    <string name="torrent_buffering">Буферизация: %1$d%%</string>
+    <string name="torrent_speed">%1$s/с</string>
+    <string name="torrent_select_file">Выберите файл для стриминга</string>
+    <string name="torrent_magnet_hint">Вставьте magnet-ссылку</string>
+    <string name="torrent_magnet_title">Торрент-стрим</string>
+    <string name="torrent_cancel">Отмена</string>
+    <string name="torrent_stream">Стримить</string>
+
     <string name="web_confirm_yes">Да, искать</string>
     <string name="web_confirm_no">Нет</string>
     <string name="web_confirm_type_audio">Музыка / Аудио</string>

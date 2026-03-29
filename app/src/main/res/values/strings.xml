@@ -1551,6 +1551,17 @@
     <string name="search_category_archive">Archive</string>
     <string name="search_category_libgen">Library Genesis</string>
     <string name="search_category_torrents">Torrents</string>
+    <!-- Torrent streaming -->
+    <string name="torrent_no_files">No files in torrent</string>
+    <string name="torrent_playback_started">Playback started</string>
+    <string name="torrent_buffering">Buffering: %1$d%%</string>
+    <string name="torrent_speed">%1$s/s</string>
+    <string name="torrent_select_file">Select file to stream</string>
+    <string name="torrent_magnet_hint">Paste magnet link</string>
+    <string name="torrent_magnet_title">Torrent Stream</string>
+    <string name="torrent_cancel">Cancel</string>
+    <string name="torrent_stream">Stream</string>
+
     <string name="web_confirm_yes">Yes, search</string>
     <string name="web_confirm_no">No</string>
     <string name="web_confirm_type_audio">Music / Audio</string>
