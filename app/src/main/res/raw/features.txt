@@ -206,7 +206,7 @@
   > Chunked I/O for large files — no memory issues
   > Settings → ext4 thumbnail cache size (0–500 MB)
   > ext4, ext3, ext2 filesystems supported
-  > Works on devices where Android doesn't mount ext4 natively
+  > Works on all devices — Android doesn't support ext4 USB out of the box
 
 # Quick Preview
 - Tap file icon → preview dialog
@@ -891,7 +891,7 @@
   > 4 overlay animations with live preview cards
   > Animations render on top of all backgrounds — text, buttons and icons remain visible
   > Only one animation active at a time (auto-disable others)
-  > Works everywhere except document readers and video player
+  > [NEW] Works everywhere except gallery, video/audio player and document readers
 - Matrix Rain
   > Falling symbols (Katakana, Binary, Latin, Cyrillic, Mix)
   > Color: 8 presets + custom RGB, speed, density, opacity
