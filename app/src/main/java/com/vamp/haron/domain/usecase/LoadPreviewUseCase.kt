@@ -44,16 +44,25 @@ class LoadPreviewUseCase @Inject constructor(
     suspend operator fun invoke(entry: FileEntry): Result<PreviewData> = withContext(Dispatchers.IO) {
         try {
             val isFb2Zip = entry.name.lowercase().endsWith(".fb2.zip")
-            // ext4 — copy to cache for preview
+            // ext4 — use disk cache or read via IoScheduler
             val effectiveEntry = if (entry.path.startsWith("ext4://")) {
-                val internal = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(entry.path)
                 val name = entry.path.substringAfterLast("/")
-                val cacheFile = java.io.File(context.cacheDir, "ext4_preview_$name")
-                val data = com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internal, 50L * 1024 * 1024)
-                if (data != null) {
-                    cacheFile.writeBytes(data)
-                    entry.copy(path = cacheFile.absolutePath)
-                } else entry
+                // 1. Check thumbnail disk cache first
+                val thumbCached = com.vamp.haron.data.usb.ext4.Ext4CacheManager.getCachedThumbnailFromDisk(context, entry.path)
+                if (thumbCached != null) {
+                    entry.copy(path = thumbCached.absolutePath)
+                } else {
+                    // 2. Read full file via IoScheduler (waits for USB)
+                    val cacheFile = java.io.File(context.cacheDir, "ext4_preview_$name")
+                    val data = com.vamp.haron.data.usb.ext4.Ext4IoScheduler.withThumbnailRead {
+                        val internal = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toInternalPath(entry.path)
+                        com.vamp.haron.data.usb.ext4.Ext4Native.nativeReadFile(internal, 0)
+                    }
+                    if (data != null) {
+                        cacheFile.writeBytes(data)
+                        entry.copy(path = cacheFile.absolutePath)
+                    } else entry
+                }
             } else entry
 
             val e = effectiveEntry
