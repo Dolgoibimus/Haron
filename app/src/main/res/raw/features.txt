@@ -891,7 +891,7 @@
   > 4 overlay animations with live preview cards
   > Animations render on top of all backgrounds — text, buttons and icons remain visible
   > Only one animation active at a time (auto-disable others)
-  > [NEW] Works everywhere except gallery, video/audio player and document readers
+  > Fix: animations now disabled in gallery, video/audio player and document readers
 - Matrix Rain
   > Falling symbols (Katakana, Binary, Latin, Cyrillic, Mix)
   > Color: 8 presets + custom RGB, speed, density, opacity
