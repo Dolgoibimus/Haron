@@ -134,6 +134,8 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Torrent streaming (full flavor only — banned on Google Play)
+    // NOTE: v2.1.0-39 available on GitHub (feb 2026) but not on Maven Central yet
+    //        — may fix 16KB page alignment warning on arm64
     "fullImplementation"("org.libtorrent4j:libtorrent4j:2.1.0-35")
     "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-35")
     "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-35")

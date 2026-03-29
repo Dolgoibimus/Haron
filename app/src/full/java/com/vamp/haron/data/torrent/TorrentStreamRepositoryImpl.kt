@@ -7,8 +7,11 @@ import com.vamp.haron.domain.model.TorrentFileInfo
 import com.vamp.haron.domain.model.TorrentStreamState
 import com.vamp.haron.domain.repository.TorrentStreamRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -32,8 +35,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val SUB = "Torrent"
-private const val BUFFER_PERCENT = 5 // Start playback after 5% buffered
-private const val MIN_BUFFER_BYTES = 5 * 1024 * 1024L // At least 5 MB before playback
+private const val BUFFER_PERCENT = 3 // Start playback after 3% buffered
+private const val MIN_BUFFER_BYTES = 15 * 1024 * 1024L // At least 15 MB before playback
 
 @Singleton
 class TorrentStreamRepositoryImpl @Inject constructor(
@@ -54,7 +57,11 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         get() = File(context.filesDir, "torrent_stream").apply { mkdirs() }
 
     private fun ensureSession(): SessionManager {
-        session?.let { return it }
+        session?.let {
+            EcosystemLogger.d(HaronConstants.TAG, "$SUB: reusing existing session")
+            return it
+        }
+        EcosystemLogger.i(HaronConstants.TAG, "$SUB: creating new session...")
         val settings = SettingsPack()
             .listenInterfaces("0.0.0.0:6881,[::]:6881")
             .activeDownloads(1)
@@ -64,8 +71,30 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         val mgr = SessionManager(false)
         mgr.addListener(torrentListener)
         mgr.start(params)
+        // Bootstrap DHT with well-known nodes
+        mgr.startDht()
+        try {
+            val swig = mgr.swig()
+            swig?.add_dht_node(org.libtorrent4j.swig.string_int_pair("router.bittorrent.com", 6881))
+            swig?.add_dht_node(org.libtorrent4j.swig.string_int_pair("dht.transmissionbt.com", 6881))
+            swig?.add_dht_node(org.libtorrent4j.swig.string_int_pair("router.utorrent.com", 6881))
+            swig?.add_dht_node(org.libtorrent4j.swig.string_int_pair("dht.libtorrent.org", 25401))
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "$SUB: DHT bootstrap error: ${e.message}")
+        }
         session = mgr
-        EcosystemLogger.i(HaronConstants.TAG, "$SUB: session started")
+        EcosystemLogger.i(HaronConstants.TAG, "$SUB: session started, isDht=${mgr.isDhtRunning}")
+        // Periodic status logger
+        CoroutineScope(Dispatchers.IO).launch {
+            while (session != null) {
+                delay(10_000)
+                val h = currentHandle ?: continue
+                try {
+                    val s = h.status()
+                    EcosystemLogger.d(HaronConstants.TAG, "$SUB: [status] state=${s.state()}, progress=${(s.progress() * 100).toInt()}%, dl=${s.downloadRate() / 1024}KB/s, seeds=${s.numSeeds()}, peers=${s.numPeers()}, dht=${mgr.stats().dhtNodes()}")
+                } catch (_: Exception) {}
+            }
+        }
         return mgr
     }
 
@@ -213,20 +242,26 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         )
 
         override fun alert(alert: Alert<*>) {
+            EcosystemLogger.d(HaronConstants.TAG, "$SUB: alert: ${alert.type()}")
             when (alert) {
                 is AddTorrentAlert -> {
+                    EcosystemLogger.i(HaronConstants.TAG, "$SUB: AddTorrentAlert, error=${alert.error().isError}, hasInfo=${alert.handle().torrentFile() != null}")
                     if (alert.error().isError) {
+                        EcosystemLogger.e(HaronConstants.TAG, "$SUB: AddTorrent error: ${alert.error().message}")
                         _state.value = TorrentStreamState.Error(alert.error().message)
                         return
                     }
                     val handle = alert.handle()
                     currentHandle = handle
+                    val status = handle.status()
+                    EcosystemLogger.i(HaronConstants.TAG, "$SUB: handle state=${status.state()}, progress=${status.progress()}, seeds=${status.numSeeds()}, peers=${status.numPeers()}")
                     if (handle.torrentFile() != null) {
                         // Have metadata already (.torrent file)
                         setupSequentialDownload(handle)
                         _state.value = TorrentStreamState.Buffering(0, 0)
+                    } else {
+                        EcosystemLogger.d(HaronConstants.TAG, "$SUB: waiting for metadata (magnet)...")
                     }
-                    // else: magnet — wait for MetadataReceivedAlert
                 }
 
                 is MetadataReceivedAlert -> {

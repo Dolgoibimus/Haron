@@ -1826,43 +1826,81 @@ private fun ExplorerDialogs(
         is DialogState.TorrentBuffering -> {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { viewModel.stopTorrentStream() },
-                title = { androidx.compose.material3.Text(stringResource(R.string.torrent_magnet_title)) },
+                title = null,
                 text = {
-                    androidx.compose.foundation.layout.Column {
-                        androidx.compose.material3.Text(
-                            stringResource(R.string.torrent_buffering, dialog.percent)
-                        )
-                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                        androidx.compose.material3.LinearProgressIndicator(
-                            progress = { dialog.percent / 100f },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                        ) {
+                            androidx.compose.material3.Text(
+                                text = if (dialog.percent > 0)
+                                    stringResource(R.string.torrent_buffering, dialog.percent)
+                                else
+                                    stringResource(R.string.torrent_magnet_title) + "…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            androidx.compose.material3.IconButton(
+                                onClick = { viewModel.stopTorrentStream() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.torrent_cancel),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (dialog.percent > 0) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { dialog.percent / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                                    .height(6.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(3.dp)),
+                            )
+                        } else {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                                    .height(6.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(3.dp)),
+                            )
+                        }
                         if (dialog.speed > 0) {
-                            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(4.dp))
                             androidx.compose.material3.Text(
                                 stringResource(R.string.torrent_speed, dialog.speed.toFileSize(context)),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 },
                 confirmButton = {},
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { viewModel.stopTorrentStream() }) {
-                        androidx.compose.material3.Text(stringResource(R.string.torrent_cancel))
-                    }
-                }
+                dismissButton = {}
             )
         }
         is DialogState.TorrentFileSelect -> {
+            // Sort: videos first (largest on top = best quality), then others
+            val sortedFiles = remember(dialog.files) {
+                dialog.files.sortedWith(compareByDescending<com.vamp.haron.domain.model.TorrentFileInfo> { it.isVideo }.thenByDescending { it.size })
+            }
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = viewModel::dismissDialog,
                 title = { androidx.compose.material3.Text(stringResource(R.string.torrent_select_file)) },
                 text = {
                     androidx.compose.foundation.lazy.LazyColumn {
-                        items(dialog.files.size) { index ->
-                            val file = dialog.files[index]
+                        items(sortedFiles.size) { index ->
+                            val file = sortedFiles[index]
                             androidx.compose.foundation.layout.Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

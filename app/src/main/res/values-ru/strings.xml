@@ -1559,6 +1559,7 @@
     <string name="torrent_magnet_title">Торрент-стрим</string>
     <string name="torrent_cancel">Отмена</string>
     <string name="torrent_stream">Стримить</string>
+    <string name="torrent_no_peers">Нет сидеров — попробуйте позже или другой торрент</string>
 
     <string name="web_confirm_yes">Да, искать</string>
     <string name="web_confirm_no">Нет</string>

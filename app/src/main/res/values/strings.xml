@@ -1561,6 +1561,7 @@
     <string name="torrent_magnet_title">Torrent Stream</string>
     <string name="torrent_cancel">Cancel</string>
     <string name="torrent_stream">Stream</string>
+    <string name="torrent_no_peers">No seeders found — try later or different torrent</string>
 
     <string name="web_confirm_yes">Yes, search</string>
     <string name="web_confirm_no">No</string>

@@ -1295,8 +1295,12 @@ class ExplorerViewModel @Inject constructor(
             torrentStreamRepository.state.collect { torrentState ->
                 _uiState.update { it.copy(torrentState = torrentState) }
                 when (torrentState) {
+                    is com.vamp.haron.domain.model.TorrentStreamState.FetchingMetadata -> {
+                        _toastMessage.tryEmit(appContext.getString(R.string.torrent_magnet_title) + "…")
+                    }
                     is com.vamp.haron.domain.model.TorrentStreamState.Ready -> {
                         // Enough buffered — launch VLC player
+                        _uiState.update { it.copy(dialogState = DialogState.None) }
                         PlaylistHolder.items = listOf(
                             PlaylistHolder.PlaylistItem(
                                 filePath = torrentState.filePath,
@@ -1310,10 +1314,18 @@ class ExplorerViewModel @Inject constructor(
                     }
                     is com.vamp.haron.domain.model.TorrentStreamState.Error -> {
                         _uiState.update { it.copy(dialogState = DialogState.None) }
-                        _toastMessage.tryEmit(torrentState.message)
+                        _toastMessage.tryEmit("Torrent: ${torrentState.message}")
                     }
                     is com.vamp.haron.domain.model.TorrentStreamState.Buffering -> {
                         _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(torrentState.percent, torrentState.downloadSpeed)) }
+                    }
+                    is com.vamp.haron.domain.model.TorrentStreamState.Idle -> {
+                        // Stream stopped (could be timeout or user cancel)
+                        val wasBuffering = _uiState.value.dialogState is DialogState.TorrentBuffering
+                        if (wasBuffering) {
+                            _uiState.update { it.copy(dialogState = DialogState.None) }
+                            _toastMessage.tryEmit(appContext.getString(R.string.torrent_no_peers))
+                        }
                     }
                     else -> {}
                 }
@@ -7640,7 +7652,9 @@ class ExplorerViewModel @Inject constructor(
     fun openTorrentFile(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+            _toastMessage.tryEmit("Torrent: reading file list…")
             val files = torrentStreamRepository.getFiles(path)
+            EcosystemLogger.d(HaronConstants.TAG, "openTorrentFile: got ${files.size} files")
             if (files.isEmpty()) {
                 _toastMessage.tryEmit(appContext.getString(R.string.torrent_no_files))
                 _uiState.update { it.copy(dialogState = DialogState.None) }
@@ -7650,7 +7664,8 @@ class ExplorerViewModel @Inject constructor(
             if (videoFiles.size == 1 || (videoFiles.isEmpty() && files.size == 1)) {
                 // Single video or single file — start immediately
                 val target = videoFiles.firstOrNull() ?: files.first()
-                torrentStreamRepository.startStream(path, target.index)
+                _toastMessage.tryEmit("Torrent: streaming ${target.name}…")
+                com.vamp.haron.service.TorrentStreamService.start(appContext, path, target.index)
             } else {
                 // Multiple files — show selection dialog
                 withContext(Dispatchers.Main) {
@@ -7665,10 +7680,8 @@ class ExplorerViewModel @Inject constructor(
             _toastMessage.tryEmit("Torrent not available in this build")
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
-            torrentStreamRepository.startStream(magnet)
-        }
+        _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+        com.vamp.haron.service.TorrentStreamService.start(appContext, magnet)
     }
 
     fun showMagnetInputDialog() {
@@ -7680,14 +7693,13 @@ class ExplorerViewModel @Inject constructor(
     }
 
     fun selectTorrentFile(uri: String, fileIndex: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
-            torrentStreamRepository.startStream(uri, fileIndex)
-        }
+        _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
+        com.vamp.haron.service.TorrentStreamService.start(appContext, uri, fileIndex)
     }
 
     fun stopTorrentStream() {
         torrentStreamRepository.stopStream()
+        com.vamp.haron.service.TorrentStreamService.stop(appContext)
         _uiState.update { it.copy(dialogState = DialogState.None, torrentState = com.vamp.haron.domain.model.TorrentStreamState.Idle) }
     }
 

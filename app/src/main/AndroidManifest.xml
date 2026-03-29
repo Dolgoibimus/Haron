@@ -192,6 +192,12 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".service.TorrentStreamService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
             android:name=".service.TransferService"
             android:exported="false"
             android:stopWithTask="false"
