@@ -44,6 +44,7 @@ import com.vamp.haron.common.util.swipeBackFromLeft
 private data class FeatureItem(
     val text: String,
     val isNew: Boolean,
+    val isFix: Boolean = false,
     val isSubHeader: Boolean = false,
     val details: List<String> = emptyList()
 )
@@ -129,11 +130,15 @@ fun FeaturesScreen(
                         )
                     } else {
                         val displayText = item.text
+                        val itemColor = when {
+                            item.isNew -> MaterialTheme.colorScheme.tertiary
+                            item.isFix -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
                         Text(
-                            text = "• $displayText",
+                            text = if (item.isFix) "• Fix: $displayText" else "• $displayText",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (item.isNew) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.onSurface,
+                            color = itemColor,
                             modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
                         )
                     }
@@ -185,12 +190,16 @@ private fun FeatureCategoryDetailScreen(
                     val displayText = item.text
 
                     // Feature title
+                    val titleColor = when {
+                        item.isNew -> MaterialTheme.colorScheme.tertiary
+                        item.isFix -> MaterialTheme.colorScheme.secondary
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                     Text(
                         text = displayText,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (item.isNew) MaterialTheme.colorScheme.tertiary
-                            else MaterialTheme.colorScheme.onSurface,
+                        color = titleColor,
                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                     )
 
@@ -205,10 +214,14 @@ private fun FeatureCategoryDetailScreen(
                         ) {
                             Column {
                                 item.details.forEach { detail ->
+                                    val isFixDetail = detail.startsWith("FIX:")
+                                    val detailText = if (isFixDetail) "Fix: ${detail.removePrefix("FIX:")}" else detail
+                                    val detailColor = if (isFixDetail) MaterialTheme.colorScheme.secondary
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                                     Text(
-                                        text = detail,
+                                        text = detailText,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                        color = detailColor,
                                         modifier = Modifier.padding(bottom = 2.dp)
                                     )
                                 }
@@ -254,17 +267,24 @@ private fun parseFeaturesFile(text: String): List<Pair<String, List<FeatureItem>
             trimmed.startsWith("- ") -> {
                 val itemText = trimmed.removePrefix("- ")
                 val isNew = itemText.contains("[NEW]")
-                val cleanText = itemText.replace("[NEW]", "").trim()
+                val isFix = itemText.contains("Fix:")
+                val cleanText = itemText.replace("[NEW]", "").replace("Fix:", "").trim()
                 currentItems.add(FeatureItem(
                     text = cleanText,
-                    isNew = isNew
+                    isNew = isNew,
+                    isFix = isFix
                 ))
             }
             trimmed.startsWith("> ") -> {
                 val detail = trimmed.removePrefix("> ")
+                val detailIsFix = detail.contains("Fix:")
+                val cleanDetail = if (detailIsFix) detail.replace("Fix:", "").trim() else detail
                 if (currentItems.isNotEmpty()) {
                     val last = currentItems.removeAt(currentItems.lastIndex)
-                    currentItems.add(last.copy(details = last.details + detail))
+                    currentItems.add(last.copy(
+                        details = last.details + (if (detailIsFix) "FIX:$cleanDetail" else cleanDetail),
+                        isFix = last.isFix || detailIsFix
+                    ))
                 }
             }
         }
