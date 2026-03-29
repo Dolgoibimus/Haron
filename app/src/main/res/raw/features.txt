@@ -196,7 +196,7 @@
   > Safe eject: tap "Eject" icon next to USB drive in Side Menu
 - Free/total space indicator
   > Each storage shows how much space is used and total capacity
-- [NEW] ext4 USB support (no root)
+- ext4 USB support (no root)
   > First Android file manager to read/write ext4 USB drives without root
   > Plug in a Linux-formatted (ext4) USB drive → Haron mounts it automatically via lwext4
   > Full file operations: copy, move, delete, rename, create folders
@@ -307,17 +307,17 @@
   > Tap an archive → it opens in the panel like a regular folder
   > Navigate inside, view files, extract selectively
   > Inline viewing — no need to extract first
-- [NEW] Multi-volume RAR archives
+- Multi-volume RAR archives
   > Supports both styles: file.part1.rar/part2.rar and file.rar/file.r00/file.r01
   > Tap any part — first volume is found automatically
   > Browse and extract just like a regular archive
   > Missing volumes detected with error message
-- [NEW] Install APK from archive
+- Install APK from archive
   > Tap an .apk file inside any archive (ZIP, RAR, 7z) → extracts and launches installer
   > Works with multi-volume RAR too
   > Version check: shows update/reinstall info, warns on downgrade
   > Downgrade: offers to uninstall current version first, then installs older version automatically
-- [NEW] Install XAPK and APKS files
+- Install XAPK and APKS files
   > Tap .xapk or .apks file → parses contents, copies OBB data, installs all APKs
   > Split APK support: base + config APKs installed together via system PackageInstaller
   > OBB files automatically placed in /Android/obb/ for the app to find
@@ -421,7 +421,7 @@
 - Extract APK to Downloads folder
 - Uninstall apps with sweep animation
 - Open app in system settings
-- [NEW] App files: view all installed paths and sizes
+- App files: view all installed paths and sizes
   > Tap app → "App files" → expandable tree with APK, splits, OBB, data paths
   > Each entry shows size; tap to expand and see full path
   > Without Shizuku: APK, native libs, OBB, external data
@@ -909,26 +909,26 @@
   > Gentle upward drift simulating warm air currents
   > Speed, density, opacity, size sliders
 - All animations: "Only while charging" option, auto-pause on background
-- [NEW] Power Saving (Settings → Power saving)
+- Power Saving (Settings → Power saving)
   > Toggle "Power save mode" — disables all animations and reduces background activity
   > Battery threshold slider (0–50%) — animations auto-disable when battery drops below threshold
   > Default threshold: 15%. Set to 0 to never auto-disable
-- [NEW] Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
+- Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
   > Swipe right from left edge (40dp zone) to go back
-- [NEW] FPS slider for all animations (10-60fps, default 30)
+- FPS slider for all animations (10-60fps, default 30)
   > Lower FPS saves battery, higher FPS is smoother
-- [NEW] Procedural snowflakes — unique 6-fold crystals
+- Procedural snowflakes — unique 6-fold crystals
   > Each snowflake is unique (seed-based procedural generation)
   > 3D spin around vertical axis
   > Separate count sliders for small/medium/large flakes
   > Side edge spawning: 15% of flakes enter from sides
-- [NEW] About screen with version, changelog, privacy, copyright
-- [NEW] Wake lock optimization: released after 5 min idle in cast service
-- [NEW] Audio player improvements
+- About screen with version, changelog, privacy, copyright
+- Wake lock optimization: released after 5 min idle in cast service
+- Audio player improvements
   > No autoplay on file open — press play when ready
   > Audio always starts from beginning (no position restore)
   > Correct track plays when tapping file name
-- [NEW] Backup & Restore (Settings → Backup & Restore)
+- Backup & Restore (Settings → Backup & Restore)
   > Create backup of all user data: settings, network credentials, cloud accounts, book library, secure folder
   > Choose which sections to include: Settings, Credentials, Books, Secure Folder
   > Optional password: checkbox "Protect with password" for Settings/Credentials/Books

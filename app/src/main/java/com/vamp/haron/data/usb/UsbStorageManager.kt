@@ -338,12 +338,18 @@ class UsbStorageManager @Inject constructor(
                     EcosystemLogger.i(TAG, "ext4: SUCCESS — ${probe.label} mounted via lwext4!")
                     _ext4MountingToast.tryEmit(context.getString(com.vamp.haron.R.string.ext4_mounted, probe.label))
 
+                    // Get real filesystem stats from lwext4
+                    val stats = com.vamp.haron.data.usb.ext4.Ext4Native.nativeGetStats()
+                    val ext4Total = stats?.getOrNull(0) ?: 0L
+                    val ext4Free = stats?.getOrNull(1) ?: 0L
+                    EcosystemLogger.i(TAG, "ext4: stats total=${ext4Total / 1_000_000}MB, free=${ext4Free / 1_000_000}MB")
+
                     // Replace unsupported-FS volume with ext4 volume
                     val ext4Volume = UsbVolume(
                         path = com.vamp.haron.data.usb.ext4.Ext4PathUtils.toExt4Path("/usb/"),
                         label = "${probe.label} (ext4)",
-                        totalSpace = probe.totalSpace,
-                        freeSpace = probe.freeSpace,
+                        totalSpace = ext4Total,
+                        freeSpace = ext4Free,
                         fileSystemType = "ext4",
                         unsupportedFs = false,
                         uuid = null

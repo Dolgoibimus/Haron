@@ -1,5 +1,26 @@
 ## Release 1.6
 
+# Batch 108 — ext4 USB support (no root)
+- First Android file manager to read/write ext4 USB drives without root
+- lwext4 (C/NDK) + libaums: userspace ext4 over raw USB block I/O
+- Full file operations: copy, move, delete, rename, create folders
+- Chunked SCSI I/O (64 sectors) + chunked file copy (1 MB) — no OOM or USB timeout
+- Image thumbnails with lazy loading + disk cache (0–500 MB in Settings)
+- Quick Preview for photos (full resolution)
+- ext4, ext3, ext2 filesystems supported
+- Works on all devices — Android doesn't support ext4 USB out of the box
+
+# Batch 107 — App files in APK manager
+- "App files" button in app details: expandable tree with APK, splits, OBB, data paths
+- Each entry shows size; tap to expand and see full path + children
+- Without Shizuku: APK, native libs, OBB, external data
+- With Shizuku: + internal data (/data/data/) with subdirectory breakdown
+- Locked paths shown in gray with lock icon
+- Banner "Enable Shizuku for full access" when locked paths exist
+
+# Fixes from 1.5
+- Fix: animations now disabled in gallery, video/audio player and document readers
+
 # Batch 106 — XAPK/APKS installer
 - Install XAPK and APKS files (split APK bundles with OBB data)
 - Parses manifest.json, extracts APKs, copies OBB to /Android/obb/

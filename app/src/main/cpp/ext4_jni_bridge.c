@@ -823,3 +823,38 @@ Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeIsDirectory(
     (*env)->ReleaseStringUTFChars(env, jpath, path);
     return JNI_FALSE;
 }
+
+/**
+ * Get filesystem stats: total bytes and free bytes.
+ * Returns long[2] = {totalBytes, freeBytes}, or null if not mounted.
+ */
+JNIEXPORT jlongArray JNICALL
+Java_com_vamp_haron_data_usb_ext4_Ext4Native_nativeGetStats(
+    JNIEnv *env, jclass clazz
+) {
+    if (!g_mounted) return NULL;
+
+    struct ext4_mount_stats stats;
+    int rc = ext4_mount_point_stats("/usb/", &stats);
+    if (rc != EOK) {
+        LOGE("getStats: ext4_mount_point_stats failed, rc=%d", rc);
+        return NULL;
+    }
+
+    uint64_t totalBytes = (uint64_t)stats.blocks_count * stats.block_size;
+    uint64_t freeBytes = (uint64_t)stats.free_blocks_count * stats.block_size;
+
+    LOGD("getStats: blocks=%llu, free=%llu, block_size=%u, total=%llu MB, free=%llu MB",
+         (unsigned long long)stats.blocks_count,
+         (unsigned long long)stats.free_blocks_count,
+         stats.block_size,
+         (unsigned long long)(totalBytes / 1024 / 1024),
+         (unsigned long long)(freeBytes / 1024 / 1024));
+
+    jlongArray result = (*env)->NewLongArray(env, 2);
+    if (!result) return NULL;
+
+    jlong buf[2] = { (jlong)totalBytes, (jlong)freeBytes };
+    (*env)->SetLongArrayRegion(env, result, 0, 2, buf);
+    return result;
+}

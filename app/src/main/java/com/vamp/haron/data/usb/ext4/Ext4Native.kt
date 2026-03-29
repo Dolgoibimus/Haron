@@ -96,4 +96,10 @@ object Ext4Native {
      * Check if path is a directory.
      */
     external fun nativeIsDirectory(path: String): Boolean
+
+    /**
+     * Get filesystem stats: total bytes and free bytes.
+     * @return LongArray[2] = {totalBytes, freeBytes}, or null if not mounted.
+     */
+    external fun nativeGetStats(): LongArray?
 }

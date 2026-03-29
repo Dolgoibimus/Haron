@@ -403,6 +403,7 @@ class FileOperationService : Service() {
     ) {
         val type = if (isMove) OperationType.MOVE else OperationType.COPY
         val isDstSaf = destinationDir.startsWith("content://")
+        val movedFromDownload = mutableListOf<Pair<String, String>>() // oldPath → newPath
         EcosystemLogger.d(HaronConstants.TAG, "executeOperation: type=$type, sources=${sourcePaths.size}, dest=$destinationDir, resolution=$conflictResolution")
         for (p in sourcePaths) EcosystemLogger.d(HaronConstants.TAG, "executeOperation: src=$p, exists=${if (p.startsWith("content://")) "SAF" else File(p).exists()}")
 
@@ -495,6 +496,8 @@ class FileOperationService : Service() {
                                 _progress.value = OperationProgress(filesDone, totalFiles, fileName, type)
                                 lastProgressTime = SystemClock.elapsedRealtime()
                             }
+                            // Track moved files for DownloadManager cleanup
+                            movedFromDownload.add(srcPath to dest.absolutePath)
                         } else {
                             if (src.isDirectory) safeCopyDirectory(src, dest) { name, size -> updateFileProgress(name, size) }
                             else { val sz = src.length(); src.copyTo(dest, overwrite = false); updateFileProgress(src.name, sz) }
@@ -566,6 +569,12 @@ class FileOperationService : Service() {
                     error = e.message
                 )
             }
+        }
+
+        // Clean DownloadManager orphan records for files moved out of Download/
+        // Prevents Android DownloadIdleService.cleanOrphans() from deleting moved files
+        if (isMove && movedFromDownload.isNotEmpty()) {
+            com.vamp.haron.common.util.DownloadManagerCleaner.cleanAfterMove(applicationContext, movedFromDownload)
         }
 
         finishOperation(filesDone, totalFiles, type, null)

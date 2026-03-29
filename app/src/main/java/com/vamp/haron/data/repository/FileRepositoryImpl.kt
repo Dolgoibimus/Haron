@@ -389,6 +389,7 @@ class FileRepositoryImpl @Inject constructor(
                 }
             }
             var count = 0
+            val movedFromDownload = mutableListOf<Pair<String, String>>()
             for (srcPath in sourcePaths) {
                 val resolution = resolutions[srcPath] ?: ConflictResolution.RENAME
                 val isSrcSaf = isContentUri(srcPath)
@@ -431,6 +432,7 @@ class FileRepositoryImpl @Inject constructor(
                                     continue
                                 }
                             }
+                            movedFromDownload.add(srcPath to resolvedDest)
                             count++
                         } else {
                             // File → File (normal paths)
@@ -458,6 +460,7 @@ class FileRepositoryImpl @Inject constructor(
                                 else src.copyTo(dest, overwrite = isReplace)
                                 src.deleteRecursively()
                             }
+                            movedFromDownload.add(srcPath to dest.absolutePath)
                             count++
                         }
                     }
@@ -478,6 +481,10 @@ class FileRepositoryImpl @Inject constructor(
                         }
                     }
                 }
+            }
+            // Clean DownloadManager orphan records (AOSP bug #148573846)
+            if (movedFromDownload.isNotEmpty()) {
+                com.vamp.haron.common.util.DownloadManagerCleaner.cleanAfterMove(context, movedFromDownload)
             }
             EcosystemLogger.d(HaronConstants.TAG, "Перемещено $count файлов в $destinationDir")
             Result.success(count)
