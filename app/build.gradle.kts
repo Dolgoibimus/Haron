@@ -133,6 +133,11 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
+    // Torrent streaming (full flavor only — banned on Google Play)
+    "fullImplementation"("org.libtorrent4j:libtorrent4j:2.1.0-35")
+    "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-35")
+    "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-35")
+
     // Document support (.doc)
     implementation("org.apache.poi:poi:5.2.5")
     implementation("org.apache.poi:poi-scratchpad:5.2.5")
