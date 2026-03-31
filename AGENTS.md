@@ -31,7 +31,7 @@
 
 **Сессия 31.03.2026:**
 
-**Перенос из лаборатории HaronOwn (Batch 111):** ⚠️ не проверено
+**Перенос из лаборатории HaronOwn (Batch 111):** ✅ проверено
 - ✅ Багфиксы из лаборатории: TextEditor save, ComparisonViewModel binary check, CompareFoldersUseCase OOM (5000 файлов, глубина 10), HaronNavigation animation hide
 - ✅ MyersDiff (замена java-diff-utils) + NoOpSLF4J (замена slf4j-nop)
 - ✅ SimpleFtpClient (замена commons-net) — raw socket FTP/FTPS, RFC 959, PASV, LIST parsing
@@ -77,14 +77,14 @@
 - ✅ Nayuki QR генератор (замена ZXing core, ~0.5 МБ) — ✅ проверено
 - ✅ Audio tag editors: Id3/Flac/Ogg/M4a (замена jaudiotagger, ~1 МБ) — ✅ проверено
 - ✅ FileIndexJobService (замена WorkManager, ~0.5 МБ) — ✅ проверено
-- ✅ SimpleFtpServer (замена ftpserver-core, ~0.5 МБ) — ⚠️ не проверено
-- ✅ SimpleHttpServer (замена Ktor 5 модулей, ~3 МБ) — ⚠️ не проверено
+- ✅ SimpleFtpServer (замена ftpserver-core, ~0.5 МБ) — ✅ проверено (fix: PASV IP 0.0.0.0 → localAddr)
+- ✅ SimpleHttpServer (замена Ktor 5 модулей, ~3 МБ) — ✅ проверено
 - ✅ MyersDiff переписан на LCS-based DP (фикс index bugs на пустых/неравных списках)
 - ✅ 414 юнит-тестов проходят (66 новых для MyersDiff, StreamingCipher, AesZipHelper)
 - **Убрано зависимостей**: ZXing, jaudiotagger, ftpserver-core, Ktor (5 модулей), WorkManager (~5.5 МБ)
 - **Итого убрано за сессию (Batch 111 + 115)**: ~13.8 МБ зависимостей
 
-**Хранилище приложения (Batch 116):** ⚠️ не проверено
+**Хранилище приложения (Batch 116):** ✅ проверено
 - ✅ AppStorageScreen — управление `files/` из настроек
 - Список папок с размерами, раскрытие по тапу, удаление файлов по одному
 - Кнопка "Очистить папку" у директорий (DeleteSweep)

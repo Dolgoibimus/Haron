@@ -169,17 +169,27 @@ class FtpClientManager @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     /** Get remote file size (for Content-Length in HTTP proxy) */
+    private val fileSizeCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     suspend fun getFileSize(host: String, port: Int, remotePath: String): Long = withContext(Dispatchers.IO) {
+        val cacheKey = "$host:$port:$remotePath"
+        fileSizeCache[cacheKey]?.let { return@withContext it }
         val key = FtpPathUtils.connectionKey(host, port)
         val conn = connections[key] ?: return@withContext -1L
         conn.mutex.withLock {
+            // Double-check cache after acquiring lock
+            fileSizeCache[cacheKey]?.let { return@withLock it }
             conn.lastUsed = System.currentTimeMillis()
             try {
                 val info = conn.client.getFileInfo(remotePath)
-                if (info != null && info.size >= 0) return@withLock info.size
-                val sizeResult = conn.client.getFileSize(remotePath)
-                if (sizeResult >= 0) return@withLock sizeResult
-                conn.client.listFiles(remotePath).firstOrNull()?.size ?: -1L
+                val size = if (info != null && info.size >= 0) info.size
+                else {
+                    val sizeResult = conn.client.getFileSize(remotePath)
+                    if (sizeResult >= 0) sizeResult
+                    else conn.client.listFiles(remotePath).firstOrNull()?.size ?: -1L
+                }
+                if (size > 0) fileSizeCache[cacheKey] = size
+                size
             } catch (_: Exception) { -1L }
         }
     }
@@ -188,7 +198,8 @@ class FtpClientManager @Inject constructor(
     suspend fun openInputStream(host: String, port: Int, remotePath: String, offset: Long = 0): Pair<java.io.InputStream, () -> Unit>? = withContext(Dispatchers.IO) {
         val key = FtpPathUtils.connectionKey(host, port)
         val conn = connections[key] ?: return@withContext null
-        conn.mutex.lock()
+        // tryLock: if another stream is active, return null immediately (VLC probe won't block)
+        if (!conn.mutex.tryLock()) return@withContext null
         conn.lastUsed = System.currentTimeMillis()
         if (offset > 0) {
             conn.client.setRestartOffset(offset)

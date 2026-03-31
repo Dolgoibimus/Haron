@@ -90,7 +90,8 @@ class SimpleFtpServer(
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
             val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
 
-            val session = FtpSession(rootDir, config, writer, addr)
+            val localAddr = socket.localAddress?.hostAddress ?: "0.0.0.0"
+            val session = FtpSession(rootDir, config, writer, addr, localAddr)
             writer.print("220 Haron FTP Server ready\r\n"); writer.flush()
 
             while (running.get() && !socket.isClosed) {
@@ -157,7 +158,8 @@ class SimpleFtpServer(
         private val rootDir: String,
         private val config: FtpServerConfig,
         private val writer: PrintWriter,
-        private val addr: String
+        private val addr: String,
+        private val localAddr: String = "0.0.0.0"
     ) {
         var username = ""
         private var authenticated = false
@@ -255,8 +257,9 @@ class SimpleFtpServer(
                 val port = ss.localPort
                 val p1 = port / 256
                 val p2 = port % 256
-                // Use 0,0,0,0 — client will connect to the server IP
-                reply("227 Entering Passive Mode (0,0,0,0,$p1,$p2)")
+                // Use control socket's local address so client connects to correct IP
+                val ipParts = localAddr.replace('.', ',')
+                reply("227 Entering Passive Mode ($ipParts,$p1,$p2)")
             } catch (e: Exception) {
                 reply("425 Can't open passive connection: ${e.message}")
             }

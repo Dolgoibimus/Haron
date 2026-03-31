@@ -166,11 +166,13 @@ fun AppStorageScreen(
                                 )
                             }
                         }
-                        Icon(
-                            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        if (entry.children.isNotEmpty()) {
+                            Icon(
+                                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     // Expanded children
