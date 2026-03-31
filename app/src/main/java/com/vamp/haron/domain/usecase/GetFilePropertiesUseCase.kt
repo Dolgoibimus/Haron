@@ -8,7 +8,7 @@ import com.vamp.haron.R
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.domain.model.FileEntry
-import com.tom_roush.pdfbox.pdmodel.PDDocument
+// PDDocument loaded via reflection for mini compatibility
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -236,20 +236,38 @@ class GetFilePropertiesUseCase @Inject constructor(
     private fun buildPdfMetadata(path: String): Map<String, String> {
         val map = linkedMapOf<String, String>()
         val file = File(path)
-        PDDocument.load(file).use { doc ->
-            val info = doc.documentInformation
-            map[context.getString(R.string.doc_pages)] = doc.numberOfPages.toString()
-            info?.title?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_title)] = it }
-            info?.author?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_author)] = it }
-            info?.subject?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_subject)] = it }
-            info?.keywords?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_keywords)] = it }
-            info?.creator?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_creator)] = it }
-            info?.producer?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_producer)] = it }
-            info?.creationDate?.let { cal ->
-                val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
-                map[context.getString(R.string.doc_created)] = fmt.format(cal.time)
+        try {
+            // Use reflection so mini builds without PDFBox still compile
+            val pdDocClass = Class.forName("com.tom_roush.pdfbox.pdmodel.PDDocument")
+            val loadMethod = pdDocClass.getMethod("load", File::class.java)
+            val doc = loadMethod.invoke(null, file) ?: return map
+            try {
+                val getPages = pdDocClass.getMethod("getNumberOfPages")
+                map[context.getString(R.string.doc_pages)] = (getPages.invoke(doc) as Int).toString()
+                val getInfo = pdDocClass.getMethod("getDocumentInformation")
+                val info = getInfo.invoke(doc)
+                if (info != null) {
+                    val ic = info.javaClass
+                    (ic.getMethod("getTitle").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_title)] = it }
+                    (ic.getMethod("getAuthor").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_author)] = it }
+                    (ic.getMethod("getSubject").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_subject)] = it }
+                    (ic.getMethod("getKeywords").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_keywords)] = it }
+                    (ic.getMethod("getCreator").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_creator)] = it }
+                    (ic.getMethod("getProducer").invoke(info) as? String)?.takeIf { it.isNotBlank() }?.let { map[context.getString(R.string.doc_producer)] = it }
+                    try {
+                        val cal = ic.getMethod("getCreationDate").invoke(info) as? java.util.Calendar
+                        cal?.let {
+                            val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+                            map[context.getString(R.string.doc_created)] = fmt.format(it.time)
+                        }
+                    } catch (_: Exception) {}
+                }
+            } finally {
+                try { pdDocClass.getMethod("close").invoke(doc) } catch (_: Exception) {}
             }
-        }
+        } catch (_: ClassNotFoundException) {
+            // PDFBox not available in mini build
+        } catch (_: Exception) {}
         return map
     }
 

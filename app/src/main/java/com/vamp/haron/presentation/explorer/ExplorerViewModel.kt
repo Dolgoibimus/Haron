@@ -2,6 +2,7 @@ package com.vamp.haron.presentation.explorer
 
 import android.content.Context
 import android.net.Uri
+import com.vamp.haron.BuildConfig
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -75,6 +76,7 @@ import com.vamp.haron.data.ftp.FtpClientManager
 import com.vamp.haron.data.ftp.FtpFileInfo
 import com.vamp.haron.data.ftp.FtpPathUtils
 import com.vamp.haron.data.shizuku.ShizukuManager
+import com.vamp.haron.data.shizuku.ShizukuState
 import com.vamp.haron.data.usb.UsbStorageManager
 import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.repository.SecureFolderRepository
@@ -113,6 +115,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.content.Intent
 import android.provider.DocumentsContract
+import com.vamp.haron.common.util.ThumbnailCache
 import com.vamp.haron.common.util.iconRes
 import com.vamp.haron.common.util.mimeType
 import com.vamp.haron.common.util.toFileSize
@@ -995,6 +998,191 @@ class ExplorerViewModel @Inject constructor(
     }
 
     /**
+     * Move files from cloud to local: download then delete from cloud.
+     */
+    private fun cloudMoveToLocal(paths: List<String>, targetDir: String) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+        val sourcePanel = getPanel(activeId)
+        val selected = sourcePanel.files.filter { it.path in paths }
+        if (selected.isEmpty()) return
+
+        clearSelection(activeId)
+
+        val progressId = nextProgressId()
+        launchCloudJob {
+            val filesToDownload = mutableListOf<CloudDownloadItem>()
+
+            suspend fun collectFiles(entries: List<FileEntry>, localDir: String) {
+                for (entry in entries) {
+                    val parsed = cloudManager.parseCloudUri(entry.path) ?: continue
+                    if (entry.isDirectory) {
+                        val subDir = File(localDir, entry.name)
+                        subDir.mkdirs()
+                        cloudManager.listFiles(parsed.accountId, parsed.path).onSuccess { children ->
+                            collectFiles(children.map { it.toFileEntry() }, subDir.absolutePath)
+                        }
+                    } else {
+                        filesToDownload.add(CloudDownloadItem(
+                            parsed.accountId, parsed.path,
+                            File(localDir, entry.name).absolutePath,
+                            entry.name, entry.size
+                        ))
+                    }
+                }
+            }
+
+            updateProgress(OperationProgress(0, selected.size, "", OperationType.MOVE, id = progressId))
+            collectFiles(selected, targetDir)
+            refreshPanel(targetId)
+
+            if (filesToDownload.isEmpty()) {
+                updateProgress(OperationProgress(0, 0, "", OperationType.MOVE, isComplete = true, id = progressId))
+                delay(2000)
+                removeProgress(progressId)
+                return@launchCloudJob
+            }
+
+            val total = filesToDownload.size
+            val totalBytes = filesToDownload.sumOf { it.size }
+            var completedBytes = 0L
+            var downloaded = 0
+
+            for ((idx, item) in filesToDownload.withIndex()) {
+                updateProgress(OperationProgress(
+                    idx + 1, total, item.name, OperationType.MOVE,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
+                try {
+                    cloudManager.downloadFile(item.accountId, item.cloudFileId, item.localPath)
+                        .collect { progress ->
+                            val overallPercent = if (totalBytes > 0) {
+                                ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                            } else 0
+                            updateProgress(OperationProgress(
+                                idx + 1, total, item.name, OperationType.MOVE,
+                                filePercent = overallPercent.coerceIn(0, 100),
+                                id = progressId,
+                                speedBytesPerSec = progress.speedBytesPerSec
+                            ))
+                        }
+                    // Delete from cloud after successful download
+                    cloudManager.delete(item.accountId, item.cloudFileId)
+                    completedBytes += item.size
+                    downloaded++
+                    if (downloaded % 3 == 0 || downloaded == 1) refreshPanel(targetId)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    completedBytes += item.size
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud move-to-local failed: ${item.name}: ${e.message}")
+                }
+            }
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+            updateProgress(OperationProgress(downloaded, total, "", OperationType.MOVE, isComplete = true, id = progressId))
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_complete, downloaded))
+            delay(2000)
+            removeProgress(progressId)
+        }
+    }
+
+    /**
+     * Move files from local to cloud: upload then delete local.
+     */
+    private fun cloudMoveFromLocal(paths: List<String>, targetCloudPath: String) {
+        val state = _uiState.value
+        val activeId = state.activePanel
+        val targetId = if (activeId == PanelId.TOP) PanelId.BOTTOM else PanelId.TOP
+
+        clearSelection(activeId)
+
+        val parsed = cloudManager.parseCloudUri(targetCloudPath)
+        if (parsed == null) {
+            EcosystemLogger.e(HaronConstants.TAG, "cloudMoveFromLocal: cannot parse cloud URI: $targetCloudPath")
+            return
+        }
+
+        val cloudDir = parsed.path
+        val filesToUpload = mutableListOf<Pair<File, String>>()
+        fun collectLocal(file: File, relDir: String) {
+            if (file.isDirectory) {
+                file.listFiles()?.forEach { collectLocal(it, "$relDir/${file.name}") }
+            } else {
+                filesToUpload.add(file to relDir)
+            }
+        }
+        for (path in paths) {
+            val f = File(path)
+            if (f.isDirectory) {
+                f.listFiles()?.forEach { collectLocal(it, "/${f.name}") }
+            } else {
+                filesToUpload.add(f to "")
+            }
+        }
+
+        val progressId = nextProgressId()
+        val total = filesToUpload.size
+        val totalBytes = filesToUpload.sumOf { it.first.length() }
+        var completedBytes = 0L
+        val createdFolders = mutableMapOf<String, String>()
+
+        launchCloudJob {
+            updateProgress(OperationProgress(0, total, "", OperationType.MOVE, id = progressId))
+            var uploaded = 0
+            for ((idx, pair) in filesToUpload.withIndex()) {
+                val (localFile, relDir) = pair
+                updateProgress(OperationProgress(
+                    idx + 1, total, localFile.name, OperationType.MOVE,
+                    filePercent = if (totalBytes > 0) ((completedBytes * 100) / totalBytes).toInt() else 0,
+                    id = progressId
+                ))
+                try {
+                    val targetCloudDir = ensureCloudFolderPath(parsed.accountId, cloudDir, relDir, createdFolders)
+                    cloudUploadMutex.withLock {
+                        cloudManager.uploadFile(parsed.accountId, localFile.absolutePath, targetCloudDir, localFile.name)
+                            .collect { progress ->
+                                val overallPercent = if (totalBytes > 0) {
+                                    ((completedBytes + progress.bytesTransferred) * 100 / totalBytes).toInt()
+                                } else 0
+                                updateProgress(OperationProgress(
+                                    idx + 1, total, localFile.name, OperationType.MOVE,
+                                    filePercent = overallPercent.coerceIn(0, 100),
+                                    id = progressId,
+                                    speedBytesPerSec = progress.speedBytesPerSec
+                                ))
+                            }
+                    }
+                    // Delete local after successful upload
+                    localFile.delete()
+                    completedBytes += localFile.length()
+                    uploaded++
+                    if (uploaded % 3 == 0 || uploaded == 1) {
+                        refreshPanel(activeId)
+                        refreshPanel(targetId)
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    completedBytes += localFile.length()
+                    EcosystemLogger.e(HaronConstants.TAG, "Cloud move-from-local failed: ${localFile.name}: ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }
+            // Delete source directories if they're now empty
+            for (path in paths) {
+                val f = File(path)
+                if (f.isDirectory) f.deleteRecursively()
+            }
+            refreshPanel(PanelId.TOP)
+            refreshPanel(PanelId.BOTTOM)
+            updateProgress(OperationProgress(uploaded, total, "", OperationType.MOVE, isComplete = true, id = progressId))
+            _toastMessage.tryEmit(appContext.getString(R.string.cloud_upload_complete, uploaded))
+            delay(2000)
+            removeProgress(progressId)
+        }
+    }
+
+    /**
      * Delete selected files from cloud storage.
      */
     fun cloudDeleteSelected() {
@@ -1292,6 +1480,7 @@ class ExplorerViewModel @Inject constructor(
 
         // Torrent streaming state
         viewModelScope.launch {
+            var torrentPlayerLaunched = false
             torrentStreamRepository.state.collect { torrentState ->
                 _uiState.update { it.copy(torrentState = torrentState) }
                 when (torrentState) {
@@ -1299,20 +1488,20 @@ class ExplorerViewModel @Inject constructor(
                         _toastMessage.tryEmit(appContext.getString(R.string.torrent_magnet_title) + "…")
                     }
                     is com.vamp.haron.domain.model.TorrentStreamState.Ready -> {
-                        // Enough buffered — launch VLC player
-                        _uiState.update { it.copy(dialogState = DialogState.None) }
-                        PlaylistHolder.items = listOf(
-                            PlaylistHolder.PlaylistItem(
-                                filePath = torrentState.filePath,
-                                fileName = torrentState.fileName,
-                                fileType = "video"
-                            )
-                        )
-                        PlaylistHolder.startIndex = 0
-                        _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(0))
-                        _toastMessage.tryEmit(appContext.getString(R.string.torrent_playback_started))
+                        if (!torrentPlayerLaunched) {
+                            torrentPlayerLaunched = true
+                            launchTorrentPlayer(torrentState.filePath, torrentState.fileName)
+                        }
+                    }
+                    is com.vamp.haron.domain.model.TorrentStreamState.Streaming -> {
+                        // Catch Streaming if Ready was missed (fast cache scan)
+                        if (!torrentPlayerLaunched) {
+                            torrentPlayerLaunched = true
+                            launchTorrentPlayer(torrentState.filePath, torrentState.fileName)
+                        }
                     }
                     is com.vamp.haron.domain.model.TorrentStreamState.Error -> {
+                        torrentPlayerLaunched = false
                         _uiState.update { it.copy(dialogState = DialogState.None) }
                         _toastMessage.tryEmit("Torrent: ${torrentState.message}")
                     }
@@ -1320,7 +1509,7 @@ class ExplorerViewModel @Inject constructor(
                         _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(torrentState.percent, torrentState.downloadSpeed)) }
                     }
                     is com.vamp.haron.domain.model.TorrentStreamState.Idle -> {
-                        // Stream stopped (could be timeout or user cancel)
+                        torrentPlayerLaunched = false
                         val wasBuffering = _uiState.value.dialogState is DialogState.TorrentBuffering
                         if (wasBuffering) {
                             _uiState.update { it.copy(dialogState = DialogState.None) }
@@ -1379,6 +1568,7 @@ class ExplorerViewModel @Inject constructor(
 
     private companion object {
         const val MAX_HISTORY_SIZE = 50
+        const val MAX_DEEP_RESULTS = 500
     }
 
     // --- USB OTG ---
@@ -2232,6 +2422,11 @@ class ExplorerViewModel @Inject constructor(
             val type = entry.iconRes()
             when (type) {
                 "video", "audio" -> {
+                    if (!BuildConfig.HAS_VIDEO_PLAYER) {
+                        // Mini build — open with system player
+                        openWithExternalApp(entry)
+                        return
+                    }
                     // Build playlist from all media files in folder
                     val mediaFiles = panel.files.filter { f ->
                         !f.isDirectory && f.iconRes() in listOf("video", "audio")
@@ -2272,6 +2467,10 @@ class ExplorerViewModel @Inject constructor(
                     _navigationEvent.tryEmit(NavigationEvent.OpenGallery(startIndex))
                 }
                 "pdf" -> {
+                    if (!BuildConfig.HAS_PDF_READER) {
+                        openWithExternalApp(entry)
+                        return
+                    }
                     preferences.lastDocumentFile = entry.path
                     _navigationEvent.tryEmit(
                         NavigationEvent.OpenPdfReader(entry.path, entry.name)
@@ -2787,6 +2986,8 @@ class ExplorerViewModel @Inject constructor(
         if (panel.searchInContent) {
             performContentSearch(panelId, query)
         }
+        // Always run deep (recursive) search in subfolders
+        performDeepSearch(panelId, query)
     }
 
     fun openSearch(panelId: PanelId) {
@@ -2796,14 +2997,17 @@ class ExplorerViewModel @Inject constructor(
     fun closeSearch(panelId: PanelId) {
         contentSearchJobs[panelId]?.cancel()
         folderIndexJobs[panelId]?.cancel()
-        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "", searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
+        deepSearchJobs[panelId]?.cancel()
+        lastDeepSearchKey.remove(panelId)
+        updatePanel(panelId) { it.copy(isSearchActive = false, searchQuery = "", searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null, deepSearchResults = null, isDeepSearching = false, deepSearchProgress = null) }
         // Reload files to guarantee they are visible after search close
         refreshPanel(panelId)
     }
 
     fun clearSearch(panelId: PanelId) {
         folderIndexJobs[panelId]?.cancel()
-        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null) }
+        deepSearchJobs[panelId]?.cancel()
+        updatePanel(panelId) { it.copy(searchQuery = "", isSearchActive = false, searchInContent = false, contentSearchSnippets = null, isContentIndexing = false, contentIndexProgress = null, deepSearchResults = null, isDeepSearching = false, deepSearchProgress = null) }
     }
 
     fun toggleSearchInContent(panelId: PanelId) {
@@ -2883,6 +3087,141 @@ class ExplorerViewModel @Inject constructor(
             val panel = getPanel(panelId)
             val paths = searchRepository.searchContentInFolder(panel.currentPath, query)
             updatePanel(panelId) { it.copy(contentSearchSnippets = paths) }
+        }
+    }
+
+    // --- Deep (recursive) search ---
+
+    private val deepSearchJobs = mutableMapOf<PanelId, kotlinx.coroutines.Job>()
+    private val lastDeepSearchKey = mutableMapOf<PanelId, String>() // "path|query" → skip if same
+
+    private fun performDeepSearch(panelId: PanelId, query: String) {
+        if (query.isBlank() || query.length < 2) {
+            deepSearchJobs[panelId]?.cancel()
+            lastDeepSearchKey.remove(panelId)
+            updatePanel(panelId) { it.copy(deepSearchResults = null, isDeepSearching = false, deepSearchProgress = null) }
+            return
+        }
+        val panel = getPanel(panelId)
+        val key = "${panel.currentPath}|$query"
+        if (lastDeepSearchKey[panelId] == key) return // same search, skip
+        lastDeepSearchKey[panelId] = key
+        deepSearchJobs[panelId]?.cancel()
+        deepSearchJobs[panelId] = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            delay(500) // debounce — longer than shallow search
+            val rootPath = panel.currentPath
+
+            // Skip for non-local paths (cloud, archive, content://, ext4://)
+            if (rootPath.startsWith("content://") || rootPath.startsWith("ext4://") ||
+                panel.isArchiveMode || panel.cloudBreadcrumbs.isNotEmpty()) {
+                return@launch
+            }
+
+            EcosystemLogger.d(HaronConstants.TAG, "DeepSearch: starting in $rootPath for '$query'")
+            updatePanel(panelId) { it.copy(isDeepSearching = true, deepSearchResults = emptyList(), deepSearchProgress = null) }
+
+            val results = mutableListOf<com.vamp.haron.domain.model.FileEntry>()
+            val lowerQuery = query.lowercase()
+            var scannedDirs = 0
+
+            try {
+                val rootFile = java.io.File(rootPath)
+                val isRestricted = rootPath.contains("/Android/data") || rootPath.contains("/Android/obb") || rootPath.contains("/Android/media")
+                val shizukuReady = shizukuManager.state.value == ShizukuState.BOUND || shizukuManager.state.value == ShizukuState.READY
+                val useShizuku = isRestricted && shizukuReady
+
+                if (useShizuku) {
+                    // Recursive search via Shizuku for restricted paths
+                    deepSearchShizuku(rootPath, lowerQuery, results, panelId) { scannedDirs++; scannedDirs }
+                } else {
+                    val job = coroutineContext[Job]
+                    // Standard File.walkTopDown
+                    rootFile.walkTopDown()
+                        .onEnter { dir ->
+                            // Check cancellation
+                            if (job?.isActive == false) return@onEnter false
+                            val dirPath = dir.absolutePath
+                            // Skip restricted paths unless Shizuku available
+                            val dirRestricted = dirPath.contains("/Android/data") || dirPath.contains("/Android/obb") || dirPath.contains("/Android/media")
+                            if (dirRestricted && !shizukuReady) {
+                                return@onEnter false
+                            }
+                            // Update progress every 50 dirs
+                            scannedDirs++
+                            if (scannedDirs % 50 == 0) {
+                                updatePanel(panelId) {
+                                    it.copy(
+                                        deepSearchProgress = "${results.size} ${appContext.getString(com.vamp.haron.R.string.found)}, ${dir.name}",
+                                        deepSearchResults = results.toList()
+                                    )
+                                }
+                            }
+                            true
+                        }
+                        .filter { file ->
+                            // Skip current folder files — they are already shown by shallow search
+                            results.size < MAX_DEEP_RESULTS &&
+                                file.parentFile?.absolutePath != rootPath &&
+                                file.name.lowercase().contains(lowerQuery)
+                        }
+                        .forEach { file ->
+                            if (job?.isActive == false || results.size >= MAX_DEEP_RESULTS) return@forEach
+                            val nameLc = file.name.lowercase()
+                            val ext = if (nameLc.endsWith(".fb2.zip")) "fb2" else file.extension.lowercase()
+                            results.add(
+                                com.vamp.haron.domain.model.FileEntry(
+                                    name = file.name,
+                                    path = file.absolutePath,
+                                    isDirectory = file.isDirectory,
+                                    size = if (file.isDirectory) 0L else file.length(),
+                                    lastModified = file.lastModified(),
+                                    extension = ext,
+                                    isHidden = file.isHidden,
+                                    childCount = if (file.isDirectory) (file.listFiles()?.size ?: 0) else 0
+                                )
+                            )
+                        }
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "DeepSearch: error: ${e.message}")
+            } finally {
+                EcosystemLogger.i(HaronConstants.TAG, "DeepSearch: done, ${results.size} results, $scannedDirs dirs scanned")
+                updatePanel(panelId) {
+                    it.copy(
+                        deepSearchResults = results.toList(),
+                        isDeepSearching = false,
+                        deepSearchProgress = null
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun deepSearchShizuku(
+        dirPath: String,
+        lowerQuery: String,
+        results: MutableList<com.vamp.haron.domain.model.FileEntry>,
+        panelId: PanelId,
+        onDir: () -> Int
+    ) {
+        val entries = shizukuManager.listFiles(dirPath) ?: return
+        for (entry in entries) {
+            kotlinx.coroutines.yield() // throws CancellationException if job cancelled
+            if (entry.name.lowercase().contains(lowerQuery)) {
+                results.add(entry)
+            }
+            if (entry.isDirectory) {
+                val count = onDir()
+                if (count % 50 == 0) {
+                    updatePanel(panelId) {
+                        it.copy(
+                            deepSearchProgress = "${results.size} ${appContext.getString(com.vamp.haron.R.string.found)}, ${entry.name}",
+                            deepSearchResults = results.toList()
+                        )
+                    }
+                }
+                deepSearchShizuku(entry.path, lowerQuery, results, panelId, onDir)
+            }
         }
     }
 
@@ -3145,9 +3484,19 @@ class ExplorerViewModel @Inject constructor(
             return
         }
 
-        // Cloud: move not supported (use copy + manual delete)
-        if (paths.any { isCloudPath(it) } || isCloudPath(targetPanel.currentPath)) {
-            _toastMessage.tryEmit(appContext.getString(R.string.cloud_download_local_only))
+        // Cloud → local: download then delete from cloud
+        if (paths.any { isCloudPath(it) } && !isCloudPath(targetPanel.currentPath)) {
+            cloudMoveToLocal(paths, targetPanel.currentPath)
+            return
+        }
+        // Local → cloud: upload then delete local
+        if (!paths.any { isCloudPath(it) } && isCloudPath(targetPanel.currentPath)) {
+            cloudMoveFromLocal(paths, targetPanel.currentPath)
+            return
+        }
+        // Cloud → cloud: not supported yet
+        if (paths.any { isCloudPath(it) } && isCloudPath(targetPanel.currentPath)) {
+            _toastMessage.tryEmit("Cloud-to-cloud move not supported")
             return
         }
 
@@ -7649,6 +7998,29 @@ class ExplorerViewModel @Inject constructor(
 
     // ==================== Torrent Streaming ====================
 
+    private fun launchTorrentPlayer(filePath: String, fileName: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(dialogState = DialogState.None) }
+            // Ensure HTTP server is running for torrent proxy
+            if (!httpFileServer.isRunning()) {
+                httpFileServer.start(emptyList())
+            }
+            httpFileServer.torrentStreamRepo = torrentStreamRepository
+            val streamUrl = "http://127.0.0.1:${httpFileServer.actualPort}/torrent-stream"
+            EcosystemLogger.i(HaronConstants.TAG, "Torrent: streaming via HTTP proxy: $streamUrl")
+            PlaylistHolder.items = listOf(
+                PlaylistHolder.PlaylistItem(
+                    filePath = streamUrl,
+                    fileName = fileName,
+                    fileType = "video"
+                )
+            )
+            PlaylistHolder.startIndex = 0
+            _navigationEvent.tryEmit(NavigationEvent.OpenMediaPlayer(0))
+            _toastMessage.tryEmit(appContext.getString(R.string.torrent_playback_started))
+        }
+    }
+
     fun openTorrentFile(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(dialogState = DialogState.TorrentBuffering(0, 0)) }
@@ -8360,6 +8732,23 @@ class ExplorerViewModel @Inject constructor(
         }
     }
 
+    suspend fun loadProtectedThumbnail(originalPath: String): android.graphics.Bitmap? {
+        ThumbnailCache.get(originalPath)?.let { return it }
+        val allEntries = secureFolderRepository.getAllProtectedEntries()
+        val secureEntry = allEntries.find { it.originalPath == originalPath } ?: return null
+        // Decrypt in-memory — no temp file on disk (security)
+        val bytes = secureFolderRepository.decryptToBytes(secureEntry.id).getOrNull() ?: return null
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
+        val maxSize = 256
+        val sampleSize = maxOf(1, maxOf(opts.outWidth / maxSize, opts.outHeight / maxSize))
+        val decodeOpts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts) ?: return null
+        ThumbnailCache.put(originalPath, bmp)
+        return bmp
+    }
+
     fun onProtectedFileClick(entry: FileEntry) {
         if (!entry.isProtected) return
         viewModelScope.launch {
@@ -8396,9 +8785,14 @@ class ExplorerViewModel @Inject constructor(
                             NavigationEvent.OpenTextEditor(tempFile.absolutePath, entry.name)
                         )
                     }
-                    "pdf", "document" -> {
+                    "pdf" -> {
                         _navigationEvent.tryEmit(
                             NavigationEvent.OpenPdfReader(tempFile.absolutePath, entry.name)
+                        )
+                    }
+                    "document" -> {
+                        _navigationEvent.tryEmit(
+                            NavigationEvent.OpenDocumentViewer(tempFile.absolutePath, entry.name)
                         )
                     }
                     "archive" -> {

@@ -68,10 +68,6 @@
 # ---------- Tesseract4Android (native JNI) ----------
 -keep class cz.adaptech.tesseract4android.** { *; }
 
-# ---------- Ktor (HTTP server — coroutines + reflection) ----------
--keep class io.ktor.** { *; }
--dontwarn io.ktor.**
-
 # ---------- SLF4J (logging facade) ----------
 -dontwarn org.slf4j.**
 
@@ -86,14 +82,11 @@
 # ---------- ML Kit ----------
 -keep class com.google.mlkit.** { *; }
 
-# ---------- ZXing (QR) ----------
--keep class com.google.zxing.** { *; }
+# ---------- Nayuki QR (bundled source, common/qr/) ----------
+-keep class com.vamp.haron.common.qr.** { *; }
 
-# ---------- Google Drive API ----------
--keep class com.google.api.** { *; }
--keep class com.google.auth.** { *; }
--dontwarn com.google.api.**
--dontwarn com.google.auth.**
+# ---------- Google Drive (direct HTTP REST, no SDK) ----------
+# No keep rules needed — uses standard HttpURLConnection + org.json
 
 # ---------- Dropbox SDK ----------
 -keep class com.dropbox.core.** { *; }
@@ -163,10 +156,6 @@
 -dontwarn org.osgi.framework.BundleContext
 -dontwarn org.osgi.framework.FrameworkUtil
 -dontwarn org.osgi.framework.ServiceReference
-
-# ---------- JAudiotagger (audio tag writing) ----------
--keep class org.jaudiotagger.** { *; }
--dontwarn org.jaudiotagger.**
 
 # ---------- libtorrent4j (torrent download) ----------
 -keep class org.libtorrent4j.** { *; }

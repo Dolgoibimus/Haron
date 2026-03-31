@@ -29,39 +29,83 @@
 > Сюда записывается задача которая выполняется прямо сейчас.
 > При /compact — сохранить прогресс здесь перед сжатием.
 
-**Сессия 29.03.2026 (ночь):**
+**Сессия 31.03.2026:**
 
-**Релиз 1.6 завершён:**
-- ✅ changelog.txt EN+RU: добавлены Batch 107, 108, секция "Fixes from 1.5"
-- ✅ features.txt: убраны все [NEW] (релиз закрыт)
-- ✅ ext4 USB: nativeGetStats() — реальный total/free space из lwext4 (было 0Б)
-- ✅ Сборка APK (arm64+armv7) + AAB, GitHub release v1.6, RuStore опубликован
-- ✅ AGENTS.md: Batch 108 (ext4), секция "Сайты и площадки", хотелки из 4PDA анализа
+**Перенос из лаборатории HaronOwn (Batch 111):** ⚠️ не проверено
+- ✅ Багфиксы из лаборатории: TextEditor save, ComparisonViewModel binary check, CompareFoldersUseCase OOM (5000 файлов, глубина 10), HaronNavigation animation hide
+- ✅ MyersDiff (замена java-diff-utils) + NoOpSLF4J (замена slf4j-nop)
+- ✅ SimpleFtpClient (замена commons-net) — raw socket FTP/FTPS, RFC 959, PASV, LIST parsing
+- ✅ AesZipHelper (замена zip4j) — WinZip AES-256, PBKDF2, split ZIP
+- ✅ StreamingCipher (замена Tink) — AES-256-GCM сегментированный, Android Keystore
+- ✅ Dropbox progress fix (GlobalScope.async) + cloud move (copy+delete)
+- ✅ Google Drive → HTTP REST (замена google-api-services-drive + google-api-client + google-auth)
+- ✅ GDrive rename fix (entry.name вместо fileId) + Grid rename icon fix (size 80dp)
+- ✅ VLC буфер 10 мин (--network-caching=600000) + индикатор буферизации (LinearProgressIndicator)
+- ✅ Stream proxy буфер 512KB + flush() для cloud и FTP
+- ✅ FTP видеострим фикс (onOpenMediaPlayer callback)
+- **Убрано зависимостей**: slf4j-nop, java-diff-utils, commons-net, zip4j, tink-android, google-api-services-drive, google-api-client-android, google-auth-library-oauth2-http (~8.3 МБ)
 
-**Новые фичи (в разработке):**
-- ✅ Build Flavors: full (RuStore/4PDA/GitHub) vs play (Google Play) — FeatureFlags.kt, раздельные манифесты
-- ✅ DownloadManagerCleaner — фикс AOSP бага #148573846 (файлы исчезают из Download после перемещения)
-- ⚠️ Торрент-стрим (libtorrent4j 2.1.0-35) — НЕ ПРОВЕРЕНО:
-  - TorrentStreamRepository + TorrentStreamRepositoryImpl (full) / заглушка (play)
-  - TorrentStreamService — foreground service, WakeLock, notification
-  - UI: TorrentBuffering / TorrentFileSelect / TorrentMagnetInput диалоги
-  - .torrent → авто-выбор видео → буферизация 15МБ → VLC
-  - setPieceDeadline() вместо sequential_download (быстрее)
-  - SIGSEGV fix: убраны все handle.status() из alert callbacks
-  - Таймаут 60с no-peers (по piecesDownloaded, не по percent)
-  - DHT bootstrap: 4 публичных ноды
-  - **Статус**: качает куски, не крашит, но скорость низкая на тестовых торрентах (1 seed). Нужен тест на популярном торренте с хорошей раздачей.
+**Торрент-стрим (Batch 112):** ⚠️ не проверено
+- ✅ HTTP-прокси для VLC (endpoint `/torrent-stream` в HttpFileServer) — VLC стримит через HTTP вместо прямого чтения файла
+- ✅ Range requests (VLC перемотка) + блокирующее ожидание pieces (timeout 2 мин)
+- ✅ ConcurrentHashMap для piece tracking (вместо нативного havePiece — SIGSEGV)
+- ✅ SharedFlow + polling гибрид в waitForPiece (race condition fix)
+- ✅ Все setPieceDeadline убраны (SIGSEGV в libtorrent4j 2.x), prioritizePieces(TOP) один раз при setup
+- ✅ handleActive volatile guard — предотвращает SIGSEGV при stopStream() из другого потока
+- ✅ stopStream() безопасный — currentHandle=null ДО session.remove()
+- ✅ Кеш очищается при старте нового стрима (нет дырок от rarest-first)
+- ✅ No-peers timeout: 60с → 3 мин (DHT bootstrap)
+- ✅ Connections 800→1500, peers 4000, buffers 4 МБ
+- ✅ torrentPlayerLaunched — ловит и Ready, и Streaming (если Ready пропущен)
+- ✅ READY ждёт piece 0+1 (видео с начала, не с середины)
+- **Статус**: видео открывается и играет ~30 сек, скорость ~12 МБ/с. Pieces приходят вразнобой (rarest-first, sequential_download/setPieceDeadline не работают в libtorrent4j 2.x). VLC ждёт нужный piece через HTTP прокси. libtorrent4j 1.x не подключается к современным пирам. Нужно исследовать альтернативы.
 
-**Исследования:**
-- ✅ Android/data доступ: 16 методов, все SAF-лазейки закрыты (4 CVE за 2024-2025). Shizuku = потолок. Сохранено в memory/android-data-access-research.md
-- ✅ Встроенный ADB shell (LADB-подход): технически возможен, добавлен в хотелки
-- ✅ Конкурентный анализ 4PDA: сводка по всем 24 менеджерам, боли рынка, уникальные фичи
+**Swipe-back (Batch 113):** ✅ проверено
+- ✅ swipeBackFromLeft добавлен в 14 экранов: AppManager, Gallery, LibrarySettings, Backup, Steganography, Support, ArchiveViewer, Comparison, DocumentViewer, TextEditor, Transfer, MediaPlayer, PdfReader, PlayerSettings
+- Пропущены: LockScreen (блокирует back), SearchScreen (блокирует back)
+- 11 экранов уже имели swipe-back ранее
+
+**Багфиксы сессии 31.03.2026 (Batch 114):** ✅ проверено
+- ✅ Защищённая папка: Keystore ключ пересоздаётся с setRandomizedEncryptionRequired(false) если старый не поддерживает caller-provided IV
+- ✅ Защищённая папка → FB2: тип "document" теперь открывает DocumentViewer (было PdfReader)
+- ✅ Swipe-back в галерее: SwipeBackEdgeOverlay поверх HorizontalPager (overlay вместо modifier)
+- ✅ Swipe-back в читалке FB2: totalDx обновляется всегда (был баг — переставал обновляться после wasDrag)
+- ✅ Thumbnail в защищённой папке: in-memory расшифровка (decryptToBytes → BitmapFactory.decodeByteArray), без temp файла на диске
+- ✅ Превью AES-encrypted ZIP: AesZipHelper fallback в LoadPreviewUseCase (было "архив защищён паролем")
+
+**Перенос из лаборатории — волна 2 (Batch 115):** ⚠️ частично проверено
+- ✅ Nayuki QR генератор (замена ZXing core, ~0.5 МБ) — ✅ проверено
+- ✅ Audio tag editors: Id3/Flac/Ogg/M4a (замена jaudiotagger, ~1 МБ) — ✅ проверено
+- ✅ FileIndexJobService (замена WorkManager, ~0.5 МБ) — ✅ проверено
+- ✅ SimpleFtpServer (замена ftpserver-core, ~0.5 МБ) — ⚠️ не проверено
+- ✅ SimpleHttpServer (замена Ktor 5 модулей, ~3 МБ) — ⚠️ не проверено
+- ✅ MyersDiff переписан на LCS-based DP (фикс index bugs на пустых/неравных списках)
+- ✅ 414 юнит-тестов проходят (66 новых для MyersDiff, StreamingCipher, AesZipHelper)
+- **Убрано зависимостей**: ZXing, jaudiotagger, ftpserver-core, Ktor (5 модулей), WorkManager (~5.5 МБ)
+- **Итого убрано за сессию (Batch 111 + 115)**: ~13.8 МБ зависимостей
+
+**Хранилище приложения (Batch 116):** ⚠️ не проверено
+- ✅ AppStorageScreen — управление `files/` из настроек
+- Список папок с размерами, раскрытие по тапу, удаление файлов по одному
+- Кнопка "Очистить папку" у директорий (DeleteSweep)
+- `.haron_secure` скрыта (нельзя удалить зашифрованные файлы)
+- Маршрут APP_STORAGE, кнопка в SettingsScreen
+
+**Предыдущие сессии (архив):**
+
+**Сессия 30.03.2026:**
+- ✅ Mini flavor (Batch 109), Deep search (Batch 110), HaronOwn лаборатория создана
+
+**Сессия 29.03.2026:**
+- ✅ Релиз 1.6 (APK+AAB+GitHub+RuStore), Build Flavors full/play, DownloadManagerCleaner
+- ✅ Торрент-стрим начат (libtorrent4j, service, UI)
 
 **TODO (следующая сессия):**
-- ▶ Тест торрент-стрима на популярном торренте
+- ▶ Торрент: исследовать альтернативы libtorrent4j 2.x для sequential download
 - ▶ Кнопка "Magnet" в инструментах (pie menu)
 - ▶ Каст торрента на ТВ через HTTP-сервер
 - ▶ Очистка кеша торрентов в настройках
+- ▶ Google Drive: проверить REST API на устройстве
 
 **Batch 105 завершён** — многотомные RAR, установка APK из архива, даунгрейд.
 
@@ -3729,6 +3773,60 @@ SSH: JSch, кнопка подключения, диалог пароля, keepa
 ---
 
 ## Changelog
+
+### 0.115.0 — Batch 115 (Phase 4, v2.0) ⚠️ частично проверено
+- Lab transfer wave 2: 5 more dependency replacements (~5.5 MB saved)
+- Nayuki QR generator replaces ZXing core (QR generation only)
+- Custom audio tag editors (ID3/FLAC/OGG/M4A) replace jaudiotagger
+- FileIndexJobService (JobScheduler) replaces WorkManager
+- SimpleFtpServer replaces Apache ftpserver-core
+- SimpleHttpServer replaces Ktor (5 modules, 12 endpoints + WebSocket)
+- MyersDiff rewritten: LCS-based DP (fixes index bugs on empty/unequal lists)
+- 66 new unit tests (MyersDiff, StreamingCipher, AesZipHelper), 414 total passing
+
+### 0.116.0 — Batch 116 (Phase 4, v2.0) ⚠️ не проверено
+- App Storage screen: manage internal files/ from settings
+- Expandable directory list with per-file delete and clear-folder buttons
+- Secure folder hidden from listing
+
+### 0.114.0 — Batch 114 (Phase 4, v2.0) ✅ проверено
+- Fix: Keystore key recreation for StreamingCipher (caller-provided IV)
+- Fix: Protected folder → FB2 opens in DocumentViewer (was PdfReader)
+- Fix: Swipe-back in Gallery (overlay) and DocumentViewer (totalDx bug)
+- Fix: Protected folder thumbnails — in-memory decryption (no temp file)
+- Fix: AES-encrypted ZIP preview shows file list instead of error
+
+### 0.113.0 — Batch 113 (Phase 4, v2.0) ✅ проверено
+- Swipe-back жест (свайп слева) добавлен в 14 экранов
+
+### 0.112.0 — Batch 112 (Phase 4, v2.0) ⚠️ не проверено
+- Торрент-стрим через HTTP-прокси: VLC играет через localhost, поддержка Range/перемотки
+- SIGSEGV fixes: все нативные вызовы (setPieceDeadline, havePiece, prioritizePieces) безопасны
+- Piece tracking через ConcurrentHashMap, waitForPiece poll+flow hybrid
+- No-peers timeout 3 мин, connections 1500, buffers 4 МБ
+
+### 0.111.0 — Batch 111 (Phase 4, v2.0) ⚠️ не проверено
+- Перенос из лаборатории HaronOwn: 7 замен зависимостей (~8.3 МБ экономия)
+- SimpleFtpClient (raw socket FTP), AesZipHelper (WinZip AES-256), StreamingCipher (AES-256-GCM)
+- Google Drive → HTTP REST API (убрано 3 библиотеки, ~5 МБ)
+- Dropbox: fix прогресса загрузки + cloud move (copy+delete)
+- VLC: буфер 10 мин + индикатор буферизации, stream proxy буфер 512KB
+- GDrive rename fix, grid rename icon fix, FTP видеострим fix
+- Багфиксы: TextEditor save, binary comparison, folder comparison OOM
+
+### 0.110.0 — Batch 110 (Phase 4, v2.0) ⚠️ не проверено
+- Рекурсивный поиск файлов из любой папки на любую глубину подпапок
+- Поиск через Shizuku в Android/data, Android/obb, Android/media (если доступен)
+- Прогресс поиска в реальном времени, макс 500 результатов
+- Путь найденного файла кликабельный → переход в папку (список + превью)
+- fb2.zip определяется как fb2 в результатах поиска
+
+### 0.109.0 — Batch 109 (Phase 4, v2.0) ⚠️ не проверено
+- Третий build flavor `mini` — лёгкая версия (~42 МБ release)
+- Убраны VLC, FFmpeg, торрент, PDFBox, POI, Tesseract, ML Kit, CameraX, ExoPlayer
+- 12 stub-файлов, shared source set `notMini/`, 6 BuildConfig флагов
+- Видео/PDF в mini открываются системным приложением (chooser)
+- Путь кликабельный в превью для результатов deep search
 
 ### 0.105.0 — Batch 105 (Phase 4, v2.0)
 - Многотомные RAR-архивы: просмотр и извлечение (new-style .part1.rar и old-style .rar/.r00)

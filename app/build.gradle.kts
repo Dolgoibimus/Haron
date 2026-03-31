@@ -67,6 +67,12 @@ android {
             buildConfigField("Boolean", "HAS_ROOT_ACCESS", "true")
             buildConfigField("Boolean", "HAS_HIDDEN_CAMERA", "true")
             buildConfigField("Boolean", "HAS_FLOATING_WINDOW", "true")
+            buildConfigField("Boolean", "HAS_VIDEO_PLAYER", "true")
+            buildConfigField("Boolean", "HAS_TRANSCODING", "true")
+            buildConfigField("Boolean", "HAS_OCR", "true")
+            buildConfigField("Boolean", "HAS_DOCUMENT_READER", "true")
+            buildConfigField("Boolean", "HAS_PDF_READER", "true")
+            buildConfigField("Boolean", "HAS_QR_SCANNER", "true")
         }
         create("play") {
             dimension = "store"
@@ -75,6 +81,26 @@ android {
             buildConfigField("Boolean", "HAS_ROOT_ACCESS", "false")
             buildConfigField("Boolean", "HAS_HIDDEN_CAMERA", "false")
             buildConfigField("Boolean", "HAS_FLOATING_WINDOW", "false")
+            buildConfigField("Boolean", "HAS_VIDEO_PLAYER", "true")
+            buildConfigField("Boolean", "HAS_TRANSCODING", "true")
+            buildConfigField("Boolean", "HAS_OCR", "true")
+            buildConfigField("Boolean", "HAS_DOCUMENT_READER", "true")
+            buildConfigField("Boolean", "HAS_PDF_READER", "true")
+            buildConfigField("Boolean", "HAS_QR_SCANNER", "true")
+        }
+        create("mini") {
+            dimension = "store"
+            // Lightweight — no media player, no readers, no OCR (~45 MB)
+            buildConfigField("Boolean", "HAS_TORRENT", "false")
+            buildConfigField("Boolean", "HAS_ROOT_ACCESS", "true")
+            buildConfigField("Boolean", "HAS_HIDDEN_CAMERA", "false")
+            buildConfigField("Boolean", "HAS_FLOATING_WINDOW", "true")
+            buildConfigField("Boolean", "HAS_VIDEO_PLAYER", "false")
+            buildConfigField("Boolean", "HAS_TRANSCODING", "false")
+            buildConfigField("Boolean", "HAS_OCR", "false")
+            buildConfigField("Boolean", "HAS_DOCUMENT_READER", "false")
+            buildConfigField("Boolean", "HAS_PDF_READER", "false")
+            buildConfigField("Boolean", "HAS_QR_SCANNER", "false")
         }
     }
 
@@ -83,6 +109,10 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     buildTypes {
@@ -118,6 +148,18 @@ android {
             excludes += listOf("META-INF/INDEX.LIST", "META-INF/DEPENDENCIES")
         }
     }
+
+    // Shared source set for full + play (everything mini doesn't have)
+    sourceSets {
+        getByName("full") {
+            java.srcDir("src/notMini/java")
+            kotlin.srcDir("src/notMini/java")
+        }
+        getByName("play") {
+            java.srcDir("src/notMini/java")
+            kotlin.srcDir("src/notMini/java")
+        }
+    }
 }
 
 configurations.all {
@@ -134,58 +176,62 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Torrent streaming (full flavor only — banned on Google Play)
-    // NOTE: v2.1.0-39 available on GitHub (feb 2026) but not on Maven Central yet
-    //        — may fix 16KB page alignment warning on arm64
+    // 2.1.0-35: 1.x doesn't connect to modern peers
     "fullImplementation"("org.libtorrent4j:libtorrent4j:2.1.0-35")
     "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-35")
     "fullImplementation"("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-35")
 
-    // Document support (.doc)
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-scratchpad:5.2.5")
+    // Document support (.doc) — not in mini
+    "fullImplementation"("org.apache.poi:poi:5.2.5")
+    "fullImplementation"("org.apache.poi:poi-scratchpad:5.2.5")
+    "playImplementation"("org.apache.poi:poi:5.2.5")
+    "playImplementation"("org.apache.poi:poi-scratchpad:5.2.5")
 
-    // PDF text extraction (content search)
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // PDF text extraction (content search) — not in mini
+    "fullImplementation"("com.tom-roush:pdfbox-android:2.0.27.0")
+    "playImplementation"("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // Archive support (7z, rar, password-protected zip)
     implementation("org.apache.commons:commons-compress:1.26.1")
     implementation("org.tukaani:xz:1.9")
     implementation("com.github.junrar:junrar:7.5.5")
-    implementation("org.slf4j:slf4j-nop:2.0.13")
-    implementation("net.lingala.zip4j:zip4j:2.11.5")
+    implementation("org.slf4j:slf4j-api:2.0.13") // slf4j-nop заменён своим NoOpSLF4JServiceProvider (common/logging/)
+    // zip4j replaced by AesZipHelper (common/util/AesZipHelper.kt)
     // 7-Zip-JBinding for Android (RAR5 + password support via native 7z engine)
     implementation("com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.03")
 
-    // Media3 ExoPlayer (inline previews)
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-ui:1.5.1")
+    // Media3 — common + session for all (Cast needs it), exoplayer + ui only for full/play
     implementation("androidx.media3:media3-common:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
+    "fullImplementation"("androidx.media3:media3-exoplayer:1.5.1")
+    "fullImplementation"("androidx.media3:media3-ui:1.5.1")
+    "playImplementation"("androidx.media3:media3-exoplayer:1.5.1")
+    "playImplementation"("androidx.media3:media3-ui:1.5.1")
 
-    // VLC (fullscreen player — universal codec support: AVI, DivX, Xvid, WMV, etc.)
-    implementation("org.videolan.android:libvlc-all:3.6.5")
+    // VLC (fullscreen player) — not in mini
+    "fullImplementation"("org.videolan.android:libvlc-all:3.6.5")
+    "playImplementation"("org.videolan.android:libvlc-all:3.6.5")
 
-    // FFmpeg (video transcoding for Chromecast — AVI/MKV/WMV → MP4)
-    implementation("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
+    // FFmpeg (video transcoding for Chromecast) — not in mini
+    "fullImplementation"("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
+    "playImplementation"("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
 
     // Room
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1")
 
-    // WorkManager
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
-    // hilt-work/hilt-compiler removed — manual WorkerFactory avoids KSP bug with generic @AssistedFactory
+    // FileIndexJobService replaces WorkManager (no dependency needed)
 
-    // ML Kit Image Labeling + OCR Text Recognition
-    implementation("com.google.mlkit:image-labeling:17.0.9")
-    implementation("com.google.mlkit:text-recognition:16.0.1")
+    // ML Kit Image Labeling + OCR Text Recognition — not in mini
+    "fullImplementation"("com.google.mlkit:image-labeling:17.0.9")
+    "fullImplementation"("com.google.mlkit:text-recognition:16.0.1")
+    "playImplementation"("com.google.mlkit:image-labeling:17.0.9")
+    "playImplementation"("com.google.mlkit:text-recognition:16.0.1")
 
-    // Tesseract OCR (better Cyrillic support)
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
-
-    // Tink (streaming AES-GCM encryption for secure folder — no OOM on large files)
-    implementation("com.google.crypto.tink:tink-android:1.15.0")
+    // Tesseract OCR (better Cyrillic support) — not in mini
+    "fullImplementation"("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    "playImplementation"("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
 
     // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
@@ -194,25 +240,16 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
-    // HTTP server (Ktor CIO — file transfer + WebSocket for TV remote)
-    implementation("io.ktor:ktor-server-core:2.3.12")
-    implementation("io.ktor:ktor-server-cio:2.3.12")
-    implementation("io.ktor:ktor-server-partial-content:2.3.12")
-    implementation("io.ktor:ktor-server-auto-head-response:2.3.12")
-    implementation("io.ktor:ktor-server-websockets:2.3.12")
+    // HTTP server: SimpleHttpServer (raw sockets, replaces Ktor CIO ~3 MB)
+    // No external dependency needed — see data/transfer/SimpleHttpServer.kt
 
     // Cloud storage
-    implementation("com.google.apis:google-api-services-drive:v3-rev20240914-2.0.0")
-    implementation("com.google.api-client:google-api-client-android:2.7.0")
-    implementation("com.google.auth:google-auth-library-oauth2-http:1.30.0")
+    // Google Drive — uses direct HTTP REST API (no SDK needed)
     implementation("com.dropbox.core:dropbox-core-sdk:7.0.0")
     // OneDrive uses direct HTTP calls to Graph REST API (no SDK needed)
     implementation("androidx.browser:browser:1.8.0")
     // OkHttp (reliable large file uploads — keepalive, write timeout, HTTP/2)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // JAudiotagger (write album art into ID3/Vorbis/M4A tags)
-    implementation("net.jthink:jaudiotagger:3.0.1")
 
 
     // Core library desugaring (Java 11+ API on older Android)
@@ -223,25 +260,29 @@ dependencies {
     implementation("io.github.Rosemoe.sora-editor:editor")
     implementation("io.github.Rosemoe.sora-editor:language-textmate")
 
-    // Diff utils (file comparison)
-    implementation("io.github.java-diff-utils:java-diff-utils:4.12")
+    // java-diff-utils заменён своим MyersDiff (common/util/MyersDiff.kt)
 
-    // ZXing QR code generation
-    implementation("com.google.zxing:core:3.5.3")
+    // QR code generation — Nayuki (common/qr/QrCode.java), no external dependency
 
-    // CameraX + ML Kit Barcode Scanning (QR scanner)
-    implementation("androidx.camera:camera-camera2:1.4.1")
-    implementation("androidx.camera:camera-lifecycle:1.4.1")
-    implementation("androidx.camera:camera-view:1.4.1")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // CameraX + ML Kit Barcode Scanning (QR scanner) — not in mini
+    "fullImplementation"("androidx.camera:camera-camera2:1.4.1")
+    "fullImplementation"("androidx.camera:camera-lifecycle:1.4.1")
+    "fullImplementation"("androidx.camera:camera-view:1.4.1")
+    "fullImplementation"("com.google.mlkit:barcode-scanning:17.3.0")
+    "playImplementation"("androidx.camera:camera-camera2:1.4.1")
+    "playImplementation"("androidx.camera:camera-lifecycle:1.4.1")
+    "playImplementation"("androidx.camera:camera-view:1.4.1")
+    "playImplementation"("com.google.mlkit:barcode-scanning:17.3.0")
 
-    // FTP client (Apache Commons Net) + embedded FTP server (Apache FtpServer)
-    implementation("commons-net:commons-net:3.11.1")
-    implementation("org.apache.ftpserver:ftpserver-core:1.2.0")
+    // FTP client: SimpleFtpClient (raw socket, replaces Apache Commons Net)
+    // Embedded FTP server: SimpleFtpServer (pure socket, RFC 959, replaces Apache ftpserver-core)
 
     // SMB client (smbj + RPC for share enumeration)
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("com.rapid7.client:dcerpc:0.12.13")
+
+    // BouncyCastle (required by smbj for NTLM/SPNEGO; POI brings it in full/play, mini needs explicit)
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.72")
 
     // SSH client (modern JSch fork — ed25519, rsa-sha2, curve25519)
     implementation("com.github.mwiede:jsch:0.2.18")

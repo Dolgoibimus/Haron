@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.TransferState
 import com.vamp.haron.presentation.transfer.components.DeviceList
 import com.vamp.haron.presentation.transfer.components.QrCodeDialog
@@ -305,6 +306,7 @@ fun TransferScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
         ) {
             // Tab row

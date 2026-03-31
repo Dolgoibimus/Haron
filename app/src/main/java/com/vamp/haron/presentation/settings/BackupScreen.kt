@@ -1,10 +1,6 @@
 package com.vamp.haron.presentation.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,6 +56,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.data.backup.BackupManager
 import com.vamp.haron.domain.model.SecureFileEntry
@@ -177,24 +174,8 @@ fun BackupScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
-                .pointerInput(Unit) {
-                    val edgePx = 40.dp.toPx()
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        if (down.position.x > edgePx) return@awaitEachGesture
-                        var totalDrag = 0f
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull() ?: break
-                            if (!change.pressed) {
-                                if (totalDrag > 100.dp.toPx()) onBack()
-                                break
-                            }
-                            totalDrag += change.positionChange().x
-                        }
-                    }
-                }
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {

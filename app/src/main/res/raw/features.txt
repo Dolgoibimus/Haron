@@ -453,6 +453,16 @@
 - Global search across entire device
   > How to open: long tap 🔍 in panel header, or voice "search" / "find"
   > Search screen: input field on top, filter chips below, results below that
+- Deep search — recursive search from any folder to any depth [NEW]
+  > Type 2+ characters in panel search → searches current folder AND all subfolders
+  > Progress shown in real-time: "N found, folder_name"
+  > Max 500 results, runs on background thread (no UI lag)
+  > Found file shows relative path (📂 path/to/folder) — tap to navigate there
+  > Works with Shizuku in Android/data, Android/obb, Android/media
+- Build flavor: mini — lightweight version (~42 MB release) [NEW]
+  > No VLC, FFmpeg, torrent, PDFBox, POI, Tesseract, ML Kit, CameraX
+  > Video/PDF open via system chooser
+  > All core features: file manager, archives, FTP/SMB/SSH, clouds, terminal, code editor, Cast
 - Two search modes: by name and by content
   > "Тт" button on the right — searches file names (always works, no indexing needed)
   > "📄" button — searches text INSIDE files (requires indexing, see below)
@@ -537,6 +547,17 @@
 - PIN or biometric required to enter protected mode
 - Virtual directory shows all protected files after authentication
 - Copy decrypts, move decrypts + unprotects
+
+# Torrent Streaming (full flavor only) [NEW]
+- Stream video from .torrent files directly — no need to download first
+  > Tap a .torrent file → buffering dialog → video plays in VLC
+  > HTTP proxy on localhost — VLC streams through it with buffering support
+  > Range requests supported — seeking/rewinding works
+  > Foreground service with notification and wake lock
+  > Multi-file torrents: auto-selects largest video, or shows file picker
+  > DHT bootstrap with 4 public nodes for peer discovery
+  > No-peers timeout: 3 minutes
+  > Torrent cache cleaned on each new stream start
 
 # Network & Transfer
 - Device transfer: Wi-Fi Direct + NSD
@@ -913,8 +934,9 @@
   > Toggle "Power save mode" — disables all animations and reduces background activity
   > Battery threshold slider (0–50%) — animations auto-disable when battery drops below threshold
   > Default threshold: 15%. Set to 0 to never auto-disable
-- Swipe back from left edge on all settings, terminal, library, storage, duplicates, tags screens
-  > Swipe right from left edge (40dp zone) to go back
+- Swipe back from left edge on all screens (settings, player, gallery, editor, reader, archive, comparison, transfer, steganography, app manager, support) [NEW]
+  > Swipe right from left edge (40dp zone, 80dp threshold) to go back
+  > Only blocked on lock screen (secure folder PIN entry)
 - FPS slider for all animations (10-60fps, default 30)
   > Lower FPS saves battery, higher FPS is smoother
 - Procedural snowflakes — unique 6-fold crystals
@@ -943,4 +965,9 @@
   > Per-file selection: choose exactly which protected files to include
   > Progress % displayed in Create button during backup
   > All checkboxes disabled during backup to prevent changes
-  > On restore: secure folder files re-encrypted with new device's Tink Streaming AEAD key
+  > On restore: secure folder files re-encrypted with new device's Streaming AEAD key
+- App Storage manager (Settings → App Storage) [NEW]
+  > View internal app data directories with sizes
+  > Tap directory to expand and see individual files
+  > Delete files individually or clear entire folder
+  > Secure folder hidden from listing (safety)

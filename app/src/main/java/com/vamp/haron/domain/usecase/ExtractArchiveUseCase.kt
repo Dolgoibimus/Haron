@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import net.lingala.zip4j.ZipFile as Zip4jFile
+import com.vamp.haron.common.util.AesZipHelper
 import net.sf.sevenzipjbinding.ExtractOperationResult
 import net.sf.sevenzipjbinding.IInArchive
 import net.sf.sevenzipjbinding.ISequentialOutStream
@@ -98,29 +98,50 @@ class ExtractArchiveUseCase @Inject constructor(
     ) {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            // Always use zip4j — it supports split ZIP (.z01, .z02...) and passwords
-            val zip4j = Zip4jFile(file)
-            if (!password.isNullOrEmpty()) {
-                zip4j.setPassword(password.toCharArray())
-            }
-            val headers = zip4j.fileHeaders.filter { h ->
-                !h.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
-                    h.fileName.trimEnd('/').startsWith(sel)
-                })
-            }
-            val total = headers.size
-            headers.forEachIndexed { index, header ->
-                emit(ExtractProgress(index, total, header.fileName.substringAfterLast('/')))
-                val outputName = stripPrefix(header.fileName, basePrefix)
-                val outFile = File(destinationDir, outputName)
-                outFile.parentFile?.mkdirs()
-                zip4j.getInputStream(header).use { input ->
+            val isEncrypted = AesZipHelper.isZipEncrypted(file)
+            if (isEncrypted) {
+                // AES encrypted ZIP — use AesZipHelper
+                val pw = password?.toCharArray() ?: throw IllegalStateException("encrypted")
+                val entries = AesZipHelper.listEncryptedZip(file, pw).filter { e ->
+                    !e.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
+                        e.name.trimEnd('/').startsWith(sel)
+                    })
+                }
+                val total = entries.size
+                entries.forEachIndexed { index, entry ->
+                    emit(ExtractProgress(index, total, entry.name.substringAfterLast('/')))
+                    val outputName = stripPrefix(entry.name, basePrefix)
+                    val outFile = File(destinationDir, outputName)
+                    outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { output ->
-                        input.copyTo(output)
+                        AesZipHelper.extractDecryptedEntry(file, entry.name, pw, output)
                     }
                 }
+                emit(ExtractProgress(total, total, "", isComplete = true))
+            } else {
+                // Unencrypted ZIP — use standard java.util.zip.ZipFile
+                val zipFile = java.util.zip.ZipFile(file)
+                zipFile.use { zf ->
+                    val entries = zf.entries().asSequence().filter { e ->
+                        !e.isDirectory && (selectedEntries == null || selectedEntries.any { sel ->
+                            e.name.trimEnd('/').startsWith(sel)
+                        })
+                    }.toList()
+                    val total = entries.size
+                    entries.forEachIndexed { index, entry ->
+                        emit(ExtractProgress(index, total, entry.name.substringAfterLast('/')))
+                        val outputName = stripPrefix(entry.name, basePrefix)
+                        val outFile = File(destinationDir, outputName)
+                        outFile.parentFile?.mkdirs()
+                        zf.getInputStream(entry).use { input ->
+                            FileOutputStream(outFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+                    emit(ExtractProgress(total, total, "", isComplete = true))
+                }
             }
-            emit(ExtractProgress(total, total, "", isComplete = true))
         } finally {
             if (isContentUri) file.delete()
         }

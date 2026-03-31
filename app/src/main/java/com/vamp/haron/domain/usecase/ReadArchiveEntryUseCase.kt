@@ -8,7 +8,7 @@ import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import net.lingala.zip4j.ZipFile as Zip4jFile
+import com.vamp.haron.common.util.AesZipHelper
 import net.sf.sevenzipjbinding.IInArchive
 import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.PropID
@@ -71,23 +71,34 @@ class ReadArchiveEntryUseCase @Inject constructor(
     ): ByteArray? {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            val zip = Zip4jFile(file)
-            if (!password.isNullOrEmpty()) {
-                zip.setPassword(password.toCharArray())
-            }
-            val header = zip.fileHeaders.firstOrNull { h ->
-                h.fileName.trimEnd('/') == entryFullPath.trimEnd('/')
-            } ?: return null
-
-            if (header.uncompressedSize > MAX_ENTRY_SIZE) {
-                EcosystemLogger.d(TAG, "Entry too large: ${header.uncompressedSize} > $MAX_ENTRY_SIZE")
-                return null
-            }
-
-            return zip.getInputStream(header).use { input ->
-                val baos = ByteArrayOutputStream(header.uncompressedSize.toInt().coerceAtLeast(1024))
-                input.copyTo(baos)
-                baos.toByteArray()
+            val isEncrypted = AesZipHelper.isZipEncrypted(file)
+            if (isEncrypted) {
+                val pw = password?.toCharArray() ?: throw IllegalStateException("encrypted")
+                // Check size from entry list
+                val entries = AesZipHelper.listEncryptedZip(file, pw)
+                val target = entries.firstOrNull { it.name.trimEnd('/') == entryFullPath.trimEnd('/') }
+                    ?: return null
+                if (target.size > MAX_ENTRY_SIZE) {
+                    EcosystemLogger.d(TAG, "Entry too large: ${target.size} > $MAX_ENTRY_SIZE")
+                    return null
+                }
+                return AesZipHelper.getDecryptedEntryBytes(file, entryFullPath, pw)
+            } else {
+                val zipFile = java.util.zip.ZipFile(file)
+                return zipFile.use { zf ->
+                    val entry = zf.entries().asSequence().firstOrNull { e ->
+                        e.name.trimEnd('/') == entryFullPath.trimEnd('/')
+                    } ?: return null
+                    if (entry.size > MAX_ENTRY_SIZE) {
+                        EcosystemLogger.d(TAG, "Entry too large: ${entry.size} > $MAX_ENTRY_SIZE")
+                        return null
+                    }
+                    zf.getInputStream(entry).use { input ->
+                        val baos = ByteArrayOutputStream(entry.size.toInt().coerceAtLeast(1024))
+                        input.copyTo(baos)
+                        baos.toByteArray()
+                    }
+                }
             }
         } finally {
             if (isContentUri) file.delete()

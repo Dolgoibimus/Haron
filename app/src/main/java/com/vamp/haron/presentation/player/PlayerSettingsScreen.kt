@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.data.datastore.HaronPreferences
 
 @Composable
@@ -62,6 +63,7 @@ fun PlayerSettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .swipeBackFromLeft(onBack = onBack)
             .background(Color.Black.copy(alpha = 0.95f))
             .padding(horizontal = 2.dp)
     ) {

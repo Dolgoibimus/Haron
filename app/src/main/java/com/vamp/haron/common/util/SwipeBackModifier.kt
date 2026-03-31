@@ -1,12 +1,18 @@
 package com.vamp.haron.common.util
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.geometry.Offset
 
 /**
  * Edge swipe from left to trigger back navigation.
@@ -55,4 +61,47 @@ fun Modifier.swipeBackFromLeft(
             }
         )
     }
+}
+
+/**
+ * Overlay composable for swipe-back on screens where child gestures
+ * (HorizontalPager, pinch-zoom) consume horizontal drags.
+ * Places a narrow invisible touch zone on the left edge ON TOP of content.
+ */
+@Composable
+fun SwipeBackEdgeOverlay(
+    onBack: () -> Unit,
+    edgeWidthDp: Int = 40,
+    thresholdDp: Int = 80
+) {
+    val density = LocalDensity.current
+    val thresholdPx = with(density) { thresholdDp.dp.toPx() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(edgeWidthDp.dp)
+            .pointerInput(Unit) {
+                var totalDragX = 0f
+                var fired = false
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        totalDragX = 0f
+                        fired = false
+                    },
+                    onDragEnd = { totalDragX = 0f; fired = false },
+                    onDragCancel = { totalDragX = 0f; fired = false },
+                    onHorizontalDrag = { change, dragAmount ->
+                        if (!fired) {
+                            totalDragX += dragAmount
+                            if (totalDragX > thresholdPx) {
+                                fired = true
+                                change.consume()
+                                onBack()
+                            }
+                        }
+                    }
+                )
+            }
+    )
 }

@@ -1,7 +1,7 @@
 package com.vamp.haron.domain.usecase
 
-import com.github.difflib.DiffUtils
-import com.github.difflib.patch.DeltaType
+import com.vamp.haron.common.util.DeltaType
+import com.vamp.haron.common.util.MyersDiff
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.domain.model.DiffLine
@@ -20,7 +20,7 @@ class CompareTextFilesUseCase @Inject constructor() {
             val leftLines = File(leftPath).readLines()
             val rightLines = File(rightPath).readLines()
 
-            val patch = DiffUtils.diff(leftLines, rightLines)
+            val deltas = MyersDiff.diff(leftLines, rightLines)
 
             val left = mutableListOf<DiffLine>()
             val right = mutableListOf<DiffLine>()
@@ -31,9 +31,9 @@ class CompareTextFilesUseCase @Inject constructor() {
             var leftIdx = 0
             var rightIdx = 0
 
-            for (delta in patch.deltas) {
+            for (delta in deltas) {
                 // Unchanged lines before this delta
-                while (leftIdx < delta.source.position) {
+                while (leftIdx < delta.sourcePosition) {
                     left.add(DiffLine(leftIdx + 1, leftLines[leftIdx], DiffLineType.UNCHANGED))
                     right.add(DiffLine(rightIdx + 1, rightLines[rightIdx], DiffLineType.UNCHANGED))
                     leftIdx++
@@ -42,26 +42,26 @@ class CompareTextFilesUseCase @Inject constructor() {
 
                 when (delta.type) {
                     DeltaType.DELETE -> {
-                        delta.source.lines.forEachIndexed { i, line ->
+                        delta.sourceLines.forEachIndexed { i, line ->
                             left.add(DiffLine(leftIdx + i + 1, line, DiffLineType.REMOVED))
                             right.add(DiffLine(null, "", DiffLineType.REMOVED))
                         }
-                        removedCount += delta.source.lines.size
-                        leftIdx += delta.source.lines.size
+                        removedCount += delta.sourceLines.size
+                        leftIdx += delta.sourceLines.size
                     }
                     DeltaType.INSERT -> {
-                        delta.target.lines.forEachIndexed { i, line ->
+                        delta.targetLines.forEachIndexed { i, line ->
                             left.add(DiffLine(null, "", DiffLineType.ADDED))
                             right.add(DiffLine(rightIdx + i + 1, line, DiffLineType.ADDED))
                         }
-                        addedCount += delta.target.lines.size
-                        rightIdx += delta.target.lines.size
+                        addedCount += delta.targetLines.size
+                        rightIdx += delta.targetLines.size
                     }
                     DeltaType.CHANGE -> {
-                        val maxLen = maxOf(delta.source.lines.size, delta.target.lines.size)
+                        val maxLen = maxOf(delta.sourceLines.size, delta.targetLines.size)
                         for (i in 0 until maxLen) {
-                            val srcLine = delta.source.lines.getOrNull(i)
-                            val tgtLine = delta.target.lines.getOrNull(i)
+                            val srcLine = delta.sourceLines.getOrNull(i)
+                            val tgtLine = delta.targetLines.getOrNull(i)
                             left.add(
                                 DiffLine(
                                     if (srcLine != null) leftIdx + i + 1 else null,
@@ -78,10 +78,9 @@ class CompareTextFilesUseCase @Inject constructor() {
                             )
                         }
                         modifiedCount += maxLen
-                        leftIdx += delta.source.lines.size
-                        rightIdx += delta.target.lines.size
+                        leftIdx += delta.sourceLines.size
+                        rightIdx += delta.targetLines.size
                     }
-                    else -> {}
                 }
             }
 

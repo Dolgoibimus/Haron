@@ -45,8 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
+import com.vamp.haron.common.qr.QrCode
 import com.vamp.haron.R
 
 @Composable
@@ -394,16 +393,24 @@ private fun OthersTabContent(
 
 private fun generateQrBitmap(text: String): Bitmap? {
     return try {
-        val size = 512
-        val writer = QRCodeWriter()
-        val bitMatrix = writer.encode(text, BarcodeFormat.QR_CODE, size, size)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val qr = QrCode.encodeText(text, QrCode.Ecc.MEDIUM)
+        val scale = 512 / (qr.size + 8) // quiet zone ~4 modules each side
+        val imgSize = (qr.size + 8) * scale
+        val bitmap = Bitmap.createBitmap(imgSize, imgSize, Bitmap.Config.ARGB_8888)
         // Dark navy dots on warm cream background — reduces screen glare vs pure black/white
         val darkColor = Color.rgb(28, 40, 65)    // #1C2841
         val lightColor = Color.rgb(250, 245, 230) // #FAF5E6
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                bitmap.setPixel(x, y, if (bitMatrix[x, y]) darkColor else lightColor)
+        val offset = 4 * scale // quiet zone offset
+        bitmap.eraseColor(lightColor)
+        for (y in 0 until qr.size) {
+            for (x in 0 until qr.size) {
+                if (qr.getModule(x, y)) {
+                    for (dy in 0 until scale) {
+                        for (dx in 0 until scale) {
+                            bitmap.setPixel(offset + x * scale + dx, offset + y * scale + dy, darkColor)
+                        }
+                    }
+                }
             }
         }
         bitmap

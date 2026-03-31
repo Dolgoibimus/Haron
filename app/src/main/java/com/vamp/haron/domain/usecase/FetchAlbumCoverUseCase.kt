@@ -5,6 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import com.vamp.core.logger.EcosystemLogger
+import com.vamp.haron.common.audio.FlacTagEditor
+import com.vamp.haron.common.audio.Id3TagEditor
+import com.vamp.haron.common.audio.M4aTagEditor
+import com.vamp.haron.common.audio.OggTagEditor
 import com.vamp.haron.common.util.ThumbnailCache
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -13,8 +17,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.jaudiotagger.audio.AudioFileIO
-import org.jaudiotagger.tag.images.ArtworkFactory
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -114,20 +116,27 @@ class FetchAlbumCoverUseCase @Inject constructor(
     fun saveCover(path: String, imageBytes: ByteArray): Flow<CoverResult> = flow {
         try {
             val file = File(path)
-            val audioFile = AudioFileIO.read(file)
-            val tag = audioFile.tagOrCreateAndSetDefault
-            tag.deleteArtworkField()
-            val artwork = ArtworkFactory.createArtworkFromFile(file)
-            artwork.binaryData = imageBytes
-            artwork.mimeType = "image/jpeg"
-            tag.setField(artwork)
-            audioFile.commit()
+            val ext = file.extension.lowercase()
 
-            // Invalidate thumbnail cache so list shows the new cover
-            ThumbnailCache.remove(path)
-
-            EcosystemLogger.i(TAG, "Cover saved to: $path")
-            emit(CoverResult.Saved)
+            val success = when (ext) {
+                "mp3" -> Id3TagEditor.writeCoverArt(file, imageBytes, "image/jpeg")
+                "flac" -> FlacTagEditor.writeCoverArt(file, imageBytes, "image/jpeg")
+                "ogg", "oga", "opus" -> OggTagEditor.writeCoverArt(file, imageBytes, "image/jpeg")
+                "m4a", "m4b", "mp4", "aac", "alac" -> M4aTagEditor.writeCoverArt(file, imageBytes, "image/jpeg")
+                else -> {
+                    EcosystemLogger.e(TAG, "Cover writing not supported for: $ext")
+                    emit(CoverResult.Error("Cover writing not supported for $ext"))
+                    return@flow
+                }
+            }
+            if (success) {
+                // Invalidate thumbnail cache so list shows the new cover
+                ThumbnailCache.remove(path)
+                EcosystemLogger.i(TAG, "Cover saved to: $path")
+                emit(CoverResult.Saved)
+            } else {
+                emit(CoverResult.Error("Failed to write cover art"))
+            }
         } catch (e: Exception) {
             EcosystemLogger.e(TAG, "saveCover failed: ${e.message}")
             emit(CoverResult.Error(e.message ?: "Unknown error"))

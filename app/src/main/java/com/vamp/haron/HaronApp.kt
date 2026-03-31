@@ -1,9 +1,7 @@
 package com.vamp.haron
 
 import android.app.Application
-import androidx.work.Configuration
-import com.vamp.haron.di.HaronWorkerFactory
-import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+// PDFBoxResourceLoader — loaded via reflection for mini variant (no pdfbox-android)
 import com.vamp.core.db.EcosystemDatabase
 import com.vamp.core.db.EcosystemPreferences
 import com.vamp.core.logger.EcosystemLogger
@@ -24,10 +22,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
-class HaronApp : Application(), Configuration.Provider {
-
-    @Inject
-    lateinit var workerFactory: HaronWorkerFactory
+class HaronApp : Application() {
 
     @Inject
     lateinit var castManager: GoogleCastManager
@@ -44,11 +39,6 @@ class HaronApp : Application(), Configuration.Provider {
     private var contentObserver: FileContentObserver? = null
     private var screenOnReceiver: ScreenOnReceiver? = null
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -81,11 +71,18 @@ class HaronApp : Application(), Configuration.Provider {
         appScope.launch {
             EcosystemDatabase.getInstance(this@HaronApp)
         }
-        appScope.launch {
-            PDFBoxResourceLoader.init(this@HaronApp)
+        if (BuildConfig.HAS_PDF_READER) {
+            appScope.launch {
+                try {
+                    val cls = Class.forName("com.tom_roush.pdfbox.android.PDFBoxResourceLoader")
+                    cls.getMethod("init", android.content.Context::class.java).invoke(null, this@HaronApp)
+                } catch (_: Exception) {}
+            }
         }
-        appScope.launch {
-            tesseractOcr.init()
+        if (BuildConfig.HAS_OCR) {
+            appScope.launch {
+                tesseractOcr.init()
+            }
         }
         // Cast requires main thread — defer to after onCreate finishes
         Handler(Looper.getMainLooper()).post {

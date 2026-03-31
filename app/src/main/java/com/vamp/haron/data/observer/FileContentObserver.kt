@@ -1,17 +1,17 @@
 package com.vamp.haron.data.observer
 
+import android.app.job.JobInfo
+import android.app.job.JobScheduler
+import android.content.ComponentName
 import android.content.Context
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
-import com.vamp.haron.service.FileIndexWorker
+import com.vamp.haron.service.FileIndexJobService
 
 class FileContentObserver(
     private val context: Context
@@ -27,12 +27,7 @@ class FileContentObserver(
         lastTriggerTime = now
         EcosystemLogger.d(HaronConstants.TAG, "FileContentObserver: MediaStore changed, triggering re-index")
 
-        val request = OneTimeWorkRequestBuilder<FileIndexWorker>().build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            FileIndexWorker.WORK_NAME_ONE_TIME,
-            ExistingWorkPolicy.KEEP,
-            request
-        )
+        scheduleIndexJob(context, FileIndexJobService.JOB_ID_CONTENT_CHANGE)
     }
 
     fun register() {
@@ -45,5 +40,22 @@ class FileContentObserver(
 
     fun unregister() {
         context.contentResolver.unregisterContentObserver(this)
+    }
+
+    companion object {
+        fun scheduleIndexJob(context: Context, jobId: Int) {
+            val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+            // Skip if this job is already pending
+            if (scheduler.getPendingJob(jobId) != null) return
+            val jobInfo = JobInfo.Builder(
+                jobId,
+                ComponentName(context, FileIndexJobService::class.java)
+            )
+                .setRequiresDeviceIdle(false)
+                .setRequiresCharging(false)
+                .setOverrideDeadline(5_000) // run within 5s
+                .build()
+            scheduler.schedule(jobInfo)
+        }
     }
 }

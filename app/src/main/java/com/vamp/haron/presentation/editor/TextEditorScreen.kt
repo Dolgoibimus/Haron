@@ -90,6 +90,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.SearchNavigationHolder
 import com.vamp.haron.domain.model.TransferHolder
@@ -318,15 +319,21 @@ fun TextEditorScreen(
     }
 
     fun saveFile() {
+        // Capture content on main thread BEFORE switching to IO (Sora Editor is a View)
+        val content = if (isEditMode && useSoraEditor.value) {
+            val soraText = soraEditorRef?.text?.toString() ?: rawText
+            if (soraInsertedNewlines) soraText.replace("\n", "") else soraText
+        } else if (isEditMode) {
+            textFieldValue.text
+        } else rawText
+        com.vamp.core.logger.EcosystemLogger.d(
+            com.vamp.haron.common.constants.HaronConstants.TAG,
+            "TextEditor saveFile: capturing ${content.length} chars (isEdit=$isEditMode, sora=${useSoraEditor.value})"
+        )
         scope.launch(Dispatchers.IO) {
             try {
-                var content = if (isEditMode && useSoraEditor.value) {
-                    val soraText = soraEditorRef?.text?.toString() ?: rawText
-                    // If we inserted newlines for display, strip them on save
-                    if (soraInsertedNewlines) soraText.replace("\n", "") else soraText
-                } else if (isEditMode) {
-                    textFieldValue.text
-                } else rawText
+                @Suppress("NAME_SHADOWING")
+                val content = content
                 if (filePath.startsWith("content://")) {
                     val uri = Uri.parse(filePath)
                     context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
@@ -588,6 +595,11 @@ fun TextEditorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = {
+                    if (isEditMode && isModified) showExitDialog = true
+                    else if (isEditMode) isEditMode = false
+                    else onBack()
+                })
                 .padding(paddingValues)
                 .consumeWindowInsets(paddingValues)
                 .imePadding()

@@ -1,20 +1,17 @@
 package com.vamp.haron.domain.usecase
 
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import net.lingala.zip4j.ZipFile
-import net.lingala.zip4j.model.ExcludeFileFilter
-import net.lingala.zip4j.model.ZipParameters
-import net.lingala.zip4j.model.enums.AesKeyStrength
-import net.lingala.zip4j.model.enums.CompressionMethod
-import net.lingala.zip4j.model.enums.EncryptionMethod
-import net.lingala.zip4j.progress.ProgressMonitor
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
+import com.vamp.haron.common.util.AesZipHelper
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
 data class ZipProgress(
@@ -53,78 +50,55 @@ class CreateZipUseCase @Inject constructor() {
 
         val actualOutputPath = outputPath
         val actualName = File(actualOutputPath).name
+        val hasPassword = !password.isNullOrEmpty()
+        val splitSizeBytes = if (splitSizeMb > 0) splitSizeMb * 1024L * 1024L else 0L
 
-        val zipFile = ZipFile(actualOutputPath)
-        if (!password.isNullOrEmpty()) {
-            zipFile.setPassword(password.toCharArray())
-        }
-
-        val params = ZipParameters().apply {
-            compressionMethod = CompressionMethod.DEFLATE
-            if (!password.isNullOrEmpty()) {
-                isEncryptFiles = true
-                encryptionMethod = EncryptionMethod.AES
-                aesKeyStrength = AesKeyStrength.KEY_STRENGTH_256
-            }
-        }
-
-        if (splitSizeMb > 0) {
-            // Split ZIP — batch operation, poll ProgressMonitor for per-file progress
-            val splitSizeBytes = splitSizeMb * 1024L * 1024L
-            zipFile.isRunInThread = true
-
-            val hasDirectories = existingSources.any { it.isDirectory }
-            if (!hasDirectories) {
-                zipFile.createSplitZipFile(existingSources, params, true, splitSizeBytes)
+        if (hasPassword) {
+            // AES-256 encrypted ZIP
+            if (splitSizeBytes > 0) {
+                AesZipHelper.createSplitZip(
+                    actualOutputPath, allFiles, password!!.toCharArray(), splitSizeBytes
+                ) { index, t, name ->
+                    // Note: can't emit from callback in flow, progress tracked below
+                }
+                // Emit progress after completion (split is done synchronously inside helper)
+                allFiles.forEachIndexed { index, (file, _) ->
+                    emit(ZipProgress(index, total, file.name))
+                }
             } else {
-                val parentDir = existingSources.first().parentFile!!
-                val selectedNames = existingSources.map { it.name }.toSet()
-                val splitParams = ZipParameters(params).apply {
-                    isIncludeRootFolder = false
-                    excludeFileFilter = ExcludeFileFilter { file ->
-                        val topLevel = file.toRelativeString(parentDir).split('/', '\\').first()
-                        topLevel !in selectedNames
-                    }
+                AesZipHelper.createEncryptedZip(actualOutputPath, allFiles, password!!.toCharArray()) { index, t, name ->
+                    // Synchronous callback — can't emit from here
                 }
-                zipFile.createSplitZipFileFromFolder(parentDir, splitParams, true, splitSizeBytes)
-            }
-
-            val monitor = zipFile.progressMonitor
-            // Wait for operation to start (max 2 seconds)
-            var waitCount = 0
-            while (monitor.state != ProgressMonitor.State.BUSY && waitCount < 200) {
-                delay(10)
-                waitCount++
-            }
-
-            var lastFileName = ""
-            var current = 0
-            while (monitor.state == ProgressMonitor.State.BUSY) {
-                val fn = monitor.fileName ?: ""
-                if (fn.isNotEmpty() && fn != lastFileName) {
-                    lastFileName = fn
-                    current++
-                    emit(ZipProgress(current.coerceAtMost(total), total, fn.substringAfterLast('/')))
+                // Emit progress for each file
+                allFiles.forEachIndexed { index, (file, _) ->
+                    emit(ZipProgress(index, total, file.name))
                 }
-                delay(50)
             }
-
-            if (monitor.result == ProgressMonitor.Result.ERROR) {
-                val ex = monitor.exception ?: Exception("ZIP creation error")
-                EcosystemLogger.e(HaronConstants.TAG, "CreateZipUseCase: split zip failed — ${ex.message}")
-                throw ex
+            val outputSize = File(actualOutputPath).length()
+            EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: encrypted zip complete, outputSize=$outputSize")
+            emit(ZipProgress(total, total, "", isComplete = true, actualArchiveName = actualName))
+        } else if (splitSizeBytes > 0) {
+            // Unencrypted split ZIP
+            AesZipHelper.createSplitZip(actualOutputPath, allFiles, null, splitSizeBytes) { index, t, name ->
+                // Synchronous callback
+            }
+            allFiles.forEachIndexed { index, (file, _) ->
+                emit(ZipProgress(index, total, file.name))
             }
             val outputSize = File(actualOutputPath).length()
             EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: split zip complete, outputSize=$outputSize")
             emit(ZipProgress(total, total, "", isComplete = true, actualArchiveName = actualName))
         } else {
-            // Non-split — add files one by one for exact per-file progress
-            allFiles.forEachIndexed { index, (file, zipPath) ->
-                emit(ZipProgress(index, total, file.name))
-                val fileParams = ZipParameters(params).apply {
-                    fileNameInZip = zipPath
+            // Non-split, non-encrypted — use standard ZipOutputStream with per-file progress
+            ZipOutputStream(FileOutputStream(actualOutputPath)).use { zos ->
+                allFiles.forEachIndexed { index, (file, zipPath) ->
+                    emit(ZipProgress(index, total, file.name))
+                    val entry = ZipEntry(zipPath)
+                    entry.time = file.lastModified()
+                    zos.putNextEntry(entry)
+                    FileInputStream(file).use { fis -> fis.copyTo(zos) }
+                    zos.closeEntry()
                 }
-                zipFile.addFile(file, fileParams)
             }
             val outputSize = File(actualOutputPath).length()
             EcosystemLogger.d(HaronConstants.TAG, "CreateZipUseCase: zip complete, outputSize=$outputSize")

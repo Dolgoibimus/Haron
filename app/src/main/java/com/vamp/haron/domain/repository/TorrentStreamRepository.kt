@@ -39,4 +39,40 @@ interface TorrentStreamRepository {
      * Whether torrent streaming is available in this build.
      */
     val isAvailable: Boolean
+
+    /**
+     * Check if a specific piece has been downloaded.
+     */
+    fun havePiece(pieceIndex: Int): Boolean = false
+
+    /**
+     * Get the piece index that contains the given byte offset within the target file.
+     */
+    fun pieceIndexForOffset(offset: Long): Int = -1
+
+    /**
+     * Wait until the given piece is downloaded.
+     * Returns true if piece is available, false on timeout.
+     */
+    suspend fun waitForPiece(pieceIndex: Int, timeoutMs: Long = 30_000): Boolean = false
+
+    /**
+     * Piece length in bytes.
+     */
+    val pieceLength: Long get() = 0
+
+    /**
+     * First piece index of the target file.
+     */
+    val firstPieceIndex: Int get() = 0
+
+    /**
+     * Target file total size.
+     */
+    val streamFileSize: Long get() = 0
+
+    /**
+     * Target file path on disk.
+     */
+    val streamFilePath: String get() = ""
 }

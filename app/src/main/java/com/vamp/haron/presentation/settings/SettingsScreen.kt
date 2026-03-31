@@ -71,6 +71,7 @@ fun SettingsScreen(
     onOpenNavbarSettings: () -> Unit = {},
     onOpenThemes: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenAppStorage: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -708,6 +709,23 @@ fun SettingsScreen(
                 Icon(Icons.Filled.Backup, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.backup_button))
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // --- App Storage ---
+            SectionHeader(
+                icon = Icons.Filled.Storage,
+                title = stringResource(R.string.app_storage_title)
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenAppStorage,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Storage, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.app_storage_button))
             }
 
             Spacer(Modifier.height(32.dp))

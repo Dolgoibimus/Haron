@@ -140,14 +140,36 @@ class ComparisonViewModel @Inject constructor(
         EcosystemLogger.d(HaronConstants.TAG, "ComparisonVM: open file diff $relativePath")
         viewModelScope.launch {
             try {
-                val diff = compareTextFiles(leftFile.absolutePath, rightFile.absolutePath)
-                _state.value = _state.value.copy(
-                    mode = ComparisonMode.TEXT,
-                    textDiff = diff,
-                    leftName = leftFile.name,
-                    rightName = rightFile.name,
-                    isViewingFileDiff = true
-                )
+                if (isTextFile(leftFile) && isTextFile(rightFile)) {
+                    val diff = compareTextFiles(leftFile.absolutePath, rightFile.absolutePath)
+                    _state.value = _state.value.copy(
+                        mode = ComparisonMode.TEXT,
+                        textDiff = diff,
+                        leftName = leftFile.name,
+                        rightName = rightFile.name,
+                        isViewingFileDiff = true
+                    )
+                } else {
+                    // Binary file — show metadata comparison
+                    val sameContent = if (leftFile.length() == rightFile.length()) {
+                        md5(leftFile) == md5(rightFile)
+                    } else false
+                    _state.value = _state.value.copy(
+                        mode = ComparisonMode.BINARY,
+                        binaryMetadata = FileMetadataComparison(
+                            leftPath = leftFile.absolutePath,
+                            rightPath = rightFile.absolutePath,
+                            leftSize = leftFile.length(),
+                            rightSize = rightFile.length(),
+                            leftModified = leftFile.lastModified(),
+                            rightModified = rightFile.lastModified(),
+                            sameContent = sameContent
+                        ),
+                        leftName = leftFile.name,
+                        rightName = rightFile.name,
+                        isViewingFileDiff = true
+                    )
+                }
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "ComparisonVM: file diff failed for $relativePath: ${e.message}")
             }

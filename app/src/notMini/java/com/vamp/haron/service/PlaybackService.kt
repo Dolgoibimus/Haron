@@ -49,6 +49,9 @@ class PlaybackService : MediaSessionService() {
             "--avcodec-skip-idct=0",
             "--audio-resampler", "soxr",
             "--audio-time-stretch",
+            "--network-caching=600000",   // 10 min network buffer for cloud/FTP streaming
+            "--file-caching=3000",        // 3 sec local file buffer
+            "--live-caching=3000",
         ))
 
         vlcPlayer = VlcMediaPlayer(libVlc!!)

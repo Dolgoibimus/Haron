@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.presentation.common.ProgressInfoRow
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.presentation.comparison.components.FolderDiffView
@@ -90,7 +91,7 @@ fun ComparisonScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier.fillMaxSize().swipeBackFromLeft(onBack = handleBack).padding(padding)) {
             when {
                 state.error != null -> {
                     Text(

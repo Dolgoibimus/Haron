@@ -8,50 +8,7 @@ import org.apache.poi.poifs.filesystem.POIFSFileSystem
 import java.io.File
 import java.util.zip.ZipFile
 
-// ======================== Data model ========================
-
-enum class ParaAlignment { LEFT, CENTER, RIGHT, JUSTIFY }
-enum class VerticalAlign { NORMAL, SUPERSCRIPT, SUBSCRIPT }
-
-data class DocParagraph(
-    val spans: List<DocSpan>,
-    val headingLevel: Int = 0,
-    val alignment: ParaAlignment = ParaAlignment.LEFT,
-    val indentLeft: Int = 0,
-    val indentFirstLine: Int = 0,
-    val spacingBeforeDp: Int = 0,
-    val spacingAfterDp: Int = 0,
-    val lineSpacingMultiplier: Float = 0f,
-    val listBullet: String? = null,
-    val listLevel: Int = 0,
-    val backgroundColor: Long = 0,
-    val hasBorderBottom: Boolean = false,     // paragraph bottom border → horizontal line
-    val isTable: Boolean = false,
-    val tableCells: List<List<DocSpan>>? = null,
-    val tableColWidths: List<Float>? = null,
-    val tableCellAligns: List<ParaAlignment>? = null,
-    val tableCellBgs: List<Long>? = null,
-    val tableCellVMerge: List<Boolean>? = null,
-    val tableCellGridSpans: List<Int>? = null, // horizontal merge: how many cols each cell spans
-    val tableCellVAligns: List<String>? = null, // "top","center","bottom"
-    val tableCellBorders: List<Int>? = null,   // per cell border bitmask: 1=left 2=right 4=top 8=bottom
-    val tableHasBorders: Boolean = true,
-    val imageData: ByteArray? = null
-)
-
-data class DocSpan(
-    val text: String,
-    val bold: Boolean = false,
-    val italic: Boolean = false,
-    val underline: Boolean = false,
-    val strikethrough: Boolean = false,
-    val fontSize: Float = 0f,
-    val textColor: Long = 0,
-    val highlightColor: Long = 0,
-    val fontFamily: String? = null,           // font name from document
-    val verticalAlign: VerticalAlign = VerticalAlign.NORMAL,
-    val hyperlink: String? = null
-)
+// Data classes (ParaAlignment, VerticalAlign, DocParagraph, DocSpan) are in DocumentModels.kt (main/)
 
 private data class OdtStyle(
     val bold: Boolean = false,
@@ -1647,7 +1604,10 @@ object DocumentParser {
     // ======================== FB2 ========================
 
     private fun parseFb2(file: File): List<DocParagraph> {
-        return parseFb2Internal(file.readBytes())
+        com.vamp.core.logger.EcosystemLogger.d("Haron", "parseFb2: ${file.name}, size=${file.length()}")
+        val result = parseFb2Internal(file.readBytes())
+        com.vamp.core.logger.EcosystemLogger.d("Haron", "parseFb2: result=${result.size} paragraphs")
+        return result
     }
 
     private fun parseFb2Internal(rawBytes: ByteArray): List<DocParagraph> {

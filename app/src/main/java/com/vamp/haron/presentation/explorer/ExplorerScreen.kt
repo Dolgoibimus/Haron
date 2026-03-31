@@ -1,6 +1,7 @@
 package com.vamp.haron.presentation.explorer
 
 import android.widget.Toast
+import com.vamp.haron.BuildConfig
 import com.vamp.haron.domain.model.PreviewData
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -647,6 +648,7 @@ fun ExplorerScreen(
                 folderSizeCache = state.folderSizeCache,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.topPanel.currentPath),
                 archiveThumbnailCache = viewModel.archiveThumbnailCache,
+                onLoadProtectedThumbnail = { viewModel.loadProtectedThumbnail(it) },
                 onSizeClick = { viewModel.showStorageSizeInfo(PanelId.TOP) },
                 modifier = modifier
             )
@@ -819,6 +821,7 @@ fun ExplorerScreen(
                 hasSelectionBar = hasSelection && !isDragging,
                 cloudAuthHeader = viewModel.getCloudAuthHeader(state.bottomPanel.currentPath),
                 archiveThumbnailCache = viewModel.archiveThumbnailCache,
+                onLoadProtectedThumbnail = { viewModel.loadProtectedThumbnail(it) },
                 onSizeClick = { viewModel.showStorageSizeInfo(PanelId.BOTTOM) },
                 modifier = modifier
             )
@@ -1307,7 +1310,10 @@ fun ExplorerScreen(
     // Rename overlay — floats above keyboard
     val renamingPath = state.topPanel.renamingPath ?: state.bottomPanel.renamingPath
     if (renamingPath != null) {
-        val renamingName = java.io.File(renamingPath).name
+        // For cloud paths (cloud://provider/fileId), find entry.name instead of parsing path
+        val renamingPanel = if (state.topPanel.renamingPath != null) state.topPanel else state.bottomPanel
+        val renamingName = renamingPanel.files.firstOrNull { it.path == renamingPath }?.name
+            ?: java.io.File(renamingPath).name
         RenameOverlay(
             currentName = renamingName,
             onConfirm = { viewModel.confirmInlineRename(it) },
@@ -1475,7 +1481,10 @@ private fun ExplorerDialogs(
                 isLoading = dialog.isLoading,
                 error = dialog.error,
                 onDismiss = viewModel::dismissDialog,
-                onFullscreenPlay = { _ ->
+                onFullscreenPlay = if (!BuildConfig.HAS_VIDEO_PLAYER) { _ ->
+                    viewModel.dismissDialog()
+                    viewModel.openWithExternalApp(dialog.entry)
+                } else { _ ->
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
@@ -1507,7 +1516,10 @@ private fun ExplorerDialogs(
                         onOpenGallery(idx)
                     }
                 }),
-                onOpenPdf = {
+                onOpenPdf = if (!BuildConfig.HAS_PDF_READER) ({
+                    viewModel.dismissDialog()
+                    viewModel.openWithExternalApp(dialog.entry)
+                }) else ({
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
                         viewModel.onProtectedFileClick(dialog.entry)
@@ -1518,7 +1530,7 @@ private fun ExplorerDialogs(
                             ?: dialog.entry.path
                         onOpenPdfReader(pdfPath, dialog.entry.name)
                     }
-                },
+                }),
                 onOpenDocument = {
                     viewModel.dismissDialog()
                     if (dialog.entry.isProtected) {
@@ -1543,6 +1555,13 @@ private fun ExplorerDialogs(
                 onDelete = {
                     viewModel.deleteFromPreview()
                 },
+                onNavigateToFolder = { folderPath ->
+                    viewModel.dismissDialog()
+                    viewModel.closeSearch(viewModel.uiState.value.activePanel)
+                    viewModel.navigateTo(viewModel.uiState.value.activePanel, folderPath)
+                },
+                currentFolderPath = if (viewModel.uiState.value.activePanel == com.vamp.haron.domain.model.PanelId.TOP)
+                    viewModel.uiState.value.topPanel.currentPath else viewModel.uiState.value.bottomPanel.currentPath,
                 adjacentFiles = dialog.adjacentFiles,
                 currentFileIndex = dialog.currentFileIndex,
                 onFileChanged = { newIndex ->

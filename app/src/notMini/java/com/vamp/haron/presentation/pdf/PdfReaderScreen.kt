@@ -90,6 +90,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.common.util.PdfMatch
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.TransferHolder
@@ -465,6 +466,7 @@ private fun PdfReaderContent(
             Box(
                 Modifier
                     .fillMaxSize()
+                    .swipeBackFromLeft(onBack = onBack)
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
@@ -476,6 +478,7 @@ private fun PdfReaderContent(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
                 .pointerInput(Unit) {
                     val slop = viewConfiguration.touchSlop

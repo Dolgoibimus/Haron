@@ -49,7 +49,7 @@ class TorrentStreamService : Service() {
         private const val ACTION_STOP = "com.vamp.haron.TORRENT_STOP"
         private const val EXTRA_URI = "uri"
         private const val EXTRA_FILE_INDEX = "file_index"
-        private const val NO_PEERS_TIMEOUT_MS = 60_000L
+        private const val NO_PEERS_TIMEOUT_MS = 180_000L // 3 min for DHT bootstrap
 
         fun start(context: Context, uri: String, fileIndex: Int = -1) {
             val intent = Intent(context, TorrentStreamService::class.java).apply {

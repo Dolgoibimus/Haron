@@ -62,6 +62,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
+import com.vamp.haron.common.util.SwipeBackEdgeOverlay
 import com.vamp.haron.common.util.toFileSize
 import com.vamp.haron.domain.model.GalleryHolder
 import com.vamp.haron.domain.model.TransferHolder
@@ -250,6 +251,9 @@ fun GalleryScreen(
                 }
             }
         }
+
+        // Swipe-back overlay (on top of HorizontalPager which consumes horizontal drags)
+        SwipeBackEdgeOverlay(onBack = onBack)
 
         // Cast device selection sheet
         val showCastSheet by castViewModel.showDeviceSheet.collectAsState()

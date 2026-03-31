@@ -4,12 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
-import com.vamp.haron.service.FileIndexWorker
+import com.vamp.haron.service.FileIndexJobService
 
 class ScreenOnReceiver : BroadcastReceiver() {
 
@@ -24,12 +21,7 @@ class ScreenOnReceiver : BroadcastReceiver() {
         lastIndexTime = now
         EcosystemLogger.d(HaronConstants.TAG, "ScreenOnReceiver: screen on, triggering re-index")
 
-        val request = OneTimeWorkRequestBuilder<FileIndexWorker>().build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            FileIndexWorker.WORK_NAME_SCREEN_ON,
-            ExistingWorkPolicy.KEEP,
-            request
-        )
+        FileContentObserver.scheduleIndexJob(context, FileIndexJobService.JOB_ID_SCREEN_ON)
     }
 
     companion object {

@@ -77,6 +77,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vamp.haron.R
 import com.vamp.haron.common.util.toFileSize
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.domain.model.InstalledAppInfo
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -119,6 +120,7 @@ fun AppManagerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .swipeBackFromLeft(onBack = onBack)
                 .padding(padding)
         ) {
             // Search

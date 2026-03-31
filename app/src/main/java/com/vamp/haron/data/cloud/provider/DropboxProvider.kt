@@ -273,21 +273,20 @@ class DropboxProvider(
                         // Small file: single upload with CountingInputStream + polling
                         val bytesRead = AtomicLong(0L)
                         val uploadStartTime = System.currentTimeMillis()
-                        val uploadJob = withContext(Dispatchers.IO) {
-                            async {
-                                FileInputStream(file).use { fis ->
-                                    val countingStream = CountingInputStream(fis, bytesRead)
-                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: calling uploadAndFinish for $targetPath")
-                                    val startTime = System.currentTimeMillis()
-                                    val result = withRefreshSuspend {
-                                        getClient()!!.files().uploadBuilder(targetPath)
-                                            .withMode(WriteMode.OVERWRITE)
-                                            .uploadAndFinish(countingStream)
-                                    }
-                                    val elapsed = System.currentTimeMillis() - startTime
-                                    EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: uploadAndFinish completed in ${elapsed}ms, result name=${result.name}, size=${result.size}, rev=${result.rev}")
-                                    result
+                        @Suppress("OPT_IN_USAGE")
+                        val uploadJob = kotlinx.coroutines.GlobalScope.async(Dispatchers.IO) {
+                            FileInputStream(file).use { fis ->
+                                val countingStream = CountingInputStream(fis, bytesRead)
+                                EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: calling uploadAndFinish for $targetPath")
+                                val startTime = System.currentTimeMillis()
+                                val result = withRefreshSuspend {
+                                    getClient()!!.files().uploadBuilder(targetPath)
+                                        .withMode(WriteMode.OVERWRITE)
+                                        .uploadAndFinish(countingStream)
                                 }
+                                val elapsed = System.currentTimeMillis() - startTime
+                                EcosystemLogger.d(HaronConstants.TAG, "Dropbox upload: uploadAndFinish completed in ${elapsed}ms, result name=${result.name}, size=${result.size}, rev=${result.rev}")
+                                result
                             }
                         }
                         var lastEmitPercent = -1

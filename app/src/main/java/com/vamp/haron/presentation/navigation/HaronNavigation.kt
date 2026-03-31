@@ -114,6 +114,7 @@ object HaronRoutes {
     const val TEXT_EDITOR_CLOUD = "text_editor_cloud"
     const val TEXT_EDITOR_CLOUD_ROUTE = "text_editor_cloud?filePath={filePath}&fileName={fileName}&cloudUri={cloudUri}&otherPanelPath={otherPanelPath}"
     const val BACKUP = "backup"
+    const val APP_STORAGE = "app_storage"
     const val DOCUMENT_VIEWER = "document_viewer"
     const val DOCUMENT_VIEWER_ROUTE = "document_viewer?filePath={filePath}&fileName={fileName}"
 
@@ -567,10 +568,16 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenNavbarSettings = { navController.navigate(HaronRoutes.NAVBAR_SETTINGS) },
                 onOpenThemes = { navController.navigate(HaronRoutes.THEMES) },
                 onOpenBackup = { navController.navigate(HaronRoutes.BACKUP) },
+                onOpenAppStorage = { navController.navigate(HaronRoutes.APP_STORAGE) },
             )
         }
         composable(HaronRoutes.BACKUP) {
             BackupScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(HaronRoutes.APP_STORAGE) {
+            com.vamp.haron.presentation.settings.AppStorageScreen(
                 onBack = { navController.popBackStack() }
             )
         }
@@ -627,6 +634,9 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
                 onOpenFolder = { path ->
                     TransferHolder.pendingNavigationPath.value = path
                     navController.popBackStack()
+                },
+                onOpenMediaPlayer = { startIndex ->
+                    navController.navigate(HaronRoutes.mediaPlayer(startIndex))
                 },
                 openScanner = backStackEntry.arguments?.getBoolean("openScanner") ?: false
             )
@@ -899,7 +909,10 @@ fun HaronNavigation(navigateToPath: String? = null, modifier: Modifier = Modifie
         animRoute.startsWith(HaronRoutes.GALLERY) ||
         animRoute.startsWith(HaronRoutes.MEDIA_PLAYER) ||
         animRoute.startsWith(HaronRoutes.PDF_READER) ||
-        animRoute.startsWith(HaronRoutes.DOCUMENT_VIEWER)
+        animRoute.startsWith(HaronRoutes.DOCUMENT_VIEWER) ||
+        animRoute.startsWith(HaronRoutes.TEXT_EDITOR) ||
+        animRoute.startsWith(HaronRoutes.TEXT_EDITOR_CLOUD) ||
+        animRoute.startsWith(HaronRoutes.COMPARISON)
     )
     if (matrixShow && !hideAnimation) {
         com.vamp.haron.presentation.matrix.MatrixRainCanvas(

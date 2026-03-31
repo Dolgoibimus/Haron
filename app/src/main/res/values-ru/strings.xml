@@ -792,6 +792,7 @@
     <!-- Content search (Batch 22) -->
     <string name="search_by_name">Поиск по имени</string>
     <string name="search_by_content">Поиск по содержимому</string>
+    <string name="found">найдено</string>
     <string name="content_search_hint">Поиск по содержимому включает текстовые файлы, документы, PDF и метаданные медиа. Индексация больших файлов может занять время.</string>
     <string name="expand_snippet">Показать контекст</string>
 
@@ -1629,6 +1630,12 @@
     <string name="snowfall_size">Размер</string>
     <string name="starfield_title">Звёздное небо</string>
     <string name="dust_title">Пылинки</string>
+
+    <!-- App Storage -->
+    <string name="app_storage_title">Хранилище приложения</string>
+    <string name="app_storage_button">Хранилище приложения</string>
+    <string name="app_storage_files">файлов</string>
+    <string name="app_storage_clear_dir">Очистить папку</string>
 
     <!-- Backup -->
     <string name="backup_section_title">Резервное копирование</string>

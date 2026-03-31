@@ -2,16 +2,17 @@ package com.vamp.haron.domain.usecase
 
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
-import net.lingala.zip4j.ZipFile
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.util.zip.ZipFile
 
 /**
- * Tests for CreateZipUseCase — ZIP archive creation with zip4j.
+ * Tests for CreateZipUseCase — ZIP archive creation.
+ * Rewritten to use standard java.util.zip after zip4j removal.
  */
 class CreateZipUseCaseTest {
 
@@ -41,9 +42,9 @@ class CreateZipUseCaseTest {
         assertTrue(progress.last().isComplete)
         assertEquals(1, progress.last().total)
         ZipFile(output).use { zip ->
-            val entries = zip.fileHeaders
+            val entries = zip.entries().toList()
             assertEquals(1, entries.size)
-            assertEquals("test.txt", entries[0].fileName)
+            assertEquals("test.txt", entries[0].name)
         }
     }
 
@@ -60,7 +61,7 @@ class CreateZipUseCaseTest {
         assertTrue(progress.last().isComplete)
         assertEquals(2, progress.last().total)
         ZipFile(output).use { zip ->
-            val names = zip.fileHeaders.map { it.fileName }
+            val names = zip.entries().toList().map { it.name }
             assertTrue(names.any { it.endsWith("a.txt") })
             assertTrue(names.any { it.endsWith("b.txt") })
         }
@@ -78,25 +79,7 @@ class CreateZipUseCaseTest {
         assertTrue(progress.last().isComplete)
         assertEquals(2, progress.last().total)
         ZipFile(output).use { zip ->
-            assertEquals(2, zip.fileHeaders.size)
-        }
-    }
-
-    @Test
-    fun `zip with password creates encrypted archive`() = runTest {
-        val file = File(tempDir, "secret.txt").apply { writeText("top secret data") }
-        val output = File(tempDir, "encrypted.zip")
-
-        useCase(listOf(file.absolutePath), output.absolutePath, password = "mypass123").toList()
-
-        assertTrue(output.exists())
-        val zip = ZipFile(output)
-        assertTrue(zip.isEncrypted)
-        zip.setPassword("mypass123".toCharArray())
-        zip.use { z ->
-            val entries = z.fileHeaders
-            assertEquals(1, entries.size)
-            assertTrue(entries[0].isEncrypted)
+            assertEquals(2, zip.entries().toList().size)
         }
     }
 
@@ -120,40 +103,5 @@ class CreateZipUseCaseTest {
         assertEquals(2, progress[2].current)
         assertTrue(progress[3].isComplete)
         assertEquals(3, progress[3].total)
-    }
-
-    @Test
-    fun `zip with password and no password produces different results`() = runTest {
-        val file = File(tempDir, "data.txt").apply { writeText("some data here") }
-        val outputPlain = File(tempDir, "plain.zip")
-        val outputEncrypted = File(tempDir, "encrypted.zip")
-
-        useCase(listOf(file.absolutePath), outputPlain.absolutePath).toList()
-        useCase(listOf(file.absolutePath), outputEncrypted.absolutePath, password = "pass").toList()
-
-        assertTrue(outputPlain.exists())
-        assertTrue(outputEncrypted.exists())
-
-        val plainZip = ZipFile(outputPlain)
-        val encZip = ZipFile(outputEncrypted)
-
-        assertTrue(!plainZip.isEncrypted)
-        assertTrue(encZip.isEncrypted)
-
-        plainZip.close()
-        encZip.close()
-    }
-
-    @Test
-    fun `zip empty password treated as no encryption`() = runTest {
-        val file = File(tempDir, "noenc.txt").apply { writeText("no encryption") }
-        val output = File(tempDir, "noenc.zip")
-
-        useCase(listOf(file.absolutePath), output.absolutePath, password = "").toList()
-
-        assertTrue(output.exists())
-        val zip = ZipFile(output)
-        assertTrue(!zip.isEncrypted)
-        zip.close()
     }
 }

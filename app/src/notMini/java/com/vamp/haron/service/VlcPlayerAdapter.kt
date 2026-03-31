@@ -47,6 +47,7 @@ class VlcPlayerAdapter(
     private var _repeatMode: Int = Player.REPEAT_MODE_ALL
     private var _isTransitioning: Boolean = false
     private var lastInvalidateTime: Long = 0L
+    private var _bufferingPercent: Float = 100f
 
     init {
         EcosystemLogger.d(HaronConstants.TAG, "VlcPlayerAdapter: initialized")
@@ -77,6 +78,9 @@ class VlcPlayerAdapter(
                             invalidateState()
                         }
                     }
+                }
+                VlcMediaPlayer.Event.Buffering -> {
+                    _bufferingPercent = event.buffering
                 }
                 VlcMediaPlayer.Event.LengthChanged -> {
                     durationMs = vlcPlayer.length.coerceAtLeast(0)
@@ -313,10 +317,17 @@ class VlcPlayerAdapter(
     fun isCurrentlyPlaying(): Boolean = _isPlaying
     fun getCurrentPositionMs(): Long = positionMs
     fun getCurrentDurationMs(): Long = durationMs
+    fun getBufferedPositionMs(): Long {
+        if (durationMs <= 0) return 0L
+        return (durationMs * _bufferingPercent / 100f).toLong().coerceIn(positionMs, durationMs)
+    }
     fun getCurrentRepeatMode(): Int = _repeatMode
     fun setRepeat(mode: Int) {
         _repeatMode = mode
         invalidateState()
         onRepeatModeChanged?.invoke(mode)
     }
+
+    fun togglePlay() { vlcPlayer.play() }
+    fun togglePause() { vlcPlayer.pause() }
 }

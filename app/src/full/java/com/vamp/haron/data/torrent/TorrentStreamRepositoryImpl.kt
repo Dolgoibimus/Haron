@@ -7,20 +7,19 @@ import com.vamp.haron.domain.model.TorrentFileInfo
 import com.vamp.haron.domain.model.TorrentStreamState
 import com.vamp.haron.domain.repository.TorrentStreamRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.libtorrent4j.AlertListener
 import org.libtorrent4j.Priority
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
-import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.alerts.AddTorrentAlert
@@ -35,8 +34,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val SUB = "Torrent"
-private const val BUFFER_PERCENT = 3 // Start playback after 3% buffered
-private const val MIN_BUFFER_BYTES = 15 * 1024 * 1024L // At least 15 MB before playback
+private const val BUFFER_PERCENT = 3
+private const val MIN_BUFFER_BYTES = 15 * 1024 * 1024L
 
 @Singleton
 class TorrentStreamRepositoryImpl @Inject constructor(
@@ -49,14 +48,29 @@ class TorrentStreamRepositoryImpl @Inject constructor(
     override val isAvailable: Boolean = true
 
     private var session: SessionManager? = null
-    private var currentHandle: TorrentHandle? = null
+    @Volatile private var currentHandle: TorrentHandle? = null
+    @Volatile private var handleActive = false // guard against SIGSEGV on removed handle
     private var streamFileIndex: Int = -1
     private var lastLoggedPercent = -1
     private var totalPieces: Int = 0
     private var downloadedPieces: Int = 0
-    private var targetFileSize: Long = 0
-    private var targetFilePath: String = ""
+    private var _targetFileSize: Long = 0
+    private var _targetFilePath: String = ""
     private var targetFileName: String = ""
+    private var _pieceLength: Long = 0
+    private var _firstPieceIndex: Int = 0
+
+    // Channel for piece completion notifications (HTTP proxy waits on this)
+    private val pieceCompleted = MutableSharedFlow<Int>(extraBufferCapacity = 256)
+    // Track downloaded pieces in-process to avoid native havePiece() SIGSEGV
+    private val downloadedPieceSet = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    // Queue of pieces to prioritize (HTTP thread → alert thread, avoids SIGSEGV)
+    private val priorityRequestQueue = java.util.concurrent.ConcurrentLinkedQueue<Int>()
+
+    override val pieceLength: Long get() = _pieceLength
+    override val firstPieceIndex: Int get() = _firstPieceIndex
+    override val streamFileSize: Long get() = _targetFileSize
+    override val streamFilePath: String get() = _targetFilePath
 
     private val cacheDir: File
         get() = File(context.filesDir, "torrent_stream").apply { mkdirs() }
@@ -69,15 +83,20 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         EcosystemLogger.i(HaronConstants.TAG, "$SUB: creating new session...")
         val settings = SettingsPack()
             .listenInterfaces("0.0.0.0:6881,[::]:6881")
-            .activeDownloads(2)
+            .activeDownloads(4)
             .activeSeeds(0)
-            .connectionsLimit(500)
+            .connectionsLimit(1500)
+            .downloadRateLimit(0)
+            .uploadRateLimit(0)
+            .sendBufferWatermark(4 * 1024) // 4 MB (value in KB)
+            .maxPeerlistSize(4000)
+
         val params = SessionParams(settings)
         val mgr = SessionManager(false)
         mgr.addListener(torrentListener)
         mgr.start(params)
-        // Bootstrap DHT with well-known nodes
         mgr.startDht()
+        // Add DHT bootstrap nodes
         try {
             val swig = mgr.swig()
             swig?.add_dht_node(org.libtorrent4j.swig.string_int_pair("router.bittorrent.com", 6881))
@@ -95,6 +114,8 @@ class TorrentStreamRepositoryImpl @Inject constructor(
     override suspend fun startStream(uri: String, fileIndex: Int) = withContext(Dispatchers.IO) {
         try {
             stopStream()
+            // Clean old cache to avoid non-sequential piece holes from previous downloads
+            cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             _state.value = TorrentStreamState.FetchingMetadata
             streamFileIndex = fileIndex
 
@@ -104,7 +125,6 @@ class TorrentStreamRepositoryImpl @Inject constructor(
                 EcosystemLogger.i(HaronConstants.TAG, "$SUB: downloading magnet metadata...")
                 mgr.download(uri, cacheDir, null)
             } else {
-                // .torrent file
                 val torrentFile = File(uri)
                 if (!torrentFile.exists()) {
                     _state.value = TorrentStreamState.Error("File not found: $uri")
@@ -123,7 +143,6 @@ class TorrentStreamRepositoryImpl @Inject constructor(
     override suspend fun getFiles(uri: String): List<TorrentFileInfo> = withContext(Dispatchers.IO) {
         try {
             val ti = if (uri.startsWith("magnet:")) {
-                // Need to fetch metadata first
                 val mgr = ensureSession()
                 val bytes = mgr.fetchMagnet(uri, 30, cacheDir)
                 if (bytes != null) TorrentInfo.bdecode(bytes) else null
@@ -154,17 +173,20 @@ class TorrentStreamRepositoryImpl @Inject constructor(
     }
 
     override fun stopStream() {
-        currentHandle?.let { handle ->
+        handleActive = false // must be set BEFORE remove to prevent SIGSEGV in alert thread
+        val handle = currentHandle
+        currentHandle = null // clear reference BEFORE native calls
+        handle?.let { h ->
             try {
-                handle.pause()
-                session?.remove(handle)
+                session?.remove(h)
             } catch (_: Exception) {}
         }
-        currentHandle = null
         streamFileIndex = -1
         lastLoggedPercent = -1
+        downloadedPieceSet.clear()
         _state.value = TorrentStreamState.Idle
-        EcosystemLogger.d(HaronConstants.TAG, "$SUB: stream stopped")
+        // Keep session alive — reuse for next torrent (DHT, connections)
+        EcosystemLogger.d(HaronConstants.TAG, "$SUB: stream stopped (session kept)")
     }
 
     override suspend fun cleanCache() = withContext(Dispatchers.IO) {
@@ -178,16 +200,46 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         EcosystemLogger.i(HaronConstants.TAG, "$SUB: cache cleaned")
     }
 
+    // --- HTTP proxy API ---
+
+    override fun havePiece(pieceIndex: Int): Boolean {
+        return pieceIndex in downloadedPieceSet
+    }
+
+    override fun pieceIndexForOffset(offset: Long): Int {
+        if (_pieceLength <= 0) return -1
+        return _firstPieceIndex + (offset / _pieceLength).toInt()
+    }
+
+    override suspend fun waitForPiece(pieceIndex: Int, timeoutMs: Long): Boolean {
+        if (havePiece(pieceIndex)) return true
+        // Request priority via queue (processed in alert thread — safe for native calls)
+        priorityRequestQueue.add(pieceIndex)
+        EcosystemLogger.d(HaronConstants.TAG, "$SUB: HTTP waiting for piece $pieceIndex")
+        // Poll + flow hybrid: avoids race condition where piece arrives between havePiece() and flow subscription
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (havePiece(pieceIndex)) return true
+            // Wait for any piece completion, then re-check
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) break
+            withTimeoutOrNull(remaining.coerceAtMost(2000)) {
+                pieceCompleted.first { true } // any piece
+            }
+        }
+        return havePiece(pieceIndex)
+    }
+
+    // --- Internal ---
+
     private fun setupSequentialDownload(handle: TorrentHandle) {
         val ti = handle.torrentFile() ?: return
         val storage = ti.files()
         val numFiles = storage.numFiles()
 
-        // Find target file
-        val targetIndex = if (streamFileIndex >= 0 && streamFileIndex < numFiles) {
+        val targetIndex = if (streamFileIndex in 0 until numFiles) {
             streamFileIndex
         } else {
-            // Auto-select largest video file
             val videoExts = setOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts")
             var bestIdx = 0
             var bestSize = 0L
@@ -199,7 +251,6 @@ class TorrentStreamRepositoryImpl @Inject constructor(
                     bestSize = size
                 }
             }
-            // If no video found, pick largest file
             if (bestSize == 0L) {
                 for (i in 0 until numFiles) {
                     if (storage.fileSize(i) > bestSize) {
@@ -213,31 +264,35 @@ class TorrentStreamRepositoryImpl @Inject constructor(
 
         streamFileIndex = targetIndex
 
-        // Set priorities: target file = TOP_PRIORITY, others = IGNORE
-        val priorities = Array(numFiles) { Priority.IGNORE }
-        priorities[targetIndex] = Priority.TOP_PRIORITY
-        handle.prioritizeFiles(priorities)
-
-        // Use piece deadlines for streaming (better than sequential_download)
-        // Prioritize first pieces + last piece (container metadata) with tight deadlines
-        val firstPiece = (storage.fileOffset(targetIndex) / ti.pieceLength()).toInt()
+        // Cache piece info for HTTP proxy
+        _pieceLength = ti.pieceLength().toLong()
+        _firstPieceIndex = (storage.fileOffset(targetIndex) / ti.pieceLength()).toInt()
         val lastPiece = ((storage.fileOffset(targetIndex) + storage.fileSize(targetIndex) - 1) / ti.pieceLength()).toInt()
-        val bufferPieces = (MIN_BUFFER_BYTES / ti.pieceLength()).toInt().coerceAtLeast(5)
 
-        // First N pieces — tight deadline for quick start
-        for (i in firstPiece..(firstPiece + bufferPieces).coerceAtMost(lastPiece)) {
-            handle.setPieceDeadline(i, (i - firstPiece + 1) * 500) // 500ms per piece
+        // Set file + piece priorities (no setPieceDeadline — SIGSEGV in libtorrent4j 2.x)
+        try {
+            val priorities = Array(numFiles) { Priority.IGNORE }
+            priorities[targetIndex] = Priority.TOP_PRIORITY
+            handle.prioritizeFiles(priorities)
+
+            val piecePriorities = Array(ti.numPieces()) { Priority.TOP_PRIORITY }
+            handle.prioritizePieces(piecePriorities)
+            handleActive = true
+            EcosystemLogger.i(HaronConstants.TAG, "$SUB: all ${ti.numPieces()} pieces set to TOP_PRIORITY")
+        } catch (e: Exception) {
+            EcosystemLogger.e(HaronConstants.TAG, "$SUB: error setting priorities: ${e.message}")
         }
-        // Last piece — container needs it for duration/index
-        handle.setPieceDeadline(lastPiece, 3000)
 
-        // Cache info for crash-safe progress tracking (avoid handle.status() in alerts)
         totalPieces = ti.numPieces()
         downloadedPieces = 0
-        targetFileSize = storage.fileSize(targetIndex)
-        targetFilePath = File(cacheDir, storage.filePath(targetIndex)).absolutePath
+        _targetFileSize = storage.fileSize(targetIndex)
+        _targetFilePath = File(cacheDir, storage.filePath(targetIndex)).absolutePath
         targetFileName = storage.fileName(targetIndex)
-        EcosystemLogger.i(HaronConstants.TAG, "$SUB: streaming file[$targetIndex]: $targetFileName (${targetFileSize / 1_000_000}MB), pieces=$totalPieces")
+
+        downloadedPieceSet.clear()
+        downloadedPieces = 0
+
+        EcosystemLogger.i(HaronConstants.TAG, "$SUB: streaming file[$targetIndex]: $targetFileName (${_targetFileSize / 1_000_000}MB), pieces=$totalPieces, pieceLen=${_pieceLength / 1024}KB")
     }
 
     private val torrentListener = object : AlertListener {
@@ -250,7 +305,6 @@ class TorrentStreamRepositoryImpl @Inject constructor(
         )
 
         override fun alert(alert: Alert<*>) {
-            EcosystemLogger.d(HaronConstants.TAG, "$SUB: alert: ${alert.type()}")
             when (alert) {
                 is AddTorrentAlert -> {
                     EcosystemLogger.i(HaronConstants.TAG, "$SUB: AddTorrentAlert, error=${alert.error().isError}, hasInfo=${alert.handle().torrentFile() != null}")
@@ -263,7 +317,6 @@ class TorrentStreamRepositoryImpl @Inject constructor(
                     currentHandle = handle
                     EcosystemLogger.i(HaronConstants.TAG, "$SUB: AddTorrent OK, name=${alert.torrentName()}")
                     if (handle.isValid && handle.torrentFile() != null) {
-                        // Have metadata already (.torrent file)
                         setupSequentialDownload(handle)
                         _state.value = TorrentStreamState.Buffering(0, 0)
                     } else {
@@ -279,10 +332,20 @@ class TorrentStreamRepositoryImpl @Inject constructor(
                 }
 
                 is PieceFinishedAlert -> {
-                    // Track progress WITHOUT calling handle.status() — avoids native SIGSEGV crash
                     downloadedPieces++
+                    val pieceIdx = alert.pieceIndex()
+                    downloadedPieceSet.add(pieceIdx)
+                    pieceCompleted.tryEmit(pieceIdx)
+                    // Log first 20 pieces to debug ordering
+                    if (downloadedPieces <= 20) {
+                        EcosystemLogger.d(HaronConstants.TAG, "$SUB: piece[$pieceIdx] downloaded (#$downloadedPieces), set size=${downloadedPieceSet.size}")
+                    }
+
+                    // Drain priority queue (no native calls — SIGSEGV in libtorrent4j 2.x)
+                    while (priorityRequestQueue.poll() != null) { /* discard */ }
+
                     val progress = if (totalPieces > 0) (downloadedPieces * 100 / totalPieces) else 0
-                    val downloaded = if (totalPieces > 0) (targetFileSize * downloadedPieces / totalPieces) else 0L
+                    val downloaded = if (totalPieces > 0) (_targetFileSize * downloadedPieces / totalPieces) else 0L
 
                     if (progress != lastLoggedPercent) {
                         lastLoggedPercent = progress
@@ -291,14 +354,16 @@ class TorrentStreamRepositoryImpl @Inject constructor(
 
                     val currentState = _state.value
                     if (currentState is TorrentStreamState.Buffering || currentState is TorrentStreamState.FetchingMetadata) {
-                        if (progress >= BUFFER_PERCENT || downloaded >= MIN_BUFFER_BYTES) {
-                            EcosystemLogger.i(HaronConstants.TAG, "$SUB: READY — $targetFileName, buffered ${downloaded / 1_000_000}MB")
-                            _state.value = TorrentStreamState.Ready(targetFilePath, targetFileName)
+                        val hasStartPieces = _firstPieceIndex in downloadedPieceSet &&
+                                (_firstPieceIndex + 1) in downloadedPieceSet
+                        if (hasStartPieces && (progress >= BUFFER_PERCENT || downloaded >= MIN_BUFFER_BYTES)) {
+                            EcosystemLogger.i(HaronConstants.TAG, "$SUB: READY — $targetFileName, buffered ${downloaded / 1_000_000}MB, has start pieces")
+                            _state.value = TorrentStreamState.Ready(_targetFilePath, targetFileName)
                         } else {
                             _state.value = TorrentStreamState.Buffering(progress, downloaded / 1024, downloadedPieces)
                         }
                     } else if (currentState is TorrentStreamState.Ready || currentState is TorrentStreamState.Streaming) {
-                        _state.value = TorrentStreamState.Streaming(targetFilePath, targetFileName, progress, downloaded / 1024, 0, 0)
+                        _state.value = TorrentStreamState.Streaming(_targetFilePath, targetFileName, progress, downloaded / 1024, 0, 0)
                     }
                 }
 

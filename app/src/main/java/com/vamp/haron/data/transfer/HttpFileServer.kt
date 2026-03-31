@@ -5,25 +5,17 @@ import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.vamp.haron.data.cast.RemoteInputChannel
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.cio.*
-import io.ktor.server.engine.*
-import io.ktor.server.plugins.autohead.*
-import io.ktor.server.plugins.partialcontent.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.server.websocket.*
-import io.ktor.websocket.*
-import java.time.Duration
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.Inet4Address
@@ -39,10 +31,10 @@ data class HttpDownloadEvent(
 )
 
 /**
- * Embedded HTTP server built on Ktor CIO for sharing files over the local network.
- * Serves static files, directory listings, PDF page previews, and HLS streams.
- * Supports WebSocket connections for remote input events and download event tracking.
- * Auto-selects an available port starting from 8080.
+ * Embedded HTTP server for sharing files over the local network.
+ * Built on SimpleHttpServer (raw sockets, replaces Ktor CIO ~3 MB).
+ * Serves static files, directory listings, PDF page previews, HLS streams,
+ * cloud/FTP proxy, and WebSocket for remote input events.
  */
 @Singleton
 class HttpFileServer @Inject constructor(
@@ -51,7 +43,7 @@ class HttpFileServer @Inject constructor(
     private val ftpClientManager: com.vamp.haron.data.ftp.FtpClientManager,
     private val sftpClientManager: com.vamp.haron.data.sftp.SftpClientManager
 ) {
-    private var engine: ApplicationEngine? = null
+    private var server: SimpleHttpServer? = null
     private var sharedFiles: List<File> = emptyList()
     var actualPort: Int = 0
         private set
@@ -63,25 +55,28 @@ class HttpFileServer @Inject constructor(
     private var slideshowFiles: List<File> = emptyList()
     private var slideshowIntervalSec: Int = 5
     private var pdfFile: File? = null
-    @Suppress("unused") // kept for potential future use
+    @Suppress("unused")
     private var fileInfoHtml: String? = null
 
     // Cloud streaming proxy
     data class CloudStreamConfig(
         val fileId: String,
-        val accountId: String, // "gdrive:alice@gmail.com"
+        val accountId: String,
         val fileName: String,
         val fileSize: Long
     ) {
-        /** Provider scheme extracted from accountId (e.g. "gdrive") */
         val providerScheme: String get() = accountId.substringBefore(':')
     }
     private val cloudStreams = mutableMapOf<String, CloudStreamConfig>()
-    /** Callback to get fresh access token by accountId */
     var cloudTokenProvider: ((String) -> String?)? = null
 
-    // HLS (progressive transcode → Chromecast)
+    // Torrent streaming proxy
+    var torrentStreamRepo: com.vamp.haron.domain.repository.TorrentStreamRepository? = null
+
+    // HLS
     @Volatile private var hlsDir: File? = null
+
+    private var wsScope: CoroutineScope? = null
 
     suspend fun start(files: List<File>): Int {
         stop()
@@ -92,416 +87,15 @@ class HttpFileServer @Inject constructor(
         EcosystemLogger.d(HaronConstants.TAG, "HttpFileServer.start: port=$port, files=${files.size}, " +
                 "fileNames=${files.take(3).map { it.name }}")
 
-        // Log all network interfaces for diagnostics
         logAllNetworkInterfaces()
 
-        engine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            install(PartialContent)
-            install(AutoHeadResponse)
-            install(WebSockets) {
-                pingPeriod = Duration.ofSeconds(15)
-                timeout = Duration.ofSeconds(30)
-                maxFrameSize = Long.MAX_VALUE
-            }
-            routing {
-                // --- WebSocket for TV remote ---
-                webSocket("/ws/remote") {
-                    EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket connected")
-                    try {
-                        remoteInputChannel.events.collect { json ->
-                            send(Frame.Text(json))
-                        }
-                    } catch (e: Exception) {
-                        EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket disconnected: ${e.message}")
-                    }
-                }
-                get("/") {
-                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET / from ${call.request.local.remoteAddress}")
-                    call.respondText(buildHtmlPage(sharedFiles), ContentType.Text.Html)
-                }
-                get("/download/{index}") {
-                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /download/${call.parameters["index"]} from ${call.request.local.remoteAddress}")
-                    val idx = call.parameters["index"]?.toIntOrNull()
-                    if (idx == null || idx !in sharedFiles.indices) {
-                        call.respondText("File not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val file = sharedFiles[idx]
-                    if (!file.exists()) {
-                        call.respondText("File not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val encodedName = URLEncoder.encode(file.name, "UTF-8").replace("+", "%20")
-                    call.response.header(
-                        HttpHeaders.ContentDisposition,
-                        "attachment; filename*=UTF-8''$encodedName"
-                    )
-                    call.response.header(HttpHeaders.ContentLength, file.length().toString())
-                    val fileSize = file.length()
-                    call.respondOutputStream(
-                        contentType = ContentType.Application.OctetStream,
-                        status = HttpStatusCode.OK
-                    ) {
-                        withContext(Dispatchers.IO) {
-                            file.inputStream().use { input ->
-                                input.copyTo(this@respondOutputStream, bufferSize = 8192)
-                            }
-                        }
-                    }
-                    _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, fileSize))
-                }
-                get("/stream/{index}") {
-                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /stream/${call.parameters["index"]} from ${call.request.local.remoteAddress}")
-                    val idx = call.parameters["index"]?.toIntOrNull()
-                    if (idx == null || idx !in sharedFiles.indices) {
-                        call.respondText("File not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val file = sharedFiles[idx]
-                    if (!file.exists()) {
-                        call.respondText("File not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    call.response.header(HttpHeaders.AcceptRanges, "bytes")
-                    val fileSize = file.length()
-                    call.respondFile(file)
-                    _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, fileSize))
-                }
-
-                // JSON API for Haron-to-Haron QR download
-                get("/api/files") {
-                    EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET /api/files from ${call.request.local.remoteAddress}, files=${sharedFiles.size}")
-                    val json = sharedFiles.mapIndexed { index, file ->
-                        """{"index":$index,"name":"${escapeJson(file.name)}","size":${file.length()}}"""
-                    }.joinToString(",", "[", "]")
-                    call.respondText(json, ContentType.Application.Json)
-                }
-
-                // --- Cloud streaming proxy ---
-                get("/cloud/stream/{streamId}") {
-                    val streamId = call.parameters["streamId"]
-                    val config = streamId?.let { cloudStreams[it] }
-                    if (config == null) {
-                        call.respondText("Stream not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-
-                    try {
-                        // Get fresh token on each request (tokens expire after 1 hour)
-                        val freshToken = cloudTokenProvider?.invoke(config.accountId)
-                        if (freshToken == null) {
-                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): no token for ${config.accountId}")
-                            call.respondText("No access token", status = HttpStatusCode.Unauthorized)
-                            return@get
-                        }
-                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): using token ${freshToken.take(15)}...")
-
-                        // Resolve download URL (provider-specific)
-                        val downloadUrl = when (config.providerScheme) {
-                            "gdrive" -> "https://www.googleapis.com/drive/v3/files/${config.fileId}?alt=media"
-                            "yandex" -> {
-                                // Two-step: get temporary download URL, then stream from it
-                                val tempUrl = withContext(Dispatchers.IO) {
-                                    getYandexDownloadUrl(config.fileId, freshToken)
-                                }
-                                if (tempUrl == null) {
-                                    call.respondText("Failed to get Yandex download URL", status = HttpStatusCode.BadGateway)
-                                    return@get
-                                }
-                                tempUrl
-                            }
-                            "dropbox" -> {
-                                // Get temporary direct link (supports GET + Range)
-                                val tempLink = withContext(Dispatchers.IO) {
-                                    getDropboxTemporaryLink(config.fileId, freshToken)
-                                }
-                                if (tempLink == null) {
-                                    call.respondText("Failed to get Dropbox temp link", status = HttpStatusCode.BadGateway)
-                                    return@get
-                                }
-                                tempLink
-                            }
-                            else -> {
-                                call.respondText("Unsupported provider", status = HttpStatusCode.BadRequest)
-                                return@get
-                            }
-                        }
-                        // Yandex temp URL and Dropbox temp link are self-authenticated
-                        val needsAuth = config.providerScheme !in listOf("dropbox", "yandex")
-
-                        val url = java.net.URL(downloadUrl)
-                        val conn = withContext(Dispatchers.IO) {
-                            (url.openConnection() as java.net.HttpURLConnection).apply {
-                                requestMethod = "GET"
-                                if (needsAuth) {
-                                    val authPrefix = if (config.providerScheme == "yandex") "OAuth" else "Bearer"
-                                    setRequestProperty("Authorization", "$authPrefix $freshToken")
-                                }
-                                instanceFollowRedirects = true
-                                connectTimeout = 15_000
-                                readTimeout = 60_000
-                                // Forward Range header for seeking
-                                call.request.headers[HttpHeaders.Range]?.let {
-                                    setRequestProperty("Range", it)
-                                }
-                            }
-                        }
-
-                        val responseCode = withContext(Dispatchers.IO) { conn.responseCode }
-                        EcosystemLogger.d(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode from ${config.providerScheme}")
-
-                        if (responseCode !in 200..299 && responseCode != 206) {
-                            val errorBody = try { withContext(Dispatchers.IO) { conn.errorStream?.bufferedReader()?.readText() } } catch (_: Exception) { null }
-                            EcosystemLogger.e(HaronConstants.TAG, "Cloud stream ($streamId): HTTP $responseCode, error=$errorBody")
-                            conn.disconnect()
-                            call.respondText("Stream error: HTTP $responseCode", status = HttpStatusCode.fromValue(responseCode))
-                            return@get
-                        }
-
-                        val contentType = conn.getHeaderField("Content-Type") ?: "application/octet-stream"
-                        val contentLength = conn.getHeaderField("Content-Length")
-                        val contentRange = conn.getHeaderField("Content-Range")
-
-                        val status = if (responseCode == 206) HttpStatusCode.PartialContent else HttpStatusCode.OK
-                        call.response.header(HttpHeaders.AcceptRanges, "bytes")
-                        call.response.header(HttpHeaders.AccessControlAllowOrigin, "*")
-                        contentLength?.let { call.response.header(HttpHeaders.ContentLength, it) }
-                        contentRange?.let { call.response.header(HttpHeaders.ContentRange, it) }
-
-                        call.respondOutputStream(
-                            contentType = ContentType.parse(contentType),
-                            status = status
-                        ) {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    conn.inputStream.use { input ->
-                                        val buffer = ByteArray(65536)
-                                        var bytesRead: Int
-                                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                                            write(buffer, 0, bytesRead)
-                                        }
-                                    }
-                                } finally {
-                                    conn.disconnect()
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        EcosystemLogger.e(HaronConstants.TAG, "Cloud stream error ($streamId): ${e::class.simpleName}: ${e.message}")
-                        call.respondText("Stream error: ${e.message}", status = HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                // --- HLS (progressive transcode → Chromecast) ---
-                get("/hls/{filename}") {
-                    val dir = hlsDir
-                    val name = call.parameters["filename"]
-                    EcosystemLogger.d(HaronConstants.TAG, "HLS request: /$name, hlsDir=${dir?.absolutePath}")
-                    if (dir == null || name == null) {
-                        EcosystemLogger.e(HaronConstants.TAG, "HLS 404: dir=$dir, name=$name")
-                        call.respondText("Not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val file = File(dir, name)
-                    if (!file.exists()) {
-                        EcosystemLogger.e(HaronConstants.TAG, "HLS 404: file not found: ${file.absolutePath}")
-                        call.respondText("Not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val ct = when (file.extension.lowercase()) {
-                        "m3u8" -> ContentType.parse("application/vnd.apple.mpegurl")
-                        "ts" -> ContentType.parse("video/mp2t")
-                        else -> ContentType.Application.OctetStream
-                    }
-                    // CORS for Chromecast JS-based HLS player
-                    call.response.header(HttpHeaders.AccessControlAllowOrigin, "*")
-                    // Disable caching so Chromecast re-fetches playlist for new segments
-                    call.response.header(HttpHeaders.CacheControl, "no-cache, no-store")
-                    call.response.header(HttpHeaders.ContentLength, file.length().toString())
-                    EcosystemLogger.d(HaronConstants.TAG, "HLS serving: $name (${file.length()} bytes, ct=$ct)")
-                    call.respondOutputStream(contentType = ct, status = HttpStatusCode.OK) {
-                        withContext(Dispatchers.IO) {
-                            file.inputStream().use { it.copyTo(this@respondOutputStream, 8192) }
-                        }
-                    }
-                }
-
-                // --- Extended Cast endpoints ---
-
-                get("/slideshow") {
-                    if (slideshowFiles.isEmpty()) {
-                        call.respondText("No slideshow", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    call.respondText(buildSlideshowHtml(), ContentType.Text.Html)
-                }
-                get("/slideshow/image/{index}") {
-                    val idx = call.parameters["index"]?.toIntOrNull()
-                    if (idx == null || idx !in slideshowFiles.indices) {
-                        call.respondText("Not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val file = slideshowFiles[idx]
-                    if (!file.exists()) {
-                        call.respondText("Not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val mime = guessMimeType(file.extension)
-                    call.response.header(HttpHeaders.ContentLength, file.length().toString())
-                    call.respondOutputStream(
-                        contentType = ContentType.parse(mime),
-                        status = HttpStatusCode.OK
-                    ) {
-                        withContext(Dispatchers.IO) {
-                            file.inputStream().use { it.copyTo(this@respondOutputStream, 8192) }
-                        }
-                    }
-                }
-
-                get("/presentation/{page}") {
-                    val page = call.parameters["page"]?.toIntOrNull()
-                    val pdf = pdfFile
-                    if (page == null || pdf == null || !pdf.exists()) {
-                        call.respondText("Not found", status = HttpStatusCode.NotFound)
-                        return@get
-                    }
-                    val pngBytes = withContext(Dispatchers.IO) { renderPdfPage(pdf, page) }
-                    if (pngBytes != null) {
-                        call.respondBytes(pngBytes, ContentType.Image.PNG)
-                    } else {
-                        call.respondText("Render error", status = HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                // --- FTP/SFTP proxy for media streaming ---
-                get("/ftp-proxy") {
-                    val host = call.request.queryParameters["host"]
-                    val port = call.request.queryParameters["port"]?.toIntOrNull()
-                    val path = call.request.queryParameters["path"]
-                    val proto = call.request.queryParameters["proto"] ?: "ftp" // ftp or sftp
-
-                    if (host == null || port == null || path == null) {
-                        call.respondText("Missing params", status = HttpStatusCode.BadRequest)
-                        return@get
-                    }
-
-                    try {
-                        val fileSize = if (proto == "sftp") {
-                            sftpClientManager.getFileSize(host, port, path)
-                        } else {
-                            ftpClientManager.getFileSize(host, port, path)
-                        }
-                        val ext = path.substringAfterLast('.', "").lowercase()
-                        val mimeType = when (ext) {
-                            "mp4", "m4v" -> "video/mp4"
-                            "mkv" -> "video/x-matroska"
-                            "avi" -> "video/x-msvideo"
-                            "mov" -> "video/quicktime"
-                            "webm" -> "video/webm"
-                            "mp3" -> "audio/mpeg"
-                            "flac" -> "audio/flac"
-                            "ogg" -> "audio/ogg"
-                            "wav" -> "audio/wav"
-                            "aac", "m4a" -> "audio/mp4"
-                            else -> "application/octet-stream"
-                        }
-                        val ct = ContentType.parse(mimeType)
-
-                        // Parse Range header
-                        val rangeHeader = call.request.headers[HttpHeaders.Range]
-                        val offset = if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                            rangeHeader.removePrefix("bytes=").substringBefore('-').toLongOrNull() ?: 0L
-                        } else 0L
-
-                        if (proto == "sftp") {
-                            val stream = sftpClientManager.openInputStream(host, port, path, offset)
-                            if (stream == null) {
-                                call.respondText("Cannot open remote file", status = HttpStatusCode.NotFound)
-                                return@get
-                            }
-                            val (inputStream, cleanup) = stream
-                            try {
-                                call.response.header(HttpHeaders.AcceptRanges, "bytes")
-                                if (fileSize > 0 && offset > 0) {
-                                    call.response.header(HttpHeaders.ContentRange, "bytes $offset-${fileSize - 1}/$fileSize")
-                                    call.response.header(HttpHeaders.ContentLength, (fileSize - offset).toString())
-                                    call.respondOutputStream(ct, HttpStatusCode.PartialContent) {
-                                        withContext(Dispatchers.IO) {
-                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
-                                        }
-                                    }
-                                } else {
-                                    if (fileSize > 0) call.response.header(HttpHeaders.ContentLength, fileSize.toString())
-                                    call.respondOutputStream(ct, HttpStatusCode.OK) {
-                                        withContext(Dispatchers.IO) {
-                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
-                                        }
-                                    }
-                                }
-                            } finally {
-                                cleanup()
-                            }
-                        } else {
-                            val stream = ftpClientManager.openInputStream(host, port, path, offset)
-                            if (stream == null) {
-                                call.respondText("Cannot open remote file", status = HttpStatusCode.NotFound)
-                                return@get
-                            }
-                            val (inputStream, cleanup) = stream
-                            try {
-                                call.response.header(HttpHeaders.AcceptRanges, "bytes")
-                                if (fileSize > 0 && offset > 0) {
-                                    call.response.header(HttpHeaders.ContentRange, "bytes $offset-${fileSize - 1}/$fileSize")
-                                    call.response.header(HttpHeaders.ContentLength, (fileSize - offset).toString())
-                                    call.respondOutputStream(ct, HttpStatusCode.PartialContent) {
-                                        withContext(Dispatchers.IO) {
-                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
-                                        }
-                                    }
-                                } else {
-                                    if (fileSize > 0) call.response.header(HttpHeaders.ContentLength, fileSize.toString())
-                                    call.respondOutputStream(ct, HttpStatusCode.OK) {
-                                        withContext(Dispatchers.IO) {
-                                            inputStream.use { it.copyTo(this@respondOutputStream, 65536) }
-                                        }
-                                    }
-                                }
-                            } finally {
-                                cleanup()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        EcosystemLogger.e(HaronConstants.TAG, "FTP proxy error: ${e.javaClass.simpleName}: ${e.message}")
-                        call.respondText("Proxy error: ${e.message}", status = HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                // --- OAuth loopback callback (Google Drive) ---
-                get("/oauth/callback") {
-                    val code = call.request.queryParameters["code"]
-                    if (code != null) {
-                        com.vamp.haron.data.cloud.CloudOAuthHelper.pendingAuth.value =
-                            com.vamp.haron.data.cloud.CloudOAuthHelper.PendingAuth("gdrive", code)
-                        call.respondText(
-                            "<html><body><h2>Authorization successful</h2><p>You can close this tab and return to Haron.</p></body></html>",
-                            ContentType.Text.Html
-                        )
-                        EcosystemLogger.d(HaronConstants.TAG, "OAuth callback received for gdrive")
-                    } else {
-                        val error = call.request.queryParameters["error"] ?: "unknown"
-                        call.respondText(
-                            "<html><body><h2>Authorization failed</h2><p>Error: $error</p></body></html>",
-                            ContentType.Text.Html
-                        )
-                        EcosystemLogger.e(HaronConstants.TAG, "OAuth callback error: $error")
-                    }
-                }
-
-            }
-        }
+        val httpServer = SimpleHttpServer(port)
+        setupRoutes(httpServer)
+        setupWebSocket(httpServer)
 
         try {
-            engine?.start(wait = false)
+            httpServer.start()
+            server = httpServer
             val serverUrl = getServerUrl()
             EcosystemLogger.d(HaronConstants.TAG, "HTTP server started on port $port, url=$serverUrl")
         } catch (e: Exception) {
@@ -513,15 +107,403 @@ class HttpFileServer @Inject constructor(
 
     fun stop() {
         val wasPort = actualPort
-        engine?.stop(1000, 2000)
-        engine = null
+        server?.stop()
+        server = null
+        wsScope?.cancel()
+        wsScope = null
         actualPort = 0
         sharedFiles = emptyList()
         hlsDir = null
         EcosystemLogger.d(HaronConstants.TAG, "HTTP server stopped (was on port $wasPort)")
     }
 
-    fun isRunning(): Boolean = engine != null
+    fun isRunning(): Boolean = server?.isRunning == true
+
+    private fun setupRoutes(srv: SimpleHttpServer) {
+        // --- HTML download page ---
+        srv.addRoute("GET", "/") { req, resp ->
+            EcosystemLogger.d(HaronConstants.TAG, "HTTP request: GET / from ${req.headers["host"]}")
+            resp.respondHtml(buildHtmlPage(sharedFiles))
+        }
+
+        // --- File download ---
+        srv.addRoute("GET", "/download/{index}") { req, resp ->
+            val idx = req.param("index")?.toIntOrNull()
+            if (idx == null || idx !in sharedFiles.indices) {
+                resp.respondText("File not found", statusCode = 404); return@addRoute
+            }
+            val file = sharedFiles[idx]
+            if (!file.exists()) { resp.respondText("File not found", statusCode = 404); return@addRoute }
+
+            val encodedName = URLEncoder.encode(file.name, "UTF-8").replace("+", "%20")
+            val range = SimpleHttpServer.parseRange(req.header("range"), file.length())
+
+            resp.respondStream(
+                contentType = "application/octet-stream",
+                totalSize = file.length(),
+                rangeStart = range?.first ?: -1,
+                rangeEnd = range?.second ?: -1,
+                extraHeaders = mapOf("Content-Disposition" to "attachment; filename*=UTF-8''$encodedName")
+            ) { output ->
+                file.inputStream().use { input ->
+                    if (range != null) input.skip(range.first)
+                    val limit = if (range != null) range.second - range.first + 1 else file.length()
+                    copyStream(input, output, limit)
+                }
+            }
+            _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, file.length()))
+        }
+
+        // --- File streaming ---
+        srv.addRoute("GET", "/stream/{index}") { req, resp ->
+            val idx = req.param("index")?.toIntOrNull()
+            if (idx == null || idx !in sharedFiles.indices) {
+                resp.respondText("File not found", statusCode = 404); return@addRoute
+            }
+            val file = sharedFiles[idx]
+            if (!file.exists()) { resp.respondText("File not found", statusCode = 404); return@addRoute }
+
+            val mime = guessMimeType(file.extension)
+            val range = SimpleHttpServer.parseRange(req.header("range"), file.length())
+
+            resp.respondStream(
+                contentType = mime,
+                totalSize = file.length(),
+                rangeStart = range?.first ?: -1,
+                rangeEnd = range?.second ?: -1
+            ) { output ->
+                file.inputStream().use { input ->
+                    if (range != null) input.skip(range.first)
+                    val limit = if (range != null) range.second - range.first + 1 else file.length()
+                    copyStream(input, output, limit)
+                }
+            }
+            _downloadEvents.tryEmit(HttpDownloadEvent(idx, file.name, file.length()))
+        }
+
+        // --- JSON file list ---
+        srv.addRoute("GET", "/api/files") { _, resp ->
+            val json = sharedFiles.mapIndexed { index, file ->
+                """{"index":$index,"name":"${escapeJson(file.name)}","size":${file.length()}}"""
+            }.joinToString(",", "[", "]")
+            resp.respondJson(json)
+        }
+
+        // --- Torrent streaming proxy ---
+        srv.addRoute("GET", "/torrent-stream") { req, resp ->
+            val repo = torrentStreamRepo
+            if (repo == null || repo.streamFileSize <= 0) {
+                resp.respondText("No active torrent stream", statusCode = 404); return@addRoute
+            }
+            val fileSize = repo.streamFileSize
+            val filePath = repo.streamFilePath
+            val file = File(filePath)
+
+            val rangeHeader = req.header("range")
+            val range = SimpleHttpServer.parseRange(rangeHeader, fileSize)
+            val rangeStart = range?.first ?: 0L
+            val rangeEnd = range?.second ?: (fileSize - 1)
+            val contentLength = rangeEnd - rangeStart + 1
+
+            // Wait for first needed piece before responding
+            val firstNeededPiece = repo.pieceIndexForOffset(rangeStart)
+            if (!repo.havePiece(firstNeededPiece)) {
+                val ok = repo.waitForPiece(firstNeededPiece, 120_000) // 2 min timeout for slow torrents
+                if (!ok) {
+                    EcosystemLogger.e(HaronConstants.TAG, "Torrent HTTP: timeout waiting for piece $firstNeededPiece")
+                    resp.respondText("Buffering timeout", statusCode = 503); return@addRoute
+                }
+            }
+
+            val ext = filePath.substringAfterLast('.', "").lowercase()
+            val contentType = when (ext) {
+                "mp4", "m4v" -> "video/mp4"
+                "mkv" -> "video/x-matroska"
+                "avi" -> "video/x-msvideo"
+                "webm" -> "video/webm"
+                else -> "application/octet-stream"
+            }
+
+            resp.respondStream(
+                contentType = contentType,
+                totalSize = fileSize,
+                rangeStart = if (range != null) rangeStart else -1,
+                rangeEnd = if (range != null) rangeEnd else -1,
+                extraHeaders = mapOf("Accept-Ranges" to "bytes")
+            ) { output ->
+                streamTorrentData(repo, file, rangeStart, contentLength, output)
+            }
+        }
+
+        // --- Cloud streaming proxy ---
+        srv.addRoute("GET", "/cloud/stream/{streamId}") { req, resp ->
+            val streamId = req.param("streamId")
+            val config = streamId?.let { cloudStreams[it] }
+            if (config == null) { resp.respondText("Stream not found", statusCode = 404); return@addRoute }
+
+            try {
+                val freshToken = cloudTokenProvider?.invoke(config.accountId)
+                if (freshToken == null) {
+                    resp.respondText("No access token", statusCode = 401); return@addRoute
+                }
+
+                val downloadUrl = when (config.providerScheme) {
+                    "gdrive" -> "https://www.googleapis.com/drive/v3/files/${config.fileId}?alt=media"
+                    "yandex" -> getYandexDownloadUrl(config.fileId, freshToken)
+                        ?: run { resp.respondText("Failed to get Yandex URL", statusCode = 502); return@addRoute }
+                    "dropbox" -> getDropboxTemporaryLink(config.fileId, freshToken)
+                        ?: run { resp.respondText("Failed to get Dropbox link", statusCode = 502); return@addRoute }
+                    else -> { resp.respondText("Unsupported provider", statusCode = 400); return@addRoute }
+                }
+
+                val needsAuth = config.providerScheme !in listOf("dropbox", "yandex")
+                val url = java.net.URL(downloadUrl)
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    if (needsAuth) {
+                        val authPrefix = if (config.providerScheme == "yandex") "OAuth" else "Bearer"
+                        setRequestProperty("Authorization", "$authPrefix $freshToken")
+                    }
+                    instanceFollowRedirects = true
+                    connectTimeout = 15_000
+                    readTimeout = 60_000
+                    req.header("range")?.let { setRequestProperty("Range", it) }
+                }
+
+                val responseCode = conn.responseCode
+                if (responseCode !in 200..299 && responseCode != 206) {
+                    conn.disconnect()
+                    resp.respondText("Stream error: HTTP $responseCode", statusCode = responseCode)
+                    return@addRoute
+                }
+
+                val contentType = conn.getHeaderField("Content-Type") ?: "application/octet-stream"
+                val contentLength = conn.getHeaderField("Content-Length")?.toLongOrNull() ?: -1
+                val contentRange = conn.getHeaderField("Content-Range")
+
+                val extraHeaders = mutableMapOf(
+                    "Access-Control-Allow-Origin" to "*",
+                    "Accept-Ranges" to "bytes"
+                )
+                if (contentRange != null) extraHeaders["Content-Range"] = contentRange
+
+                resp.respondStream(
+                    contentType = contentType,
+                    totalSize = contentLength,
+                    extraHeaders = extraHeaders
+                ) { output ->
+                    try {
+                        conn.inputStream.use { input ->
+                            val buffer = ByteArray(524288)
+                            var bytesRead: Int
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                output.flush()
+                            }
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "Cloud stream error ($streamId): ${e.message}")
+                resp.respondText("Stream error: ${e.message}", statusCode = 500)
+            }
+        }
+
+        // --- HLS ---
+        srv.addRoute("GET", "/hls/{filename}") { req, resp ->
+            val dir = hlsDir
+            val name = req.param("filename")
+            if (dir == null || name == null) { resp.respondText("Not found", statusCode = 404); return@addRoute }
+            val file = File(dir, name)
+            if (!file.exists()) { resp.respondText("Not found", statusCode = 404); return@addRoute }
+
+            val ct = when (file.extension.lowercase()) {
+                "m3u8" -> "application/vnd.apple.mpegurl"
+                "ts" -> "video/mp2t"
+                else -> "application/octet-stream"
+            }
+            resp.respondStream(
+                contentType = ct,
+                totalSize = file.length(),
+                extraHeaders = mapOf(
+                    "Access-Control-Allow-Origin" to "*",
+                    "Cache-Control" to "no-cache, no-store"
+                )
+            ) { output ->
+                file.inputStream().use { it.copyTo(output, 8192) }
+            }
+        }
+
+        // --- Slideshow ---
+        srv.addRoute("GET", "/slideshow") { _, resp ->
+            if (slideshowFiles.isEmpty()) { resp.respondText("No slideshow", statusCode = 404); return@addRoute }
+            resp.respondHtml(buildSlideshowHtml())
+        }
+
+        srv.addRoute("GET", "/slideshow/image/{index}") { req, resp ->
+            val idx = req.param("index")?.toIntOrNull()
+            if (idx == null || idx !in slideshowFiles.indices) { resp.respondText("Not found", statusCode = 404); return@addRoute }
+            val file = slideshowFiles[idx]
+            if (!file.exists()) { resp.respondText("Not found", statusCode = 404); return@addRoute }
+
+            val mime = guessMimeType(file.extension)
+            resp.respondStream(contentType = mime, totalSize = file.length()) { output ->
+                file.inputStream().use { it.copyTo(output, 8192) }
+            }
+        }
+
+        // --- PDF presentation ---
+        srv.addRoute("GET", "/presentation/{page}") { req, resp ->
+            val page = req.param("page")?.toIntOrNull()
+            val pdf = pdfFile
+            if (page == null || pdf == null || !pdf.exists()) { resp.respondText("Not found", statusCode = 404); return@addRoute }
+            val pngBytes = renderPdfPage(pdf, page)
+            if (pngBytes != null) resp.respondBytes(pngBytes, "image/png")
+            else resp.respondText("Render error", statusCode = 500)
+        }
+
+        // --- FTP/SFTP proxy ---
+        srv.addRoute("GET", "/ftp-proxy") { req, resp ->
+            val host = req.query("host")
+            val port = req.query("port")?.toIntOrNull()
+            val path = req.query("path")
+            val proto = req.query("proto") ?: "ftp"
+
+            if (host == null || port == null || path == null) {
+                resp.respondText("Missing params", statusCode = 400); return@addRoute
+            }
+
+            try {
+                val fileSize = if (proto == "sftp") sftpClientManager.getFileSize(host, port, path)
+                else ftpClientManager.getFileSize(host, port, path)
+
+                val mimeType = guessMimeType(path.substringAfterLast('.', ""))
+                val rangeHeader = req.header("range")
+                val offset = if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                    rangeHeader.removePrefix("bytes=").substringBefore('-').toLongOrNull() ?: 0L
+                } else 0L
+
+                val stream = if (proto == "sftp") sftpClientManager.openInputStream(host, port, path, offset)
+                else ftpClientManager.openInputStream(host, port, path, offset)
+
+                if (stream == null) { resp.respondText("Cannot open remote file", statusCode = 404); return@addRoute }
+
+                val (inputStream, cleanup) = stream
+                try {
+                    resp.respondStream(
+                        contentType = mimeType,
+                        totalSize = if (fileSize > 0) fileSize else -1,
+                        rangeStart = if (fileSize > 0 && offset > 0) offset else -1,
+                        rangeEnd = if (fileSize > 0 && offset > 0) fileSize - 1 else -1
+                    ) { output ->
+                        inputStream.use { it.copyTo(output, 524288) }
+                    }
+                } finally {
+                    cleanup()
+                }
+            } catch (e: Exception) {
+                EcosystemLogger.e(HaronConstants.TAG, "FTP proxy error: ${e.javaClass.simpleName}: ${e.message}")
+                resp.respondText("Proxy error: ${e.message}", statusCode = 500)
+            }
+        }
+
+        // --- OAuth callback ---
+        srv.addRoute("GET", "/oauth/callback") { req, resp ->
+            val code = req.query("code")
+            if (code != null) {
+                com.vamp.haron.data.cloud.CloudOAuthHelper.pendingAuth.value =
+                    com.vamp.haron.data.cloud.CloudOAuthHelper.PendingAuth("gdrive", code)
+                resp.respondHtml("<html><body><h2>Authorization successful</h2><p>You can close this tab and return to Haron.</p></body></html>")
+                EcosystemLogger.d(HaronConstants.TAG, "OAuth callback received for gdrive")
+            } else {
+                val error = req.query("error") ?: "unknown"
+                resp.respondHtml("<html><body><h2>Authorization failed</h2><p>Error: $error</p></body></html>")
+                EcosystemLogger.e(HaronConstants.TAG, "OAuth callback error: $error")
+            }
+        }
+    }
+
+    private fun setupWebSocket(srv: SimpleHttpServer) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        wsScope = scope
+
+        srv.addWebSocket("/ws/remote", object : SimpleHttpServer.WsHandler {
+            override fun onConnect(conn: SimpleHttpServer.WebSocketConnection) {
+                EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket connected")
+                // Send input events to client
+                scope.launch {
+                    try {
+                        remoteInputChannel.events.collect { json ->
+                            conn.sendText(json)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            override fun onText(conn: SimpleHttpServer.WebSocketConnection, text: String) {
+                // Client -> server messages (not used currently)
+            }
+
+            override fun onDisconnect(conn: SimpleHttpServer.WebSocketConnection) {
+                EcosystemLogger.d(HaronConstants.TAG, "Remote WebSocket disconnected")
+            }
+        })
+    }
+
+    private fun copyStream(input: java.io.InputStream, output: java.io.OutputStream, limit: Long) {
+        val buffer = ByteArray(65536)
+        var remaining = limit
+        while (remaining > 0) {
+            val toRead = buffer.size.toLong().coerceAtMost(remaining).toInt()
+            val n = input.read(buffer, 0, toRead)
+            if (n == -1) break
+            output.write(buffer, 0, n)
+            remaining -= n
+        }
+        output.flush()
+    }
+
+    private fun streamTorrentData(
+        repo: com.vamp.haron.domain.repository.TorrentStreamRepository,
+        file: File,
+        offset: Long,
+        length: Long,
+        output: java.io.OutputStream
+    ) {
+        val buffer = ByteArray(64 * 1024) // 64KB chunks
+        var remaining = length
+        var pos = offset
+
+        try {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                raf.seek(offset)
+                while (remaining > 0) {
+                    // Ensure the piece containing current position is available
+                    val pieceIdx = repo.pieceIndexForOffset(pos)
+                    if (!repo.havePiece(pieceIdx)) {
+                        val ok = kotlinx.coroutines.runBlocking { repo.waitForPiece(pieceIdx, 30_000) }
+                        if (!ok) {
+                            EcosystemLogger.e(HaronConstants.TAG, "Torrent HTTP: timeout at piece $pieceIdx, pos=$pos")
+                            break
+                        }
+                    }
+                    val toRead = remaining.coerceAtMost(buffer.size.toLong()).toInt()
+                    val read = raf.read(buffer, 0, toRead)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    output.flush()
+                    remaining -= read
+                    pos += read
+                }
+            }
+        } catch (e: Exception) {
+            EcosystemLogger.d(HaronConstants.TAG, "Torrent HTTP: stream ended: ${e.message}")
+        }
+    }
+
+    // --- Public API ---
 
     fun getServerUrl(): String? {
         val ip = getLocalIpAddress() ?: return null
@@ -537,9 +519,8 @@ class HttpFileServer @Inject constructor(
         try {
             EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: starting IP detection...")
 
-            // 1) Scan ALL NetworkInterfaces first — build a map of iface→IP
-            val ifaceIps = mutableMapOf<String, String>() // iface name → IPv4
-            val hotspotCandidates = mutableListOf<Pair<String, String>>() // (iface, ip)
+            val ifaceIps = mutableMapOf<String, String>()
+            val hotspotCandidates = mutableListOf<Pair<String, String>>()
             val niInterfaces = NetworkInterface.getNetworkInterfaces()
             if (niInterfaces != null) {
                 for (intf in niInterfaces) {
@@ -551,7 +532,6 @@ class HttpFileServer @Inject constructor(
                             if (ip == "0.0.0.0") continue
                             ifaceIps[name] = ip
                             EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: iface=$name, ip=$ip")
-                            // Hotspot AP interfaces typically have 192.168.x.x on wlan0/ap/swlan/softap
                             val isWlanLike = name.startsWith("wlan") || name.startsWith("ap") ||
                                     name.startsWith("swlan") || name.contains("softap")
                             if (isWlanLike && ip.startsWith("192.168.")) {
@@ -562,12 +542,10 @@ class HttpFileServer @Inject constructor(
                 }
             }
 
-            // 2) ConnectivityManager — find WiFi client network
             var cmWifiIp: String? = null
             var cmWifiIface: String? = null
             var cmCgnatIp: String? = null
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-                    as? android.net.ConnectivityManager
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
             if (cm != null) {
                 val allNets = cm.allNetworks
                 EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: CM found ${allNets.size} networks")
@@ -600,32 +578,27 @@ class HttpFileServer @Inject constructor(
             }
             EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: cmWifiIp=$cmWifiIp (iface=$cmWifiIface), cmCgnat=$cmCgnatIp, hotspotCandidates=$hotspotCandidates")
 
-            // 3) If hotspot is active on a DIFFERENT interface than CM WiFi → prefer hotspot IP
-            //    (concurrent STA+AP: clients connect to hotspot subnet, not to upstream WiFi)
             if (hotspotCandidates.isNotEmpty() && cmWifiIp != null) {
                 val hotspotOnDifferentIface = hotspotCandidates.firstOrNull { (iface, ip) ->
                     iface != cmWifiIface && ip != cmWifiIp
                 }
                 if (hotspotOnDifferentIface != null) {
-                    EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: hotspot detected on ${hotspotOnDifferentIface.first}=${hotspotOnDifferentIface.second}, CM WiFi on $cmWifiIface=$cmWifiIp → using hotspot IP")
+                    EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: hotspot detected on ${hotspotOnDifferentIface.first}=${hotspotOnDifferentIface.second}, CM WiFi on $cmWifiIface=$cmWifiIp -> using hotspot IP")
                     return hotspotOnDifferentIface.second
                 }
             }
 
-            // 4) Also check: if NO CM WiFi but hotspot exists → use hotspot IP
             if (cmWifiIp == null && hotspotCandidates.isNotEmpty()) {
                 val hp = hotspotCandidates.first()
                 EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: no CM WiFi, using hotspot IP ${hp.first}=${hp.second}")
                 return hp.second
             }
 
-            // 5) Regular case: use CM WiFi IP
             if (cmWifiIp != null) {
                 EcosystemLogger.d(HaronConstants.TAG, "getLocalIpAddress: using CM WiFi IP=$cmWifiIp (iface=$cmWifiIface)")
                 return cmWifiIp
             }
 
-            // 6) Fallback: best wlan IP from NetworkInterface scan
             val bestWlanIp = ifaceIps.entries.firstOrNull { (name, ip) ->
                 val isWlanLike = name.startsWith("wlan") || name.startsWith("ap") ||
                         name.startsWith("swlan") || name.contains("softap")
@@ -686,12 +659,28 @@ class HttpFileServer @Inject constructor(
 
     private fun findAvailablePort(): Int {
         for (port in HaronConstants.TRANSFER_PORT_START..HaronConstants.TRANSFER_PORT_END) {
-            try {
-                java.net.ServerSocket(port).use { return port }
-            } catch (_: Exception) { }
+            try { java.net.ServerSocket(port).use { return port } } catch (_: Exception) {}
         }
         java.net.ServerSocket(0).use { return it.localPort }
     }
+
+    // --- Setup methods ---
+
+    fun setupSlideshow(files: List<File>, intervalSec: Int) { slideshowFiles = files; slideshowIntervalSec = intervalSec }
+    fun setupPdf(file: File) { pdfFile = file }
+    fun setupFileInfo(name: String, path: String, size: String, modified: String, mimeType: String) {
+        fileInfoHtml = buildFileInfoHtml(name, path, size, modified, mimeType)
+    }
+    fun getSlideshowUrl(): String? { val ip = getLocalIpAddress() ?: return null; return "http://$ip:$actualPort/slideshow" }
+    fun getPresentationUrl(page: Int): String? { val ip = getLocalIpAddress() ?: return null; return "http://$ip:$actualPort/presentation/$page" }
+    fun getFileInfoUrl(): String? { val ip = getLocalIpAddress() ?: return null; return "http://$ip:$actualPort/fileinfo" }
+    fun setupCloudStream(streamId: String, config: CloudStreamConfig) { cloudStreams[streamId] = config }
+    fun clearCloudStreams() { cloudStreams.clear() }
+    fun getCloudStreamUrl(streamId: String): String? = "http://127.0.0.1:$actualPort/cloud/stream/$streamId"
+    fun setupHls(dir: File) { hlsDir = dir }
+    fun getHlsUrl(): String? { val ip = getLocalIpAddress() ?: return null; return "http://$ip:$actualPort/hls/playlist.m3u8" }
+
+    // --- HTML builders ---
 
     private fun buildHtmlPage(files: List<File>): String {
         val rows = files.mapIndexed { index, file ->
@@ -705,216 +694,70 @@ class HttpFileServer @Inject constructor(
         }.joinToString("\n")
 
         return """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Haron File Transfer</title>
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-         max-width: 800px; margin: 0 auto; padding: 16px; background: #121212; color: #e0e0e0; }
-  h1 { color: #bb86fc; font-size: 22px; margin: 0 0 4px 0; }
-  .info { color: #888; font-size: 14px; margin: 0 0 16px 0; }
-  a.file-card { display: flex; justify-content: space-between; align-items: center;
-               padding: 14px 16px; margin-bottom: 8px; background: #1e1e1e;
-               border-radius: 12px; cursor: pointer; color: #e0e0e0;
-               text-decoration: none;
-               -webkit-user-select: none; user-select: none;
-               -webkit-tap-highlight-color: rgba(187,134,252,0.2); }
-  a.file-card:active { background: #2a2a2a; }
-  .file-name { font-size: 15px; word-break: break-word; margin-right: 12px; flex: 1; }
-  .file-size { font-size: 13px; color: #888; white-space: nowrap; }
-</style>
-</head>
-<body>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:0 auto;padding:16px;background:#121212;color:#e0e0e0}
+h1{color:#bb86fc;font-size:22px;margin:0 0 4px 0}
+.info{color:#888;font-size:14px;margin:0 0 16px 0}
+a.file-card{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;background:#1e1e1e;border-radius:12px;cursor:pointer;color:#e0e0e0;text-decoration:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:rgba(187,134,252,0.2)}
+a.file-card:active{background:#2a2a2a}
+.file-name{font-size:15px;word-break:break-word;margin-right:12px;flex:1}
+.file-size{font-size:13px;color:#888;white-space:nowrap}
+</style></head><body>
 <h1>Haron</h1>
-<p class="info">${'$'}{files.size} file(s)</p>
+<p class="info">${files.size} file(s)</p>
 $rows
-</body>
-</html>"""
-    }
-
-    private fun formatSize(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-            bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024))} MB"
-            else -> "${"%.2f".format(bytes / (1024.0 * 1024 * 1024))} GB"
-        }
-    }
-
-    private fun escapeHtml(text: String): String {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace("\"", "&quot;")
-    }
-
-    private fun escapeJson(text: String): String {
-        return text.replace("\\", "\\\\").replace("\"", "\\\"")
-    }
-
-    // --- Extended Cast setup ---
-
-    fun setupSlideshow(files: List<File>, intervalSec: Int) {
-        slideshowFiles = files
-        slideshowIntervalSec = intervalSec
-    }
-
-    fun setupPdf(file: File) {
-        pdfFile = file
-    }
-
-    fun setupFileInfo(name: String, path: String, size: String, modified: String, mimeType: String) {
-        fileInfoHtml = buildFileInfoHtml(name, path, size, modified, mimeType)
-    }
-
-    fun getSlideshowUrl(): String? {
-        val ip = getLocalIpAddress() ?: return null
-        return "http://$ip:$actualPort/slideshow"
-    }
-
-    fun getPresentationUrl(page: Int): String? {
-        val ip = getLocalIpAddress() ?: return null
-        return "http://$ip:$actualPort/presentation/$page"
-    }
-
-    fun getFileInfoUrl(): String? {
-        val ip = getLocalIpAddress() ?: return null
-        return "http://$ip:$actualPort/fileinfo"
-    }
-
-    fun setupCloudStream(streamId: String, config: CloudStreamConfig) {
-        cloudStreams[streamId] = config
-    }
-
-    fun clearCloudStreams() {
-        cloudStreams.clear()
-    }
-
-    fun getCloudStreamUrl(streamId: String): String? {
-        return "http://127.0.0.1:$actualPort/cloud/stream/$streamId"
-    }
-
-    /** Get Dropbox temporary direct link (4 hours TTL, supports GET + Range) */
-    private fun getDropboxTemporaryLink(path: String, token: String): String? {
-        return try {
-            val url = java.net.URL("https://api.dropboxapi.com/2/files/get_temporary_link")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "POST"
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Content-Type", "application/json")
-                doOutput = true
-                connectTimeout = 15_000
-                readTimeout = 15_000
-            }
-            conn.outputStream.use { it.write("""{"path":"$path"}""".toByteArray()) }
-            if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
-                conn.disconnect()
-                val json = org.json.JSONObject(body)
-                json.getString("link")
-            } else {
-                val error = conn.errorStream?.bufferedReader()?.readText()
-                EcosystemLogger.e(HaronConstants.TAG, "Dropbox temp link failed: ${conn.responseCode}, $error")
-                conn.disconnect()
-                null
-            }
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "Dropbox temp link error: ${e.message}")
-            null
-        }
-    }
-
-    /** Yandex Disk two-step download: GET /resources/download?path=... → href (temp URL) */
-    private fun getYandexDownloadUrl(path: String, token: String): String? {
-        return try {
-            val diskPath = if (path.startsWith("disk:")) path else "disk:/$path"
-            val encodedPath = java.net.URLEncoder.encode(diskPath, "UTF-8")
-            val url = java.net.URL("https://cloud-api.yandex.net/v1/disk/resources/download?path=$encodedPath")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("Authorization", "OAuth $token")
-                connectTimeout = 15_000
-                readTimeout = 15_000
-            }
-            if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
-                conn.disconnect()
-                val json = org.json.JSONObject(body)
-                json.getString("href")
-            } else {
-                val error = conn.errorStream?.bufferedReader()?.readText()
-                EcosystemLogger.e(HaronConstants.TAG, "Yandex download URL failed: ${conn.responseCode}, $error")
-                conn.disconnect()
-                null
-            }
-        } catch (e: Exception) {
-            EcosystemLogger.e(HaronConstants.TAG, "Yandex download URL error: ${e.message}")
-            null
-        }
-    }
-
-    fun setupHls(dir: File) {
-        hlsDir = dir
-    }
-
-    fun getHlsUrl(): String? {
-        val ip = getLocalIpAddress() ?: return null
-        return "http://$ip:$actualPort/hls/playlist.m3u8"
+</body></html>"""
     }
 
     private fun buildSlideshowHtml(): String {
         val imageUrls = slideshowFiles.indices.joinToString(",") { "'/slideshow/image/$it'" }
         return """<!DOCTYPE html>
-<html><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Haron Slideshow</title>
-<style>
-body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
-img { max-width: 100vw; max-height: 100vh; object-fit: contain; transition: opacity 0.5s ease; }
-.counter { position: fixed; bottom: 16px; right: 16px; color: #fff8; font: 14px sans-serif; }
-</style>
-</head><body>
-<img id="slide" />
-<div id="counter" class="counter"></div>
-<script>
-var urls = [$imageUrls];
-var idx = 0;
-var img = document.getElementById('slide');
-var counter = document.getElementById('counter');
-function show() {
-  img.src = urls[idx];
-  counter.textContent = (idx+1) + ' / ' + urls.length;
-  idx = (idx + 1) % urls.length;
-}
-show();
-setInterval(show, ${slideshowIntervalSec * 1000});
-</script>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Haron Slideshow</title>
+<style>body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;overflow:hidden}img{max-width:100vw;max-height:100vh;object-fit:contain;transition:opacity 0.5s ease}.counter{position:fixed;bottom:16px;right:16px;color:#fff8;font:14px sans-serif}</style>
+</head><body><img id="slide"/><div id="counter" class="counter"></div>
+<script>var urls=[$imageUrls];var idx=0;var img=document.getElementById('slide');var counter=document.getElementById('counter');function show(){img.src=urls[idx];counter.textContent=(idx+1)+' / '+urls.length;idx=(idx+1)%urls.length;}show();setInterval(show,${slideshowIntervalSec * 1000});</script>
 ${buildRemoteCursorJs()}
 </body></html>"""
+    }
+
+    private fun buildFileInfoHtml(name: String, path: String, size: String, modified: String, mimeType: String): String {
+        return """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>File Info — Haron</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#121212;color:#e0e0e0;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#1e1e1e;border-radius:16px;padding:32px;min-width:400px;box-shadow:0 4px 24px rgba(0,0,0,0.4)}h1{color:#bb86fc;font-size:24px;margin:0 0 24px 0;word-break:break-all}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #333}.label{color:#888}.value{color:#e0e0e0;text-align:right;max-width:60%;word-break:break-all}</style>
+</head><body><div class="card"><h1>${escapeHtml(name)}</h1>
+<div class="row"><span class="label">Path</span><span class="value">${escapeHtml(path)}</span></div>
+<div class="row"><span class="label">Size</span><span class="value">${escapeHtml(size)}</span></div>
+<div class="row"><span class="label">Modified</span><span class="value">${escapeHtml(modified)}</span></div>
+<div class="row"><span class="label">Type</span><span class="value">${escapeHtml(mimeType)}</span></div>
+</div>${buildRemoteCursorJs()}</body></html>"""
+    }
+
+    private fun buildRemoteCursorJs(): String {
+        val wsHost = getLocalIpAddress() ?: "localhost"
+        return """<div id="haron-cursor" style="position:fixed;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.85);border:2px solid rgba(187,134,252,0.8);pointer-events:none;z-index:99999;display:none;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(187,134,252,0.5);transition:box-shadow 0.1s;"></div>
+<script>
+(function(){var cursor=document.getElementById('haron-cursor');var cx=window.innerWidth/2,cy=window.innerHeight/2;var ws=null;
+function connect(){ws=new WebSocket('ws://$wsHost:$actualPort/ws/remote');ws.onopen=function(){cursor.style.display='block';cx=window.innerWidth/2;cy=window.innerHeight/2;cursor.style.left=cx+'px';cursor.style.top=cy+'px';};
+ws.onmessage=function(e){try{var d=JSON.parse(e.data);if(d.type==='move'){cx=Math.max(0,Math.min(window.innerWidth,cx+d.dx));cy=Math.max(0,Math.min(window.innerHeight,cy+d.dy));cursor.style.left=cx+'px';cursor.style.top=cy+'px';}else if(d.type==='click'){cursor.style.boxShadow='0 0 16px rgba(187,134,252,1)';setTimeout(function(){cursor.style.boxShadow='0 0 8px rgba(187,134,252,0.5)';},150);var el=document.elementFromPoint(cx,cy);if(el){el.click();}}else if(d.type==='scroll'){window.scrollBy(d.dx,d.dy);}else if(d.type==='key'){document.dispatchEvent(new KeyboardEvent('keydown',{keyCode:d.keyCode,bubbles:true}));}else if(d.type==='text'){var el=document.activeElement;if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)){el.value=(el.value||'')+d.text;el.dispatchEvent(new Event('input',{bubbles:true}));}}}catch(ex){}};
+ws.onclose=function(){cursor.style.display='none';setTimeout(connect,2000);};ws.onerror=function(){ws.close();};}connect();})();
+</script>"""
     }
 
     private fun renderPdfPage(file: File, page: Int): ByteArray? {
         return try {
             val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
             val renderer = PdfRenderer(fd)
-            if (page < 0 || page >= renderer.pageCount) {
-                renderer.close()
-                fd.close()
-                return null
-            }
+            if (page < 0 || page >= renderer.pageCount) { renderer.close(); fd.close(); return null }
             val pdfPage = renderer.openPage(page)
-            val scale = 2 // 2x for better quality on TV
-            val bmp = Bitmap.createBitmap(
-                pdfPage.width * scale, pdfPage.height * scale, Bitmap.Config.ARGB_8888
-            )
+            val scale = 2
+            val bmp = Bitmap.createBitmap(pdfPage.width * scale, pdfPage.height * scale, Bitmap.Config.ARGB_8888)
             bmp.eraseColor(android.graphics.Color.WHITE)
             pdfPage.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            pdfPage.close()
-            renderer.close()
-            fd.close()
-
+            pdfPage.close(); renderer.close(); fd.close()
             val stream = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.PNG, 90, stream)
             bmp.recycle()
@@ -925,101 +768,64 @@ ${buildRemoteCursorJs()}
         }
     }
 
-    private fun buildFileInfoHtml(name: String, path: String, size: String, modified: String, mimeType: String): String {
-        return """<!DOCTYPE html>
-<html><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>File Info — Haron</title>
-<style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-       background: #121212; color: #e0e0e0; display: flex; justify-content: center;
-       align-items: center; min-height: 100vh; margin: 0; }
-.card { background: #1e1e1e; border-radius: 16px; padding: 32px; min-width: 400px;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
-h1 { color: #bb86fc; font-size: 24px; margin: 0 0 24px 0; word-break: break-all; }
-.row { display: flex; justify-content: space-between; padding: 8px 0;
-       border-bottom: 1px solid #333; }
-.label { color: #888; }
-.value { color: #e0e0e0; text-align: right; max-width: 60%; word-break: break-all; }
-</style>
-</head><body>
-<div class="card">
-  <h1>${escapeHtml(name)}</h1>
-  <div class="row"><span class="label">Path</span><span class="value">${escapeHtml(path)}</span></div>
-  <div class="row"><span class="label">Size</span><span class="value">${escapeHtml(size)}</span></div>
-  <div class="row"><span class="label">Modified</span><span class="value">${escapeHtml(modified)}</span></div>
-  <div class="row"><span class="label">Type</span><span class="value">${escapeHtml(mimeType)}</span></div>
-</div>
-${buildRemoteCursorJs()}
-</body></html>"""
+    // --- Cloud helpers ---
+
+    private fun getDropboxTemporaryLink(path: String, token: String): String? {
+        return try {
+            val url = java.net.URL("https://api.dropboxapi.com/2/files/get_temporary_link")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true; connectTimeout = 15_000; readTimeout = 15_000
+            }
+            conn.outputStream.use { it.write("""{"path":"$path"}""".toByteArray()) }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+                org.json.JSONObject(body).getString("link")
+            } else { conn.disconnect(); null }
+        } catch (e: Exception) { EcosystemLogger.e(HaronConstants.TAG, "Dropbox temp link error: ${e.message}"); null }
     }
 
-    private fun buildRemoteCursorJs(): String {
-        val wsHost = getLocalIpAddress() ?: "localhost"
-        return """<div id="haron-cursor" style="position:fixed;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.85);border:2px solid rgba(187,134,252,0.8);pointer-events:none;z-index:99999;display:none;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(187,134,252,0.5);transition:box-shadow 0.1s;"></div>
-<script>
-(function(){
-  var cursor = document.getElementById('haron-cursor');
-  var cx = window.innerWidth/2, cy = window.innerHeight/2;
-  var ws = null;
-  function connect() {
-    ws = new WebSocket('ws://$wsHost:$actualPort/ws/remote');
-    ws.onopen = function(){ cursor.style.display='block'; cx=window.innerWidth/2; cy=window.innerHeight/2; cursor.style.left=cx+'px'; cursor.style.top=cy+'px'; };
-    ws.onmessage = function(e){
-      try {
-        var d = JSON.parse(e.data);
-        if(d.type==='move'){
-          cx=Math.max(0,Math.min(window.innerWidth,cx+d.dx));
-          cy=Math.max(0,Math.min(window.innerHeight,cy+d.dy));
-          cursor.style.left=cx+'px'; cursor.style.top=cy+'px';
-        } else if(d.type==='click'){
-          cursor.style.boxShadow='0 0 16px rgba(187,134,252,1)';
-          setTimeout(function(){cursor.style.boxShadow='0 0 8px rgba(187,134,252,0.5)';},150);
-          var el=document.elementFromPoint(cx,cy);
-          if(el){el.click();}
-        } else if(d.type==='scroll'){
-          window.scrollBy(d.dx,d.dy);
-        } else if(d.type==='key'){
-          var evt=new KeyboardEvent('keydown',{keyCode:d.keyCode,bubbles:true});
-          document.dispatchEvent(evt);
-        } else if(d.type==='text'){
-          var el=document.activeElement;
-          if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)){
-            el.value=(el.value||'')+d.text;
-            el.dispatchEvent(new Event('input',{bubbles:true}));
-          }
-        }
-      }catch(ex){}
-    };
-    ws.onclose = function(){ cursor.style.display='none'; setTimeout(connect,2000); };
-    ws.onerror = function(){ ws.close(); };
-  }
-  connect();
-})();
-</script>"""
+    private fun getYandexDownloadUrl(path: String, token: String): String? {
+        return try {
+            val diskPath = if (path.startsWith("disk:")) path else "disk:/$path"
+            val encodedPath = java.net.URLEncoder.encode(diskPath, "UTF-8")
+            val url = java.net.URL("https://cloud-api.yandex.net/v1/disk/resources/download?path=$encodedPath")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Authorization", "OAuth $token")
+                connectTimeout = 15_000; readTimeout = 15_000
+            }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+                org.json.JSONObject(body).getString("href")
+            } else { conn.disconnect(); null }
+        } catch (e: Exception) { EcosystemLogger.e(HaronConstants.TAG, "Yandex URL error: ${e.message}"); null }
     }
 
-    private fun guessMimeType(ext: String): String {
-        return when (ext.lowercase()) {
-            "mp4", "m4v" -> "video/mp4"
-            "avi" -> "video/x-msvideo"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            "mp3" -> "audio/mpeg"
-            "flac" -> "audio/flac"
-            "ogg" -> "audio/ogg"
-            "wav" -> "audio/wav"
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "pdf" -> "application/pdf"
-            "txt" -> "text/plain"
-            "html", "htm" -> "text/html"
-            "json" -> "application/json"
-            "zip" -> "application/zip"
-            else -> "application/octet-stream"
-        }
+    // --- Utilities ---
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024))} MB"
+        else -> "${"%.2f".format(bytes / (1024.0 * 1024 * 1024))} GB"
+    }
+
+    private fun escapeHtml(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    private fun escapeJson(text: String) = text.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    private fun guessMimeType(ext: String): String = when (ext.lowercase()) {
+        "mp4", "m4v" -> "video/mp4"; "avi" -> "video/x-msvideo"; "mkv" -> "video/x-matroska"
+        "webm" -> "video/webm"; "mov" -> "video/quicktime"
+        "mp3" -> "audio/mpeg"; "flac" -> "audio/flac"; "ogg" -> "audio/ogg"
+        "wav" -> "audio/wav"; "aac", "m4a" -> "audio/mp4"
+        "jpg", "jpeg" -> "image/jpeg"; "png" -> "image/png"; "gif" -> "image/gif"; "webp" -> "image/webp"
+        "pdf" -> "application/pdf"; "txt" -> "text/plain"; "html", "htm" -> "text/html"
+        "json" -> "application/json"; "zip" -> "application/zip"
+        else -> "application/octet-stream"
     }
 }

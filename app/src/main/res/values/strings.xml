@@ -793,6 +793,7 @@
     <!-- Content search (Batch 22) -->
     <string name="search_by_name">Search by name</string>
     <string name="search_by_content">Search in content</string>
+    <string name="found">found</string>
     <string name="content_search_hint">Content search includes text files, documents, PDF, and audio/video metadata. Indexing large files may take time.</string>
     <string name="expand_snippet">Show context</string>
 
@@ -1631,6 +1632,12 @@
     <string name="snowfall_size">Size</string>
     <string name="starfield_title">Starfield</string>
     <string name="dust_title">Dust Particles</string>
+
+    <!-- App Storage -->
+    <string name="app_storage_title">App Storage</string>
+    <string name="app_storage_button">App Storage</string>
+    <string name="app_storage_files">files</string>
+    <string name="app_storage_clear_dir">Clear folder</string>
 
     <!-- Backup -->
     <string name="backup_section_title">Backup &amp; Restore</string>

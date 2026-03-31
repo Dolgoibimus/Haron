@@ -59,7 +59,8 @@ sealed interface PreviewData {
         override val lastModified: Long,
         val entries: List<ArchiveEntryInfo>,
         val totalEntries: Int,
-        val totalUncompressedSize: Long
+        val totalUncompressedSize: Long,
+        val isEncrypted: Boolean = false
     ) : PreviewData
 
     data class ApkPreview(

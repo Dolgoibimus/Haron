@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.vamp.haron.R
+// swipe-back handled inside pointerInput gesture handler (edgePx + totalDx)
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.TransferHolder
 import com.vamp.haron.common.util.DocParagraph
@@ -362,15 +363,17 @@ fun DocumentViewerScreen(
                                     val zoom = event.calculateZoom()
                                     textScale = (textScale * zoom).coerceIn(0.5f, 3f)
                                     event.changes.forEach { c -> c.consume() }
-                                } else if (!wasDrag) {
+                                } else {
                                     val pos = event.changes.firstOrNull()?.position
                                     if (pos != null) {
-                                        val dist = kotlin.math.hypot(
-                                            (pos.x - startPos.x).toDouble(),
-                                            (pos.y - startPos.y).toDouble()
-                                        )
-                                        if (dist > slop) wasDrag = true
                                         totalDx = pos.x - startPos.x
+                                        if (!wasDrag) {
+                                            val dist = kotlin.math.hypot(
+                                                (pos.x - startPos.x).toDouble(),
+                                                (pos.y - startPos.y).toDouble()
+                                            )
+                                            if (dist > slop) wasDrag = true
+                                        }
                                     }
                                 }
                             } while (event.changes.any { c -> c.pressed })
@@ -526,6 +529,7 @@ fun DocumentViewerScreen(
                         )
                     }
                 }
+
             }
         }
     }

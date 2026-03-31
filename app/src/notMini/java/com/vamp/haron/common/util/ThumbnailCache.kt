@@ -43,6 +43,8 @@ object ThumbnailCache {
 
     fun get(path: String): Bitmap? = cache.get(path)
 
+    fun put(cacheKey: String, bitmap: Bitmap) { cache.put(cacheKey, bitmap) }
+
     fun remove(path: String) { cache.remove(path) }
 
     /** Load thumbnail from a URL (for cloud files with thumbnailUrl) */

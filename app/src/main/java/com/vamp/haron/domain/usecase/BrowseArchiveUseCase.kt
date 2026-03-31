@@ -10,7 +10,7 @@ import com.vamp.haron.domain.model.ArchiveEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import net.lingala.zip4j.ZipFile as Zip4jFile
+import com.vamp.haron.common.util.AesZipHelper
 import net.sf.sevenzipjbinding.IInArchive
 import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
@@ -75,25 +75,38 @@ class BrowseArchiveUseCase @Inject constructor(
     private fun browseZip(archivePath: String, virtualPath: String, isContentUri: Boolean, password: String?): List<ArchiveEntry> {
         val file = if (isContentUri) copyToTemp(archivePath) else File(archivePath)
         try {
-            val zip4j = Zip4jFile(file)
-            if (zip4j.isEncrypted && password == null) {
+            val isEncrypted = AesZipHelper.isZipEncrypted(file)
+            if (isEncrypted && password == null) {
                 throw IllegalStateException("encrypted")
             }
-            if (password != null) {
-                zip4j.setPassword(password.toCharArray())
-            }
             val prefix = if (virtualPath.isEmpty()) "" else "$virtualPath/"
-            val headers = zip4j.fileHeaders
-            return filterDirectChildren(headers.map { h ->
-                ArchiveEntry(
-                    name = h.fileName.trimEnd('/').substringAfterLast('/'),
-                    fullPath = h.fileName.trimEnd('/'),
-                    size = h.uncompressedSize.coerceAtLeast(0),
-                    isDirectory = h.isDirectory,
-                    compressedSize = h.compressedSize.coerceAtLeast(0),
-                    lastModified = h.lastModifiedTimeEpoch
-                )
-            }, prefix)
+            if (isEncrypted) {
+                val entries = AesZipHelper.listEncryptedZip(file, password?.toCharArray())
+                return filterDirectChildren(entries.map { e ->
+                    ArchiveEntry(
+                        name = e.name.trimEnd('/').substringAfterLast('/'),
+                        fullPath = e.name.trimEnd('/'),
+                        size = e.size.coerceAtLeast(0),
+                        isDirectory = e.isDirectory,
+                        compressedSize = e.compressedSize.coerceAtLeast(0),
+                        lastModified = e.lastModified
+                    )
+                }, prefix)
+            } else {
+                val zipFile = java.util.zip.ZipFile(file)
+                return zipFile.use { zf ->
+                    filterDirectChildren(zf.entries().asSequence().map { e ->
+                        ArchiveEntry(
+                            name = e.name.trimEnd('/').substringAfterLast('/'),
+                            fullPath = e.name.trimEnd('/'),
+                            size = e.size.coerceAtLeast(0),
+                            isDirectory = e.isDirectory,
+                            compressedSize = e.compressedSize.coerceAtLeast(0),
+                            lastModified = e.time
+                        )
+                    }.toList(), prefix)
+                }
+            }
         } finally {
             if (isContentUri) file.delete()
         }

@@ -268,6 +268,7 @@ class GetFilesProtectedTest {
             }
         }
         override suspend fun getAllProtectedEntries() = entries
+        override suspend fun decryptToBytes(id: String) = Result.failure<ByteArray>(Exception("test"))
         override suspend fun decryptToCache(id: String) = Result.failure<File>(Exception("test"))
         override suspend fun deleteFromSecureStorage(ids: List<String>, onProgress: (Int, String) -> Unit) =
             Result.success(0)

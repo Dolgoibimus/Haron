@@ -23,24 +23,13 @@ import androidx.core.app.NotificationCompat
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.R
 import com.vamp.haron.common.constants.HaronConstants
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.cio.*
-import io.ktor.server.engine.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
+import com.vamp.haron.data.transfer.SimpleHttpServer
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Captures device screen via MediaProjection and streams as JPEG/MJPEG over HTTP.
- * Used for Chromecast screen mirroring. Runs Ktor CIO server on port 8080+.
- * JPEG compression runs on background HandlerThread to avoid UI jank.
+ * Used for Chromecast screen mirroring. Runs SimpleHttpServer on port 8090+.
  */
 class ScreenMirrorService : Service() {
 
@@ -62,7 +51,7 @@ class ScreenMirrorService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var imageThread: HandlerThread? = null
-    private var engine: ApplicationEngine? = null
+    private var httpServer: SimpleHttpServer? = null
     @Volatile private var lastFrameBytes: ByteArray? = null
     private var actualPort: Int = 0
     private val activeClients = AtomicInteger(0)
@@ -75,7 +64,6 @@ class ScreenMirrorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Always call startForeground immediately to avoid ForegroundServiceDidNotStartInTimeException
         startForeground(NOTIFICATION_ID, buildNotification())
 
         EcosystemLogger.d("CastFlow", "ScreenMirrorService.onStartCommand: action=${intent?.action}")
@@ -124,14 +112,12 @@ class ScreenMirrorService : Service() {
 
         imageReader = ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
 
-        // Use background thread for JPEG compression — compress() is CPU-heavy and would ANR on main
         imageThread = HandlerThread("ImageReader").also { it.start() }
         val imageHandler = Handler(imageThread!!.looper)
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
-                // Skip JPEG compression when no clients are connected — saves CPU
                 if (activeClients.get() == 0) return@setOnImageAvailableListener
 
                 val plane = image.planes[0]
@@ -156,7 +142,6 @@ class ScreenMirrorService : Service() {
             }
         }, imageHandler)
 
-        // Android 14+ requires registering a callback before createVirtualDisplay
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
@@ -176,7 +161,7 @@ class ScreenMirrorService : Service() {
         )
 
         startHttpServer()
-        isRunning = true
+        Companion.isRunning = true
         EcosystemLogger.d(HaronConstants.TAG, "Screen mirror started: ${width}x${height}")
     }
 
@@ -184,76 +169,66 @@ class ScreenMirrorService : Service() {
         val port = findAvailablePort()
         actualPort = port
 
-        engine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            routing {
-                get("/mirror") {
-                    val html = """<!DOCTYPE html>
-<html><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+        val srv = SimpleHttpServer(port)
+
+        srv.addRoute("GET", "/mirror") { _, resp ->
+            val html = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Haron Screen Mirror</title>
-<style>
-body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-img { max-width: 100%; max-height: 100vh; }
-</style>
-</head><body>
-<img id="frame" src="/frame" />
-<script>
-var img = document.getElementById('frame');
-function refresh() {
-  var next = new Image();
-  next.onload = function() { img.src = next.src; setTimeout(refresh, 200); };
-  next.onerror = function() { setTimeout(refresh, 500); };
-  next.src = '/frame?t=' + Date.now();
-}
-refresh();
-</script>
+<style>body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh}img{max-width:100%;max-height:100vh}</style>
+</head><body><img id="frame" src="/frame"/>
+<script>var img=document.getElementById('frame');function refresh(){var next=new Image();next.onload=function(){img.src=next.src;setTimeout(refresh,200);};next.onerror=function(){setTimeout(refresh,500);};next.src='/frame?t='+Date.now();}refresh();</script>
 </body></html>"""
-                    call.respondText(html, ContentType.Text.Html)
+            resp.respondHtml(html)
+        }
+
+        srv.addRoute("GET", "/frame") { _, resp ->
+            activeClients.incrementAndGet()
+            try {
+                val frame = lastFrameBytes
+                if (frame != null) {
+                    resp.respondBytes(frame, "image/jpeg")
+                } else {
+                    resp.respondText("No frame", statusCode = 503)
                 }
-                get("/frame") {
-                    activeClients.incrementAndGet()
-                    try {
-                        val frame = lastFrameBytes
-                        if (frame != null) {
-                            call.respondBytes(frame, ContentType.Image.JPEG)
-                        } else {
-                            call.respondText("No frame", status = HttpStatusCode.ServiceUnavailable)
-                        }
-                    } finally {
-                        activeClients.decrementAndGet()
-                    }
-                }
-                get("/mjpeg") {
-                    activeClients.incrementAndGet()
-                    try {
-                        call.respondBytesWriter(contentType = ContentType.parse("multipart/x-mixed-replace; boundary=frame")) {
-                            while (isActive && isRunning) {
-                                val frame = lastFrameBytes
-                                if (frame != null) {
-                                    val header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
-                                    writeFully(header.toByteArray())
-                                    writeFully(frame)
-                                    writeFully("\r\n".toByteArray())
-                                    flush()
-                                }
-                                delay(500)
-                            }
-                        }
-                    } finally {
-                        activeClients.decrementAndGet()
-                    }
-                }
+            } finally {
+                activeClients.decrementAndGet()
             }
         }
-        engine?.start(wait = false)
+
+        srv.addRoute("GET", "/mjpeg") { _, resp ->
+            activeClients.incrementAndGet()
+            try {
+                resp.respondStream(
+                    contentType = "multipart/x-mixed-replace; boundary=frame",
+                    totalSize = -1
+                ) { output ->
+                    while (Companion.isRunning) {
+                        val frame = lastFrameBytes
+                        if (frame != null) {
+                            val header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
+                            output.write(header.toByteArray())
+                            output.write(frame)
+                            output.write("\r\n".toByteArray())
+                            output.flush()
+                        }
+                        Thread.sleep(500)
+                    }
+                }
+            } finally {
+                activeClients.decrementAndGet()
+            }
+        }
+
+        srv.start()
+        httpServer = srv
         serverUrl = "http://${getLocalIp()}:$port/mirror"
         EcosystemLogger.d(HaronConstants.TAG, "Mirror HTTP server on port $port")
     }
 
     private fun stopMirroring() {
-        engine?.stop(500, 1000)
-        engine = null
+        httpServer?.stop()
+        httpServer = null
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
@@ -264,7 +239,7 @@ refresh();
         mediaProjection = null
         lastFrameBytes = null
         serverUrl = null
-        isRunning = false
+        Companion.isRunning = false
         EcosystemLogger.d(HaronConstants.TAG, "Screen mirror stopped")
     }
 
@@ -289,9 +264,7 @@ refresh();
 
     private fun findAvailablePort(): Int {
         for (port in 8090..8095) {
-            try {
-                java.net.ServerSocket(port).use { return port }
-            } catch (_: Exception) { }
+            try { java.net.ServerSocket(port).use { return port } } catch (_: Exception) {}
         }
         java.net.ServerSocket(0).use { return it.localPort }
     }
@@ -307,7 +280,7 @@ refresh();
                     }
                 }
             }
-        } catch (_: Exception) { }
+        } catch (_: Exception) {}
         return "127.0.0.1"
     }
 

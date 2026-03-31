@@ -1,12 +1,6 @@
 package com.vamp.haron.data.cloud.provider
 
 import android.content.Context
-import com.google.api.client.json.gson.GsonFactory
-import com.google.api.services.drive.Drive
-import com.google.api.services.drive.DriveScopes
-import com.google.auth.http.HttpCredentialsAdapter
-import com.google.auth.oauth2.AccessToken
-import com.google.auth.oauth2.UserCredentials
 import com.vamp.core.logger.EcosystemLogger
 import com.vamp.haron.common.constants.HaronConstants
 import com.vamp.haron.data.cloud.CloudOAuthHelper
@@ -15,16 +9,18 @@ import com.vamp.haron.domain.model.CloudFileEntry
 import com.vamp.haron.domain.model.CloudProvider
 import com.vamp.haron.domain.model.CloudTransferProgress
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.util.Date
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 class GoogleDriveProvider(
     private val context: Context,
@@ -36,9 +32,10 @@ class GoogleDriveProvider(
         val CLIENT_ID: String get() = com.vamp.haron.BuildConfig.GOOGLE_CLIENT_ID
         val CLIENT_SECRET: String get() = com.vamp.haron.BuildConfig.GOOGLE_CLIENT_SECRET
         const val TOKEN_URL = "https://oauth2.googleapis.com/token"
+        private const val API_BASE = "https://www.googleapis.com/drive/v3"
+        private const val UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3"
+        private const val CHUNK_SIZE = 10 * 1024 * 1024 // 10MB chunks
     }
-
-    private var driveService: Drive? = null
 
     override fun isAuthenticated(): Boolean {
         return tokenKey.isNotEmpty() && tokenStore.loadByKey(tokenKey) != null
@@ -49,11 +46,11 @@ class GoogleDriveProvider(
         val challenge = CloudOAuthHelper.generateCodeChallenge(verifier)
         return "https://accounts.google.com/o/oauth2/v2/auth" +
             "?client_id=$CLIENT_ID" +
-            "&redirect_uri=${java.net.URLEncoder.encode(CloudOAuthHelper.REDIRECT_URI_GDRIVE, "UTF-8")}" +
+            "&redirect_uri=${URLEncoder.encode(CloudOAuthHelper.REDIRECT_URI_GDRIVE, "UTF-8")}" +
             "&response_type=code" +
             "&code_challenge=$challenge" +
             "&code_challenge_method=S256" +
-            "&scope=${java.net.URLEncoder.encode("https://www.googleapis.com/auth/drive", "UTF-8")}" +
+            "&scope=${URLEncoder.encode("https://www.googleapis.com/auth/drive", "UTF-8")}" +
             "&access_type=offline" +
             "&prompt=consent"
     }
@@ -88,15 +85,14 @@ class GoogleDriveProvider(
                 )
             )
 
-            // Create temporary Drive service to fetch user info
+            // Fetch user info via REST API
             var email = ""
             var displayName = ""
             try {
-                val tempService = buildDriveService(token.accessToken, token.refreshToken)
-                val about = tempService.about().get().setFields("user").execute()
-                val user = about?.user
-                email = user?.emailAddress ?: ""
-                displayName = user?.displayName ?: ""
+                val aboutJson = apiGet("$API_BASE/about?fields=user", token.accessToken)
+                val userObj = JSONObject(aboutJson).optJSONObject("user")
+                email = userObj?.optString("emailAddress", "") ?: ""
+                displayName = userObj?.optString("displayName", "") ?: ""
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "GDrive: failed to fetch user info: ${e.message}")
             }
@@ -126,7 +122,6 @@ class GoogleDriveProvider(
         if (tokenKey.isNotEmpty()) {
             tokenStore.removeByKey(tokenKey)
         }
-        driveService = null
     }
 
     override suspend fun listFiles(path: String): Result<List<CloudFileEntry>> = withContext(Dispatchers.IO) {
@@ -134,21 +129,45 @@ class GoogleDriveProvider(
             val parentId = if (path.isEmpty() || path == "/") "root" else path
             EcosystemLogger.d(HaronConstants.TAG, "GDrive listFiles: path='$path', parentId='$parentId'")
 
-            val allFiles = mutableListOf<com.google.api.services.drive.model.File>()
+            data class DriveFile(
+                val id: String, val name: String, val mimeType: String?,
+                val size: Long, val modifiedTime: Long, val parents: List<String>,
+                val thumbnailLink: String?
+            )
+
+            val allFiles = mutableListOf<DriveFile>()
             var pageToken: String? = null
             do {
-                val result = withRefresh { service ->
-                    val req = service.files().list()
-                        .setQ("'$parentId' in parents and trashed=false")
-                        .setFields("nextPageToken,incompleteSearch,files(id,name,mimeType,size,modifiedTime,parents,thumbnailLink)")
-                        .setPageSize(500)
-                        .setOrderBy("folder,name")
-                    if (pageToken != null) req.setPageToken(pageToken)
-                    req.execute()
+                val q = URLEncoder.encode("'$parentId' in parents and trashed=false", "UTF-8")
+                val fields = URLEncoder.encode("nextPageToken,incompleteSearch,files(id,name,mimeType,size,modifiedTime,parents,thumbnailLink)", "UTF-8")
+                var url = "$API_BASE/files?q=$q&fields=$fields&pageSize=500&orderBy=folder%2Cname"
+                if (pageToken != null) url += "&pageToken=${URLEncoder.encode(pageToken, "UTF-8")}"
+
+                val responseBody = withRefresh { token -> apiGet(url, token) }
+                val json = JSONObject(responseBody)
+
+                EcosystemLogger.d(HaronConstants.TAG, "GDrive listFiles page: ${json.optJSONArray("files")?.length() ?: 0} items, nextPage=${json.has("nextPageToken")}, incomplete=${json.optBoolean("incompleteSearch", false)}")
+
+                val filesArr = json.optJSONArray("files")
+                if (filesArr != null) {
+                    for (i in 0 until filesArr.length()) {
+                        val f = filesArr.getJSONObject(i)
+                        val parentsList = mutableListOf<String>()
+                        f.optJSONArray("parents")?.let { pa ->
+                            for (j in 0 until pa.length()) parentsList.add(pa.getString(j))
+                        }
+                        allFiles.add(DriveFile(
+                            id = f.getString("id"),
+                            name = f.getString("name"),
+                            mimeType = f.optString("mimeType", null),
+                            size = f.optLong("size", 0L),
+                            modifiedTime = parseGoogleTime(f.optString("modifiedTime", "")),
+                            parents = parentsList,
+                            thumbnailLink = f.optString("thumbnailLink", null).takeIf { it?.isNotEmpty() == true }
+                        ))
+                    }
                 }
-                EcosystemLogger.d(HaronConstants.TAG, "GDrive listFiles page: ${result.files?.size ?: 0} items, nextPage=${result.nextPageToken != null}, incomplete=${result.incompleteSearch}")
-                result.files?.let { allFiles.addAll(it) }
-                pageToken = result.nextPageToken
+                pageToken = json.optString("nextPageToken", null).takeIf { it?.isNotEmpty() == true }
             } while (pageToken != null)
 
             val currentToken = tokenStore.loadByKey(tokenKey)?.accessToken
@@ -156,7 +175,7 @@ class GoogleDriveProvider(
                 val isDir = file.mimeType == "application/vnd.google-apps.folder"
                 val rawThumbUrl = file.thumbnailLink?.replace(Regex("=s\\d+"), "=s800")
                     ?: if (!isDir && (file.mimeType?.startsWith("image/") == true || file.mimeType?.startsWith("video/") == true)) {
-                        "https://www.googleapis.com/drive/v3/files/${file.id}?alt=media"
+                        "$API_BASE/files/${file.id}?alt=media"
                     } else null
                 // Append access_token for authenticated thumbnail download in grid
                 val authThumbUrl = if (rawThumbUrl != null && currentToken != null) {
@@ -168,13 +187,13 @@ class GoogleDriveProvider(
                     name = file.name,
                     path = file.id,
                     isDirectory = isDir,
-                    size = file.getSize()?.toLong() ?: 0L,
-                    lastModified = file.modifiedTime?.value ?: 0L,
+                    size = file.size,
+                    lastModified = file.modifiedTime,
                     mimeType = file.mimeType,
                     provider = CloudProvider.GOOGLE_DRIVE,
                     thumbnailUrl = authThumbUrl
                 )
-            } ?: emptyList()
+            }
 
             // Batch-count children for all folders in a single API query
             val folderIds = entries.filter { it.isDirectory }.map { it.id }
@@ -203,40 +222,55 @@ class GoogleDriveProvider(
 
     override fun downloadFile(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = flow {
         try {
-            val fileMeta = withRefresh { service ->
-                service.files().get(cloudFileId)
-                    .setFields("id,name,size,mimeType")
-                    .execute()
-            }
-            val totalSize = fileMeta.getSize()?.toLong() ?: 0L
-            val fileName = fileMeta.name
+            // Get file metadata
+            val fields = URLEncoder.encode("id,name,size,mimeType", "UTF-8")
+            val metaUrl = "$API_BASE/files/$cloudFileId?fields=$fields"
+            val metaBody = withRefresh { token -> apiGet(metaUrl, token) }
+            val metaJson = JSONObject(metaBody)
+            val totalSize = metaJson.optLong("size", 0L)
+            val fileName = metaJson.getString("name")
 
             emit(CloudTransferProgress(fileName, 0, totalSize))
 
-            val service = getService() ?: throw Exception("Not authenticated")
+            // Stream download
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            val downloadUrl = "$API_BASE/files/$cloudFileId?alt=media"
+            val startTime = System.currentTimeMillis()
             val outputFile = File(localPath)
 
-            // Stream download with manual progress tracking
-            val startTime = System.currentTimeMillis()
-            val inputStream = service.files().get(cloudFileId).executeMediaAsInputStream()
-            BufferedOutputStream(FileOutputStream(outputFile), 262144).use { fos ->
-                val buffer = ByteArray(262144)
-                var totalRead = 0L
-                var lastEmitPercent = -1
-                while (true) {
-                    val read = inputStream.read(buffer)
-                    if (read == -1) break
-                    fos.write(buffer, 0, read)
-                    totalRead += read
-                    val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
-                    if (percent != lastEmitPercent) {
-                        val elapsed = System.currentTimeMillis() - startTime
-                        val speed = if (elapsed > 500) totalRead * 1000 / elapsed else 0L
-                        emit(CloudTransferProgress(fileName, totalRead, totalSize, speedBytesPerSec = speed))
-                        lastEmitPercent = percent
+            val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Authorization", "Bearer $token")
+                connectTimeout = 30_000
+                readTimeout = 60_000
+            }
+
+            try {
+                if (conn.responseCode !in 200..299) {
+                    throw java.io.IOException("Download failed: HTTP ${conn.responseCode}")
+                }
+                conn.inputStream.use { inputStream ->
+                    BufferedOutputStream(FileOutputStream(outputFile), 262144).use { fos ->
+                        val buffer = ByteArray(262144)
+                        var totalRead = 0L
+                        var lastEmitPercent = -1
+                        while (true) {
+                            val read = inputStream.read(buffer)
+                            if (read == -1) break
+                            fos.write(buffer, 0, read)
+                            totalRead += read
+                            val percent = if (totalSize > 0) ((totalRead * 100) / totalSize).toInt() else 0
+                            if (percent != lastEmitPercent) {
+                                val elapsed = System.currentTimeMillis() - startTime
+                                val speed = if (elapsed > 500) totalRead * 1000 / elapsed else 0L
+                                emit(CloudTransferProgress(fileName, totalRead, totalSize, speedBytesPerSec = speed))
+                                lastEmitPercent = percent
+                            }
+                        }
                     }
                 }
-                inputStream.close()
+            } finally {
+                conn.disconnect()
             }
 
             emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
@@ -246,7 +280,7 @@ class GoogleDriveProvider(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = callbackFlow {
+    override fun uploadFile(localPath: String, cloudDirPath: String, fileName: String): Flow<CloudTransferProgress> = flow {
         var lastError: Exception? = null
         val maxRetries = 3
 
@@ -254,82 +288,74 @@ class GoogleDriveProvider(
             try {
                 // Force-refresh token before upload to avoid Connection reset
                 val refreshed = refreshToken()
-                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: attempt=$attempt/$maxRetries, tokenRefreshed=$refreshed, file=$fileName, size=${File(localPath).length() / 1024}KB")
-                val service = getService() ?: throw Exception("Not authenticated")
+                val token = getAccessToken() ?: throw Exception("Not authenticated")
                 val file = File(localPath)
                 val totalSize = file.length()
 
-                trySend(CloudTransferProgress(fileName, 0, totalSize))
+                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: attempt=$attempt/$maxRetries, tokenRefreshed=$refreshed, file=$fileName, size=${totalSize / 1024}KB")
+                emit(CloudTransferProgress(fileName, 0, totalSize))
 
                 val uploadStartTime = System.currentTimeMillis()
                 val parentId = if (cloudDirPath.isEmpty() || cloudDirPath == "/") "root" else cloudDirPath
-                val fileMetadata = com.google.api.services.drive.model.File().apply {
-                    name = fileName
-                    parents = listOf(parentId)
+
+                // Init resumable upload
+                val metadata = JSONObject().apply {
+                    put("name", fileName)
+                    put("parents", org.json.JSONArray().apply { put(parentId) })
                 }
+                val sessionUri = initResumableUpload(token, metadata.toString(), totalSize)
 
-                val mediaContent = com.google.api.client.http.FileContent(null, file)
-                val createReq = service.files().create(fileMetadata, mediaContent)
-                    .setFields("id,name,size")
-
-                // Enable resumable upload with progress — 10MB chunks for better throughput
-                createReq.mediaHttpUploader?.apply {
-                    isDirectUploadEnabled = false // use resumable
-                    chunkSize = 10 * 1024 * 1024 // 10MB chunks (Google minimum recommended)
-                }
-
-                createReq.mediaHttpUploader?.setProgressListener { uploader ->
-                    val percent = when (uploader.uploadState) {
-                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_IN_PROGRESS -> {
-                            val p = (uploader.progress * 100).toInt()
-                            if (p % 10 == 0) {
-                                EcosystemLogger.d(HaronConstants.TAG, "GDrive upload progress: $fileName $p%")
-                            }
-                            p
+                // Upload in chunks
+                FileInputStream(file).use { fis ->
+                    var offset = 0L
+                    val buffer = ByteArray(CHUNK_SIZE)
+                    while (offset < totalSize) {
+                        val remaining = (totalSize - offset).toInt().coerceAtMost(CHUNK_SIZE)
+                        var bytesRead = 0
+                        while (bytesRead < remaining) {
+                            val r = fis.read(buffer, bytesRead, remaining - bytesRead)
+                            if (r == -1) break
+                            bytesRead += r
                         }
-                        com.google.api.client.googleapis.media.MediaHttpUploader.UploadState.MEDIA_COMPLETE -> {
-                            EcosystemLogger.d(HaronConstants.TAG, "GDrive upload progress: $fileName 100% COMPLETE")
-                            100
+                        val chunk = if (bytesRead == buffer.size) buffer else buffer.copyOf(bytesRead)
+                        uploadChunk(sessionUri, chunk, offset, totalSize, token)
+                        offset += bytesRead
+
+                        val percent = ((offset * 100) / totalSize).toInt()
+                        if (percent % 10 == 0) {
+                            EcosystemLogger.d(HaronConstants.TAG, "GDrive upload progress: $fileName $percent%")
                         }
-                        else -> 0
+                        val elapsed = System.currentTimeMillis() - uploadStartTime
+                        val speed = if (elapsed > 500) offset * 1000 / elapsed else 0L
+                        emit(CloudTransferProgress(fileName, offset, totalSize, speedBytesPerSec = speed))
                     }
-                    val transferred = (totalSize * percent / 100)
-                    val elapsed = System.currentTimeMillis() - uploadStartTime
-                    val speed = if (elapsed > 500) transferred * 1000 / elapsed else 0L
-                    trySend(CloudTransferProgress(fileName, transferred, totalSize, speedBytesPerSec = speed))
                 }
 
-                withContext(Dispatchers.IO) { createReq.execute() }
-
-                trySend(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
+                emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
                 EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: SUCCESS $fileName (attempt $attempt)")
                 lastError = null
-                break // success — exit retry loop
+                break // success
             } catch (e: Exception) {
                 lastError = e
                 EcosystemLogger.e(HaronConstants.TAG, "GDrive upload error (attempt $attempt/$maxRetries): ${e.javaClass.simpleName}: ${e.message}")
-                // Retry on ANY IOException (connection reset, end of stream, timeout, etc.)
                 if (attempt < maxRetries && e is java.io.IOException) {
-                    val backoffMs = attempt * 2000L // 2s, 4s
+                    val backoffMs = attempt * 2000L
                     EcosystemLogger.d(HaronConstants.TAG, "GDrive upload: retrying in ${backoffMs}ms...")
                     kotlinx.coroutines.delay(backoffMs)
-                    driveService = null // force re-init
                     continue
                 }
-                break // non-retryable error or max retries exhausted
+                break
             }
         }
 
         if (lastError != null) {
-            trySend(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = lastError!!.message))
+            emit(CloudTransferProgress(fileName, 0, 0, isComplete = true, error = lastError!!.message))
         }
-        channel.close()
-        awaitClose { }
-    }
+    }.flowOn(Dispatchers.IO)
 
     override suspend fun delete(cloudFileId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            withRefresh { service -> service.files().delete(cloudFileId).execute() }
+            withRefresh { token -> apiDelete("$API_BASE/files/$cloudFileId", token) }
             Result.success(Unit)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "GDrive delete error: ${e.message}")
@@ -339,9 +365,9 @@ class GoogleDriveProvider(
 
     override suspend fun rename(cloudFileId: String, newName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val fileMeta = com.google.api.services.drive.model.File().apply { this.name = newName }
-            withRefresh { service -> service.files().update(cloudFileId, fileMeta).execute() }
-            EcosystemLogger.d(HaronConstants.TAG, "GDrive rename: $cloudFileId → $newName")
+            val body = JSONObject().apply { put("name", newName) }.toString()
+            withRefresh { token -> apiPatch("$API_BASE/files/$cloudFileId", token, body) }
+            EcosystemLogger.d(HaronConstants.TAG, "GDrive rename: $cloudFileId -> $newName")
             Result.success(Unit)
         } catch (e: Exception) {
             EcosystemLogger.e(HaronConstants.TAG, "GDrive rename error: ${e.message}")
@@ -355,13 +381,8 @@ class GoogleDriveProvider(
         newParentId: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            withRefresh { service ->
-                service.files().update(fileId, null)
-                    .setAddParents(newParentId)
-                    .setRemoveParents(currentParentId)
-                    .setFields("id,parents")
-                    .execute()
-            }
+            val url = "$API_BASE/files/$fileId?addParents=${URLEncoder.encode(newParentId, "UTF-8")}&removeParents=${URLEncoder.encode(currentParentId, "UTF-8")}&fields=id,parents"
+            withRefresh { token -> apiPatch(url, token, null) }
             EcosystemLogger.d(HaronConstants.TAG, "GDrive moveFile: $fileId from $currentParentId to $newParentId")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -376,8 +397,6 @@ class GoogleDriveProvider(
 
     override suspend fun getFreshAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
-            // Always force-refresh the token — Google SDK caches old token with Date(Long.MAX_VALUE)
-            // so withRefresh won't trigger 401-based refresh
             refreshToken()
             EcosystemLogger.d(HaronConstants.TAG, "GDrive getFreshAccessToken: token force-refreshed")
             tokenStore.loadByKey(tokenKey)?.accessToken
@@ -389,15 +408,35 @@ class GoogleDriveProvider(
 
     override fun updateFileContent(cloudFileId: String, localPath: String): Flow<CloudTransferProgress> = flow {
         try {
-            val service = getService() ?: throw Exception("Not authenticated")
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
             val file = File(localPath)
             val totalSize = file.length()
             val fileName = file.name
 
             emit(CloudTransferProgress(fileName, 0, totalSize))
 
-            val mediaContent = com.google.api.client.http.FileContent(null, file)
-            service.files().update(cloudFileId, null, mediaContent).execute()
+            val url = "$UPLOAD_BASE/files/$cloudFileId?uploadType=media"
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "PATCH"
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "application/octet-stream")
+                setRequestProperty("Content-Length", totalSize.toString())
+                doOutput = true
+                connectTimeout = 30_000
+                readTimeout = 120_000
+            }
+
+            try {
+                conn.outputStream.use { os ->
+                    file.inputStream().use { it.copyTo(os, 262144) }
+                }
+                if (conn.responseCode !in 200..299) {
+                    val errBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+                    throw java.io.IOException("Update content failed: HTTP ${conn.responseCode} $errBody")
+                }
+            } finally {
+                conn.disconnect()
+            }
 
             emit(CloudTransferProgress(fileName, totalSize, totalSize, isComplete = true))
             EcosystemLogger.d(HaronConstants.TAG, "GDrive updateFileContent: $cloudFileId updated ($totalSize bytes)")
@@ -410,22 +449,22 @@ class GoogleDriveProvider(
     override suspend fun createFolder(parentPath: String, name: String): Result<CloudFileEntry> = withContext(Dispatchers.IO) {
         try {
             val parentId = if (parentPath.isEmpty() || parentPath == "/") "root" else parentPath
-            val folderMetadata = com.google.api.services.drive.model.File().apply {
-                this.name = name
-                this.mimeType = "application/vnd.google-apps.folder"
-                this.parents = listOf(parentId)
+            val body = JSONObject().apply {
+                put("name", name)
+                put("mimeType", "application/vnd.google-apps.folder")
+                put("parents", org.json.JSONArray().apply { put(parentId) })
+            }.toString()
+
+            val responseBody = withRefresh { token ->
+                apiPost("$API_BASE/files?fields=${URLEncoder.encode("id,name,mimeType", "UTF-8")}", token, body)
             }
-            val created = withRefresh { service ->
-                service.files().create(folderMetadata)
-                    .setFields("id,name,mimeType")
-                    .execute()
-            }
+            val json = JSONObject(responseBody)
 
             Result.success(
                 CloudFileEntry(
-                    id = created.id,
-                    name = created.name,
-                    path = created.id,
+                    id = json.getString("id"),
+                    name = json.getString("name"),
+                    path = json.getString("id"),
                     isDirectory = true,
                     provider = CloudProvider.GOOGLE_DRIVE
                 )
@@ -436,6 +475,8 @@ class GoogleDriveProvider(
         }
     }
 
+    // ========== Batch child count ==========
+
     /**
      * Count children for multiple folders in batched API calls.
      * Groups folder IDs into chunks of 20 to keep query length manageable,
@@ -445,7 +486,6 @@ class GoogleDriveProvider(
         val countMap = mutableMapOf<String, Int>()
         val folderIdSet = folderIds.toSet()
 
-        // Chunk to avoid query length limits
         folderIds.chunked(20).forEach { chunk ->
             try {
                 val parentQuery = chunk.joinToString(" or ") { "'$it' in parents" }
@@ -453,22 +493,30 @@ class GoogleDriveProvider(
 
                 var pageToken: String? = null
                 do {
-                    val result = withRefresh { service ->
-                        val req = service.files().list()
-                            .setQ(query)
-                            .setFields("nextPageToken,files(parents)")
-                            .setPageSize(1000)
-                        if (pageToken != null) req.setPageToken(pageToken)
-                        req.execute()
-                    }
-                    result.files?.forEach { file ->
-                        file.parents?.forEach { pid ->
-                            if (pid in folderIdSet) {
-                                countMap[pid] = (countMap[pid] ?: 0) + 1
+                    val q = URLEncoder.encode(query, "UTF-8")
+                    val fields = URLEncoder.encode("nextPageToken,files(parents)", "UTF-8")
+                    var url = "$API_BASE/files?q=$q&fields=$fields&pageSize=1000"
+                    if (pageToken != null) url += "&pageToken=${URLEncoder.encode(pageToken, "UTF-8")}"
+
+                    val responseBody = withRefresh { token -> apiGet(url, token) }
+                    val json = JSONObject(responseBody)
+
+                    val filesArr = json.optJSONArray("files")
+                    if (filesArr != null) {
+                        for (i in 0 until filesArr.length()) {
+                            val f = filesArr.getJSONObject(i)
+                            val parents = f.optJSONArray("parents")
+                            if (parents != null) {
+                                for (j in 0 until parents.length()) {
+                                    val pid = parents.getString(j)
+                                    if (pid in folderIdSet) {
+                                        countMap[pid] = (countMap[pid] ?: 0) + 1
+                                    }
+                                }
                             }
                         }
                     }
-                    pageToken = result.nextPageToken
+                    pageToken = json.optString("nextPageToken", null).takeIf { it?.isNotEmpty() == true }
                 } while (pageToken != null)
             } catch (e: Exception) {
                 EcosystemLogger.e(HaronConstants.TAG, "GDrive countChildren batch error: ${e.message}")
@@ -478,30 +526,134 @@ class GoogleDriveProvider(
         return countMap
     }
 
-    private fun buildDriveService(accessToken: String, refreshToken: String?): Drive {
-        val credBuilder = UserCredentials.newBuilder()
-            .setClientId(CLIENT_ID)
-            .setClientSecret(CLIENT_SECRET)
-            .setAccessToken(AccessToken(accessToken, Date(Long.MAX_VALUE)))
-        refreshToken?.let { credBuilder.setRefreshToken(it) }
-        val credentials = credBuilder.build()
-        val transport = com.google.api.client.http.javanet.NetHttpTransport()
-        val jsonFactory = GsonFactory.getDefaultInstance()
-        return Drive.Builder(transport, jsonFactory, HttpCredentialsAdapter(credentials))
-            .setApplicationName("Haron")
-            .build()
+    // ========== HTTP helpers ==========
+
+    private fun apiGet(url: String, accessToken: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            connectTimeout = 30_000
+            readTimeout = 30_000
+        }
+        return handleResponse(conn)
     }
 
-    private fun getService(): Drive? {
-        if (driveService != null) return driveService
-        initDriveService()
-        return driveService
+    private fun apiPost(url: String, accessToken: String, jsonBody: String?): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            if (jsonBody != null) {
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                doOutput = true
+            }
+            connectTimeout = 30_000
+            readTimeout = 30_000
+        }
+        if (jsonBody != null) {
+            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+        }
+        return handleResponse(conn)
     }
 
-    private fun initDriveService() {
-        val tokens = tokenStore.loadByKey(tokenKey) ?: return
-        driveService = buildDriveService(tokens.accessToken, tokens.refreshToken)
+    private fun apiPatch(url: String, accessToken: String, jsonBody: String?): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "PATCH"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            if (jsonBody != null) {
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                doOutput = true
+            }
+            connectTimeout = 30_000
+            readTimeout = 30_000
+        }
+        if (jsonBody != null) {
+            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+        }
+        return handleResponse(conn)
     }
+
+    private fun apiDelete(url: String, accessToken: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "DELETE"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            connectTimeout = 30_000
+            readTimeout = 30_000
+        }
+        return handleResponse(conn)
+    }
+
+    private fun handleResponse(conn: HttpURLConnection): String {
+        try {
+            val code = conn.responseCode
+            if (code == 401) {
+                val errBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+                throw HttpException(401, errBody)
+            }
+            if (code == 204) return "" // No Content (e.g. delete)
+            if (code !in 200..299) {
+                val errBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+                throw java.io.IOException("HTTP $code: $errBody")
+            }
+            return conn.inputStream.bufferedReader().readText()
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    // ========== Resumable upload helpers ==========
+
+    private fun initResumableUpload(accessToken: String, metadataJson: String, contentLength: Long): String {
+        val url = "$UPLOAD_BASE/files?uploadType=resumable&fields=${URLEncoder.encode("id,name,size", "UTF-8")}"
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            setRequestProperty("X-Upload-Content-Type", "application/octet-stream")
+            setRequestProperty("X-Upload-Content-Length", contentLength.toString())
+            doOutput = true
+            connectTimeout = 30_000
+            readTimeout = 30_000
+            instanceFollowRedirects = false
+        }
+        conn.outputStream.use { it.write(metadataJson.toByteArray(Charsets.UTF_8)) }
+
+        val code = conn.responseCode
+        if (code != 200) {
+            val errBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+            throw java.io.IOException("Resumable upload init failed: HTTP $code $errBody")
+        }
+        val sessionUri = conn.getHeaderField("Location")
+            ?: throw java.io.IOException("No Location header in resumable upload init response")
+        conn.disconnect()
+        return sessionUri
+    }
+
+    private fun uploadChunk(sessionUri: String, chunk: ByteArray, offset: Long, totalSize: Long, accessToken: String) {
+        val endByte = offset + chunk.size - 1
+        val conn = (URL(sessionUri).openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", "application/octet-stream")
+            setRequestProperty("Content-Range", "bytes $offset-$endByte/$totalSize")
+            setRequestProperty("Content-Length", chunk.size.toString())
+            doOutput = true
+            connectTimeout = 30_000
+            readTimeout = 120_000
+        }
+        conn.outputStream.use { it.write(chunk) }
+
+        val code = conn.responseCode
+        // 308 = Resume Incomplete (more chunks needed), 200/201 = complete
+        if (code != 308 && code !in 200..201) {
+            val errBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+            throw java.io.IOException("Chunk upload failed: HTTP $code $errBody")
+        }
+        conn.disconnect()
+    }
+
+    // ========== Token management ==========
 
     /** Refresh access token using refresh token */
     private suspend fun refreshToken(): Boolean = withContext(Dispatchers.IO) {
@@ -529,8 +681,6 @@ class GoogleDriveProvider(
                         displayName = tokens.displayName
                     )
                 )
-                driveService = null
-                initDriveService()
                 EcosystemLogger.d(HaronConstants.TAG, "GDrive: token refreshed successfully")
             }
             result.isSuccess
@@ -540,21 +690,37 @@ class GoogleDriveProvider(
         }
     }
 
-    /** Execute Drive API call with automatic token refresh on 401 */
-    private suspend fun <T> withRefresh(block: (Drive) -> T): T {
-        val service = getService() ?: throw Exception("Not authenticated")
+    /** Execute API call with automatic token refresh on 401 */
+    private suspend fun <T> withRefresh(block: (String) -> T): T {
+        val token = getAccessToken() ?: throw Exception("Not authenticated")
         return try {
-            block(service)
-        } catch (e: com.google.api.client.googleapis.json.GoogleJsonResponseException) {
-            if (e.statusCode == 401 && refreshToken()) {
-                val newService = getService() ?: throw Exception("Not authenticated after refresh")
-                block(newService)
+            block(token)
+        } catch (e: HttpException) {
+            if (e.code == 401 && refreshToken()) {
+                val newToken = getAccessToken() ?: throw Exception("Not authenticated after refresh")
+                block(newToken)
             } else throw e
-        } catch (e: com.google.api.client.http.HttpResponseException) {
-            if (e.statusCode == 401 && refreshToken()) {
-                val newService = getService() ?: throw Exception("Not authenticated after refresh")
-                block(newService)
-            } else throw e
+        }
+    }
+
+    /** Custom exception for HTTP error codes to enable 401 detection */
+    private class HttpException(val code: Int, message: String) : java.io.IOException("HTTP $code: $message")
+
+    // ========== Utilities ==========
+
+    /** Parse Google's RFC 3339 date string to epoch millis */
+    private fun parseGoogleTime(dateStr: String): Long {
+        if (dateStr.isEmpty()) return 0L
+        return try {
+            val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            format.parse(dateStr)?.time ?: 0L
+        } catch (e: Exception) {
+            try {
+                val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                format.parse(dateStr)?.time ?: 0L
+            } catch (_: Exception) { 0L }
         }
     }
 }

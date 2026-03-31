@@ -9,18 +9,13 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.apache.commons.net.ftp.FTP
-import org.apache.commons.net.ftp.FTPClient
-import org.apache.commons.net.ftp.FTPFile
-import org.apache.commons.net.ftp.FTPReply
-import org.apache.commons.net.ftp.FTPSClient
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private data class FtpConnection(
-    val client: FTPClient,
+    val client: SimpleFtpClient,
     val credential: FtpCredential?,
     val mutex: Mutex = Mutex(),
     var lastUsed: Long = System.currentTimeMillis()
@@ -30,7 +25,7 @@ private data class FtpConnection(
  * FTP/FTPS client for browsing and transferring files on remote FTP servers.
  * Manages a pool of connections keyed by host:port, with automatic reconnection
  * and thread-safe access via per-connection mutexes.
- * Uses Apache Commons Net for FTP protocol operations.
+ * Uses raw socket-based SimpleFtpClient for FTP protocol operations.
  */
 @Singleton
 class FtpClientManager @Inject constructor(
@@ -45,19 +40,24 @@ class FtpClientManager @Inject constructor(
                 EcosystemLogger.d(HaronConstants.TAG, "FtpClientManager: connecting to ${credential.host}:${credential.port} user=${credential.username}")
                 disconnect(credential.host, credential.port)
 
-                val client = if (credential.useFtps) FTPSClient(true) else FTPClient()
-                client.connectTimeout = HaronConstants.FTP_CONNECT_TIMEOUT_MS
-                client.defaultTimeout = HaronConstants.FTP_SO_TIMEOUT_MS
-                client.controlEncoding = "UTF-8"
-                client.setAutodetectUTF8(true)
+                val client = SimpleFtpClient()
+                client.connect(
+                    credential.host,
+                    credential.port,
+                    credential.useFtps,
+                    HaronConstants.FTP_CONNECT_TIMEOUT_MS,
+                    HaronConstants.FTP_SO_TIMEOUT_MS
+                )
 
-                client.connect(credential.host, credential.port)
                 val reply = client.replyCode
-                if (!FTPReply.isPositiveCompletion(reply)) {
-                    client.disconnect()
-                    return@withContext Result.failure(
-                        IllegalStateException("FTP connect rejected: $reply")
-                    )
+                if (reply !in 200..299 && reply !in 100..199) {
+                    // Server greeting should be 220
+                    if (reply != 220) {
+                        client.disconnect()
+                        return@withContext Result.failure(
+                            IllegalStateException("FTP connect rejected: $reply")
+                        )
+                    }
                 }
 
                 val loggedIn = client.login(credential.username, credential.password)
@@ -68,11 +68,11 @@ class FtpClientManager @Inject constructor(
                     )
                 }
 
-                client.enterLocalPassiveMode()
-                client.setFileType(FTP.BINARY_FILE_TYPE)
-                client.soTimeout = HaronConstants.FTP_SO_TIMEOUT_MS
+                client.enterPassiveMode()
+                client.setBinaryMode()
+                client.setSoTimeout(HaronConstants.FTP_SO_TIMEOUT_MS)
                 // Request UTF-8 from server (IIS, vsftpd, etc.)
-                try { client.sendCommand("OPTS UTF8 ON") } catch (_: Exception) {}
+                client.sendUtf8Opts()
 
                 connections[key] = FtpConnection(client, credential)
                 EcosystemLogger.d(HaronConstants.TAG, "FtpClientManager: connected to ${credential.host}:${credential.port}")
@@ -95,7 +95,7 @@ class FtpClientManager @Inject constructor(
                 try {
                     conn.lastUsed = System.currentTimeMillis()
                     val dirPath = path.ifEmpty { "/" }
-                    val ftpFiles: Array<FTPFile> = conn.client.listFiles(dirPath) ?: emptyArray()
+                    val ftpFiles: List<FtpFileEntry> = conn.client.listFiles(dirPath)
 
                     val files = ftpFiles
                         .filter { it.name != "." && it.name != ".." }
@@ -106,9 +106,9 @@ class FtpClientManager @Inject constructor(
                                 name = f.name,
                                 isDirectory = f.isDirectory,
                                 size = f.size,
-                                lastModified = f.timestamp?.timeInMillis ?: 0L,
+                                lastModified = f.timestampMillis,
                                 path = fullPath,
-                                permissions = f.toFormattedString()?.take(10) ?: ""
+                                permissions = f.rawPermissions.take(10)
                             )
                         }
                         .sortedWith(
@@ -137,9 +137,15 @@ class FtpClientManager @Inject constructor(
             conn.lastUsed = System.currentTimeMillis()
             val fileName = remotePath.substringAfterLast("/")
             // Get remote file size
-            val totalSize = conn.client.mlistFile(remotePath)?.size
-                ?: conn.client.listFiles(remotePath)?.firstOrNull()?.size
-                ?: -1L
+            val totalSize = try {
+                val info = conn.client.getFileInfo(remotePath)
+                if (info != null && info.size >= 0) info.size
+                else {
+                    val sizeResult = conn.client.getFileSize(remotePath)
+                    if (sizeResult >= 0) sizeResult
+                    else conn.client.listFiles(remotePath).firstOrNull()?.size ?: -1L
+                }
+            } catch (_: Exception) { -1L }
 
             val actualDest = resolveConflict(localDest)
             actualDest.outputStream().use { output ->
@@ -168,9 +174,13 @@ class FtpClientManager @Inject constructor(
         val conn = connections[key] ?: return@withContext -1L
         conn.mutex.withLock {
             conn.lastUsed = System.currentTimeMillis()
-            conn.client.mlistFile(remotePath)?.size
-                ?: conn.client.listFiles(remotePath)?.firstOrNull()?.size
-                ?: -1L
+            try {
+                val info = conn.client.getFileInfo(remotePath)
+                if (info != null && info.size >= 0) return@withLock info.size
+                val sizeResult = conn.client.getFileSize(remotePath)
+                if (sizeResult >= 0) return@withLock sizeResult
+                conn.client.listFiles(remotePath).firstOrNull()?.size ?: -1L
+            } catch (_: Exception) { -1L }
         }
     }
 
@@ -181,7 +191,7 @@ class FtpClientManager @Inject constructor(
         conn.mutex.lock()
         conn.lastUsed = System.currentTimeMillis()
         if (offset > 0) {
-            conn.client.restartOffset = offset
+            conn.client.setRestartOffset(offset)
         }
         val stream = conn.client.retrieveFileStream(remotePath)
         if (stream == null) {
@@ -341,8 +351,8 @@ class FtpClientManager @Inject constructor(
         }
     }
 
-    private fun deleteDirectoryRecursive(client: FTPClient, path: String): Boolean {
-        val files = client.listFiles(path) ?: return client.removeDirectory(path)
+    private fun deleteDirectoryRecursive(client: SimpleFtpClient, path: String): Boolean {
+        val files = try { client.listFiles(path) } catch (_: Exception) { return client.removeDirectory(path) }
         for (f in files) {
             if (f.name == "." || f.name == "..") continue
             val childPath = "$path/${f.name}"

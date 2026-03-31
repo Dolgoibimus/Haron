@@ -117,6 +117,8 @@ fun QuickPreviewDialog(
     onOpenArchive: (() -> Unit)? = null,
     onInstallApk: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    onNavigateToFolder: ((String) -> Unit)? = null, // path → navigate to parent folder
+    currentFolderPath: String = "",
     adjacentFiles: List<FileEntry> = emptyList(),
     currentFileIndex: Int = 0,
     onFileChanged: (Int) -> Unit = {},
@@ -228,6 +230,25 @@ fun QuickPreviewDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        // Show relative path (clickable) for files from deep search
+                        if (onNavigateToFolder != null && currentFolderPath.isNotEmpty()) {
+                            val parentDir = java.io.File(entry.path).parent ?: ""
+                            if (parentDir != currentFolderPath && parentDir.startsWith(currentFolderPath)) {
+                                val relativePath = parentDir.removePrefix(currentFolderPath).removePrefix("/")
+                                Text(
+                                    text = "\uD83D\uDCC2 $relativePath",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .padding(top = 1.dp)
+                                        .clickable {
+                                            onNavigateToFolder(parentDir)
+                                        }
+                                )
+                            }
+                        }
                     }
                     IconButton(
                         onClick = onDismiss,

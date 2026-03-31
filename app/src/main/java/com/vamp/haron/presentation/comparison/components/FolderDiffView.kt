@@ -100,7 +100,8 @@ fun FolderDiffView(
                     entry = entry,
                     onClick = if (entry.status == ComparisonStatus.DIFFERENT && !entry.isDirectory) {
                         { onOpenDiff(entry) }
-                    } else null
+                    } else null,
+                    isComparable = entry.status == ComparisonStatus.DIFFERENT && !entry.isDirectory
                 )
             }
         }
@@ -108,7 +109,7 @@ fun FolderDiffView(
 }
 
 @Composable
-private fun FolderEntryRow(entry: FolderComparisonEntry, onClick: (() -> Unit)? = null) {
+private fun FolderEntryRow(entry: FolderComparisonEntry, onClick: (() -> Unit)? = null, isComparable: Boolean = false) {
     val statusIcon = when (entry.status) {
         ComparisonStatus.IDENTICAL -> Icons.Filled.CheckCircle
         ComparisonStatus.DIFFERENT -> Icons.Filled.Difference

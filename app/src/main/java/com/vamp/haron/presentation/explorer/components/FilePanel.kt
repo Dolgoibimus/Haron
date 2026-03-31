@@ -191,6 +191,7 @@ fun FilePanel(
     hasSelectionBar: Boolean = false,
     cloudAuthHeader: String? = null,
     archiveThumbnailCache: com.vamp.haron.common.util.ArchiveThumbnailCache? = null,
+    onLoadProtectedThumbnail: (suspend (String) -> android.graphics.Bitmap?)? = null,
     onSizeClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -263,6 +264,14 @@ fun FilePanel(
                 }
             } else {
                 files.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
+            }
+        }
+        .let { currentFolderResults ->
+            // Append deep search results from subfolders (if any)
+            if (state.isSearchActive && state.searchQuery.isNotBlank() && !state.deepSearchResults.isNullOrEmpty()) {
+                currentFolderResults + state.deepSearchResults!!
+            } else {
+                currentFolderResults
             }
         }
 
@@ -511,6 +520,22 @@ fun FilePanel(
                                 modifier = Modifier.padding(horizontal = 2.dp)
                             )
                         }
+                        // Deep search progress/status
+                        if (state.isDeepSearching && state.deepSearchProgress != null) {
+                            Text(
+                                text = state.deepSearchProgress,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(horizontal = 2.dp),
+                                maxLines = 1
+                            )
+                        } else if (state.isDeepSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp).padding(horizontal = 2.dp),
+                                strokeWidth = 1.5.dp,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                         if (state.searchQuery.isNotEmpty()) {
                             IconButton(
                                 onClick = onClearSearch,
@@ -725,9 +750,9 @@ fun FilePanel(
                         if (serviceRunning) {
                             IconButton(
                                 onClick = {
-                                    val vlc = PlaybackService.instance?.getVlcPlayer()
-                                    if (vlc != null) {
-                                        if (isServicePlaying) vlc.pause() else vlc.play()
+                                    val adapter = PlaybackService.instance?.getAdapter()
+                                    if (adapter != null) {
+                                        if (isServicePlaying) adapter.togglePause() else adapter.togglePlay()
                                     }
                                 },
                                 modifier = Modifier.size(32.dp)
@@ -1476,7 +1501,33 @@ fun FilePanel(
                             archivePath = state.archivePath,
                             archivePassword = state.archivePassword,
                             thumbnailVersion = state.thumbnailVersion,
-                            isFocused = state.focusedIndex == index
+                            isFocused = state.focusedIndex == index,
+                            deepSearchPath = if (state.isSearchActive && state.searchQuery.isNotBlank()) {
+                                val parentDir = java.io.File(entry.path).parent ?: ""
+                                if (parentDir != state.currentPath && parentDir.startsWith(state.currentPath)) {
+                                    parentDir.removePrefix(state.currentPath).removePrefix("/")
+                                } else null
+                            } else null,
+                            onLoadProtectedThumbnail = onLoadProtectedThumbnail,
+                            onDeepSearchPathClick = if (state.isSearchActive && state.searchQuery.isNotBlank()) {
+                                val parentDir = java.io.File(entry.path).parent ?: ""
+                                if (parentDir != state.currentPath && parentDir.startsWith(state.currentPath)) {
+                                    {
+                                        // Navigate to parent folder of found file
+                                        val folderEntry = FileEntry(
+                                            name = java.io.File(parentDir).name,
+                                            path = parentDir,
+                                            isDirectory = true,
+                                            size = 0L,
+                                            lastModified = 0L,
+                                            extension = "",
+                                            isHidden = false,
+                                            childCount = 0
+                                        )
+                                        onFileClick(folderEntry)
+                                    }
+                                } else null
+                            } else null
                         )
                     }
                 }

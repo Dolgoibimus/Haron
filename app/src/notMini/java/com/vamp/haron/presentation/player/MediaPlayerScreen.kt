@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -92,6 +93,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.vamp.haron.R
+import com.vamp.haron.common.util.swipeBackFromLeft
 import com.vamp.haron.common.util.toDurationString
 import com.vamp.haron.data.reading.ReadingPositionManager
 import com.vamp.haron.domain.model.PlaylistHolder
@@ -129,6 +131,7 @@ fun MediaPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var bufferedPosition by remember { mutableLongStateOf(0L) }
     var currentIndex by remember { mutableIntStateOf(startIndex) }
     var showControls by remember { mutableStateOf(true) }
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_ALL) }
@@ -192,6 +195,7 @@ fun MediaPlayerScreen(
                 }
                 isPlaying = adapter.isCurrentlyPlaying()
                 currentPosition = adapter.getCurrentPositionMs()
+                bufferedPosition = adapter.getBufferedPositionMs()
                 repeatMode = adapter.getCurrentRepeatMode()
                 val d = adapter.getCurrentDurationMs()
                 if (d > 0) duration = d else if (adapterIndex != currentIndex) duration = 0
@@ -422,6 +426,7 @@ fun MediaPlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .swipeBackFromLeft(onBack = onBack)
             .background(Color.Black)
     ) {
         if (isVideo) {
@@ -809,6 +814,21 @@ fun MediaPlayerScreen(
 
                     var isDragging by remember { mutableStateOf(false) }
                     var dragValue by remember { mutableFloatStateOf(0f) }
+                    // Buffer indicator + seek slider
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        // Buffer progress (gray bar behind slider track)
+                        val bufferFraction = if (duration > 0) bufferedPosition.toFloat() / duration else 0f
+                        LinearProgressIndicator(
+                            progress = { bufferFraction.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                                .height(4.dp)
+                                .align(Alignment.Center),
+                            color = Color.White.copy(alpha = 0.4f),
+                            trackColor = Color.Transparent
+                        )
+                    }
                     Slider(
                         value = if (isDragging) dragValue
                         else if (duration > 0) currentPosition.toFloat() / duration

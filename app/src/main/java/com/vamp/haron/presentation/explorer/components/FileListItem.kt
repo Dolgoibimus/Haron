@@ -104,6 +104,9 @@ fun FileListItem(
     archivePassword: String? = null,
     thumbnailVersion: Int = 0,
     isFocused: Boolean = false,
+    deepSearchPath: String? = null, // relative path for deep search results
+    onDeepSearchPathClick: (() -> Unit)? = null, // navigate to parent folder
+    onLoadProtectedThumbnail: (suspend (String) -> Bitmap?)? = null,
     modifier: Modifier = Modifier
 ) {
     val bgColor = when {
@@ -177,6 +180,11 @@ fun FileListItem(
                 )
             }
         }
+    } else if (entry.isProtected && showLocalThumbnail && thumbnail == null && onLoadProtectedThumbnail != null) {
+        // Protected files: decrypt to cache first, then load thumbnail from decrypted temp file
+        LaunchedEffect(entry.path, thumbnailVersion) {
+            thumbnail = onLoadProtectedThumbnail(entry.path)
+        }
     } else if (showLocalThumbnail && thumbnail == null) {
         val context = LocalContext.current
         LaunchedEffect(entry.path, thumbnailVersion) {
@@ -230,11 +238,14 @@ fun FileListItem(
                 modifier = Modifier.padding(vertical = 2.dp, horizontal = 2.dp)
             ) {
                 // Square icon area — all gestures handled by grid-level pointerInput
+                // When renaming in grid, span is maxLineSpan — limit icon size to avoid stretching
+                val iconModifier = if (isRenaming) {
+                    Modifier.size(80.dp).clip(RoundedCornerShape(8.dp))
+                } else {
+                    Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp))
+                }
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(8.dp)),
+                    modifier = iconModifier,
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     if (thumbnail != null) {
@@ -479,6 +490,23 @@ fun FileListItem(
                                 )
                             }
                         }
+                    }
+                    // Deep search: show relative path (clickable → navigate to folder)
+                    if (deepSearchPath != null) {
+                        Text(
+                            text = "\uD83D\uDCC2 $deepSearchPath",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .padding(top = 1.dp)
+                                .then(
+                                    if (onDeepSearchPathClick != null)
+                                        Modifier.clickable { onDeepSearchPathClick() }
+                                    else Modifier
+                                )
+                        )
                     }
                     // Content search snippet
                     if (contentSnippet != null && searchQuery.isNotBlank()) {

@@ -9,6 +9,7 @@ interface SecureFolderRepository {
     suspend fun getProtectedEntriesForDir(dirPath: String): List<SecureFileEntry>
     suspend fun getAllProtectedEntries(): List<SecureFileEntry>
     suspend fun decryptToCache(id: String): Result<File>
+    suspend fun decryptToBytes(id: String): Result<ByteArray>
     suspend fun deleteFromSecureStorage(ids: List<String>, onProgress: (Int, String) -> Unit): Result<Int>
     suspend fun getSecureFolderSize(): Long
     fun isFileProtected(path: String): Boolean
